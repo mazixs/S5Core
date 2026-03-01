@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/armon/go-socks5"
+	"github.com/mazixs/S5Core/pkg/obfs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -84,6 +85,12 @@ type Config struct {
 	Fail2BanTime    time.Duration
 	Logger          *log.Logger
 	Telemetry       *Telemetry // Optional custom telemetry
+
+	// Obfuscation settings
+	ObfsEnabled    bool
+	ObfsPSK        string
+	ObfsMaxPadding int
+	ObfsMTU        int
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -285,11 +292,15 @@ func (s *fail2banStore) Valid(user, password string) bool {
 // serverListener wraps net.Listener to apply IP whitelisting and timeout wrappers.
 type serverListener struct {
 	net.Listener
-	whitelist    []net.IP
-	readTimeout  time.Duration
-	writeTimeout time.Duration
-	telemetry    *Telemetry
-	mu           sync.RWMutex
+	whitelist      []net.IP
+	readTimeout    time.Duration
+	writeTimeout   time.Duration
+	telemetry      *Telemetry
+	obfsEnabled    bool
+	obfsPSK        []byte
+	obfsMaxPadding int
+	obfsMTU        int
+	mu             sync.RWMutex
 }
 
 func (l *serverListener) setWhitelist(ips []net.IP) {
@@ -352,6 +363,22 @@ func (l *serverListener) Accept() (net.Conn, error) {
 			l.telemetry.TotalConnections.Add(ctx, 1)
 		}
 
-		return &metricsConn{Conn: conn, telemetry: l.telemetry}, nil
+		wrappedConn := net.Conn(&metricsConn{Conn: conn, telemetry: l.telemetry})
+
+		if l.obfsEnabled {
+			cfg := obfs.Config{
+				PSK:        l.obfsPSK,
+				MaxPadding: l.obfsMaxPadding,
+				MTU:        l.obfsMTU,
+			}
+			obfsWrapped, err := obfs.NewConn(wrappedConn, cfg)
+			if err != nil {
+				_ = wrappedConn.Close()
+				continue
+			}
+			wrappedConn = obfsWrapped
+		}
+
+		return wrappedConn, nil
 	}
 }

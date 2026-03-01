@@ -162,10 +162,24 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.listener = &serverListener{
-		Listener:     l,
-		whitelist:    initialWhitelist,
-		readTimeout:  s.cfg.ReadTimeout,
-		writeTimeout: s.cfg.WriteTimeout,
+		Listener:       l,
+		whitelist:      initialWhitelist,
+		readTimeout:    s.cfg.ReadTimeout,
+		writeTimeout:   s.cfg.WriteTimeout,
+		obfsEnabled:    s.cfg.ObfsEnabled,
+		obfsPSK:        []byte(s.cfg.ObfsPSK),
+		obfsMaxPadding: s.cfg.ObfsMaxPadding,
+		obfsMTU:        s.cfg.ObfsMTU,
+	}
+
+	if s.cfg.ObfsEnabled {
+		s.logger.Info("Obfuscation ENABLED",
+			"max_padding", s.cfg.ObfsMaxPadding,
+			"mtu", s.cfg.ObfsMTU,
+			"psk_length", len(s.cfg.ObfsPSK),
+		)
+	} else {
+		s.logger.Warn("Obfuscation DISABLED — traffic is NOT encrypted")
 	}
 
 	s.logger.Info("Start listening proxy service", "address", listenAddr)

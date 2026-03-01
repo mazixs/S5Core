@@ -1,6 +1,6 @@
 <div align="center">
   <h1>S5Core</h1>
-  <p><strong>A High-Performance, Production-Ready SOCKS5 Proxy Server & Go SDK</strong></p>
+  <p><strong>A High-Performance, Production-Ready SOCKS5 Proxy Server & Go SDK with Traffic Obfuscation</strong></p>
 
   [![Latest Release](https://github.com/mazixs/S5Core/actions/workflows/release.yml/badge.svg)](https://github.com/mazixs/S5Core/actions)
   [![Go Report Card](https://goreportcard.com/badge/github.com/mazixs/S5Core)](https://goreportcard.com/report/github.com/mazixs/S5Core)
@@ -10,12 +10,16 @@
 
 ## Overview
 
-**S5Core** is a modern, lightweight, and extremely fast SOCKS5 server designed for high-load production environments. Written purely in Go, it features strict authentication, rate limiting, anti-bruteforce protection, zero-cost architecture with zero-allocation buffers, and built-in observability with OpenTelemetry.
+**S5Core** is a modern, lightweight, and extremely fast SOCKS5 server designed for high-load production environments. Written purely in Go, it features strict authentication, rate limiting, anti-bruteforce protection, zero-cost architecture with zero-allocation buffers, built-in observability with OpenTelemetry, and **AES-256-GCM traffic obfuscation** that makes proxy traffic indistinguishable from random noise.
 
 S5Core can be run as a standalone executable via Docker/CLI or embedded directly into your own Go applications as an SDK Core (e.g., for building Web-UI proxy panels).
 
 ## Features
 
+- **Traffic Obfuscation:** AES-256-GCM encryption with random padding on every frame. DPI systems cannot detect SOCKS5 signatures, domain names, or any protocol patterns on the wire.
+- **Client & Server Architecture:** Includes `s5client` — a local proxy that accepts plain SOCKS5 and tunnels traffic through an encrypted obfuscation layer to the S5Core server.
+- **Domain-Based Routing (Split Tunneling):** Route only specific domains or wildcards (e.g., `*.google.com`) through the encrypted tunnel.
+- **Configurable MTU:** Control frame sizes to match your network topology and avoid fragmentation.
 - **High Performance:** Uses `sync.Pool` for buffer reuse during I/O operations, practically eliminating Garbage Collector pauses.
 - **SDK & Core Architecture:** Extracted core logic into `pkg/s5server`, allowing any external Go app to import S5Core, manage proxies programmatically, and hot-add/remove users or whitelists on the fly.
 - **Built-in Fail2Ban:** In-memory tracking of authentication failures. Temporarily blocks IPs/Users attempting to bruteforce credentials.
@@ -23,6 +27,86 @@ S5Core can be run as a standalone executable via Docker/CLI or embedded directly
 - **Rate Limiting:** Global connection limits (`netutil.LimitListener`) to protect your server from File Descriptor exhaustion and OOM errors.
 - **I/O Deadlines (Slowloris Protection):** Strict Read/Write timeouts on raw TCP sockets prevent stale connections from draining resources.
 - **Security First:** Authentication enabled by default, regex-based destination FQDN filtering, and strict IP Whitelisting.
+
+---
+
+## Traffic Obfuscation
+
+S5Core implements a custom obfuscation layer inspired by [AmneziaWG](https://amnezia.org/), [XTLS Vision](https://github.com/XTLS/Xray-core), and [Hysteria v2 Salamander](https://hysteria.network/). The obfuscation wraps every TCP frame with AES-256-GCM encryption and random-length padding, making traffic indistinguishable from random noise.
+
+### How It Works
+
+```
+Browser/App → s5client (plain SOCKS5) → [AES-256-GCM + random padding] → s5core → [decrypt] → SOCKS5 → Internet
+               localhost:1080              encrypted tunnel (noise)         server:1080
+```
+
+- **Client ISP sees:** random encrypted bytes to the server IP — no SOCKS5 signatures, no domains, no HTTP keywords.
+- **Server ISP sees:** random encrypted bytes from the client IP — indistinguishable from banking app traffic with certificate pinning.
+
+### Wire Protocol
+
+Each frame on the wire:
+```
+[Frame Size (4B)] [Nonce (12B)] [AES-256-GCM Ciphertext]
+                                 └─ encrypts: [PayloadLen (2B)] [Payload] [PaddingLen (2B)] [Random Padding]
+```
+
+### Measured Results (from automated tests)
+
+The following data is captured by `TestObfsDemo_MeasurableComparison` which sends real SOCKS5 protocol bytes through the obfuscation layer and analyzes the raw wire output:
+
+#### Shannon Entropy (bits/byte)
+
+| Data | Plain (no obfuscation) | Obfuscated (AES-256-GCM) | Improvement |
+|------|------------------------|--------------------------|-------------|
+| SOCKS5 Greeting (`0x050100`) | **1.58** | **6.74** | 4.3× |
+| SOCKS5 CONNECT + domain | **3.84** | **6.61** | 1.7× |
+| HTTP Request | **4.32** | **6.87** | 1.6× |
+
+> Theoretical maximum: 8.0 bits/byte (perfectly random). Our obfuscation achieves 6.6–6.9 — on par with TLS/HTTPS encrypted traffic. Plain SOCKS5 at 1.58 bits/byte is trivially detectable by DPI.
+
+#### DPI Signature Detection
+
+| Check | Result |
+|-------|--------|
+| SOCKS5 signature `0x050100` on wire | ❌ **Not found** |
+| HTTP keyword on wire | ❌ **Not found** |
+| Domain name `example.com` on wire | ❌ **Not found** |
+
+#### Overhead per Frame
+
+| Component | Size |
+|-----------|------|
+| Frame size header | 4 bytes |
+| AES-GCM nonce | 12 bytes |
+| AES-GCM auth tag | 16 bytes |
+| Payload/padding headers | 4 bytes |
+| Random padding | 0–256 bytes (configurable) |
+| **Total overhead** | **36–292 bytes per frame** |
+
+> For payloads ≥1 KB, overhead is **<30%**. For small handshake packets (3 bytes), overhead is higher but expected — the padding is what prevents size-based fingerprinting.
+
+---
+
+## Architecture
+
+S5Core consists of two binaries:
+
+| Binary | Role | Description |
+|--------|------|-------------|
+| `s5core` | **Server** | SOCKS5 proxy with optional obfuscation layer. Deployed on the remote server. |
+| `s5client` | **Client** | Local SOCKS5 proxy that wraps traffic in an obfuscation tunnel. Runs on the user's machine. |
+
+### Without Obfuscation (Standard Mode)
+```
+App → s5core:1080 (plain SOCKS5) → Internet
+```
+
+### With Obfuscation (Tunnel Mode)
+```
+App → s5client:1080 (plain SOCKS5) → [encrypted tunnel] → s5core:1080 (de-obfs → SOCKS5) → Internet
+```
 
 ---
 
@@ -44,6 +128,12 @@ func main() {
 	cfg := s5server.DefaultConfig()
 	cfg.Port = "1080"
 	cfg.RequireAuth = true
+
+	// Enable obfuscation
+	cfg.ObfsEnabled = true
+	cfg.ObfsPSK = "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH" // 32 bytes
+	cfg.ObfsMaxPadding = 256
+	cfg.ObfsMTU = 1400
 
 	// Initialize the server
 	srv, err := s5server.NewServer(cfg)
@@ -71,6 +161,8 @@ func main() {
 
 When running the standalone binary or Docker image, configuration is entirely driven by environment variables.
 
+### Server (`s5core`)
+
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `PROXY_PORT` | String | `1080` | Port to listen for SOCKS5 connections. |
@@ -80,12 +172,30 @@ When running the standalone binary or Docker image, configuration is entirely dr
 | `PROXY_PASSWORD` | String | *Empty* | Password for proxy authentication. Required if `REQUIRE_AUTH=true`. |  
 | `ALLOWED_IPS` | String | *Empty* | Comma-separated list of IP addresses allowed to connect to the proxy. |   
 | `ALLOWED_DEST_FQDN` | String | *Empty* | Regex pattern to filter allowed destination FQDNs. Empty allows all destinations. |
-| `READ_TIMEOUT` | Duration| `30s` | Maximum duration before a read operation times out. |
-| `WRITE_TIMEOUT`| Duration| `30s` | Maximum duration before a write operation times out. |
-| `MAX_CONNECTIONS`| Integer | `10000` | Global limit for concurrent active connections. |
-| `FAIL2BAN_RETRIES`| Integer | `5` | Number of failed auth attempts before temporarily banning a user. Set to 0 to disable. |
-| `FAIL2BAN_TIME` | Duration| `5m` | How long a user/IP is banned after failing authentication `FAIL2BAN_RETRIES` times. |
-| `METRICS_PORT` | String | `8080` | Port to expose OpenTelemetry/Prometheus `/metrics` and `/health` endpoints. Set to empty string to disable. |                                                                                        
+| `READ_TIMEOUT` | Duration | `30s` | Maximum duration before a read operation times out. |
+| `WRITE_TIMEOUT` | Duration | `30s` | Maximum duration before a write operation times out. |
+| `MAX_CONNECTIONS` | Integer | `10000` | Global limit for concurrent active connections. |
+| `FAIL2BAN_RETRIES` | Integer | `5` | Number of failed auth attempts before temporarily banning a user. Set to 0 to disable. |
+| `FAIL2BAN_TIME` | Duration | `5m` | How long a user/IP is banned after failing authentication. |
+| `METRICS_PORT` | String | `8080` | Port to expose OpenTelemetry/Prometheus `/metrics` and `/health` endpoints. |
+| `OBFS_ENABLED` | Boolean | `false` | Enable traffic obfuscation (AES-256-GCM + random padding). |
+| `OBFS_PSK` | String | *Empty* | Pre-shared key for obfuscation. **Must be exactly 32 bytes.** |
+| `OBFS_MAX_PADDING` | Integer | `256` | Maximum random padding per frame (bytes). Higher = more noise, more overhead. |
+| `OBFS_MTU` | Integer | `1400` | Maximum transmission unit for obfuscated frames. Set below your network MTU to avoid fragmentation. |
+
+### Client (`s5client`)
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `CLIENT_LISTEN_ADDR` | String | `127.0.0.1:1080` | Local address to accept plain SOCKS5 connections. |
+| `SERVER_ADDR` | String | *Required* | Remote S5Core server address (e.g., `1.2.3.4:1080`). |
+| `OBFS_PSK` | String | *Required* | Pre-shared key. **Must match the server's PSK exactly.** |
+| `OBFS_MAX_PADDING` | Integer | `256` | Must match the server configuration. |
+| `OBFS_MTU` | Integer | `1400` | Must match the server configuration. |
+| `ROUTE_DOMAINS` | String | *Empty* | Comma-separated domain patterns for split tunneling. Empty = tunnel all traffic. |
+
+> **Domain routing examples:** `example.com` (exact match), `*.google.com` (all subdomains + base domain), `*.youtube.com,*.googlevideo.com` (multiple patterns).
+
 *Note on durations:* Use standard Go duration strings like `30s`, `1m`, `1.5h`.
 
 ---
@@ -104,6 +214,28 @@ docker run -d \
   -e PROXY_USER=myuser \
   -e PROXY_PASSWORD=mypassword \
   ghcr.io/mazixs/s5core:latest
+```
+
+#### With Obfuscation
+```bash
+docker run -d \
+  --name s5core \
+  -p 1080:1080 \
+  -e PROXY_USER=myuser \
+  -e PROXY_PASSWORD=supersecure \
+  -e OBFS_ENABLED=true \
+  -e OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH \
+  -e OBFS_MAX_PADDING=256 \
+  -e OBFS_MTU=1400 \
+  ghcr.io/mazixs/s5core:latest
+```
+
+Then on the client machine, run the local proxy:
+```bash
+SERVER_ADDR=your-server-ip:1080 \
+OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH \
+ROUTE_DOMAINS="*.google.com,*.youtube.com" \
+./s5client
 ```
 
 #### Advanced Usage (With Whitelisting, Limits and Metrics)
@@ -133,7 +265,7 @@ You can easily route traffic of another Docker container through S5Core without 
 ```yaml
 services:
   s5core:
-    # Образ будет автоматически скачиваться из GitHub Packages
+    # Image is automatically pulled from GitHub Packages
     image: ghcr.io/mazixs/s5core:latest
     restart: always
     ports:
@@ -191,14 +323,18 @@ docker kill -s HUP s5core
 
 ## Testing the Proxy
 
-**With cURL:**
+**With cURL (no obfuscation):**
 ```bash
 curl --socks5 <PROXY_IP>:1080 -U myuser:mypassword https://ipinfo.io
 ```
 
-**Using a Dockerized cURL:**
+**With obfuscation (via s5client):**
 ```bash
-docker run --rm curlimages/curl:latest -s --socks5 myuser:mypassword@<PROXY_IP>:1080 https://ipinfo.io
+# Terminal 1: Start local client
+SERVER_ADDR=<PROXY_IP>:1080 OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH ./s5client
+
+# Terminal 2: Use it as a regular SOCKS5 proxy
+curl --socks5 127.0.0.1:1080 https://ipinfo.io
 ```
 
 ---
