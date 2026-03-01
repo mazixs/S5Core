@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mazixs/S5Core/pkg/s5server"
 	"github.com/caarlos0/env/v11"
+	"github.com/mazixs/S5Core/pkg/s5server"
 
 	"log/slog"
 
@@ -126,7 +126,7 @@ func main() {
 			http.Handle("/metrics", promhttp.Handler())
 			http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("OK"))
+				_, _ = w.Write([]byte("OK"))
 			})
 			metricsAddr := net.JoinHostPort(cfg.ListenIP, cfg.MetricsPort)
 			if cfg.ListenIP == "" {
@@ -142,7 +142,7 @@ func main() {
 				<-ctx.Done()
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				metricsServer.Shutdown(shutdownCtx)
+				_ = metricsServer.Shutdown(shutdownCtx)
 			}()
 
 			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

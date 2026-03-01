@@ -22,7 +22,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 		if err != nil {
 			t.Errorf("err: %v", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		buf := make([]byte, 4)
 		if _, err := io.ReadAtLeast(conn, buf, 4); err != nil {
@@ -32,7 +32,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 		if !bytes.Equal(buf, []byte("ping")) {
 			t.Errorf("bad: %v", buf)
 		}
-		conn.Write([]byte("pong"))
+		_, _ = conn.Write([]byte("pong"))
 	}()
 	lAddr := l.Addr().(*net.TCPAddr)
 
@@ -79,7 +79,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 	req.Write([]byte("ping"))
 
 	// Send all the bytes
-	conn.Write(req.Bytes())
+	_, _ = conn.Write(req.Bytes())
 
 	// Verify response
 	expected := []byte{
@@ -95,7 +95,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 	}
 	out := make([]byte, len(expected))
 
-	conn.SetDeadline(time.Now().Add(time.Second))
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := io.ReadAtLeast(conn, out, len(out)); err != nil {
 		t.Errorf("err: %v", err)
 	}
