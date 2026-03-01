@@ -2,7 +2,7 @@
   <h1>S5Core</h1>
   <p><strong>A High-Performance, Production-Ready SOCKS5 Proxy Server & Go SDK</strong></p>
 
-  [![Latest Release](https://github.com/S5Core/S5Core/workflows/Latest%20tag%20from%20master%20branch/badge.svg)](https://github.com/S5Core/S5Core/actions)
+  [![Latest Release](https://github.com/mazixs/S5Core/workflows/Latest%20tag%20from%20master%20branch/badge.svg)](https://github.com/S5Core/S5Core/actions)
   [![Go Report Card](https://goreportcard.com/badge/github.com/S5Core/S5Core)](https://goreportcard.com/report/github.com/S5Core/S5Core)
   [![License](https://img.shields.io/badge/License-GPL_2.0-blue.svg)](LICENSE)
 
@@ -124,7 +124,37 @@ docker run -d \
 ### Using Docker Compose
 Create a `.env` file based on `.env.example` and run:
 ```bash
-docker-compose up -d
+docker compose up -d
+```
+
+#### Routing Another Service Through S5Core
+You can easily route traffic of another Docker container through S5Core without exposing it to the host network. This is useful when you want to anonymize or proxy a specific application.
+
+```yaml
+services:
+  s5core:
+    # Вариант 1: Сборка из локальной директории (если вы скачали этот репозиторий)
+    build: .
+    # Вариант 2: Прямая сборка из репозитория GitHub (если вы не качали код)
+    # build: https://github.com/mazixs/S5Core.git#master
+    image: s5core/s5core:latest
+    restart: always
+    ports:
+      - "1080:1080"
+    environment:
+      - REQUIRE_AUTH=false # Disable auth for internal network, or use PROXY_USER/PROXY_PASSWORD
+      - MAX_CONNECTIONS=5000
+
+  my_app:
+    image: curlimages/curl
+    command: ["curl", "-s", "https://ipinfo.io"]
+    environment:
+      # Tell the application to use the S5Core SOCKS5 proxy
+      - HTTP_PROXY=socks5://s5core:1080
+      - HTTPS_PROXY=socks5://s5core:1080
+      - ALL_PROXY=socks5://s5core:1080
+    depends_on:
+      - s5core
 ```
 
 ---
