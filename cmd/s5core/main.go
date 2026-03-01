@@ -34,6 +34,10 @@ type params struct {
 	MetricsPort     string        `env:"METRICS_PORT" envDefault:"8080"`
 	Fail2BanRetries int           `env:"FAIL2BAN_RETRIES" envDefault:"5"`
 	Fail2BanTime    time.Duration `env:"FAIL2BAN_TIME" envDefault:"5m"`
+	ObfsEnabled     bool          `env:"OBFS_ENABLED" envDefault:"false"`
+	ObfsPSK         string        `env:"OBFS_PSK" envDefault:""`
+	ObfsMaxPadding  int           `env:"OBFS_MAX_PADDING" envDefault:"256"`
+	ObfsMTU         int           `env:"OBFS_MTU" envDefault:"1400"`
 }
 
 func main() {
@@ -102,6 +106,10 @@ func setupServer(cfg params, telemetry *s5server.Telemetry) (*s5server.Server, e
 		Fail2BanRetries: cfg.Fail2BanRetries,
 		Fail2BanTime:    cfg.Fail2BanTime,
 		Telemetry:       telemetry,
+		ObfsEnabled:     cfg.ObfsEnabled,
+		ObfsPSK:         cfg.ObfsPSK,
+		ObfsMaxPadding:  cfg.ObfsMaxPadding,
+		ObfsMTU:         cfg.ObfsMTU,
 	}
 
 	srv, err := s5server.NewServer(serverCfg)
