@@ -33,7 +33,7 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 	if meterProvider == nil {
 		meterProvider = otel.GetMeterProvider()
 	}
-	meter := meterProvider.Meter("github.com/S5Core/S5Core")
+	meter := meterProvider.Meter("github.com/mazixs/S5Core")
 
 	activeConns, err := meter.Int64UpDownCounter("s5core_connections_active", metric.WithDescription("The total number of active connections"))
 	if err != nil {

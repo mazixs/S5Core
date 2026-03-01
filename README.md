@@ -2,8 +2,8 @@
   <h1>S5Core</h1>
   <p><strong>A High-Performance, Production-Ready SOCKS5 Proxy Server & Go SDK</strong></p>
 
-  [![Latest Release](https://github.com/mazixs/S5Core/workflows/Latest%20tag%20from%20master%20branch/badge.svg)](https://github.com/S5Core/S5Core/actions)
-  [![Go Report Card](https://goreportcard.com/badge/github.com/S5Core/S5Core)](https://goreportcard.com/report/github.com/S5Core/S5Core)
+  [![Latest Release](https://github.com/mazixs/S5Core/actions/workflows/release.yml/badge.svg)](https://github.com/mazixs/S5Core/actions)
+  [![Go Report Card](https://goreportcard.com/badge/github.com/mazixs/S5Core)](https://goreportcard.com/report/github.com/mazixs/S5Core)
   [![License](https://img.shields.io/badge/License-GPL_2.0-blue.svg)](LICENSE)
 
 </div>
@@ -37,7 +37,7 @@ import (
 	"context"
 	"log/slog"
 	
-	"github.com/S5Core/S5Core/pkg/s5server"
+	"github.com/mazixs/S5Core/pkg/s5server"
 )
 
 func main() {

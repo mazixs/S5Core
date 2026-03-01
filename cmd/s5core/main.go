@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/S5Core/S5Core/pkg/s5server"
+	"github.com/mazixs/S5Core/pkg/s5server"
 	"github.com/caarlos0/env/v11"
 
 	"log/slog"
