@@ -1,4 +1,4 @@
-module github.com/S5Core/S5Core
+module github.com/mazixs/S5Core
 
 go 1.25.0
 
