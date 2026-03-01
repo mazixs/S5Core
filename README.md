@@ -103,7 +103,7 @@ docker run -d \
   -p 1080:1080 \
   -e PROXY_USER=myuser \
   -e PROXY_PASSWORD=mypassword \
-  s5core/s5core
+  ghcr.io/mazixs/s5core:latest
 ```
 
 #### Advanced Usage (With Whitelisting, Limits and Metrics)
@@ -118,7 +118,7 @@ docker run -d \
   -e MAX_CONNECTIONS=5000 \
   -e FAIL2BAN_RETRIES=3 \
   -e FAIL2BAN_TIME=15m \
-  s5core/s5core
+  ghcr.io/mazixs/s5core:latest
 ```
 
 ### Using Docker Compose
@@ -133,11 +133,8 @@ You can easily route traffic of another Docker container through S5Core without 
 ```yaml
 services:
   s5core:
-    # Вариант 1: Сборка из локальной директории (если вы скачали этот репозиторий)
-    build: .
-    # Вариант 2: Прямая сборка из репозитория GitHub (если вы не качали код)
-    # build: https://github.com/mazixs/S5Core.git#master
-    image: s5core/s5core:latest
+    # Образ будет автоматически скачиваться из GitHub Packages
+    image: ghcr.io/mazixs/s5core:latest
     restart: always
     ports:
       - "1080:1080"

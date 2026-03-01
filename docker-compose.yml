@@ -1,9 +1,9 @@
 services:
 
   s5core:
-    build: .
+    # build: .
     restart: always
-    image: s5core/s5core
+    image: ghcr.io/mazixs/s5core:latest
     env_file: .env
     ports:
       - "1080:1080"
