@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Check code formatting
+      run: if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi
+
+    - name: Run go vet
+      run: go vet ./...
+
+    - name: Run tests with race detector and coverage
+      run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+    - name: Build S5Core
+      run: go build -v ./cmd/s5core
