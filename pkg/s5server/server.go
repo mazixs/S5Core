@@ -8,8 +8,8 @@ import (
 	"net"
 	"os"
 
-	"github.com/mazixs/S5Core/internal/s5core"
 	"github.com/armon/go-socks5"
+	"github.com/mazixs/S5Core/internal/s5core"
 	"golang.org/x/net/netutil"
 )
 

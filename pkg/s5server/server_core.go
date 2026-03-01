@@ -15,7 +15,8 @@ import (
 
 var bufferPool = sync.Pool{
 	New: func() any {
-		return make([]byte, 32*1024)
+		b := make([]byte, 32*1024)
+		return &b
 	},
 }
 
@@ -108,7 +109,7 @@ type timeoutConn struct {
 
 func (c *timeoutConn) Read(b []byte) (int, error) {
 	if c.readTimeout > 0 {
-		err := c.Conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		err := c.SetReadDeadline(time.Now().Add(c.readTimeout))
 		if err != nil {
 			return 0, err
 		}
@@ -118,7 +119,7 @@ func (c *timeoutConn) Read(b []byte) (int, error) {
 
 func (c *timeoutConn) Write(b []byte) (int, error) {
 	if c.writeTimeout > 0 {
-		err := c.Conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		err := c.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 		if err != nil {
 			return 0, err
 		}
@@ -149,8 +150,9 @@ func (c *metricsConn) Write(b []byte) (int, error) {
 }
 
 func (c *metricsConn) ReadFrom(r io.Reader) (int64, error) {
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	bufPtr := bufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer bufferPool.Put(bufPtr)
 
 	var total int64
 	for {
@@ -177,8 +179,9 @@ func (c *metricsConn) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (c *metricsConn) WriteTo(w io.Writer) (int64, error) {
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	bufPtr := bufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer bufferPool.Put(bufPtr)
 
 	var total int64
 	for {
@@ -295,13 +298,6 @@ func (l *serverListener) setWhitelist(ips []net.IP) {
 	l.whitelist = ips
 }
 
-func (l *serverListener) setTimeouts(read, write time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.readTimeout = read
-	l.writeTimeout = write
-}
-
 func (l *serverListener) Accept() (net.Conn, error) {
 	for {
 		conn, err := l.Listener.Accept()
@@ -318,13 +314,13 @@ func (l *serverListener) Accept() (net.Conn, error) {
 		if len(whitelist) > 0 {
 			host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 			if err != nil {
-				conn.Close()
+				_ = conn.Close()
 				continue
 			}
 
 			ip := net.ParseIP(host)
 			if ip == nil {
-				conn.Close()
+				_ = conn.Close()
 				continue
 			}
 
@@ -337,7 +333,7 @@ func (l *serverListener) Accept() (net.Conn, error) {
 			}
 
 			if !allowed {
-				conn.Close()
+				_ = conn.Close()
 				continue
 			}
 		}

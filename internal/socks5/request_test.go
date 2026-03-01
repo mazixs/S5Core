@@ -34,7 +34,7 @@ func TestRequest_Connect(t *testing.T) {
 		if err != nil {
 			t.Errorf("err: %v", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		buf := make([]byte, 4)
 		if _, err := io.ReadAtLeast(conn, buf, 4); err != nil {
@@ -44,7 +44,7 @@ func TestRequest_Connect(t *testing.T) {
 		if !bytes.Equal(buf, []byte("ping")) {
 			t.Errorf("bad: %v", buf)
 		}
-		conn.Write([]byte("pong"))
+		_, _ = conn.Write([]byte("pong"))
 	}()
 	lAddr := l.Addr().(*net.TCPAddr)
 
@@ -109,7 +109,7 @@ func TestRequest_Connect_RuleFail(t *testing.T) {
 		if err != nil {
 			t.Errorf("err: %v", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		buf := make([]byte, 4)
 		if _, err := io.ReadAtLeast(conn, buf, 4); err != nil {
@@ -119,7 +119,7 @@ func TestRequest_Connect_RuleFail(t *testing.T) {
 		if !bytes.Equal(buf, []byte("ping")) {
 			t.Errorf("bad: %v", buf)
 		}
-		conn.Write([]byte("pong"))
+		_, _ = conn.Write([]byte("pong"))
 	}()
 	lAddr := l.Addr().(*net.TCPAddr)
 
