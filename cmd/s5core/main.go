@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -47,19 +48,48 @@ func main() {
 	}
 
 	// Initialize OpenTelemetry Prometheus Exporter
-	exporter, err := prometheus.New()
-	if err != nil {
-		slog.Error("Failed to initialize prometheus exporter", "error", err)
-		os.Exit(1)
-	}
-	provider := metric.NewMeterProvider(metric.WithReader(exporter))
-
-	telemetry, err := s5server.InitTelemetry(provider)
+	telemetry, err := setupTelemetry()
 	if err != nil {
 		slog.Error("Failed to initialize telemetry", "error", err)
 		os.Exit(1)
 	}
 
+	srv, err := setupServer(cfg, telemetry)
+	if err != nil {
+		slog.Error("Server configuration failed", "error", err)
+		os.Exit(1)
+	}
+
+	// Set up graceful shutdown context
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Set up SIGHUP context for configuration hot reloading
+	setupHotReload(ctx, srv)
+
+	// Start metrics server (Legacy Prometheus endpoint)
+	if cfg.MetricsPort != "" {
+		go startMetricsServer(ctx, cfg.ListenIP, cfg.MetricsPort)
+	}
+
+	if err := srv.Start(ctx); err != nil {
+		slog.Error("Server stopped with error", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("Server stopped cleanly")
+}
+
+func setupTelemetry() (*s5server.Telemetry, error) {
+	exporter, err := prometheus.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize prometheus exporter: %v", err)
+	}
+	provider := metric.NewMeterProvider(metric.WithReader(exporter))
+	return s5server.InitTelemetry(provider)
+}
+
+func setupServer(cfg params, telemetry *s5server.Telemetry) (*s5server.Server, error) {
 	serverCfg := s5server.Config{
 		Port:            cfg.Port,
 		ListenIP:        cfg.ListenIP,
@@ -76,25 +106,21 @@ func main() {
 
 	srv, err := s5server.NewServer(serverCfg)
 	if err != nil {
-		slog.Error("Failed to initialize server", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to initialize server: %v", err)
 	}
 
 	if cfg.RequireAuth && cfg.User != "" && cfg.Password != "" {
 		if err := srv.AddUser(cfg.User, cfg.Password); err != nil {
-			slog.Error("Failed to add proxy user", "error", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("failed to add proxy user: %v", err)
 		}
 	} else if cfg.RequireAuth {
-		slog.Error("REQUIRE_AUTH is true, but PROXY_USER and PROXY_PASSWORD are not set. The application will now exit.")
-		os.Exit(1)
+		return nil, fmt.Errorf("REQUIRE_AUTH is true, but PROXY_USER and PROXY_PASSWORD are not set")
 	}
 
-	// Set up graceful shutdown context
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	return srv, nil
+}
 
-	// Set up SIGHUP context for configuration hot reloading
+func setupHotReload(ctx context.Context, srv *s5server.Server) {
 	hupCtx := make(chan os.Signal, 1)
 	signal.Notify(hupCtx, syscall.SIGHUP)
 	go func() {
@@ -119,42 +145,32 @@ func main() {
 			}
 		}
 	}()
+}
 
-	// Start metrics server (Legacy Prometheus endpoint)
-	if cfg.MetricsPort != "" {
-		go func() {
-			http.Handle("/metrics", promhttp.Handler())
-			http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("OK"))
-			})
-			metricsAddr := net.JoinHostPort(cfg.ListenIP, cfg.MetricsPort)
-			if cfg.ListenIP == "" {
-				metricsAddr = ":" + cfg.MetricsPort
-			}
-			slog.Info("Start listening metrics/health service", "address", metricsAddr)
+func startMetricsServer(ctx context.Context, listenIP, metricsPort string) {
+	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+	metricsAddr := net.JoinHostPort(listenIP, metricsPort)
+	if listenIP == "" {
+		metricsAddr = ":" + metricsPort
+	}
+	slog.Info("Start listening metrics/health service", "address", metricsAddr)
 
-			metricsServer := &http.Server{
-				Addr: metricsAddr,
-			}
-
-			go func() {
-				<-ctx.Done()
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = metricsServer.Shutdown(shutdownCtx)
-			}()
-
-			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				slog.Error("Metrics server error", "error", err)
-			}
-		}()
+	metricsServer := &http.Server{
+		Addr: metricsAddr,
 	}
 
-	if err := srv.Start(ctx); err != nil {
-		slog.Error("Server stopped with error", "error", err)
-		os.Exit(1)
-	}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = metricsServer.Shutdown(shutdownCtx)
+	}()
 
-	slog.Info("Server stopped cleanly")
+	if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Error("Metrics server error", "error", err)
+	}
 }
