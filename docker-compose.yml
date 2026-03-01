@@ -1,0 +1,9 @@
+version: '3'
+services:
+
+  s5core:
+    restart: always
+    image: s5core/s5core
+    env_file: .env
+    ports:
+      - "1080:1080"

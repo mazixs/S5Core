@@ -1,0 +1,143 @@
+<div align="center">
+  <h1>S5Core</h1>
+  <p><strong>A High-Performance, Production-Ready SOCKS5 Proxy Server in Go</strong></p>
+
+  [![Latest Release](https://github.com/S5Core/S5Core/workflows/Latest%20tag%20from%20master%20branch/badge.svg)](https://github.com/S5Core/S5Core/actions)
+  [![Go Report Card](https://goreportcard.com/badge/github.com/S5Core/S5Core)](https://goreportcard.com/report/github.com/S5Core/S5Core)
+  [![License](https://img.shields.io/badge/License-GPL_2.0-blue.svg)](LICENSE)
+
+</div>
+
+## 📌 Overview
+
+**S5Core** is a modern, lightweight, and extremely fast SOCKS5 server designed for high-load production environments. Written purely in Go, it features strict authentication, rate limiting, anti-bruteforce protection, zero-cost architecture with zero-allocation buffers, and built-in observability with Prometheus metrics.
+
+## ✨ Features
+
+- **🚀 High Performance:** Uses `sync.Pool` for buffer reuse during I/O operations, practically eliminating Garbage Collector pauses.
+- **🛡️ Built-in Fail2Ban:** In-memory tracking of authentication failures. Temporarily blocks IPs/Users attempting to bruteforce credentials.
+- **🛑 Rate Limiting:** Global connection limits (`netutil.LimitListener`) to protect your server from File Descriptor exhaustion and OOM errors.
+- **⏳ I/O Deadlines (Slowloris Protection):** Strict Read/Write timeouts on raw TCP sockets prevent stale connections from draining resources.
+- **🔄 Hot Reloading:** Send a `SIGHUP` signal to the process to reload the config (IP whitelists, limits, timeouts) without dropping active connections.
+- **📊 Observability:** Exposes a Prometheus `/metrics` endpoint for real-time monitoring and a `/health` endpoint for load balancers.
+- **🔐 Security First:** Authentication enabled by default, regex-based destination FQDN filtering, and strict IP Whitelisting.
+
+---
+
+## 🛠️ Configuration (Environment Variables)
+
+Configuration is entirely driven by environment variables, making it perfect for Docker and Kubernetes deployments.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `PROXY_PORT` | String | `1080` | Port to listen for SOCKS5 connections. |
+| `PROXY_LISTEN_IP` | String | `0.0.0.0` | IP address to bind the proxy server to. |
+| `REQUIRE_AUTH` | Boolean | `true` | Enforce Username/Password authentication. Highly recommended. |
+| `PROXY_USER` | String | *Empty* | Username for proxy authentication. Required if `REQUIRE_AUTH=true`. |
+| `PROXY_PASSWORD` | String | *Empty* | Password for proxy authentication. Required if `REQUIRE_AUTH=true`. |
+| `ALLOWED_IPS` | String | *Empty* | Comma-separated list of IP addresses allowed to connect to the proxy. |
+| `ALLOWED_DEST_FQDN` | String | *Empty* | Regex pattern to filter allowed destination FQDNs. Empty allows all destinations. |
+| `READ_TIMEOUT` | Duration| `30s` | Maximum duration before a read operation times out. |
+| `WRITE_TIMEOUT`| Duration| `30s` | Maximum duration before a write operation times out. |
+| `MAX_CONNECTIONS`| Integer | `10000` | Global limit for concurrent active connections. |
+| `FAIL2BAN_RETRIES`| Integer | `5` | Number of failed auth attempts before temporarily banning a user. Set to 0 to disable. |
+| `FAIL2BAN_TIME` | Duration| `5m` | How long a user/IP is banned after failing authentication `FAIL2BAN_RETRIES` times. |
+| `METRICS_PORT` | String | `8080` | Port to expose `/metrics` (Prometheus) and `/health` endpoints. Set to empty string to disable. |
+
+*Note on durations:* Use standard Go duration strings like `30s`, `1m`, `1.5h`.
+
+---
+
+## 🚀 Getting Started
+
+### Using Docker (Recommended)
+
+You can spin up the S5Core proxy in seconds using Docker. The images are built on distroless static scratch images, guaranteeing minimal footprint and maximum security.
+
+#### Basic Usage (With Authentication)
+```bash
+docker run -d \
+  --name s5core \
+  -p 1080:1080 \
+  -e PROXY_USER=myuser \
+  -e PROXY_PASSWORD=mypassword \
+  s5core/s5core
+```
+
+#### Advanced Usage (With Whitelisting, Limits and Metrics)
+```bash
+docker run -d \
+  --name s5core \
+  -p 1080:1080 \
+  -p 8080:8080 \
+  -e PROXY_USER=myuser \
+  -e PROXY_PASSWORD=supersecure \
+  -e ALLOWED_IPS=192.168.1.10,10.0.0.5 \
+  -e MAX_CONNECTIONS=5000 \
+  -e FAIL2BAN_RETRIES=3 \
+  -e FAIL2BAN_TIME=15m \
+  s5core/s5core
+```
+
+### Using Docker Compose
+Create a `.env` file based on `.env.example` and run:
+```bash
+docker-compose up -d
+```
+
+---
+
+## 📊 Monitoring & Metrics
+
+If `METRICS_PORT` is set (default `8080`), S5Core exposes Prometheus metrics at `http://<IP>:8080/metrics`.
+
+Available metrics:
+- `s5core_connections_active` (Gauge): Current number of active TCP sessions.
+- `s5core_connections_total` (Counter): Total number of accepted connections since start.
+- `s5core_auth_failures_total` (Counter): Total number of failed authentication attempts.
+- `s5core_traffic_bytes_total{direction="in|out"}` (CounterVec): Total volume of proxied traffic in bytes.
+
+You can also use `http://<IP>:8080/health` as a readiness/liveness probe for your orchestration systems (e.g., Kubernetes).
+
+---
+
+## 🔄 Hot Reloading
+
+You can update specific configuration parameters without restarting the S5Core process or breaking existing connections.
+
+Currently supports hot-reloading for: `ALLOWED_IPS`, `READ_TIMEOUT`, and `WRITE_TIMEOUT`.
+
+**How to reload:**
+1. Update your `.env` file or environment variables.
+2. Send a `SIGHUP` signal to the process:
+   ```bash
+   kill -HUP $(pgrep s5core)
+   ```
+   *If running in Docker:*
+   ```bash
+   docker kill -s HUP s5core
+   ```
+
+---
+
+## 🧪 Testing the Proxy
+
+**With cURL:**
+```bash
+curl --socks5 <PROXY_IP>:1080 -U myuser:mypassword https://ipinfo.io
+```
+
+**Using a Dockerized cURL:**
+```bash
+docker run --rm curlimages/curl:latest -s --socks5 myuser:mypassword@<PROXY_IP>:1080 https://ipinfo.io
+```
+
+---
+
+## 📜 License
+
+This project is licensed under the GNU General Public License v2.0 (GPL-2.0) - see the [LICENSE](LICENSE) file for details.
+
+---
+*Based on the foundational work by Sergey Bogayrets and the go-socks5 community, highly optimized and refactored for modern high-load deployments by the S5Core contributors.
+https://github.com/serjs/socks5-server*
