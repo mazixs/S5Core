@@ -7,3 +7,4 @@ services:
     env_file: .env
     ports:
       - "1080:1080"
+      - "1443:1443"

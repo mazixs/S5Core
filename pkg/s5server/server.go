@@ -162,34 +162,62 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.listener = &serverListener{
-		Listener:       l,
-		whitelist:      initialWhitelist,
-		readTimeout:    s.cfg.ReadTimeout,
-		writeTimeout:   s.cfg.WriteTimeout,
-		obfsEnabled:    s.cfg.ObfsEnabled,
-		obfsPSK:        []byte(s.cfg.ObfsPSK),
-		obfsMaxPadding: s.cfg.ObfsMaxPadding,
-		obfsMTU:        s.cfg.ObfsMTU,
+		Listener:     l,
+		whitelist:    initialWhitelist,
+		readTimeout:  s.cfg.ReadTimeout,
+		writeTimeout: s.cfg.WriteTimeout,
 	}
 
-	if s.cfg.ObfsEnabled {
-		s.logger.Info("Obfuscation ENABLED",
-			"max_padding", s.cfg.ObfsMaxPadding,
-			"mtu", s.cfg.ObfsMTU,
-			"psk_length", len(s.cfg.ObfsPSK),
-		)
-	} else {
-		s.logger.Warn("Obfuscation DISABLED — traffic is NOT encrypted")
-	}
+	s.logger.Info("Start listening proxy service (plain SOCKS5)", "address", listenAddr)
 
-	s.logger.Info("Start listening proxy service", "address", listenAddr)
-
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() {
 		if err := s.socks5.Serve(s.listener); err != nil {
 			errCh <- err
 		}
 	}()
+
+	// Start obfuscated listener on a separate port if enabled
+	if s.cfg.ObfsEnabled && s.cfg.ObfsPort != "" {
+		obfsAddr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.ObfsPort)
+		if s.cfg.ListenIP == "" {
+			obfsAddr = ":" + s.cfg.ObfsPort
+		}
+
+		obfsL, err := net.Listen("tcp", obfsAddr)
+		if err != nil {
+			return fmt.Errorf("failed to listen obfs on %s: %w", obfsAddr, err)
+		}
+
+		obfsServerListener := &serverListener{
+			Listener:     obfsL,
+			whitelist:    initialWhitelist,
+			readTimeout:  s.cfg.ReadTimeout,
+			writeTimeout: s.cfg.WriteTimeout,
+		}
+
+		ol := &obfsListener{
+			serverListener: obfsServerListener,
+			psk:            []byte(s.cfg.ObfsPSK),
+			maxPadding:     s.cfg.ObfsMaxPadding,
+			mtu:            s.cfg.ObfsMTU,
+		}
+
+		s.logger.Info("Obfuscation ENABLED on separate port",
+			"obfs_port", s.cfg.ObfsPort,
+			"max_padding", s.cfg.ObfsMaxPadding,
+			"mtu", s.cfg.ObfsMTU,
+			"psk_length", len(s.cfg.ObfsPSK),
+		)
+
+		go func() {
+			if err := s.socks5.Serve(ol); err != nil {
+				errCh <- err
+			}
+		}()
+	} else {
+		s.logger.Warn("Obfuscation DISABLED — only plain SOCKS5 is available")
+	}
 
 	select {
 	case <-s.ctx.Done():
