@@ -103,10 +103,17 @@ S5Core consists of two binaries:
 App → s5core:1080 (plain SOCKS5) → Internet
 ```
 
-### With Obfuscation (Tunnel Mode)
+### With Obfuscation (Dual-Port Mode)
 ```
-App → s5client:1080 (plain SOCKS5) → [encrypted tunnel] → s5core:1080 (de-obfs → SOCKS5) → Internet
+App → s5core:1080 (plain SOCKS5) → Internet                  ← local/trusted clients (Telegram, curl)
+App → s5client:1080 → [encrypted tunnel] → s5core:1443 → Internet   ← remote clients via obfs
 ```
+
+> **Important:** When obfuscation is enabled, the server listens on **two ports simultaneously**:  
+> - `PROXY_PORT` (default `1080`) — plain SOCKS5 for direct/local connections  
+> - `OBFS_PORT` (default `1443`) — obfuscated connections from `s5client` only  
+> 
+> Plain SOCKS5 clients (browsers, Telegram) always connect to `PROXY_PORT`. They will **not** work on `OBFS_PORT`.
 
 ---
 
@@ -178,7 +185,8 @@ When running the standalone binary or Docker image, configuration is entirely dr
 | `FAIL2BAN_RETRIES` | Integer | `5` | Number of failed auth attempts before temporarily banning a user. Set to 0 to disable. |
 | `FAIL2BAN_TIME` | Duration | `5m` | How long a user/IP is banned after failing authentication. |
 | `METRICS_PORT` | String | `8080` | Port to expose OpenTelemetry/Prometheus `/metrics` and `/health` endpoints. |
-| `OBFS_ENABLED` | Boolean | `false` | Enable traffic obfuscation (AES-256-GCM + random padding). |
+| `OBFS_ENABLED` | Boolean | `false` | Enable traffic obfuscation on a separate port. |
+| `OBFS_PORT` | String | `1443` | Separate port for obfuscated connections from `s5client`. |
 | `OBFS_PSK` | String | *Empty* | Pre-shared key for obfuscation. **Must be exactly 32 bytes.** |
 | `OBFS_MAX_PADDING` | Integer | `256` | Maximum random padding per frame (bytes). Higher = more noise, more overhead. |
 | `OBFS_MTU` | Integer | `1400` | Maximum transmission unit for obfuscated frames. Set below your network MTU to avoid fragmentation. |
@@ -188,7 +196,7 @@ When running the standalone binary or Docker image, configuration is entirely dr
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `CLIENT_LISTEN_ADDR` | String | `127.0.0.1:1080` | Local address to accept plain SOCKS5 connections. |
-| `SERVER_ADDR` | String | *Required* | Remote S5Core server address (e.g., `1.2.3.4:1080`). |
+| `SERVER_ADDR` | String | *Required* | Remote S5Core server obfs address (e.g., `1.2.3.4:1443`). |
 | `OBFS_PSK` | String | *Required* | Pre-shared key. **Must match the server's PSK exactly.** |
 | `OBFS_MAX_PADDING` | Integer | `256` | Must match the server configuration. |
 | `OBFS_MTU` | Integer | `1400` | Must match the server configuration. |
@@ -221,9 +229,11 @@ docker run -d \
 docker run -d \
   --name s5core \
   -p 1080:1080 \
+  -p 1443:1443 \
   -e PROXY_USER=myuser \
   -e PROXY_PASSWORD=supersecure \
   -e OBFS_ENABLED=true \
+  -e OBFS_PORT=1443 \
   -e OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH \
   -e OBFS_MAX_PADDING=256 \
   -e OBFS_MTU=1400 \
@@ -232,7 +242,7 @@ docker run -d \
 
 Then on the client machine, run the local proxy:
 ```bash
-SERVER_ADDR=your-server-ip:1080 \
+SERVER_ADDR=your-server-ip:1443 \
 OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH \
 ROUTE_DOMAINS="*.google.com,*.youtube.com" \
 ./s5client

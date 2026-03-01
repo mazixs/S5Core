@@ -70,6 +70,11 @@ jobs:
           GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5core-darwin-amd64 ./cmd/s5core
           GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5core-darwin-arm64 ./cmd/s5core
           GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5core-windows-amd64.exe ./cmd/s5core
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5client-linux-amd64 ./cmd/s5client
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5client-linux-arm64 ./cmd/s5client
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5client-darwin-amd64 ./cmd/s5client
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5client-darwin-arm64 ./cmd/s5client
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5client-windows-amd64.exe ./cmd/s5client
 
       - name: Release
         uses: softprops/action-gh-release@v2
