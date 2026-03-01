@@ -15,22 +15,22 @@ func TestSOCKS5_Connect(t *testing.T) {
 	// Create a local listener
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Errorf("err: %v", err)
 	}
 	go func() {
 		conn, err := l.Accept()
 		if err != nil {
-			t.Fatalf("err: %v", err)
+			t.Errorf("err: %v", err)
 		}
 		defer conn.Close()
 
 		buf := make([]byte, 4)
 		if _, err := io.ReadAtLeast(conn, buf, 4); err != nil {
-			t.Fatalf("err: %v", err)
+			t.Errorf("err: %v", err)
 		}
 
 		if !bytes.Equal(buf, []byte("ping")) {
-			t.Fatalf("bad: %v", buf)
+			t.Errorf("bad: %v", buf)
 		}
 		conn.Write([]byte("pong"))
 	}()
@@ -47,13 +47,13 @@ func TestSOCKS5_Connect(t *testing.T) {
 	}
 	serv, err := New(conf)
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Errorf("err: %v", err)
 	}
 
 	// Start listening
 	go func() {
 		if err := serv.ListenAndServe("tcp", "127.0.0.1:12365"); err != nil {
-			t.Fatalf("err: %v", err)
+			t.Errorf("err: %v", err)
 		}
 	}()
 	time.Sleep(10 * time.Millisecond)
@@ -61,7 +61,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 	// Get a local conn
 	conn, err := net.Dial("tcp", "127.0.0.1:12365")
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Errorf("err: %v", err)
 	}
 
 	// Connect, auth and connec to local
@@ -97,7 +97,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 
 	conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := io.ReadAtLeast(conn, out, len(out)); err != nil {
-		t.Fatalf("err: %v", err)
+		t.Errorf("err: %v", err)
 	}
 
 	// Ignore the port
@@ -105,6 +105,6 @@ func TestSOCKS5_Connect(t *testing.T) {
 	out[13] = 0
 
 	if !bytes.Equal(out, expected) {
-		t.Fatalf("bad: %v", out)
+		t.Errorf("bad: %v", out)
 	}
 }
