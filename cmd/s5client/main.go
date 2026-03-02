@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -101,88 +102,28 @@ func main() {
 func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string) {
 	defer clientConn.Close()
 
-	// Step 1: Read SOCKS5 greeting from client
-	buf := make([]byte, 256)
-	n, err := clientConn.Read(buf)
-	if err != nil || n < 2 || buf[0] != 0x05 {
-		slog.Error("Invalid SOCKS5 greeting", "error", err)
-		return
-	}
-
-	// Respond: no auth required
-	if _, err := clientConn.Write([]byte{0x05, 0x00}); err != nil {
-		return
-	}
-
-	// Step 2: Read SOCKS5 CONNECT request
-	n, err = clientConn.Read(buf)
-	if err != nil || n < 7 {
-		slog.Error("Invalid SOCKS5 request", "error", err)
-		return
-	}
-
-	// Parse destination from SOCKS5 request
-	destFQDN := ""
-	if buf[3] == 0x03 { // Domain name
-		domainLen := int(buf[4])
-		if n >= 5+domainLen+2 {
-			destFQDN = string(buf[5 : 5+domainLen])
-		}
-	}
-
-	// Step 3: Check domain routing if patterns are configured
-	if len(routePatterns) > 0 && destFQDN != "" {
-		if !matchDomain(destFQDN, routePatterns) {
-			slog.Info("Domain not in route list, rejecting", "domain", destFQDN)
-			// Reply with connection refused (0x02)
-			clientConn.Write([]byte{0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-			return
-		}
-	}
-
-	// Step 4: Connect to S5Core server via obfs tunnel
-	serverConn, err := net.Dial("tcp", cfg.ServerAddr)
+	// Step 1-2: SOCKS5 handshake
+	connectReq, destFQDN, err := socks5Handshake(clientConn)
 	if err != nil {
-		slog.Error("Failed to connect to server", "error", err, "server", cfg.ServerAddr)
-		clientConn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		slog.Error("SOCKS5 handshake failed", "error", err)
 		return
 	}
-	defer serverConn.Close()
 
-	obfsCfg := obfs.Config{
-		PSK:        []byte(cfg.PSK),
-		MaxPadding: cfg.MaxPadding,
-		MTU:        cfg.MTU,
+	// Step 3: Check domain routing
+	if !checkRouting(clientConn, destFQDN, routePatterns) {
+		return
 	}
 
-	obfsConn, err := obfs.NewConn(serverConn, obfsCfg)
+	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request
+	obfsConn, err := dialObfsTunnel(cfg, connectReq)
 	if err != nil {
-		slog.Error("Failed to create obfs conn", "error", err)
+		slog.Error("Tunnel setup failed", "error", err, "server", cfg.ServerAddr)
+		clientConn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
 		return
 	}
+	defer obfsConn.Close()
 
-	// Step 5: Forward the original SOCKS5 greeting + request through obfs tunnel
-	// The server-side S5Core will handle the SOCKS5 protocol after de-obfuscation
-	greeting := []byte{0x05, 0x01, 0x00} // SOCKS5, 1 method, no auth
-	if _, err := obfsConn.Write(greeting); err != nil {
-		slog.Error("Failed to send greeting through tunnel", "error", err)
-		return
-	}
-
-	// Read server greeting response
-	resp := make([]byte, 2)
-	if _, err := obfsConn.Read(resp); err != nil {
-		slog.Error("Failed to read server greeting", "error", err)
-		return
-	}
-
-	// Forward the CONNECT request
-	if _, err := obfsConn.Write(buf[:n]); err != nil {
-		slog.Error("Failed to send CONNECT through tunnel", "error", err)
-		return
-	}
-
-	// Read CONNECT response
+	// Read CONNECT response from server
 	connectResp := make([]byte, 256)
 	rn, err := obfsConn.Read(connectResp)
 	if err != nil {
@@ -196,7 +137,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	}
 
 	if rn >= 2 && connectResp[1] != 0x00 {
-		return // CONNECT failed on server side
+		return
 	}
 
 	// Step 6: Bidirectional relay
@@ -215,6 +156,97 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	}()
 
 	wg.Wait()
+}
+
+// socks5Handshake reads the SOCKS5 greeting and CONNECT request from the client.
+// Returns the raw CONNECT request bytes, parsed destination FQDN, and any error.
+func socks5Handshake(clientConn net.Conn) (connectReq []byte, destFQDN string, err error) {
+	buf := make([]byte, 256)
+
+	// Read SOCKS5 greeting
+	n, err := clientConn.Read(buf)
+	if err != nil || n < 2 || buf[0] != 0x05 {
+		return nil, "", fmt.Errorf("invalid SOCKS5 greeting: %w", err)
+	}
+
+	// Respond: no auth required
+	if _, err := clientConn.Write([]byte{0x05, 0x00}); err != nil {
+		return nil, "", fmt.Errorf("failed to send greeting response: %w", err)
+	}
+
+	// Read SOCKS5 CONNECT request
+	n, err = clientConn.Read(buf)
+	if err != nil || n < 7 {
+		return nil, "", fmt.Errorf("invalid SOCKS5 request: %w", err)
+	}
+
+	// Parse destination FQDN
+	if buf[3] == 0x03 {
+		domainLen := int(buf[4])
+		if n >= 5+domainLen+2 {
+			destFQDN = string(buf[5 : 5+domainLen])
+		}
+	}
+
+	return buf[:n], destFQDN, nil
+}
+
+// checkRouting verifies if the destination domain should be routed through the tunnel.
+// Returns true if routing is allowed, false if rejected.
+func checkRouting(clientConn net.Conn, destFQDN string, routePatterns []string) bool {
+	if len(routePatterns) == 0 || destFQDN == "" {
+		return true
+	}
+
+	if matchDomain(destFQDN, routePatterns) {
+		return true
+	}
+
+	slog.Info("Domain not in route list, rejecting", "domain", destFQDN)
+	clientConn.Write([]byte{0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
+	return false
+}
+
+// dialObfsTunnel establishes an obfuscated connection to the server and forwards
+// the SOCKS5 handshake through the encrypted tunnel.
+func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
+	serverConn, err := net.Dial("tcp", cfg.ServerAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to server: %w", err)
+	}
+
+	obfsCfg := obfs.Config{
+		PSK:        []byte(cfg.PSK),
+		MaxPadding: cfg.MaxPadding,
+		MTU:        cfg.MTU,
+	}
+
+	obfsConn, err := obfs.NewConn(serverConn, obfsCfg)
+	if err != nil {
+		serverConn.Close()
+		return nil, fmt.Errorf("failed to create obfs conn: %w", err)
+	}
+
+	// Forward SOCKS5 greeting through tunnel
+	if _, err := obfsConn.Write([]byte{0x05, 0x01, 0x00}); err != nil {
+		obfsConn.Close()
+		return nil, fmt.Errorf("failed to send greeting: %w", err)
+	}
+
+	// Read server greeting response
+	var resp [2]byte
+	if _, err := obfsConn.Read(resp[:]); err != nil {
+		obfsConn.Close()
+		return nil, fmt.Errorf("failed to read server greeting: %w", err)
+	}
+
+	// Forward CONNECT request
+	if _, err := obfsConn.Write(connectReq); err != nil {
+		obfsConn.Close()
+		return nil, fmt.Errorf("failed to send CONNECT: %w", err)
+	}
+
+	return obfsConn, nil
 }
 
 // matchDomain checks if FQDN matches any of the routing patterns.
