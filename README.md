@@ -38,7 +38,7 @@ S5Core implements a custom obfuscation layer inspired by [AmneziaWG](https://amn
 
 ```
 Browser/App → s5client (plain SOCKS5) → [AES-256-GCM + random padding] → s5core → [decrypt] → SOCKS5 → Internet
-               localhost:1080              encrypted tunnel (noise)         server:1080
+               localhost:1080              encrypted tunnel (noise)         server:1443
 ```
 
 - **Client ISP sees:** random encrypted bytes to the server IP — no SOCKS5 signatures, no domains, no HTTP keywords.
@@ -146,6 +146,7 @@ func main() {
 
 	// Enable obfuscation
 	cfg.ObfsEnabled = true
+	cfg.ObfsPort = "1443"
 	cfg.ObfsPSK = "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH" // 32 bytes
 	cfg.ObfsMaxPadding = 256
 	cfg.ObfsMTU = 1400
@@ -349,7 +350,7 @@ curl --socks5 <PROXY_IP>:1080 -U myuser:mypassword https://ipinfo.io
 **With obfuscation (via s5client):**
 ```bash
 # Terminal 1: Start local client
-SERVER_ADDR=<PROXY_IP>:1080 OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH ./s5client
+SERVER_ADDR=<PROXY_IP>:1443 OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH ./s5client
 
 # Terminal 2: Use it as a regular SOCKS5 proxy
 curl --socks5 127.0.0.1:1080 https://ipinfo.io
