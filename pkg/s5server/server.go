@@ -3,13 +3,12 @@ package s5server
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"os"
 
-	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/s5core"
+	"github.com/mazixs/S5Core/internal/socks5"
 	"golang.org/x/net/netutil"
 )
 
@@ -28,7 +27,7 @@ type Server struct {
 // NewServer initializes a new SOCKS5 server with the given configuration.
 func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
-		cfg.Logger = log.New(os.Stdout, "", log.LstdFlags)
+		cfg.Logger = slog.Default()
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))

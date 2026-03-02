@@ -1,13 +1,11 @@
 package socks5
 
 import (
-	"bufio"
-	"fmt"
-	"log"
-	"net"
-	"os"
-
 	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
 )
 
 const (
@@ -43,8 +41,8 @@ type Config struct {
 	BindIP net.IP
 
 	// Logger can be used to provide a custom log target.
-	// Defaults to stdout.
-	Logger *log.Logger
+	// Defaults to slog.Default().
+	Logger *slog.Logger
 
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
@@ -80,7 +78,7 @@ func New(conf *Config) (*Server, error) {
 
 	// Ensure we have a log target
 	if conf.Logger == nil {
-		conf.Logger = log.New(os.Stdout, "", log.LstdFlags)
+		conf.Logger = slog.Default()
 	}
 
 	server := &Server{
@@ -119,31 +117,30 @@ func (s *Server) Serve(l net.Listener) error {
 // ServeConn is used to serve a single connection.
 func (s *Server) ServeConn(conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
-	bufConn := bufio.NewReader(conn)
 
 	// Read the version byte
-	version := []byte{0}
-	if _, err := bufConn.Read(version); err != nil {
-		s.config.Logger.Printf("[ERR] socks: Failed to get version byte: %v", err)
+	var version [1]byte
+	if _, err := io.ReadFull(conn, version[:]); err != nil {
+		s.config.Logger.Error("socks: Failed to get version byte", "err", err)
 		return err
 	}
 
 	// Ensure we are compatible
 	if version[0] != socks5Version {
 		err := fmt.Errorf("unsupported SOCKS version: %v", version)
-		s.config.Logger.Printf("[ERR] socks: %v", err)
+		s.config.Logger.Error("socks: unsupported SOCKS version", "version", version, "err", err)
 		return err
 	}
 
 	// Authenticate the connection
-	authContext, err := s.authenticate(conn, bufConn)
+	authContext, err := s.authenticate(conn, conn)
 	if err != nil {
 		err = fmt.Errorf("failed to authenticate: %v", err)
-		s.config.Logger.Printf("[ERR] socks: %v", err)
+		s.config.Logger.Error("socks: failed to authenticate", "err", err)
 		return err
 	}
 
-	request, err := NewRequest(bufConn)
+	request, err := NewRequest(conn)
 	if err != nil {
 		if err == errUnrecognizedAddrType {
 			if err := sendReply(conn, addrTypeNotSupported, nil); err != nil {
@@ -160,7 +157,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	// Process the client request
 	if err := s.handleRequest(request, conn); err != nil {
 		err = fmt.Errorf("failed to handle request: %v", err)
-		s.config.Logger.Printf("[ERR] socks: %v", err)
+		s.config.Logger.Error("socks: failed to handle request", "err", err)
 		return err
 	}
 

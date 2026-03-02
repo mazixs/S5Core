@@ -1,6 +1,7 @@
 package socks5
 
 import (
+	"fmt"
 	"net"
 
 	"context"
@@ -15,9 +16,12 @@ type NameResolver interface {
 type DNSResolver struct{}
 
 func (d DNSResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
-	addr, err := net.ResolveIPAddr("ip", name)
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", name)
 	if err != nil {
 		return ctx, nil, err
 	}
-	return ctx, addr.IP, err
+	if len(ips) == 0 {
+		return ctx, nil, fmt.Errorf("no IP addressed found for %s", name)
+	}
+	return ctx, ips[0], nil
 }
