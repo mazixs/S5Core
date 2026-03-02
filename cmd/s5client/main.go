@@ -19,6 +19,8 @@ import (
 type clientParams struct {
 	ListenAddr   string `env:"CLIENT_LISTEN_ADDR" envDefault:"127.0.0.1:1080"`
 	ServerAddr   string `env:"SERVER_ADDR" envDefault:""`
+	ProxyUser    string `env:"PROXY_USER" envDefault:""`
+	ProxyPass    string `env:"PROXY_PASS" envDefault:""`
 	PSK          string `env:"OBFS_PSK" envDefault:""`
 	MaxPadding   int    `env:"OBFS_MAX_PADDING" envDefault:"256"`
 	MTU          int    `env:"OBFS_MTU" envDefault:"1400"`
@@ -58,6 +60,7 @@ func main() {
 	slog.Info("S5Client starting",
 		"listen", cfg.ListenAddr,
 		"server", cfg.ServerAddr,
+		"auth", cfg.ProxyUser != "",
 		"mtu", cfg.MTU,
 		"max_padding", cfg.MaxPadding,
 		"route_domains", len(routePatterns),
@@ -227,17 +230,47 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 		return nil, fmt.Errorf("failed to create obfs conn: %w", err)
 	}
 
-	// Forward SOCKS5 greeting through tunnel
-	if _, err := obfsConn.Write([]byte{0x05, 0x01, 0x00}); err != nil {
-		obfsConn.Close()
-		return nil, fmt.Errorf("failed to send greeting: %w", err)
+	// Send SOCKS5 greeting with supported auth methods
+	if cfg.ProxyUser != "" {
+		// Offer both no-auth and user/pass
+		if _, err := obfsConn.Write([]byte{0x05, 0x02, 0x00, 0x02}); err != nil {
+			obfsConn.Close()
+			return nil, fmt.Errorf("failed to send greeting: %w", err)
+		}
+	} else {
+		if _, err := obfsConn.Write([]byte{0x05, 0x01, 0x00}); err != nil {
+			obfsConn.Close()
+			return nil, fmt.Errorf("failed to send greeting: %w", err)
+		}
 	}
 
 	// Read server greeting response
 	var resp [2]byte
-	if _, err := obfsConn.Read(resp[:]); err != nil {
+	if _, err := io.ReadFull(obfsConn, resp[:]); err != nil {
 		obfsConn.Close()
 		return nil, fmt.Errorf("failed to read server greeting: %w", err)
+	}
+
+	// Handle auth method selected by server
+	switch resp[1] {
+	case 0x00:
+		// No auth required — proceed
+	case 0x02:
+		// User/pass auth (RFC 1929)
+		if cfg.ProxyUser == "" {
+			obfsConn.Close()
+			return nil, fmt.Errorf("server requires auth but PROXY_USER not set")
+		}
+		if err := doUserPassAuth(obfsConn, cfg.ProxyUser, cfg.ProxyPass); err != nil {
+			obfsConn.Close()
+			return nil, err
+		}
+	case 0xFF:
+		obfsConn.Close()
+		return nil, fmt.Errorf("server rejected all auth methods")
+	default:
+		obfsConn.Close()
+		return nil, fmt.Errorf("unsupported auth method: 0x%02x", resp[1])
 	}
 
 	// Forward CONNECT request
@@ -247,6 +280,33 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	}
 
 	return obfsConn, nil
+}
+
+// doUserPassAuth performs RFC 1929 username/password authentication.
+func doUserPassAuth(conn net.Conn, user, pass string) error {
+	// Build auth request: [version(1)] [ulen(1)] [user] [plen(1)] [pass]
+	pkt := make([]byte, 0, 3+len(user)+len(pass))
+	pkt = append(pkt, 0x01)            // auth sub-negotiation version
+	pkt = append(pkt, byte(len(user))) // username length
+	pkt = append(pkt, []byte(user)...) // username
+	pkt = append(pkt, byte(len(pass))) // password length
+	pkt = append(pkt, []byte(pass)...) // password
+
+	if _, err := conn.Write(pkt); err != nil {
+		return fmt.Errorf("failed to send auth: %w", err)
+	}
+
+	// Read response: [version(1)] [status(1)]
+	var resp [2]byte
+	if _, err := io.ReadFull(conn, resp[:]); err != nil {
+		return fmt.Errorf("failed to read auth response: %w", err)
+	}
+
+	if resp[1] != 0x00 {
+		return fmt.Errorf("authentication failed (status: 0x%02x)", resp[1])
+	}
+
+	return nil
 }
 
 // matchDomain checks if FQDN matches any of the routing patterns.
