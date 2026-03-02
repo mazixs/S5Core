@@ -85,7 +85,15 @@ The following data is captured by `TestObfsDemo_MeasurableComparison` which send
 | Random padding | 0–256 bytes (configurable) |
 | **Total overhead** | **36–292 bytes per frame** |
 
-> For payloads ≥1 KB, overhead is **<30%**. For small handshake packets (3 bytes), overhead is higher but expected — the padding is what prevents size-based fingerprinting.
+#### Measured Frame Sizes (from test run)
+
+| Data | Plain | Obfuscated | Overhead |
+|------|-------|------------|----------|
+| SOCKS5 Greeting | 3 B | 151 B | +148 B (+4933%) |
+| SOCKS5 CONNECT | 18 B | 122 B | +104 B (+578%) |
+| HTTP Request | 37 B | 195 B | +158 B (+427%) |
+
+> For payloads ≥1 KB, overhead is **<30%**. For small handshake packets (3 bytes), overhead is higher but expected — the random padding is what prevents size-based fingerprinting. Data integrity is verified via roundtrip: every byte decrypted matches the original.
 
 ---
 
