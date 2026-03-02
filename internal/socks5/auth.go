@@ -64,8 +64,8 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) 
 	}
 
 	// Get the version and username length
-	header := []byte{0, 0}
-	if _, err := io.ReadAtLeast(reader, header, 2); err != nil {
+	var header [2]byte
+	if _, err := io.ReadFull(reader, header[:]); err != nil {
 		return nil, err
 	}
 
@@ -76,25 +76,27 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) 
 
 	// Get the user name
 	userLen := int(header[1])
-	user := make([]byte, userLen)
-	if _, err := io.ReadAtLeast(reader, user, userLen); err != nil {
+	var userBuf [256]byte
+	if _, err := io.ReadFull(reader, userBuf[:userLen]); err != nil {
 		return nil, err
 	}
 
 	// Get the password length
-	if _, err := reader.Read(header[:1]); err != nil {
+	if _, err := io.ReadFull(reader, header[:1]); err != nil {
 		return nil, err
 	}
 
 	// Get the password
 	passLen := int(header[0])
-	pass := make([]byte, passLen)
-	if _, err := io.ReadAtLeast(reader, pass, passLen); err != nil {
+	var passBuf [256]byte
+	if _, err := io.ReadFull(reader, passBuf[:passLen]); err != nil {
 		return nil, err
 	}
 
 	// Verify the password
-	if a.Credentials.Valid(string(user), string(pass)) {
+	userStr := string(userBuf[:userLen])
+	passStr := string(passBuf[:passLen])
+	if a.Credentials.Valid(userStr, passStr) {
 		if _, err := writer.Write([]byte{userAuthVersion, authSuccess}); err != nil {
 			return nil, err
 		}
@@ -106,7 +108,7 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) 
 	}
 
 	// Done
-	return &AuthContext{UserPassAuth, map[string]string{"Username": string(user)}}, nil
+	return &AuthContext{UserPassAuth, map[string]string{"Username": userStr}}, nil
 }
 
 // authenticate is used to handle connection authentication
@@ -139,13 +141,13 @@ func noAcceptableAuth(conn io.Writer) error {
 // readMethods is used to read the number of methods
 // and proceeding auth methods
 func readMethods(r io.Reader) ([]byte, error) {
-	header := []byte{0}
-	if _, err := r.Read(header); err != nil {
+	var header [1]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return nil, err
 	}
 
 	numMethods := int(header[0])
 	methods := make([]byte, numMethods)
-	_, err := io.ReadAtLeast(r, methods, numMethods)
+	_, err := io.ReadFull(r, methods)
 	return methods, err
 }

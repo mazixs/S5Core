@@ -1,13 +1,13 @@
 package socks5
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"strings"
-
-	"context"
+	"sync"
 )
 
 const (
@@ -87,10 +87,10 @@ type conn interface {
 }
 
 // NewRequest creates a new Request from the tcp connection
-func NewRequest(bufConn io.Reader) (*Request, error) {
+func NewRequest(conn io.Reader) (*Request, error) {
 	// Read the version byte
-	header := []byte{0, 0, 0}
-	if _, err := io.ReadAtLeast(bufConn, header, 3); err != nil {
+	var header [3]byte
+	if _, err := io.ReadFull(conn, header[:]); err != nil {
 		return nil, fmt.Errorf("failed to get command version: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func NewRequest(bufConn io.Reader) (*Request, error) {
 	}
 
 	// Read in the destination address
-	dest, err := readAddrSpec(bufConn)
+	dest, err := readAddrSpec(conn)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func NewRequest(bufConn io.Reader) (*Request, error) {
 		Version:  socks5Version,
 		Command:  header[1],
 		DestAddr: dest,
-		bufConn:  bufConn,
+		bufConn:  conn,
 	}
 
 	return request, nil
@@ -249,13 +249,14 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 }
 
 // readAddrSpec is used to read AddrSpec.
+// readAddrSpec is used to read AddrSpec.
 // Expects an address type byte, follwed by the address and port
 func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	d := &AddrSpec{}
 
 	// Get the address type
-	addrType := []byte{0}
-	if _, err := r.Read(addrType); err != nil {
+	var addrType [1]byte
+	if _, err := io.ReadFull(r, addrType[:]); err != nil {
 		return nil, err
 	}
 
@@ -263,25 +264,25 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	switch addrType[0] {
 	case ipv4Address:
 		addr := make([]byte, 4)
-		if _, err := io.ReadAtLeast(r, addr, len(addr)); err != nil {
+		if _, err := io.ReadFull(r, addr); err != nil {
 			return nil, err
 		}
 		d.IP = net.IP(addr)
 
 	case ipv6Address:
 		addr := make([]byte, 16)
-		if _, err := io.ReadAtLeast(r, addr, len(addr)); err != nil {
+		if _, err := io.ReadFull(r, addr); err != nil {
 			return nil, err
 		}
 		d.IP = net.IP(addr)
 
 	case fqdnAddress:
-		if _, err := r.Read(addrType); err != nil {
+		if _, err := io.ReadFull(r, addrType[:]); err != nil {
 			return nil, err
 		}
 		addrLen := int(addrType[0])
 		fqdn := make([]byte, addrLen)
-		if _, err := io.ReadAtLeast(r, fqdn, addrLen); err != nil {
+		if _, err := io.ReadFull(r, fqdn); err != nil {
 			return nil, err
 		}
 		d.FQDN = string(fqdn)
@@ -291,8 +292,8 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	}
 
 	// Read the port
-	port := []byte{0, 0}
-	if _, err := io.ReadAtLeast(r, port, 2); err != nil {
+	var port [2]byte
+	if _, err := io.ReadFull(r, port[:]); err != nil {
 		return nil, err
 	}
 	d.Port = (int(port[0]) << 8) | int(port[1])
@@ -332,7 +333,7 @@ func sendReply(w io.Writer, resp uint8, addr *AddrSpec) error {
 	}
 
 	// Format the message
-	msg := make([]byte, 6+len(addrBody))
+	var msg [260]byte
 	msg[0] = socks5Version
 	msg[1] = resp
 	msg[2] = 0 // Reserved
@@ -342,7 +343,7 @@ func sendReply(w io.Writer, resp uint8, addr *AddrSpec) error {
 	msg[4+len(addrBody)+1] = byte(addrPort & 0xff)
 
 	// Send the message
-	_, err := w.Write(msg)
+	_, err := w.Write(msg[:6+len(addrBody)])
 	return err
 }
 
@@ -350,10 +351,20 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
+var bufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 32*1024)
+		return &b
+	},
+}
+
 // proxy is used to suffle data from src to destination, and sends errors
 // down a dedicated channel
 func proxy(dst io.Writer, src io.Reader, errCh chan error) {
-	_, err := io.Copy(dst, src)
+	bufPtr := bufferPool.Get().(*[]byte)
+	defer bufferPool.Put(bufPtr)
+
+	_, err := io.CopyBuffer(dst, src, *bufPtr)
 	if tcpConn, ok := dst.(closeWriter); ok {
 		_ = tcpConn.CloseWrite()
 	}

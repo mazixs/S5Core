@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -84,7 +84,7 @@ type Config struct {
 	MaxConnections  int
 	Fail2BanRetries int
 	Fail2BanTime    time.Duration
-	Logger          *log.Logger
+	Logger          *slog.Logger
 	Telemetry       *Telemetry // Optional custom telemetry
 
 	// Obfuscation settings

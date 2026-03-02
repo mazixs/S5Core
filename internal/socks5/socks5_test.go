@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"log"
+	"log/slog"
 	"net"
-	"os"
 	"testing"
 	"time"
 )
@@ -43,7 +42,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 	cator := UserPassAuthenticator{Credentials: creds}
 	conf := &Config{
 		AuthMethods: []Authenticator{cator},
-		Logger:      log.New(os.Stdout, "", log.LstdFlags),
+		Logger:      slog.Default(),
 	}
 	serv, err := New(conf)
 	if err != nil {
