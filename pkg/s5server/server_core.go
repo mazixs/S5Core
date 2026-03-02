@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/armon/go-socks5"
+	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"

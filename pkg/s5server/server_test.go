@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/armon/go-socks5"
+	"github.com/mazixs/S5Core/internal/socks5"
 )
 
 // mockConn implements net.Conn for testing

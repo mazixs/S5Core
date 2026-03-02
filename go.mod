@@ -2,8 +2,6 @@ module github.com/mazixs/S5Core
 
 go 1.25.0
 
-require github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-
 require (
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/prometheus/client_golang v1.23.2
@@ -32,5 +30,3 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/armon/go-socks5 => github.com/serjs/go-socks5 v0.0.0-20250923183437-3920b97ee0d2
