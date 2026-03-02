@@ -4,7 +4,8 @@
 *.dll
 *.so
 *.dylib
-s5core
+/s5core
+/s5client
 dist/
 build/
 

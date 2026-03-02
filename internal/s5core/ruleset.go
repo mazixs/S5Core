@@ -4,7 +4,7 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/armon/go-socks5"
+	"github.com/mazixs/S5Core/internal/socks5"
 )
 
 // PermitDestAddrPattern returns a RuleSet which selectively allows addresses
