@@ -10,13 +10,14 @@
 
 ## Overview
 
-**S5Core** is a modern, lightweight, and extremely fast SOCKS5 server designed for high-load production environments. Written purely in Go, it features strict authentication, rate limiting, anti-bruteforce protection, zero-cost architecture with zero-allocation buffers, built-in observability with OpenTelemetry, and **AES-256-GCM traffic obfuscation** that makes proxy traffic indistinguishable from random noise.
+**S5Core** is a modern, lightweight, and extremely fast SOCKS5 server designed for high-load production environments. Written purely in Go, it features strict authentication, rate limiting, anti-bruteforce protection, zero-cost architecture with zero-allocation buffers, built-in observability with OpenTelemetry, **AES-256-GCM traffic obfuscation** that makes proxy traffic indistinguishable from random noise, and **full UDP relay support** that prevents WebRTC/DNS leaks.
 
 S5Core can be run as a standalone executable via Docker/CLI or embedded directly into your own Go applications as an SDK Core (e.g., for building Web-UI proxy panels).
 
 ## Features
 
 - **Traffic Obfuscation:** AES-256-GCM encryption with random padding on every frame. DPI systems cannot detect SOCKS5 signatures, domain names, or any protocol patterns on the wire.
+- **UDP Relay & Anti-Leak Tunneling:** Full RFC 1928 UDP Associate (`0x03`) support. Additionally, `s5client` automatically tunnels all UDP traffic (WebRTC, DNS, QUIC) inside the obfuscated TCP connection via a custom command (`0x83`), making UDP leak attacks impossible.
 - **Client & Server Architecture:** Includes `s5client` — a local proxy that accepts plain SOCKS5 and tunnels traffic through an encrypted obfuscation layer to the S5Core server.
 - **Domain-Based Routing (Split Tunneling):** Route only specific domains or wildcards (e.g., `*.google.com`) through the encrypted tunnel.
 - **Configurable MTU:** Control frame sizes to match your network topology and avoid fragmentation.
@@ -37,8 +38,11 @@ S5Core implements a custom obfuscation layer inspired by [AmneziaWG](https://amn
 ### How It Works
 
 ```
-Browser/App → s5client (plain SOCKS5) → [AES-256-GCM + random padding] → s5core → [decrypt] → SOCKS5 → Internet
-               localhost:1080              encrypted tunnel (noise)         server:1443
+TCP: App → s5client (plain SOCKS5) → [AES-256-GCM + random padding] → s5core → [decrypt] → SOCKS5 → Internet
+                localhost:1080              encrypted tunnel (noise)        server:1443
+
+UDP: App → s5client (UDP Associate) → [UDP-over-TCP mux + AES-256-GCM] → s5core → [demux] → UDP → Internet
+                localhost:1080              same encrypted tunnel            server:1443
 ```
 
 - **Client ISP sees:** random encrypted bytes to the server IP — no SOCKS5 signatures, no domains, no HTTP keywords.
@@ -108,13 +112,14 @@ S5Core consists of two binaries:
 
 ### Without Obfuscation (Standard Mode)
 ```
-App → s5core:1080 (plain SOCKS5) → Internet
+TCP: App → s5core:1080 (plain SOCKS5) → Internet
+UDP: App → s5core:1080 (UDP Associate) → s5core (UDP relay) → Internet
 ```
 
 ### With Obfuscation (Dual-Port Mode)
 ```
-App → s5core:1080 (plain SOCKS5) → Internet                  ← local/trusted clients (Telegram, curl)
-App → s5client:1080 → [encrypted tunnel] → s5core:1443 → Internet   ← remote clients via obfs
+TCP: App → s5client:1080 → [encrypted tunnel] → s5core:1443 → Internet
+UDP: App → s5client:1080 → [UDP-over-TCP mux] → s5core:1443 → Internet   ← no UDP leaks!
 ```
 
 > **Important:** When obfuscation is enabled, the server listens on **two ports simultaneously**:  
@@ -206,10 +211,14 @@ When running the standalone binary or Docker image, configuration is entirely dr
 |----------|------|---------|-------------|
 | `CLIENT_LISTEN_ADDR` | String | `127.0.0.1:1080` | Local address to accept plain SOCKS5 connections. |
 | `SERVER_ADDR` | String | *Required* | Remote S5Core server obfs address (e.g., `1.2.3.4:1443`). |
+| `PROXY_USER` | String | *Empty* | Username for authenticating with the S5Core server. |
+| `PROXY_PASS` | String | *Empty* | Password for authenticating with the S5Core server. |
 | `OBFS_PSK` | String | *Required* | Pre-shared key. **Must match the server's PSK exactly.** |
 | `OBFS_MAX_PADDING` | Integer | `256` | Must match the server configuration. |
 | `OBFS_MTU` | Integer | `1400` | Must match the server configuration. |
 | `ROUTE_DOMAINS` | String | *Empty* | Comma-separated domain patterns for split tunneling. Empty = tunnel all traffic. |
+
+> **UDP support:** `s5client` transparently handles UDP Associate requests from applications. When an app sends a SOCKS5 UDP Associate command (`0x03`), `s5client` opens a local UDP socket, multiplexes all UDP packets inside the encrypted TCP tunnel (command `0x83`), and the server relays them to the internet as native UDP. No additional configuration is needed.
 
 > **Domain routing examples:** `example.com` (exact match), `*.google.com` (all subdomains + base domain), `*.youtube.com,*.googlevideo.com` (multiple patterns).
 
@@ -315,8 +324,10 @@ Available metrics:
 - `s5core_connections_active` (UpDownCounter): Current number of active TCP sessions.
 - `s5core_connections_total` (Counter): Total number of accepted connections since start.
 - `s5core_auth_failures_total` (Counter): Total number of failed authentication attempts.
-- `s5core_traffic_bytes_in` (Counter): Total volume of incoming traffic in bytes.
-- `s5core_traffic_bytes_out` (Counter): Total volume of outgoing traffic in bytes.
+- `s5core_traffic_bytes_in` (Counter): Total volume of incoming traffic in bytes (TCP + UDP).
+- `s5core_traffic_bytes_out` (Counter): Total volume of outgoing traffic in bytes (TCP + UDP).
+
+> **Note:** UDP traffic flowing through the standard UDP Associate relay is tracked with batched counters (flushed every 1 MB) to minimize performance overhead. UDP traffic tunneled via `s5client` (command `0x83`) is automatically counted as TCP bytes since it flows through the obfuscated TCP connection.
 
 You can also use `http://<IP>:8080/health` as a readiness/liveness probe for your orchestration systems (e.g., Kubernetes).
 
@@ -355,6 +366,17 @@ SERVER_ADDR=<PROXY_IP>:1443 OBFS_PSK=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH ./s5client
 # Terminal 2: Use it as a regular SOCKS5 proxy
 curl --socks5 127.0.0.1:1080 https://ipinfo.io
 ```
+
+**Testing UDP relay (DNS over SOCKS5):**
+```bash
+# Via s5client — DNS traffic tunneled through encrypted TCP
+proxychains4 dig @1.1.1.1 example.com
+
+# Or with direct UDP Associate (no obfuscation)
+proxychains4 -f /etc/proxychains-udp.conf dig @8.8.8.8 example.com
+```
+
+> **WebRTC leak test:** After configuring your browser to use `s5client` as SOCKS5 proxy (with remote DNS), visit [browserleaks.com/webrtc](https://browserleaks.com/webrtc). With UDP tunneling enabled, your real IP should not appear in any WebRTC candidates.
 
 ---
 
