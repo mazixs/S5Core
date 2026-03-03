@@ -88,6 +88,13 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var bytesIn int64
+		defer func() {
+			if bytesIn > 0 && s.config.BytesAddIn != nil {
+				s.config.BytesAddIn(bytesIn)
+			}
+		}()
+
 		for {
 			buf := bufPool.Get().([]byte)
 			n, rAddr, err := udpConn.ReadFromUDP(buf)
@@ -110,6 +117,14 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 			}
 
 			if isFromClient {
+				if s.config.BytesAddIn != nil {
+					bytesIn += int64(n)
+					if bytesIn >= 1024*1024 { // Flush every 1MB
+						s.config.BytesAddIn(bytesIn)
+						bytesIn = 0
+					}
+				}
+
 				// Packet from Client -> Target
 				// Must have SOCKS5 UDP header
 				hdrLen, dstAddr, err := ParseUDPHeader(buf[:n])
@@ -163,12 +178,28 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var bytesOut int64
+		defer func() {
+			if bytesOut > 0 && s.config.BytesAddOut != nil {
+				s.config.BytesAddOut(bytesOut)
+			}
+		}()
+
 		for {
 			select {
 			case pkt := <-clientToTarget:
 				udpConn.WriteToUDP(pkt.data, pkt.addr)
 			case pkt := <-targetToClient:
-				udpConn.WriteToUDP(pkt.data, pkt.addr)
+				nw, err := udpConn.WriteToUDP(pkt.data, pkt.addr)
+				if err == nil && nw > 0 {
+					if s.config.BytesAddOut != nil {
+						bytesOut += int64(nw)
+						if bytesOut >= 1024*1024 {
+							s.config.BytesAddOut(bytesOut)
+							bytesOut = 0
+						}
+					}
+				}
 			case <-ctx.Done():
 				return
 			}

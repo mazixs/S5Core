@@ -61,6 +61,15 @@ func NewServer(cfg Config) (*Server, error) {
 		socks5conf.Rules = ruleset
 	}
 
+	if cfg.Telemetry != nil {
+		socks5conf.BytesAddIn = func(n int64) {
+			cfg.Telemetry.BytesIn.Add(context.Background(), n)
+		}
+		socks5conf.BytesAddOut = func(n int64) {
+			cfg.Telemetry.BytesOut.Add(context.Background(), n)
+		}
+	}
+
 	srv, err := socks5.New(socks5conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create socks5 server: %w", err)
