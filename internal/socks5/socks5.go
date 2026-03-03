@@ -44,6 +44,12 @@ type Config struct {
 	// Defaults to slog.Default().
 	Logger *slog.Logger
 
+	// BytesAddIn is an optional high-performance callback to track inbound traffic metrics
+	BytesAddIn func(int64)
+
+	// BytesAddOut is an optional high-performance callback to track outbound traffic metrics
+	BytesAddOut func(int64)
+
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
