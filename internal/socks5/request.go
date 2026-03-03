@@ -14,6 +14,7 @@ const (
 	ConnectCommand   = uint8(1)
 	BindCommand      = uint8(2)
 	AssociateCommand = uint8(3)
+	UDPTunnelCommand = uint8(0x83) // Custom custom command for UDP-over-TCP tunneling
 	ipv4Address      = uint8(1)
 	fqdnAddress      = uint8(3)
 	ipv6Address      = uint8(4)
@@ -147,6 +148,8 @@ func (s *Server) handleRequest(req *Request, conn conn) error {
 		return s.handleBind(ctx, conn, req)
 	case AssociateCommand:
 		return s.handleAssociate(ctx, conn, req)
+	case UDPTunnelCommand:
+		return s.handleUDPTcpmux(ctx, conn, req)
 	default:
 		if err := sendReply(conn, commandNotSupported, nil); err != nil {
 			return fmt.Errorf("failed to send reply: %v", err)
@@ -226,22 +229,6 @@ func (s *Server) handleBind(ctx context.Context, conn conn, req *Request) error 
 	}
 
 	// TODO: Support bind
-	if err := sendReply(conn, commandNotSupported, nil); err != nil {
-		return fmt.Errorf("failed to send reply: %v", err)
-	}
-	return nil
-}
-
-// handleAssociate is used to handle a connect command
-func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) error {
-	// Check if this is allowed
-	if _, ok := s.config.Rules.Allow(ctx, req); !ok {
-		if err := sendReply(conn, ruleFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %v", err)
-		}
-		return fmt.Errorf("associate to %v blocked by rules", req.DestAddr)
-	}
-	// TODO: Support associate
 	if err := sendReply(conn, commandNotSupported, nil); err != nil {
 		return fmt.Errorf("failed to send reply: %v", err)
 	}

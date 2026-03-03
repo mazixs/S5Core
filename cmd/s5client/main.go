@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
 )
 
@@ -105,20 +106,28 @@ func main() {
 func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string) {
 	defer clientConn.Close()
 
-	// Step 1-2: SOCKS5 handshake
-	connectReq, destFQDN, err := socks5Handshake(clientConn)
+	// Step 1-2: SOCKS5 handshake (read request)
+	connectReq, cmd, destFQDN, err := socks5Handshake(clientConn)
 	if err != nil {
 		slog.Error("SOCKS5 handshake failed", "error", err)
 		return
 	}
 
-	// Step 3: Check domain routing
-	if !checkRouting(clientConn, destFQDN, routePatterns) {
+	// Step 3: Check domain routing (only for CONNECT)
+	if cmd == socks5.ConnectCommand && !checkRouting(clientConn, destFQDN, routePatterns) {
 		return
 	}
 
+	// For UDP Associate, we need to rewrite the command byte to our custom UDPTunnelCommand (0x83)
+	// before sending it through the tunnel, so the server knows to multiplex it over TCP.
+	wireReq := make([]byte, len(connectReq))
+	copy(wireReq, connectReq)
+	if cmd == socks5.AssociateCommand {
+		wireReq[1] = socks5.UDPTunnelCommand
+	}
+
 	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request
-	obfsConn, err := dialObfsTunnel(cfg, connectReq)
+	obfsConn, err := dialObfsTunnel(cfg, wireReq)
 	if err != nil {
 		slog.Error("Tunnel setup failed", "error", err, "server", cfg.ServerAddr)
 		clientConn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
@@ -126,6 +135,13 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	}
 	defer obfsConn.Close()
 
+	// Handle based on command
+	if cmd == socks5.AssociateCommand {
+		handleUDPAssociate(clientConn, obfsConn, connectReq)
+		return
+	}
+
+	// Handle normal CONNECT
 	// Read CONNECT response from server
 	connectResp := make([]byte, 256)
 	rn, err := obfsConn.Read(connectResp)
@@ -144,7 +160,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	}
 
 	// Step 6: Bidirectional relay
-	slog.Info("Tunnel established", "domain", destFQDN, "server", cfg.ServerAddr)
+	slog.Info("TCP Tunnel established", "domain", destFQDN, "server", cfg.ServerAddr)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -161,26 +177,32 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	wg.Wait()
 }
 
-// socks5Handshake reads the SOCKS5 greeting and CONNECT request from the client.
-// Returns the raw CONNECT request bytes, parsed destination FQDN, and any error.
-func socks5Handshake(clientConn net.Conn) (connectReq []byte, destFQDN string, err error) {
+// socks5Handshake reads the SOCKS5 greeting and request from the client.
+// Returns the raw request bytes, the command type, parsed destination FQDN, and any error.
+func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string, err error) {
 	buf := make([]byte, 256)
 
 	// Read SOCKS5 greeting
 	n, err := clientConn.Read(buf)
 	if err != nil || n < 2 || buf[0] != 0x05 {
-		return nil, "", fmt.Errorf("invalid SOCKS5 greeting: %w", err)
+		return nil, 0, "", fmt.Errorf("invalid SOCKS5 greeting: %w", err)
 	}
 
-	// Respond: no auth required
+	// Respond: no auth required locally
 	if _, err := clientConn.Write([]byte{0x05, 0x00}); err != nil {
-		return nil, "", fmt.Errorf("failed to send greeting response: %w", err)
+		return nil, 0, "", fmt.Errorf("failed to send greeting response: %w", err)
 	}
 
-	// Read SOCKS5 CONNECT request
+	// Read SOCKS5 request
 	n, err = clientConn.Read(buf)
 	if err != nil || n < 7 {
-		return nil, "", fmt.Errorf("invalid SOCKS5 request: %w", err)
+		return nil, 0, "", fmt.Errorf("invalid SOCKS5 request: %w", err)
+	}
+
+	cmd = buf[1]
+	if cmd != socks5.ConnectCommand && cmd != socks5.AssociateCommand {
+		clientConn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
+		return nil, 0, "", fmt.Errorf("unsupported command: %d", cmd)
 	}
 
 	// Parse destination FQDN
@@ -191,7 +213,7 @@ func socks5Handshake(clientConn net.Conn) (connectReq []byte, destFQDN string, e
 		}
 	}
 
-	return buf[:n], destFQDN, nil
+	return buf[:n], cmd, destFQDN, nil
 }
 
 // checkRouting verifies if the destination domain should be routed through the tunnel.
