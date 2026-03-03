@@ -13,6 +13,7 @@ import (
 // and then multiplexes UDP packets over the obfuscated TCP tunnel.
 func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, connectReq []byte) {
 	// 1. Read CONNECT response from server (for the 0x83 UDPTcpMux command)
+	slog.Info("UDP Associate: waiting for server reply on 0x83...")
 	connectResp := make([]byte, 256)
 	rn, err := obfsConn.Read(connectResp)
 	if err != nil {
