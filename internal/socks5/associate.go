@@ -7,14 +7,10 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 )
-
-// udpPacket is used to pass packets between sockets
-type udpPacket struct {
-	addr *net.UDPAddr
-	data []byte
-}
 
 // handleAssociate implements the standard RFC 1928 UDP ASSOCIATE.
 // The client connects via TCP to request a UDP relay.
@@ -57,129 +53,34 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		return fmt.Errorf("failed to send reply: %v", err)
 	}
 
-	// We multiplex the UDP stream
-	// Client -> S5Core -> Target
-	// Target -> S5Core -> Client
-
 	// We only accept packets from the client's registered IP (weak security as per RFC)
 	clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-	clientUDPAddr := &net.UDPAddr{} // will be populated on first packet from client
 
-	bufPool := sync.Pool{
-		New: func() interface{} { return make([]byte, 65535) },
-	}
+	// clientUDPAddr is accessed from multiple goroutines — use atomic pointer.
+	var clientUDPAddrPtr atomic.Pointer[net.UDPAddr]
 
-	errCh := make(chan error, 2)
-	clientToTarget := make(chan udpPacket, 32)
-	targetToClient := make(chan udpPacket, 32)
+	errCh := make(chan error, 3)
+	done := make(chan struct{})
 
-	var wg sync.WaitGroup
-
-	// TCP Connection monitor - if TCP closes, UDP tunnel dies
-	wg.Add(1)
+	// TCP Connection monitor — if TCP closes, all UDP goroutines must terminate
 	go func() {
-		defer wg.Done()
 		var b [1]byte
 		_, err := conn.(net.Conn).Read(b[:])
-		errCh <- fmt.Errorf("tcp control connection closed: %v", err)
+		_ = err
+		close(done)
+		// Force the blocking UDP read to unblock
+		udpConn.Close()
 	}()
 
-	// UDP Reader
-	wg.Add(1)
+	// UDP relay goroutine: single goroutine handles reads AND writes
+	// to avoid channel overhead and extra goroutines.
 	go func() {
-		defer wg.Done()
-		var bytesIn int64
+		buf := make([]byte, 65535)
+		var bytesIn, bytesOut int64
 		defer func() {
 			if bytesIn > 0 && s.config.BytesAddIn != nil {
 				s.config.BytesAddIn(bytesIn)
 			}
-		}()
-
-		for {
-			buf := bufPool.Get().([]byte)
-			n, rAddr, err := udpConn.ReadFromUDP(buf)
-			if err != nil {
-				errCh <- fmt.Errorf("udp read failed: %w", err)
-				return
-			}
-
-			// When testing locally, both client and target have IP 127.0.0.1.
-			// We MUST use the explicit UDP port if we know it (after first packet),
-			// otherwise we fall back to checking just IP (since SOCKS5 RFC says client IP
-			// connects, but we don't know the client UDP port until the first packet).
-			isFromClient := false
-			if clientUDPAddr.IP != nil {
-				// We already know the client's exact UDP IP:Port
-				isFromClient = rAddr.String() == clientUDPAddr.String()
-			} else {
-				// First packet: we only know the client's IP from the TCP connection
-				isFromClient = rAddr.IP.String() == clientIP
-			}
-
-			if isFromClient {
-				if s.config.BytesAddIn != nil {
-					bytesIn += int64(n)
-					if bytesIn >= 1024*1024 { // Flush every 1MB
-						s.config.BytesAddIn(bytesIn)
-						bytesIn = 0
-					}
-				}
-
-				// Packet from Client -> Target
-				// Must have SOCKS5 UDP header
-				hdrLen, dstAddr, err := ParseUDPHeader(buf[:n])
-				if err != nil {
-					s.config.Logger.Warn("socks: invalid UDP header from client", "error", err)
-					bufPool.Put(buf)
-					continue
-				}
-
-				var dAddr net.Addr
-				if dstAddr.FQDN != "" {
-					_, resolvedIP, err := s.config.Resolver.Resolve(ctx, dstAddr.FQDN)
-					if err != nil {
-						s.config.Logger.Warn("socks: udp fqdn resolve failed", "error", err)
-						bufPool.Put(buf)
-						continue
-					}
-					dAddr = &net.UDPAddr{IP: resolvedIP, Port: dstAddr.Port}
-				} else {
-					dAddr = &net.UDPAddr{IP: dstAddr.IP, Port: dstAddr.Port}
-				}
-
-				// Remember client's actual UDP ephemeral port
-				clientUDPAddr = rAddr
-
-				// Send raw payload to target
-				payload := make([]byte, n-hdrLen)
-				copy(payload, buf[hdrLen:n])
-				clientToTarget <- udpPacket{addr: dAddr.(*net.UDPAddr), data: payload}
-			} else {
-				// Packet from Target -> Client
-				// Needs SOCKS5 UDP header appended
-				if clientUDPAddr.IP == nil {
-					bufPool.Put(buf)
-					continue // Drop if we don't know the client's UDP port yet
-				}
-
-				payload := make([]byte, n)
-				copy(payload, buf[:n])
-
-				srcSpec := &AddrSpec{IP: rAddr.IP, Port: rAddr.Port}
-				packetData := BuildUDPHeader(srcSpec, payload)
-
-				targetToClient <- udpPacket{addr: clientUDPAddr, data: packetData}
-			}
-			bufPool.Put(buf)
-		}
-	}()
-
-	// UDP Writer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		var bytesOut int64
-		defer func() {
 			if bytesOut > 0 && s.config.BytesAddOut != nil {
 				s.config.BytesAddOut(bytesOut)
 			}
@@ -187,30 +88,120 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 
 		for {
 			select {
-			case pkt := <-clientToTarget:
-				udpConn.WriteToUDP(pkt.data, pkt.addr)
-			case pkt := <-targetToClient:
-				nw, err := udpConn.WriteToUDP(pkt.data, pkt.addr)
-				if err == nil && nw > 0 {
-					if s.config.BytesAddOut != nil {
-						bytesOut += int64(nw)
-						if bytesOut >= 1024*1024 {
-							s.config.BytesAddOut(bytesOut)
-							bytesOut = 0
-						}
+			case <-done:
+				return
+			default:
+			}
+
+			// Set a short read deadline so we can check `done` periodically
+			udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+			n, rAddr, err := udpConn.ReadFromUDP(buf)
+			if err != nil {
+				if isTimeout(err) {
+					continue
+				}
+				select {
+				case <-done:
+				default:
+					errCh <- fmt.Errorf("udp read failed: %w", err)
+				}
+				return
+			}
+
+			// Determine if this packet is from the client or from a target
+			curClient := clientUDPAddrPtr.Load()
+			isFromClient := false
+			if curClient != nil {
+				isFromClient = rAddr.String() == curClient.String()
+			} else {
+				isFromClient = rAddr.IP.String() == clientIP
+			}
+
+			if isFromClient {
+				// Track inbound bytes
+				if s.config.BytesAddIn != nil {
+					bytesIn += int64(n)
+					if bytesIn >= 1024*1024 {
+						s.config.BytesAddIn(bytesIn)
+						bytesIn = 0
 					}
 				}
-			case <-ctx.Done():
-				return
+
+				// Parse SOCKS5 UDP header
+				// IMPORTANT: copy the IP out of buf before reuse
+				hdrLen, dstAddr, err := ParseUDPHeader(buf[:n])
+				if err != nil {
+					s.config.Logger.Warn("socks: invalid UDP header from client", "error", err)
+					continue
+				}
+
+				var dUDP *net.UDPAddr
+				if dstAddr.FQDN != "" {
+					_, resolvedIP, err := s.config.Resolver.Resolve(ctx, dstAddr.FQDN)
+					if err != nil {
+						s.config.Logger.Warn("socks: udp fqdn resolve failed", "error", err)
+						continue
+					}
+					dUDP = &net.UDPAddr{IP: resolvedIP, Port: dstAddr.Port}
+				} else {
+					// Copy IP to avoid aliasing buf
+					ip := make(net.IP, len(dstAddr.IP))
+					copy(ip, dstAddr.IP)
+					dUDP = &net.UDPAddr{IP: ip, Port: dstAddr.Port}
+				}
+
+				// Remember client's actual UDP address (atomic store)
+				addrCopy := &net.UDPAddr{
+					IP:   make(net.IP, len(rAddr.IP)),
+					Port: rAddr.Port,
+					Zone: rAddr.Zone,
+				}
+				copy(addrCopy.IP, rAddr.IP)
+				clientUDPAddrPtr.Store(addrCopy)
+
+				// Send raw payload to target
+				payload := buf[hdrLen:n]
+				nw, werr := udpConn.WriteToUDP(payload, dUDP)
+				if werr == nil && nw > 0 && s.config.BytesAddOut != nil {
+					bytesOut += int64(nw)
+					if bytesOut >= 1024*1024 {
+						s.config.BytesAddOut(bytesOut)
+						bytesOut = 0
+					}
+				}
+			} else {
+				// Packet from Target -> Client
+				curClient = clientUDPAddrPtr.Load()
+				if curClient == nil {
+					continue // Drop if we don't know the client's UDP port yet
+				}
+
+				// Build response with SOCKS5 UDP header
+				// Copy IP from rAddr to avoid aliasing
+				srcIP := make(net.IP, len(rAddr.IP))
+				copy(srcIP, rAddr.IP)
+				srcSpec := &AddrSpec{IP: srcIP, Port: rAddr.Port}
+				packetData := BuildUDPHeader(srcSpec, buf[:n])
+
+				nw, werr := udpConn.WriteToUDP(packetData, curClient)
+				if werr == nil && nw > 0 && s.config.BytesAddOut != nil {
+					bytesOut += int64(nw)
+					if bytesOut >= 1024*1024 {
+						s.config.BytesAddOut(bytesOut)
+						bytesOut = 0
+					}
+				}
 			}
 		}
 	}()
 
-	// Wait for any critical failure
-	err = <-errCh
-
-	// Cancel and cleanup happens via defers and TCP close
-	return nil
+	// Wait for done (TCP close) or error
+	select {
+	case <-done:
+		return nil
+	case err := <-errCh:
+		return err
+	}
 }
 
 // handleUDPTcpmux implements a custom reliable UDP-over-TCP tunnel (Command 0x83).
@@ -225,9 +216,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		return fmt.Errorf("udp-tcpmux to %v blocked by rules", req.DestAddr)
 	}
 
-	// We don't need to listen on an incoming UDP port because the client pushes UDP
-	// traffic through this active TCP connection. We just need an unbound UDP
-	// socket to send/receive to the actual targets on the internet.
+	// Unbound UDP socket to send/receive to the internet targets
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
@@ -247,7 +236,10 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	tcpConn := conn.(net.Conn)
 	tcpConn.SetDeadline(time.Time{}) // Disable timeouts, this is a long-lived tunnel
 
-	// Go routine to read UDP packets from Internet and write to TCP stream
+	// Mutex to serialize TCP writes from the UDP->TCP goroutine
+	var tcpWriteMu sync.Mutex
+
+	// Internet -> TCP: read UDP responses and write into TCP stream
 	go func() {
 		buf := make([]byte, 65535)
 		for {
@@ -257,27 +249,31 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 				return
 			}
 
-			// Wrap in SOCKS5 UDP Header representing the source
-			srcSpec := &AddrSpec{IP: rAddr.IP, Port: rAddr.Port}
-			socksHdr := BuildUDPHeader(srcSpec, buf[:n])
+			// Copy IP to avoid aliasing buf
+			srcIP := make(net.IP, len(rAddr.IP))
+			copy(srcIP, rAddr.IP)
+			srcSpec := &AddrSpec{IP: srcIP, Port: rAddr.Port}
+			socksFrame := BuildUDPHeader(srcSpec, buf[:n])
 
 			// Prepend 16-bit length prefix for TCP framing
-			frame := make([]byte, 2+len(socksHdr))
-			binary.BigEndian.PutUint16(frame[0:2], uint16(len(socksHdr)))
-			copy(frame[2:], socksHdr)
+			frame := make([]byte, 2+len(socksFrame))
+			binary.BigEndian.PutUint16(frame[0:2], uint16(len(socksFrame)))
+			copy(frame[2:], socksFrame)
 
-			if _, err := tcpConn.Write(frame); err != nil {
+			tcpWriteMu.Lock()
+			_, err = tcpConn.Write(frame)
+			tcpWriteMu.Unlock()
+			if err != nil {
 				errCh <- fmt.Errorf("tcp write error: %w", err)
 				return
 			}
 		}
 	}()
 
-	// Read UDP packets from TCP stream and send to Internet
+	// TCP -> Internet: read length-prefixed UDP packets and send out
 	go func() {
 		lenBuf := make([]byte, 2)
 		for {
-			// Read 16-bit length
 			if _, err := io.ReadFull(tcpConn, lenBuf); err != nil {
 				errCh <- fmt.Errorf("tcp read length error: %w", err)
 				return
@@ -288,7 +284,6 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 				continue // Keep-alive
 			}
 
-			// Read inner SOCKS5 UDP Frame
 			frameBuf := make([]byte, packetLen)
 			if _, err := io.ReadFull(tcpConn, frameBuf); err != nil {
 				errCh <- fmt.Errorf("tcp read frame error: %w", err)
@@ -301,25 +296,43 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 				continue
 			}
 
-			var dAddr net.Addr
+			var dUDP *net.UDPAddr
 			if dstAddr.FQDN != "" {
 				_, resolvedIP, err := s.config.Resolver.Resolve(ctx, dstAddr.FQDN)
 				if err != nil {
 					s.config.Logger.Warn("socks: udp-tcpmux fqdn resolve failed", "error", err)
 					continue
 				}
-				dAddr = &net.UDPAddr{IP: resolvedIP, Port: dstAddr.Port}
+				dUDP = &net.UDPAddr{IP: resolvedIP, Port: dstAddr.Port}
 			} else {
-				dAddr = &net.UDPAddr{IP: dstAddr.IP, Port: dstAddr.Port}
+				// Copy IP to avoid aliasing frameBuf
+				ip := make(net.IP, len(dstAddr.IP))
+				copy(ip, dstAddr.IP)
+				dUDP = &net.UDPAddr{IP: ip, Port: dstAddr.Port}
 			}
 
-			// Send to Internet
 			payload := frameBuf[hdrLen:]
-			if _, err := udpConn.WriteToUDP(payload, dAddr.(*net.UDPAddr)); err != nil {
+			if _, err := udpConn.WriteToUDP(payload, dUDP); err != nil {
 				s.config.Logger.Warn("socks: udp-tcpmux write to internet failed", "error", err)
 			}
 		}
 	}()
 
-	return <-errCh // Block until either side errors
+	// Block until either side errors; defer closes udpConn
+	err = <-errCh
+	return err
 }
+
+// isTimeout checks if an error is a network timeout.
+func isTimeout(err error) bool {
+	type timeout interface {
+		Timeout() bool
+	}
+	if t, ok := err.(timeout); ok {
+		return t.Timeout()
+	}
+	return false
+}
+
+// Ensure atomic.Pointer[net.UDPAddr] alignment (for 32-bit platforms).
+var _ = unsafe.Sizeof(atomic.Pointer[net.UDPAddr]{})
