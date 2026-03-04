@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -202,10 +203,26 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		return fmt.Errorf("failed to send reply: %v", err)
 	}
 
+	// Extract username for per-user traffic tracking
+	username := extractUsername(req)
+
 	// Start proxying
 	errCh := make(chan error, 2)
-	go proxy(target, req.bufConn, errCh)
-	go proxy(conn, target, errCh)
+	if s.config.TrafficCallback != nil && username != "" {
+		// Resolve the atomic counter once, before the hot loop.
+		// This avoids map lookups and RLock on every chunk.
+		counter := s.config.TrafficCounter(username)
+		if counter != nil {
+			go proxyWithTraffic(target, req.bufConn, errCh, counter)
+			go proxyWithTraffic(conn, target, errCh, counter)
+		} else {
+			go proxy(target, req.bufConn, errCh)
+			go proxy(conn, target, errCh)
+		}
+	} else {
+		go proxy(target, req.bufConn, errCh)
+		go proxy(conn, target, errCh)
+	}
 
 	// Wait
 	for i := 0; i < 2; i++ {
@@ -356,4 +373,64 @@ func proxy(dst io.Writer, src io.Reader, errCh chan error) {
 		_ = tcpConn.CloseWrite()
 	}
 	errCh <- err
+}
+
+// proxyWithTraffic is like proxy but also atomically increments a
+// per-user traffic counter. The counter pointer is resolved once at
+// connection setup time so the hot loop is lock-free.
+func proxyWithTraffic(dst io.Writer, src io.Reader, errCh chan error, counter *atomic.Int64) {
+	bufPtr := bufferPool.Get().(*[]byte)
+	defer bufferPool.Put(bufPtr)
+	buf := *bufPtr
+
+	var accumulated int64
+	const flushThreshold = 64 * 1024 // flush every 64KB to reduce atomic op overhead
+
+	finish := func(e error) {
+		if accumulated > 0 {
+			counter.Add(accumulated)
+		}
+		if tcpConn, ok := dst.(closeWriter); ok {
+			_ = tcpConn.CloseWrite()
+		}
+		errCh <- e
+	}
+
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if nw > 0 {
+				accumulated += int64(nw)
+				if accumulated >= flushThreshold {
+					counter.Add(accumulated)
+					accumulated = 0
+				}
+			}
+			if ew != nil {
+				finish(ew)
+				return
+			}
+			if nr != nw {
+				finish(io.ErrShortWrite)
+				return
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				finish(er)
+			} else {
+				finish(nil)
+			}
+			return
+		}
+	}
+}
+
+// extractUsername returns the authenticated username from the request, if any.
+func extractUsername(req *Request) string {
+	if req.AuthContext != nil && req.AuthContext.Payload != nil {
+		return req.AuthContext.Payload["Username"]
+	}
+	return ""
 }

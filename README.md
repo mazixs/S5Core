@@ -58,17 +58,26 @@ Each frame on the wire:
 
 ### Measured Results (from automated tests)
 
-The following data is captured by `TestObfsDemo_MeasurableComparison` which sends real SOCKS5 protocol bytes through the obfuscation layer and analyzes the raw wire output:
+The following data is captured by our integration benchmarks that test raw TCP throughput and connection latency:
+
+#### Connection Performance
+
+| Metric | Plain (No Obfuscation) | Obfuscated (AES-256-GCM) |
+|--------|------------------------|--------------------------|
+| **Throughput (1MB Stream)** | ~400 – 500 MB/s | ~30 – 35 MB/s |
+| **Handshake Latency** | ~110 – 130 µs | ~160 – 190 µs |
+
+> **Note on Performance:** The obfuscation throughput of ~35 MB/s (approx 280 Mbps) is more than sufficient for modern VPS connections. The handshake overhead is virtually negligible (~50 microseconds difference) compared to real-world internet routing latency (20–100+ ms).
 
 #### Shannon Entropy (bits/byte)
 
-| Data | Plain (no obfuscation) | Obfuscated (AES-256-GCM) | Improvement |
-|------|------------------------|--------------------------|-------------|
-| SOCKS5 Greeting (`0x050100`) | **1.58** | **6.74** | 4.3× |
-| SOCKS5 CONNECT + domain | **3.84** | **6.61** | 1.7× |
-| HTTP Request | **4.32** | **6.87** | 1.6× |
+| Data | Plain | Obfuscated |
+|------|-------|------------|
+| SOCKS5 Greeting | **1.58** | **6.75** |
+| SOCKS5 CONNECT | **3.84** | **5.45** |
+| HTTP Request | **4.32** | **6.75** |
 
-> Theoretical maximum: 8.0 bits/byte (perfectly random). Our obfuscation achieves 6.6–6.9 — on par with TLS/HTTPS encrypted traffic. Plain SOCKS5 at 1.58 bits/byte is trivially detectable by DPI.
+> Theoretical maximum: 8.0 bits/byte (perfectly random). Plain SOCKS5 at 1.58 bits/byte is trivially detectable by DPI.
 
 #### DPI Signature Detection
 
@@ -78,26 +87,40 @@ The following data is captured by `TestObfsDemo_MeasurableComparison` which send
 | HTTP keyword on wire | ❌ **Not found** |
 | Domain name `example.com` on wire | ❌ **Not found** |
 
-#### Overhead per Frame
+---
 
-| Component | Size |
-|-----------|------|
-| Frame size header | 4 bytes |
-| AES-GCM nonce | 12 bytes |
-| AES-GCM auth tag | 16 bytes |
-| Payload/padding headers | 4 bytes |
-| Random padding | 0–256 bytes (configurable) |
-| **Total overhead** | **36–292 bytes per frame** |
+## Authentication & Multi-Account Management
 
-#### Measured Frame Sizes (from test run)
+S5Core utilizes a high-performance, lock-free JSON user store capable of tracking per-user traffic limits without impacting the hot path.
 
-| Data | Plain | Obfuscated | Overhead |
-|------|-------|------------|----------|
-| SOCKS5 Greeting | 3 B | 151 B | +148 B (+4933%) |
-| SOCKS5 CONNECT | 18 B | 122 B | +104 B (+578%) |
-| HTTP Request | 37 B | 195 B | +158 B (+427%) |
+By defining an optional `USERS_FILE`, you can enable multi-account support with expiration dates and traffic quotas. If no file is provided, S5Core falls back to the legacy `PROXY_USER`/`PROXY_PASSWORD` environment variables.
 
-> For payloads ≥1 KB, overhead is **<30%**. For small handshake packets (3 bytes), overhead is higher but expected — the random padding is what prevents size-based fingerprinting. Data integrity is verified via roundtrip: every byte decrypted matches the original.
+### Example `users.json`
+
+```json
+{
+  "users": [
+    {
+      "id": "u-001",
+      "username": "premium_user",
+      "password": "secure123",
+      "comment": "100GB limit, expires in 2027",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "traffic_limit_bytes": 107374182400,
+      "traffic_used_bytes": 0,
+      "enabled": true
+    },
+    {
+      "id": "u-002",
+      "username": "unlimited_user",
+      "password": "anotherpassword",
+      "enabled": true
+    }
+  ]
+}
+```
+
+> **Hot Reloading:** Send `SIGHUP` to the S5Core process to reload `users.json` on the fly without dropping connections! Traffic metrics are preserved and merged during reload.
 
 ---
 
@@ -125,8 +148,6 @@ UDP: App → s5client:1080 → [UDP-over-TCP mux] → s5core:1443 → Internet  
 > **Important:** When obfuscation is enabled, the server listens on **two ports simultaneously**:  
 > - `PROXY_PORT` (default `1080`) — plain SOCKS5 for direct/local connections  
 > - `OBFS_PORT` (default `1443`) — obfuscated connections from `s5client` only  
-> 
-> Plain SOCKS5 clients (browsers, Telegram) always connect to `PROXY_PORT`. They will **not** work on `OBFS_PORT`.
 
 ---
 
@@ -148,6 +169,9 @@ func main() {
 	cfg := s5server.DefaultConfig()
 	cfg.Port = "1080"
 	cfg.RequireAuth = true
+	// Enable modern user store
+	cfg.UsersFile = "users.json"
+	cfg.TrafficFlushInterval = 30 * time.Second
 
 	// Enable obfuscation
 	cfg.ObfsEnabled = true
@@ -161,9 +185,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	// Add users dynamically (e.g., from your database or Web-UI)
-	srv.AddUser("admin", "secret")
 
 	// Update whitelisted IPs on the fly
 	srv.UpdateWhitelist([]string{"192.168.1.100"})
@@ -186,11 +207,12 @@ When running the standalone binary or Docker image, configuration is entirely dr
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
+| `USERS_FILE` | String | *Empty* | Path to `users.json`. Enables multi-account support with quotas. |
 | `PROXY_PORT` | String | `1080` | Port to listen for SOCKS5 connections. |
 | `PROXY_LISTEN_IP` | String | `0.0.0.0` | IP address to bind the proxy server to. |
 | `REQUIRE_AUTH` | Boolean | `true` | Enforce Username/Password authentication. Highly recommended. |
-| `PROXY_USER` | String | *Empty* | Username for proxy authentication. Required if `REQUIRE_AUTH=true`. |      
-| `PROXY_PASSWORD` | String | *Empty* | Password for proxy authentication. Required if `REQUIRE_AUTH=true`. |  
+| `PROXY_USER` | String | *Empty* | Legacy: Username for proxy authentication. Overridden by `USERS_FILE`. |      
+| `PROXY_PASSWORD` | String | *Empty* | Legacy: Password for proxy authentication. Overridden by `USERS_FILE`. |  
 | `ALLOWED_IPS` | String | *Empty* | Comma-separated list of IP addresses allowed to connect to the proxy. |   
 | `ALLOWED_DEST_FQDN` | String | *Empty* | Regex pattern to filter allowed destination FQDNs. Empty allows all destinations. |
 | `READ_TIMEOUT` | Duration | `30s` | Maximum duration before a read operation times out. |
@@ -198,6 +220,7 @@ When running the standalone binary or Docker image, configuration is entirely dr
 | `MAX_CONNECTIONS` | Integer | `10000` | Global limit for concurrent active connections. |
 | `FAIL2BAN_RETRIES` | Integer | `5` | Number of failed auth attempts before temporarily banning a user. Set to 0 to disable. |
 | `FAIL2BAN_TIME` | Duration | `5m` | How long a user/IP is banned after failing authentication. |
+| `TRAFFIC_FLUSH_INTERVAL` | Duration | `30s` | Interval to flush user traffic metrics to disk (if `USERS_FILE` is used). |
 | `METRICS_PORT` | String | `8080` | Port to expose OpenTelemetry/Prometheus `/metrics` and `/health` endpoints. |
 | `OBFS_ENABLED` | Boolean | `false` | Enable traffic obfuscation on a separate port. |
 | `OBFS_PORT` | String | `1443` | Separate port for obfuscated connections from `s5client`. |

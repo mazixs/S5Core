@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync/atomic"
 )
 
 const (
@@ -49,6 +50,16 @@ type Config struct {
 
 	// BytesAddOut is an optional high-performance callback to track outbound traffic metrics
 	BytesAddOut func(int64)
+
+	// TrafficCallback is called for each chunk of proxied data with the
+	// authenticated username and byte count. Used for per-user traffic metering.
+	// Kept for UDP handlers where atomic pointer resolution is inconvenient.
+	TrafficCallback func(username string, bytes int64)
+
+	// TrafficCounter resolves a username to a raw *atomic.Int64 pointer
+	// for lock-free per-user traffic counting on the TCP hot path.
+	// Called once at connection setup time.
+	TrafficCounter func(username string) *atomic.Int64
 
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)

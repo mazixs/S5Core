@@ -39,6 +39,8 @@ type params struct {
 	ObfsPSK         string        `env:"OBFS_PSK" envDefault:""`
 	ObfsMaxPadding  int           `env:"OBFS_MAX_PADDING" envDefault:"256"`
 	ObfsMTU         int           `env:"OBFS_MTU" envDefault:"1400"`
+	UsersFile       string        `env:"USERS_FILE" envDefault:""`
+	TrafficFlush    time.Duration `env:"TRAFFIC_FLUSH_INTERVAL" envDefault:"60s"`
 }
 
 func main() {
@@ -96,22 +98,24 @@ func setupTelemetry() (*s5server.Telemetry, error) {
 
 func setupServer(cfg params, telemetry *s5server.Telemetry) (*s5server.Server, error) {
 	serverCfg := s5server.Config{
-		Port:            cfg.Port,
-		ListenIP:        cfg.ListenIP,
-		RequireAuth:     cfg.RequireAuth,
-		AllowedDestFqdn: cfg.AllowedDestFqdn,
-		AllowedIPs:      cfg.AllowedIPs,
-		ReadTimeout:     cfg.ReadTimeout,
-		WriteTimeout:    cfg.WriteTimeout,
-		MaxConnections:  cfg.MaxConnections,
-		Fail2BanRetries: cfg.Fail2BanRetries,
-		Fail2BanTime:    cfg.Fail2BanTime,
-		Telemetry:       telemetry,
-		ObfsEnabled:     cfg.ObfsEnabled,
-		ObfsPort:        cfg.ObfsPort,
-		ObfsPSK:         cfg.ObfsPSK,
-		ObfsMaxPadding:  cfg.ObfsMaxPadding,
-		ObfsMTU:         cfg.ObfsMTU,
+		Port:                 cfg.Port,
+		ListenIP:             cfg.ListenIP,
+		RequireAuth:          cfg.RequireAuth,
+		AllowedDestFqdn:      cfg.AllowedDestFqdn,
+		AllowedIPs:           cfg.AllowedIPs,
+		ReadTimeout:          cfg.ReadTimeout,
+		WriteTimeout:         cfg.WriteTimeout,
+		MaxConnections:       cfg.MaxConnections,
+		Fail2BanRetries:      cfg.Fail2BanRetries,
+		Fail2BanTime:         cfg.Fail2BanTime,
+		Telemetry:            telemetry,
+		ObfsEnabled:          cfg.ObfsEnabled,
+		ObfsPort:             cfg.ObfsPort,
+		ObfsPSK:              cfg.ObfsPSK,
+		ObfsMaxPadding:       cfg.ObfsMaxPadding,
+		ObfsMTU:              cfg.ObfsMTU,
+		UsersFile:            cfg.UsersFile,
+		TrafficFlushInterval: cfg.TrafficFlush,
 	}
 
 	srv, err := s5server.NewServer(serverCfg)
@@ -119,12 +123,15 @@ func setupServer(cfg params, telemetry *s5server.Telemetry) (*s5server.Server, e
 		return nil, fmt.Errorf("failed to initialize server: %v", err)
 	}
 
-	if cfg.RequireAuth && cfg.User != "" && cfg.Password != "" {
-		if err := srv.AddUser(cfg.User, cfg.Password); err != nil {
-			return nil, fmt.Errorf("failed to add proxy user: %v", err)
+	if cfg.RequireAuth && cfg.UsersFile == "" {
+		// Legacy mode: single user from env
+		if cfg.User != "" && cfg.Password != "" {
+			if err := srv.AddUser(cfg.User, cfg.Password); err != nil {
+				return nil, fmt.Errorf("failed to add proxy user: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("REQUIRE_AUTH is true, but neither USERS_FILE nor PROXY_USER/PROXY_PASSWORD are set")
 		}
-	} else if cfg.RequireAuth {
-		return nil, fmt.Errorf("REQUIRE_AUTH is true, but PROXY_USER and PROXY_PASSWORD are not set")
 	}
 
 	return srv, nil
@@ -147,7 +154,13 @@ func setupHotReload(ctx context.Context, srv *s5server.Server) {
 				if err := srv.UpdateWhitelist(newCfg.AllowedIPs); err != nil {
 					slog.Error("Failed to update whitelist during reload", "error", err)
 				} else {
-					slog.Info("Configuration hot reloaded successfully")
+					slog.Info("Whitelist reloaded successfully")
+				}
+
+				if err := srv.ReloadUsers(); err != nil {
+					slog.Error("Failed to reload users during SIGHUP", "error", err)
+				} else {
+					slog.Info("User store reloaded successfully")
 				}
 
 			case <-ctx.Done():

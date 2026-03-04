@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"time"
 
 	"github.com/mazixs/S5Core/internal/s5core"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/userstore"
 	"golang.org/x/net/netutil"
 )
 
@@ -19,6 +21,7 @@ type Server struct {
 	listener   *serverListener
 	tcpListen  net.Listener
 	credStore  *fail2banStore
+	userStore  *userstore.Store
 	logger     *slog.Logger
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -37,10 +40,28 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	var credStore *fail2banStore
+	var uStore *userstore.Store
 
 	if cfg.RequireAuth {
 		var store socks5.CredentialStore
-		store = socks5.StaticCredentials{}
+
+		// If UsersFile is configured, use it as the primary credential source
+		if cfg.UsersFile != "" {
+			uStore = userstore.NewStore(logger)
+			if err := uStore.LoadFromFile(cfg.UsersFile); err != nil {
+				return nil, fmt.Errorf("failed to load users file: %w", err)
+			}
+			store = userstore.NewCredentialAdapter(uStore)
+
+			// Wire per-user traffic callback (for UDP handlers)
+			socks5conf.TrafficCallback = func(username string, bytes int64) {
+				uStore.AddTraffic(username, bytes)
+			}
+			// Wire lock-free traffic counter (for TCP hot path)
+			socks5conf.TrafficCounter = uStore.TrafficCounterFor
+		} else {
+			store = socks5.StaticCredentials{}
+		}
 
 		if cfg.Fail2BanRetries > 0 {
 			credStore = newFail2banStore(store, cfg.Fail2BanRetries, cfg.Fail2BanTime, cfg.Telemetry)
@@ -80,7 +101,17 @@ func NewServer(cfg Config) (*Server, error) {
 		socks5:    srv,
 		logger:    logger,
 		credStore: credStore,
+		userStore: uStore,
 	}, nil
+}
+
+// ReloadUsers reloads the user store from the configured file.
+// Traffic counters are preserved across reloads.
+func (s *Server) ReloadUsers() error {
+	if s.userStore == nil {
+		return fmt.Errorf("user store is not configured")
+	}
+	return s.userStore.Reload(s.cfg.UsersFile)
 }
 
 // AddUser adds a new user for authentication
@@ -227,6 +258,15 @@ func (s *Server) Start(ctx context.Context) error {
 		s.logger.Warn("Obfuscation DISABLED — only plain SOCKS5 is available")
 	}
 
+	// Start periodic traffic flush if user store is configured
+	if s.userStore != nil {
+		flushInterval := s.cfg.TrafficFlushInterval
+		if flushInterval <= 0 {
+			flushInterval = 60 * time.Second
+		}
+		s.userStore.StartPeriodicFlush(s.cfg.UsersFile, flushInterval)
+	}
+
 	select {
 	case <-s.ctx.Done():
 		s.logger.Info("Server context canceled, shutting down...")
@@ -238,6 +278,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Stop gracefully stops the proxy server.
 func (s *Server) Stop() error {
+	if s.userStore != nil {
+		s.userStore.StopPeriodicFlush()
+	}
 	if s.cancelFunc != nil {
 		s.cancelFunc()
 	}

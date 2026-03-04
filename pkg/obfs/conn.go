@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -28,9 +29,31 @@ type Config struct {
 // conn is the obfuscation wrapper around net.Conn.
 type conn struct {
 	net.Conn
-	cfg     Config
-	aead    cipher.AEAD
-	readbuf []byte // internal buffer for partial reads
+	cfg  Config
+	aead cipher.AEAD
+
+	// Pre-allocated write buffers (owned by single goroutine per direction,
+	// so no mutex needed — net.Conn guarantees sequential Write calls).
+	writeBuf []byte // reusable buffer for building the wire frame
+	nonce    []byte // reusable nonce buffer
+
+	// Buffered random source — reduces crypto/rand syscalls from
+	// 2 per frame to ~1 per 300+ frames (4KB buffer / ~12 bytes per frame).
+	randBuf [4096]byte
+	randPos int
+
+	// Pre-allocated read buffers
+	readHdr  [4]byte // frame header
+	readBuf  []byte  // reusable frame read buffer
+	readRest []byte  // unconsumed payload from previous Read
+}
+
+// bufferPool for large frame buffers used in Read when readBuf is too small.
+var bufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 2*1024*1024)
+		return &b
+	},
 }
 
 // NewConn wraps an existing net.Conn with obfuscation.
@@ -53,57 +76,110 @@ func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
 		return nil, fmt.Errorf("obfs: failed to create GCM: %w", err)
 	}
 
-	return &conn{
-		Conn: c,
-		cfg:  cfg,
-		aead: aead,
-	}, nil
+	nonceSize := aead.NonceSize()
+	// Pre-allocate write buffer large enough for: 4 (header) + nonceSize + max plaintext + GCM tag + padding
+	maxPlaintext := 2 + 65535 + 2 + cfg.MaxPadding
+	maxCiphertext := maxPlaintext + aead.Overhead()
+	writeBufSize := 4 + nonceSize + maxCiphertext
+
+	// Pre-allocate read buffer for typical frames
+	readBufSize := cfg.MTU * 2
+	if readBufSize < 4096 {
+		readBufSize = 4096
+	}
+
+	oc := &conn{
+		Conn:     c,
+		cfg:      cfg,
+		aead:     aead,
+		writeBuf: make([]byte, writeBufSize),
+		nonce:    make([]byte, nonceSize),
+		readBuf:  make([]byte, readBufSize),
+		randPos:  4096, // force fill on first use
+	}
+
+	return oc, nil
+}
+
+// randBytes fills dst with random bytes from the buffered source.
+// This batches crypto/rand syscalls to reduce overhead.
+func (c *conn) randBytes(dst []byte) {
+	for len(dst) > 0 {
+		if c.randPos >= len(c.randBuf) {
+			io.ReadFull(rand.Reader, c.randBuf[:])
+			c.randPos = 0
+		}
+		n := copy(dst, c.randBuf[c.randPos:])
+		c.randPos += n
+		dst = dst[n:]
+	}
+}
+
+// randUint16 returns a random uint16 from the buffered source.
+func (c *conn) randUint16() uint16 {
+	var b [2]byte
+	c.randBytes(b[:])
+	return binary.BigEndian.Uint16(b[:])
 }
 
 // Write implements net.Conn.Write with obfuscation.
-// Protocol: [Payload Length (2 bytes)] [Payload] [Padding Length (2 bytes)] [Padding] -> AES-GCM -> [Nonce (12 bytes)] [Ciphertext]
+// Protocol: [FrameLen 4B] [Nonce 12B] [AES-GCM([PayloadLen 2B][Payload][PadLen 2B][Padding])]
+//
+// Zero-alloc hot path: all buffers are pre-allocated and reused.
 func (c *conn) Write(b []byte) (int, error) {
 	if len(b) > 65535 {
 		return 0, fmt.Errorf("obfs: payload too large")
 	}
 
-	// Generate random padding
+	// Determine padding length — zero-alloc, uses buffered random
 	padLen := 0
 	if c.cfg.MaxPadding > 0 {
-		padLenBytes := make([]byte, 2)
-		// simple random for pad length up to MaxPadding
-		_, _ = rand.Read(padLenBytes)
-		padLen = int(binary.BigEndian.Uint16(padLenBytes)) % (c.cfg.MaxPadding + 1)
+		padLen = int(c.randUint16()) % (c.cfg.MaxPadding + 1)
 	}
 
-	padding := make([]byte, padLen)
-	if padLen > 0 {
-		_, _ = rand.Read(padding)
-	}
-
-	// Construct plaintext frame: [PayloadLen][Payload][PaddingLen][Padding]
+	// Build plaintext directly in writeBuf after header+nonce space
+	nonceSize := c.aead.NonceSize()
+	plaintextStart := 4 + nonceSize
 	plaintextLen := 2 + len(b) + 2 + padLen
-	plaintext := make([]byte, plaintextLen)
 
-	binary.BigEndian.PutUint16(plaintext[0:2], uint16(len(b)))
-	copy(plaintext[2:], b)
-	binary.BigEndian.PutUint16(plaintext[2+len(b):], uint16(padLen))
-	copy(plaintext[2+len(b)+2:], padding)
-
-	// Encrypt
-	nonce := make([]byte, c.aead.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return 0, fmt.Errorf("obfs: failed to generate nonce: %w", err)
+	// Ensure writeBuf is large enough (should always be, but safety check)
+	needed := 4 + nonceSize + plaintextLen + c.aead.Overhead()
+	if needed > len(c.writeBuf) {
+		c.writeBuf = make([]byte, needed)
 	}
 
-	ciphertext := c.aead.Seal(nil, nonce, plaintext, nil)
+	// Fill plaintext region: [PayloadLen][Payload][PadLen][Padding]
+	pt := c.writeBuf[plaintextStart : plaintextStart+plaintextLen]
+	binary.BigEndian.PutUint16(pt[0:2], uint16(len(b)))
+	copy(pt[2:], b)
+	binary.BigEndian.PutUint16(pt[2+len(b):], uint16(padLen))
+	if padLen > 0 {
+		// Fill padding with buffered random bytes
+		c.randBytes(pt[2+len(b)+2 : 2+len(b)+2+padLen])
+	}
 
-	// Send frame size + nonce + ciphertext
-	frameSize := uint32(len(nonce) + len(ciphertext))
-	header := make([]byte, 4)
-	binary.BigEndian.PutUint32(header, frameSize)
+	// Generate nonce from buffered random
+	c.randBytes(c.nonce)
 
-	if _, err := c.Conn.Write(append(header, append(nonce, ciphertext...)...)); err != nil {
+	// Copy nonce into wire position
+	copy(c.writeBuf[4:4+nonceSize], c.nonce)
+
+	// Encrypt in-place: Seal appends ciphertext after nonce in writeBuf
+	// We use Seal with dst pointing right after the nonce.
+	ciphertext := c.aead.Seal(
+		c.writeBuf[4+nonceSize:4+nonceSize], // dst (append to this slice)
+		c.nonce,
+		pt,
+		nil,
+	)
+
+	// Write frame header
+	frameSize := uint32(nonceSize + len(ciphertext))
+	binary.BigEndian.PutUint32(c.writeBuf[0:4], frameSize)
+
+	// Single write syscall for entire frame
+	totalLen := 4 + int(frameSize)
+	if _, err := c.Conn.Write(c.writeBuf[:totalLen]); err != nil {
 		return 0, err
 	}
 
@@ -114,26 +190,32 @@ func (c *conn) Write(b []byte) (int, error) {
 // It reads a full frame, decrypts it, and extracts the payload.
 // Supports internal buffering for payloads larger than the caller's buffer.
 func (c *conn) Read(b []byte) (int, error) {
-	// Drain internal buffer first
-	if len(c.readbuf) > 0 {
-		n := copy(b, c.readbuf)
-		c.readbuf = c.readbuf[n:]
+	// Drain leftover from previous frame first
+	if len(c.readRest) > 0 {
+		n := copy(b, c.readRest)
+		c.readRest = c.readRest[n:]
 		return n, nil
 	}
 
-	// Read frame size
-	header := make([]byte, 4)
-	if _, err := io.ReadFull(c.Conn, header); err != nil {
+	// Read frame header (4 bytes) — zero-alloc, uses stack array
+	if _, err := io.ReadFull(c.Conn, c.readHdr[:]); err != nil {
 		return 0, err
 	}
-	frameSize := binary.BigEndian.Uint32(header)
+	frameSize := binary.BigEndian.Uint32(c.readHdr[:])
 
 	// Sanity check frame size to prevent OOM
-	if frameSize > 2*1024*1024 { // 2MB max frame
+	if frameSize > 2*1024*1024 {
 		return 0, fmt.Errorf("obfs: frame too large")
 	}
 
-	frame := make([]byte, frameSize)
+	// Read frame body — reuse readBuf if big enough
+	var frame []byte
+	if int(frameSize) <= cap(c.readBuf) {
+		frame = c.readBuf[:frameSize]
+	} else {
+		// Frame larger than our buffer — allocate (rare)
+		frame = make([]byte, frameSize)
+	}
 	if _, err := io.ReadFull(c.Conn, frame); err != nil {
 		return 0, err
 	}
@@ -144,9 +226,10 @@ func (c *conn) Read(b []byte) (int, error) {
 	}
 
 	nonce := frame[:nonceSize]
-	ciphertext := frame[nonceSize:]
+	ciphertextBytes := frame[nonceSize:]
 
-	plaintext, err := c.aead.Open(nil, nonce, ciphertext, nil)
+	// Decrypt in-place to avoid allocation
+	plaintext, err := c.aead.Open(ciphertextBytes[:0], nonce, ciphertextBytes, nil)
 	if err != nil {
 		return 0, fmt.Errorf("obfs: failed to decrypt: %w", err)
 	}
@@ -164,8 +247,9 @@ func (c *conn) Read(b []byte) (int, error) {
 	copied := copy(b, payload)
 
 	if copied < len(payload) {
-		// Buffer remaining data for next Read() call
-		c.readbuf = append(c.readbuf[:0], payload[copied:]...)
+		// Buffer remaining data — need a separate copy since payload
+		// aliases readBuf which will be overwritten on next Read
+		c.readRest = append(c.readRest[:0], payload[copied:]...)
 	}
 
 	return copied, nil
