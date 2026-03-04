@@ -378,6 +378,13 @@ proxychains4 -f /etc/proxychains-udp.conf dig @8.8.8.8 example.com
 
 > **WebRTC leak test:** After configuring your browser to use `s5client` as SOCKS5 proxy (with remote DNS), visit [browserleaks.com/webrtc](https://browserleaks.com/webrtc). With UDP tunneling enabled, your real IP should not appear in any WebRTC candidates.
 
+### Helper Scripts
+
+We provide practical bash scripts in the `scripts/` directory to help you test and manage the proxy:
+
+- **`check_proxy.sh`**: A comprehensive health-check script that automatically tests TCP connectivity, proxy authentication, retrieves IP Geo-information, checks Prometheus endpoints, and validates DNS resolution behavior.
+- **`vpn_test.sh`**: Creates a **full transparent VPN** using `tun2socks`. It intercepts all L3 traffic (TCP and UDP) on your system using a `tun0` interface, routes it to the local `s5client`, and encrypts it through the obfs tunnel to the server. This guarantees 100% protection against WebRTC, UDP, and DNS leaks without manual application configuration. Ensure you edit the config variables at the top of the scripts before running them!
+
 ---
 
 ## License
