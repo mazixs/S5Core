@@ -32,5 +32,4 @@ go.work.sum
 *.swo
 *~
 .DS_Store
-scripts/check_proxy.sh
 scripts/transparent_proxy.sh
