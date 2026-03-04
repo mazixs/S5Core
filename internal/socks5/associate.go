@@ -94,7 +94,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 			}
 
 			// Set a short read deadline so we can check `done` periodically
-			udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+			_ = udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 			n, rAddr, err := udpConn.ReadFromUDP(buf)
 			if err != nil {
 				if isTimeout(err) {
@@ -234,7 +234,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 
 	errCh := make(chan error, 2)
 	tcpConn := conn.(net.Conn)
-	tcpConn.SetDeadline(time.Time{}) // Disable timeouts, this is a long-lived tunnel
+	_ = tcpConn.SetDeadline(time.Time{}) // Disable timeouts, this is a long-lived tunnel
 
 	// Mutex to serialize TCP writes from the UDP->TCP goroutine
 	var tcpWriteMu sync.Mutex
