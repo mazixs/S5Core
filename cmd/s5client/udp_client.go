@@ -11,7 +11,7 @@ import (
 // handleUDPAssociate handles the client side of UDP Associate.
 // It opens a local UDP socket, tells the application its address,
 // and then multiplexes UDP packets over the obfuscated TCP tunnel.
-func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, connectReq []byte) {
+func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 	// 1. Read CONNECT response from server (for the 0x83 UDPTcpMux command)
 	slog.Info("UDP Associate: waiting for server reply on 0x83...")
 	connectResp := make([]byte, 256)
@@ -38,7 +38,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, connectReq []byt
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		slog.Error("Failed to bind local UDP socket", "error", err)
-		clientConn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // General failure
+		_, _ = clientConn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // General failure
 		return
 	}
 	defer udpConn.Close()

@@ -165,7 +165,7 @@ func verifyRoundTrip(t *testing.T, cfg Config, payload []byte, name string) {
 		close(done)
 	}()
 
-	obfsClient.Write(payload)
+	_, _ = obfsClient.Write(payload)
 
 	select {
 	case <-done:

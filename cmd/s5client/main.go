@@ -137,7 +137,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 
 	// Handle based on command
 	if cmd == socks5.AssociateCommand {
-		handleUDPAssociate(clientConn, obfsConn, connectReq)
+		handleUDPAssociate(clientConn, obfsConn)
 		return
 	}
 
@@ -201,7 +201,7 @@ func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string
 
 	cmd = buf[1]
 	if cmd != socks5.ConnectCommand && cmd != socks5.AssociateCommand {
-		clientConn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
+		_, _ = clientConn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
 		return nil, 0, "", fmt.Errorf("unsupported command: %d", cmd)
 	}
 

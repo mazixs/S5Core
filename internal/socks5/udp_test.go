@@ -32,7 +32,7 @@ func TestUDPAssociate(t *testing.T) {
 			}
 			// The proxy sends us pure UDP payload without the SOCKS5 header.
 			// The proxy has stripped it. We just echo the raw payload back.
-			echoServer.WriteToUDP(buf[:n], addr)
+			_, _ = echoServer.WriteToUDP(buf[:n], addr)
 		}
 	}()
 
@@ -50,7 +50,9 @@ func TestUDPAssociate(t *testing.T) {
 		t.Fatalf("Failed to listen: %v", err)
 	}
 	defer ln.Close()
-	go server.Serve(ln)
+	go func() {
+		_ = server.Serve(ln)
+	}()
 
 	// Connect to SOCKS5 server
 	conn, err := net.Dial("tcp", ln.Addr().String())
@@ -97,7 +99,7 @@ func TestUDPAssociate(t *testing.T) {
 		t.Fatalf("Failed to start local UDP client: %v", err)
 	}
 	defer clientUDP.Close()
-	clientUDP.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = clientUDP.SetDeadline(time.Now().Add(2 * time.Second))
 
 	// 4. Send a UDP packet through the SOCKS5 proxy to the Echo server
 	msg := []byte("Hello UDP over SOCKS5!")
@@ -155,7 +157,7 @@ func TestUDPTcpmux(t *testing.T) {
 			if err != nil {
 				return
 			}
-			echoServer.WriteToUDP(buf[:n], addr)
+			_, _ = echoServer.WriteToUDP(buf[:n], addr)
 		}
 	}()
 
@@ -173,7 +175,9 @@ func TestUDPTcpmux(t *testing.T) {
 		t.Fatalf("Failed to listen: %v", err)
 	}
 	defer ln.Close()
-	go server.Serve(ln)
+	go func() {
+		_ = server.Serve(ln)
+	}()
 
 	// Connect to SOCKS5 server via TCP
 	conn, err := net.Dial("tcp", ln.Addr().String())
@@ -181,7 +185,7 @@ func TestUDPTcpmux(t *testing.T) {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	// 1. SOCKS5 handshake
 	req := []byte{0x05, 0x01, 0x00}
