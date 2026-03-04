@@ -93,6 +93,10 @@ type Config struct {
 	ObfsPSK        string
 	ObfsMaxPadding int
 	ObfsMTU        int
+
+	// Multi-account settings
+	UsersFile            string        // Path to JSON file with user accounts
+	TrafficFlushInterval time.Duration // Interval for flushing traffic counters to disk
 }
 
 // DefaultConfig returns a configuration with sensible defaults.

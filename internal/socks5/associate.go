@@ -24,6 +24,8 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		return fmt.Errorf("associate to %v blocked by rules", req.DestAddr)
 	}
 
+	username := extractUsername(req)
+
 	// Bind to a local UDP port
 	bindAddr := &net.UDPAddr{IP: s.config.BindIP, Port: 0}
 	if bindAddr.IP == nil {
@@ -84,6 +86,9 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 			if bytesOut > 0 && s.config.BytesAddOut != nil {
 				s.config.BytesAddOut(bytesOut)
 			}
+			if s.config.TrafficCallback != nil && username != "" && (bytesIn+bytesOut) > 0 {
+				s.config.TrafficCallback(username, bytesIn+bytesOut)
+			}
 		}()
 
 		for {
@@ -123,6 +128,9 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 					bytesIn += int64(n)
 					if bytesIn >= 1024*1024 {
 						s.config.BytesAddIn(bytesIn)
+						if s.config.TrafficCallback != nil && username != "" {
+							s.config.TrafficCallback(username, bytesIn)
+						}
 						bytesIn = 0
 					}
 				}
@@ -166,6 +174,9 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 					bytesOut += int64(nw)
 					if bytesOut >= 1024*1024 {
 						s.config.BytesAddOut(bytesOut)
+						if s.config.TrafficCallback != nil && username != "" {
+							s.config.TrafficCallback(username, bytesOut)
+						}
 						bytesOut = 0
 					}
 				}
@@ -188,6 +199,9 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 					bytesOut += int64(nw)
 					if bytesOut >= 1024*1024 {
 						s.config.BytesAddOut(bytesOut)
+						if s.config.TrafficCallback != nil && username != "" {
+							s.config.TrafficCallback(username, bytesOut)
+						}
 						bytesOut = 0
 					}
 				}
