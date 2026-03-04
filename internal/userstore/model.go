@@ -5,15 +5,15 @@ import "time"
 // UserAccount represents a single proxy user with authentication,
 // validity period, and traffic accounting.
 type UserAccount struct {
-	ID               string     `json:"id"`
-	Username         string     `json:"username"`
-	Password         string     `json:"password"`
-	Comment          string     `json:"comment,omitempty"`
-	ValidFrom        *time.Time `json:"valid_from,omitempty"`
-	ValidUntil       *time.Time `json:"valid_until,omitempty"`
-	TrafficLimitBytes int64     `json:"traffic_limit_bytes,omitempty"`
-	TrafficUsedBytes  int64     `json:"traffic_used_bytes,omitempty"`
-	Enabled          bool       `json:"enabled"`
+	ID                string     `json:"id"`
+	Username          string     `json:"username"`
+	Password          string     `json:"password"`
+	Comment           string     `json:"comment,omitempty"`
+	ValidFrom         *time.Time `json:"valid_from,omitempty"`
+	ValidUntil        *time.Time `json:"valid_until,omitempty"`
+	TrafficLimitBytes int64      `json:"traffic_limit_bytes,omitempty"`
+	TrafficUsedBytes  int64      `json:"traffic_used_bytes,omitempty"`
+	Enabled           bool       `json:"enabled"`
 }
 
 // UsersFile is the root structure of the users JSON file.
