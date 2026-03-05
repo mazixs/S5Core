@@ -138,14 +138,18 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	// Read the version byte
 	var version [1]byte
 	if _, err := io.ReadFull(conn, version[:]); err != nil {
-		s.config.Logger.Error("socks: Failed to get version byte", "err", err)
+		if err == io.EOF {
+			s.config.Logger.Debug("socks: Connection closed before reading version byte", "err", err)
+		} else {
+			s.config.Logger.Debug("socks: Failed to get version byte", "err", err)
+		}
 		return err
 	}
 
 	// Ensure we are compatible
 	if version[0] != socks5Version {
 		err := fmt.Errorf("unsupported SOCKS version: %v", version)
-		s.config.Logger.Error("socks: unsupported SOCKS version", "version", version, "err", err)
+		s.config.Logger.Debug("socks: unsupported SOCKS version", "version", version, "err", err)
 		return err
 	}
 
@@ -153,7 +157,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	authContext, err := s.authenticate(conn, conn)
 	if err != nil {
 		err = fmt.Errorf("failed to authenticate: %v", err)
-		s.config.Logger.Error("socks: failed to authenticate", "err", err)
+		s.config.Logger.Debug("socks: failed to authenticate", "err", err)
 		return err
 	}
 
@@ -174,7 +178,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	// Process the client request
 	if err := s.handleRequest(request, conn); err != nil {
 		err = fmt.Errorf("failed to handle request: %v", err)
-		s.config.Logger.Error("socks: failed to handle request", "err", err)
+		s.config.Logger.Debug("socks: failed to handle request", "err", err)
 		return err
 	}
 
