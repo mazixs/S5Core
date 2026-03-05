@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -46,14 +45,6 @@ type conn struct {
 	readHdr  [4]byte // frame header
 	readBuf  []byte  // reusable frame read buffer
 	readRest []byte  // unconsumed payload from previous Read
-}
-
-// bufferPool for large frame buffers used in Read when readBuf is too small.
-var bufferPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 0, 2*1024*1024)
-		return &b
-	},
 }
 
 // NewConn wraps an existing net.Conn with obfuscation.
@@ -106,7 +97,7 @@ func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
 func (c *conn) randBytes(dst []byte) {
 	for len(dst) > 0 {
 		if c.randPos >= len(c.randBuf) {
-			io.ReadFull(rand.Reader, c.randBuf[:])
+			_, _ = io.ReadFull(rand.Reader, c.randBuf[:])
 			c.randPos = 0
 		}
 		n := copy(dst, c.randBuf[c.randPos:])
@@ -204,7 +195,9 @@ func (c *conn) Read(b []byte) (int, error) {
 	frameSize := binary.BigEndian.Uint32(c.readHdr[:])
 
 	// Sanity check frame size to prevent OOM
-	if frameSize > 2*1024*1024 {
+	// The maximum theoretical obfuscated frame size is around 66KB.
+	// Cap the buffer allocation at 128KB to prevent a memory allocation DoS.
+	if frameSize > 131072 {
 		return 0, fmt.Errorf("obfs: frame too large")
 	}
 
