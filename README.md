@@ -67,7 +67,9 @@ The following data is captured by our integration benchmarks that test raw TCP t
 | **Throughput (1MB Stream)** | ~400 – 500 MB/s | ~30 – 35 MB/s |
 | **Handshake Latency** | ~110 – 130 µs | ~160 – 190 µs |
 
-> **Note on Performance:** The obfuscation throughput of ~35 MB/s (approx 280 Mbps) is more than sufficient for modern VPS connections. The handshake overhead is virtually negligible (~50 microseconds difference) compared to real-world internet routing latency (20–100+ ms).
+> **Note on Performance:** The obfuscation throughput of ~35 MB/s (approx 280 Mbps) is more than sufficient for modern VPS connections. The handshake overhead is virtually negligible (~50 microseconds difference) compared to real-world internet routing latency (20-100+ ms).
+>
+> **Low-end VPS warning:** do not treat the microbenchmarks above as a proxy for real browsing through `tun2socks`. A weak VDS such as `1 vCPU / 1 GB RAM` is not recommended if you expect responsive surfing and minimal page-open latency with obfuscation enabled. Throughput can still look fine, but first-byte latency and site opening time may degrade noticeably because each new connection is wrapped in userspace encryption plus per-frame padding. If you must use a budget server, start by reducing `OBFS_MAX_PADDING`.
 
 #### Shannon Entropy (bits/byte)
 
@@ -403,10 +405,79 @@ proxychains4 -f /etc/proxychains-udp.conf dig @8.8.8.8 example.com
 
 ### Helper Scripts
 
-We provide practical bash scripts in the `scripts/` directory to help you test and manage the proxy:
+We provide practical helper scripts in the `scripts/` directory to help you test and manage the proxy:
 
 - **`check_proxy.sh`**: A comprehensive health-check script that automatically tests TCP connectivity, proxy authentication, retrieves IP Geo-information, checks Prometheus endpoints, and validates DNS resolution behavior.
 - **`vpn_test.sh`**: Creates a **full transparent VPN** using `tun2socks`. It intercepts all L3 traffic (TCP and UDP) on your system using a `tun0` interface, routes it to the local `s5client`, and encrypts it through the obfs tunnel to the server. This guarantees 100% protection against WebRTC, UDP, and DNS leaks without manual application configuration. Ensure you edit the config variables at the top of the scripts before running them!
+- **`s5vpn-win.ps1`**: Windows 11 full-tunnel wrapper around `tun2socks` and local `s5client`. It builds `s5client`, creates a Wintun adapter, routes all IPv4 traffic through the local SOCKS endpoint, keeps the obfuscated hop between `s5client` and `s5core:1443`, disables physical IPv6 during the session, and restores the original routes on `stop`.
+
+### Windows Full-Tunnel (`s5vpn-win.ps1`)
+
+Use this when you want all Windows traffic to go through:
+
+`apps -> Wintun -> tun2socks -> 127.0.0.1:1080 -> obfs -> s5core:1443`
+
+This mode is intended for anti-leak operation: DNS, WebRTC/UDP, and regular TCP traffic are forced into the local tunnel instead of relying on per-app proxy settings.
+
+#### Requirements
+
+1. Install `tun2socks` on Windows, for example with `winget`:
+   ```powershell
+   winget install xjasonlyu.tun2socks
+   ```
+2. Make sure `wintun.dll` is present next to `tun2socks.exe`, or set `WintunDll` manually in the script.
+3. Run PowerShell as Administrator.
+
+#### Configure the Script
+
+Edit only the config block at the top of [`scripts/s5vpn-win.ps1`](scripts/s5vpn-win.ps1):
+
+```powershell
+$Config = [ordered]@{
+    ServerHost        = "YOUR_SERVER_IP"
+    ServerPort        = 1443
+    ObfsPsk           = "YOUR_32_BYTE_PSK_REPLACE_ME_1234"
+    ObfsMaxPadding    = 256
+    ObfsMtu           = 1400
+    ProxyUser         = "YOUR_PROXY_USERNAME"
+    ProxyPass         = "YOUR_PROXY_PASSWORD"
+    ClientListenAddr  = "127.0.0.1:1080"
+    TunName           = "wintun"
+    TunIp             = "198.18.0.1"
+    TunPrefixLength   = 15
+    DnsServers        = @("1.1.1.1", "1.0.0.1")
+    DisableIPv6       = $true
+    RouteLanRanges    = $true
+    AutoBuildS5Client = $true
+    S5ClientExe       = (Join-Path $RepoRoot "build\s5client.exe")
+    Tun2SocksExe      = ""
+    WintunDll         = ""
+}
+```
+
+Notes:
+- Leave `Tun2SocksExe` empty to let the script auto-detect a `winget` installation.
+- Leave `WintunDll` empty if `wintun.dll` is already next to `tun2socks.exe`.
+- The `ObfsPsk` placeholder above is exactly 32 bytes long; replace it with your real PSK.
+
+#### Commands
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\s5vpn-win.ps1 start
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\s5vpn-win.ps1 status
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\s5vpn-win.ps1 test
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\s5vpn-win.ps1 stop
+```
+
+What the script does:
+- builds `s5client` from local source if needed;
+- starts local SOCKS on `127.0.0.1:1080`;
+- starts `tun2socks` on a Wintun adapter;
+- pins the route to your server outside the tunnel;
+- installs split default routes (`0.0.0.0/1` and `128.0.0.0/1`) so all other IPv4 traffic goes into the tunnel;
+- removes the ordinary default route during the session and restores it on `stop`.
+
+This keeps the obfuscation intact: `tun2socks` talks only to local `s5client`, and only `s5client` talks to the remote obfuscated port.
 
 ---
 
