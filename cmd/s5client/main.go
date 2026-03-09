@@ -180,11 +180,8 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 // socks5Handshake reads the SOCKS5 greeting and request from the client.
 // Returns the raw request bytes, the command type, parsed destination FQDN, and any error.
 func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string, err error) {
-	buf := make([]byte, 256)
-
-	// Read SOCKS5 greeting
-	n, err := clientConn.Read(buf)
-	if err != nil || n < 2 || buf[0] != 0x05 {
+	// Read SOCKS5 greeting exactly to avoid relying on packet boundaries.
+	if err := readSocks5Greeting(clientConn); err != nil {
 		return nil, 0, "", fmt.Errorf("invalid SOCKS5 greeting: %w", err)
 	}
 
@@ -193,27 +190,18 @@ func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string
 		return nil, 0, "", fmt.Errorf("failed to send greeting response: %w", err)
 	}
 
-	// Read SOCKS5 request
-	n, err = clientConn.Read(buf)
-	if err != nil || n < 7 {
+	// Read SOCKS5 request exactly to avoid partial-read stalls and truncation.
+	req, cmd, destFQDN, err = readSocks5Request(clientConn)
+	if err != nil {
 		return nil, 0, "", fmt.Errorf("invalid SOCKS5 request: %w", err)
 	}
 
-	cmd = buf[1]
 	if cmd != socks5.ConnectCommand && cmd != socks5.AssociateCommand {
 		_, _ = clientConn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
 		return nil, 0, "", fmt.Errorf("unsupported command: %d", cmd)
 	}
 
-	// Parse destination FQDN
-	if buf[3] == 0x03 {
-		domainLen := int(buf[4])
-		if n >= 5+domainLen+2 {
-			destFQDN = string(buf[5 : 5+domainLen])
-		}
-	}
-
-	return buf[:n], cmd, destFQDN, nil
+	return req, cmd, destFQDN, nil
 }
 
 // checkRouting verifies if the destination domain should be routed through the tunnel.
@@ -252,15 +240,21 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 		return nil, fmt.Errorf("failed to create obfs conn: %w", err)
 	}
 
-	// Send SOCKS5 greeting with supported auth methods
+	// Send SOCKS5 greeting with supported auth methods.
+	// In no-auth mode we can safely pipeline CONNECT behind the greeting
+	// and save one WAN RTT.
 	if cfg.ProxyUser != "" {
-		// Offer both no-auth and user/pass
+		// Offer both no-auth and user/pass to preserve compatibility with
+		// existing server configs.
 		if _, err := obfsConn.Write([]byte{0x05, 0x02, 0x00, 0x02}); err != nil {
 			obfsConn.Close()
 			return nil, fmt.Errorf("failed to send greeting: %w", err)
 		}
 	} else {
-		if _, err := obfsConn.Write([]byte{0x05, 0x01, 0x00}); err != nil {
+		pipelined := make([]byte, 0, 3+len(connectReq))
+		pipelined = append(pipelined, 0x05, 0x01, 0x00)
+		pipelined = append(pipelined, connectReq...)
+		if _, err := obfsConn.Write(pipelined); err != nil {
 			obfsConn.Close()
 			return nil, fmt.Errorf("failed to send greeting: %w", err)
 		}
@@ -276,6 +270,9 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	// Handle auth method selected by server
 	switch resp[1] {
 	case 0x00:
+		if cfg.ProxyUser == "" {
+			return obfsConn, nil
+		}
 		// No auth required — proceed
 	case 0x02:
 		// User/pass auth (RFC 1929)
@@ -283,10 +280,19 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 			obfsConn.Close()
 			return nil, fmt.Errorf("server requires auth but PROXY_USER not set")
 		}
-		if err := doUserPassAuth(obfsConn, cfg.ProxyUser, cfg.ProxyPass); err != nil {
+		authReq := buildUserPassAuthPacket(cfg.ProxyUser, cfg.ProxyPass)
+		pipelined := make([]byte, 0, len(authReq)+len(connectReq))
+		pipelined = append(pipelined, authReq...)
+		pipelined = append(pipelined, connectReq...)
+		if _, err := obfsConn.Write(pipelined); err != nil {
+			obfsConn.Close()
+			return nil, fmt.Errorf("failed to send auth: %w", err)
+		}
+		if err := readUserPassAuthResponse(obfsConn); err != nil {
 			obfsConn.Close()
 			return nil, err
 		}
+		return obfsConn, nil
 	case 0xFF:
 		obfsConn.Close()
 		return nil, fmt.Errorf("server rejected all auth methods")
@@ -304,8 +310,7 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	return obfsConn, nil
 }
 
-// doUserPassAuth performs RFC 1929 username/password authentication.
-func doUserPassAuth(conn net.Conn, user, pass string) error {
+func buildUserPassAuthPacket(user, pass string) []byte {
 	// Build auth request: [version(1)] [ulen(1)] [user] [plen(1)] [pass]
 	pkt := make([]byte, 0, 3+len(user)+len(pass))
 	pkt = append(pkt, 0x01)            // auth sub-negotiation version
@@ -313,12 +318,10 @@ func doUserPassAuth(conn net.Conn, user, pass string) error {
 	pkt = append(pkt, []byte(user)...) // username
 	pkt = append(pkt, byte(len(pass))) // password length
 	pkt = append(pkt, []byte(pass)...) // password
+	return pkt
+}
 
-	if _, err := conn.Write(pkt); err != nil {
-		return fmt.Errorf("failed to send auth: %w", err)
-	}
-
-	// Read response: [version(1)] [status(1)]
+func readUserPassAuthResponse(conn io.Reader) error {
 	var resp [2]byte
 	if _, err := io.ReadFull(conn, resp[:]); err != nil {
 		return fmt.Errorf("failed to read auth response: %w", err)
@@ -329,6 +332,78 @@ func doUserPassAuth(conn net.Conn, user, pass string) error {
 	}
 
 	return nil
+}
+
+func readSocks5Greeting(r io.Reader) error {
+	var header [2]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		return err
+	}
+	if header[0] != 0x05 {
+		return fmt.Errorf("unsupported SOCKS version: %d", header[0])
+	}
+
+	methodsLen := int(header[1])
+	if methodsLen == 0 {
+		return fmt.Errorf("no auth methods provided")
+	}
+
+	methods := make([]byte, methodsLen)
+	if _, err := io.ReadFull(r, methods); err != nil {
+		return err
+	}
+	return nil
+}
+
+func readSocks5Request(r io.Reader) ([]byte, byte, string, error) {
+	var header [4]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		return nil, 0, "", err
+	}
+	if header[0] != 0x05 {
+		return nil, 0, "", fmt.Errorf("unsupported SOCKS version: %d", header[0])
+	}
+
+	req := make([]byte, 0, 4+1+255+2)
+	req = append(req, header[:]...)
+
+	var addrPart []byte
+	var destFQDN string
+	switch header[3] {
+	case 0x01:
+		addrPart = make([]byte, 4)
+		if _, err := io.ReadFull(r, addrPart); err != nil {
+			return nil, 0, "", err
+		}
+	case 0x04:
+		addrPart = make([]byte, 16)
+		if _, err := io.ReadFull(r, addrPart); err != nil {
+			return nil, 0, "", err
+		}
+	case 0x03:
+		var domainLen [1]byte
+		if _, err := io.ReadFull(r, domainLen[:]); err != nil {
+			return nil, 0, "", err
+		}
+		addrPart = append(addrPart, domainLen[0])
+		domain := make([]byte, int(domainLen[0]))
+		if _, err := io.ReadFull(r, domain); err != nil {
+			return nil, 0, "", err
+		}
+		addrPart = append(addrPart, domain...)
+		destFQDN = string(domain)
+	default:
+		return nil, 0, "", fmt.Errorf("unsupported address type: %d", header[3])
+	}
+	req = append(req, addrPart...)
+
+	var port [2]byte
+	if _, err := io.ReadFull(r, port[:]); err != nil {
+		return nil, 0, "", err
+	}
+	req = append(req, port[:]...)
+
+	return req, header[1], destFQDN, nil
 }
 
 // matchDomain checks if FQDN matches any of the routing patterns.
