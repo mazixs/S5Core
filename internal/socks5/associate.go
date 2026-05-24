@@ -246,9 +246,23 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		return fmt.Errorf("failed to send reply: %v", err)
 	}
 
+	tunnelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	errCh := make(chan error, 2)
 	tcpConn := conn.(net.Conn)
 	_ = tcpConn.SetDeadline(time.Time{}) // Disable timeouts, this is a long-lived tunnel
+
+	// Helper to signal termination to both goroutines.
+	stopTunnel := func(e error) {
+		cancel()
+		_ = tcpConn.SetDeadline(time.Now()) // unblock reads/writes
+		udpConn.Close()
+		select {
+		case errCh <- e:
+		default:
+		}
+	}
 
 	// Mutex to serialize TCP writes from the UDP->TCP goroutine
 	var tcpWriteMu sync.Mutex
@@ -257,9 +271,18 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	go func() {
 		buf := make([]byte, 65535)
 		for {
+			select {
+			case <-tunnelCtx.Done():
+				return
+			default:
+			}
+
 			n, rAddr, err := udpConn.ReadFromUDP(buf)
 			if err != nil {
-				errCh <- fmt.Errorf("udp socket read error: %w", err)
+				if isTimeout(err) {
+					continue
+				}
+				stopTunnel(fmt.Errorf("udp socket read error: %w", err))
 				return
 			}
 
@@ -278,7 +301,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			_, err = tcpConn.Write(frame)
 			tcpWriteMu.Unlock()
 			if err != nil {
-				errCh <- fmt.Errorf("tcp write error: %w", err)
+				stopTunnel(fmt.Errorf("tcp write error: %w", err))
 				return
 			}
 		}
@@ -288,8 +311,17 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	go func() {
 		lenBuf := make([]byte, 2)
 		for {
+			select {
+			case <-tunnelCtx.Done():
+				return
+			default:
+			}
+
 			if _, err := io.ReadFull(tcpConn, lenBuf); err != nil {
-				errCh <- fmt.Errorf("tcp read length error: %w", err)
+				if tunnelCtx.Err() != nil {
+					return
+				}
+				stopTunnel(fmt.Errorf("tcp read length error: %w", err))
 				return
 			}
 
@@ -300,7 +332,10 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 
 			frameBuf := make([]byte, packetLen)
 			if _, err := io.ReadFull(tcpConn, frameBuf); err != nil {
-				errCh <- fmt.Errorf("tcp read frame error: %w", err)
+				if tunnelCtx.Err() != nil {
+					return
+				}
+				stopTunnel(fmt.Errorf("tcp read frame error: %w", err))
 				return
 			}
 

@@ -1,11 +1,12 @@
-ARG GOLANG_VERSION="1.25"
+ARG GOLANG_VERSION="1.26"
 
-FROM golang:$GOLANG_VERSION-alpine as builder
+FROM golang:${GOLANG_VERSION}-alpine AS builder
 RUN apk --no-cache add tzdata
 WORKDIR /go/src/github.com/mazixs/S5Core
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-s' -o ./S5Core ./cmd/s5core
 
 FROM gcr.io/distroless/static:nonroot
-COPY --from=builder /go/src/github.com/mazixs/S5Core/S5Core /
+USER nonroot:nonroot
+COPY --from=builder --chown=nonroot:nonroot /go/src/github.com/mazixs/S5Core/S5Core /
 ENTRYPOINT ["/S5Core"]

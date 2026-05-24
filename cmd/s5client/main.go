@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,15 @@ import (
 	"github.com/caarlos0/env/v11"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
+)
+
+const (
+	socks5Ver           = 0x05
+	socks5Success       = 0x00
+	socks5NoAuth        = 0x00
+	socks5UserPassAuth  = 0x02
+	socks5CmdNotSup     = 0x07
+	socks5GenFailure    = 0x01
 )
 
 type clientParams struct {
@@ -92,7 +102,7 @@ func main() {
 	for {
 		clientConn, err := listener.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), "use of closed") {
+			if errors.Is(err, net.ErrClosed) {
 				break
 			}
 			slog.Error("Accept error", "error", err)
@@ -130,7 +140,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	obfsConn, err := dialObfsTunnel(cfg, wireReq)
 	if err != nil {
 		slog.Error("Tunnel setup failed", "error", err, "server", cfg.ServerAddr)
-		clientConn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
+		clientConn.Write([]byte{socks5Ver, socks5CmdNotSup, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
 		return
 	}
 	defer obfsConn.Close()
@@ -186,7 +196,7 @@ func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string
 	}
 
 	// Respond: no auth required locally
-	if _, err := clientConn.Write([]byte{0x05, 0x00}); err != nil {
+	if _, err := clientConn.Write([]byte{socks5Ver, socks5Success}); err != nil {
 		return nil, 0, "", fmt.Errorf("failed to send greeting response: %w", err)
 	}
 
@@ -197,7 +207,7 @@ func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string
 	}
 
 	if cmd != socks5.ConnectCommand && cmd != socks5.AssociateCommand {
-		_, _ = clientConn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
+		_, _ = clientConn.Write([]byte{socks5Ver, socks5CmdNotSup, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // Command not supported
 		return nil, 0, "", fmt.Errorf("unsupported command: %d", cmd)
 	}
 
@@ -216,7 +226,7 @@ func checkRouting(clientConn net.Conn, destFQDN string, routePatterns []string) 
 	}
 
 	slog.Info("Domain not in route list, rejecting", "domain", destFQDN)
-	clientConn.Write([]byte{0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
+	clientConn.Write([]byte{socks5Ver, socks5UserPassAuth, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
 	return false
 }
 
@@ -246,13 +256,13 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	if cfg.ProxyUser != "" {
 		// Offer both no-auth and user/pass to preserve compatibility with
 		// existing server configs.
-		if _, err := obfsConn.Write([]byte{0x05, 0x02, 0x00, 0x02}); err != nil {
+		if _, err := obfsConn.Write([]byte{socks5Ver, socks5UserPassAuth, 0x00, 0x02}); err != nil {
 			obfsConn.Close()
 			return nil, fmt.Errorf("failed to send greeting: %w", err)
 		}
 	} else {
 		pipelined := make([]byte, 0, 3+len(connectReq))
-		pipelined = append(pipelined, 0x05, 0x01, 0x00)
+		pipelined = append(pipelined, socks5Ver, 0x01, socks5NoAuth)
 		pipelined = append(pipelined, connectReq...)
 		if _, err := obfsConn.Write(pipelined); err != nil {
 			obfsConn.Close()

@@ -43,7 +43,7 @@ func (a NoAuthAuthenticator) GetCode() uint8 {
 }
 
 func (a NoAuthAuthenticator) Authenticate(reader io.Reader, writer io.Writer) (*AuthContext, error) {
-	_, err := writer.Write([]byte{socks5Version, NoAuth})
+	_, err := writer.Write([]byte{Socks5Version, NoAuth})
 	return &AuthContext{NoAuth, nil}, err
 }
 
@@ -59,7 +59,7 @@ func (a UserPassAuthenticator) GetCode() uint8 {
 
 func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) (*AuthContext, error) {
 	// Tell the client to use user/pass auth
-	if _, err := writer.Write([]byte{socks5Version, UserPassAuth}); err != nil {
+	if _, err := writer.Write([]byte{Socks5Version, UserPassAuth}); err != nil {
 		return nil, err
 	}
 
@@ -134,7 +134,7 @@ func (s *Server) authenticate(conn io.Writer, bufConn io.Reader) (*AuthContext, 
 // noAcceptableAuth is used to handle when we have no eligible
 // authentication mechanism
 func noAcceptableAuth(conn io.Writer) error {
-	_, _ = conn.Write([]byte{socks5Version, noAcceptable})
+	_, _ = conn.Write([]byte{Socks5Version, noAcceptable})
 	return ErrNoSupportedAuth
 }
 

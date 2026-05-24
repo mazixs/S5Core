@@ -25,7 +25,11 @@ TUN_NAME="tun0"
 TUN_IP="198.18.0.1"
 TUN_NET="198.18.0.0/15"
 
-TUN2SOCKS_BIN="${HOME}/go/bin/tun2socks"  # Or the path where you installed tun2socks
+# Determine original (non-root) user's HOME even under sudo
+ORIG_USER="${SUDO_USER:-$USER}"
+ORIG_HOME="$(getent passwd "$ORIG_USER" | cut -d: -f6)"
+
+TUN2SOCKS_BIN="${ORIG_HOME}/go/bin/tun2socks"  # Or the path where you installed tun2socks
 TUN2SOCKS_PID="/tmp/s5core_tun2socks.pid"
 S5CLIENT_PID="/tmp/s5core_s5client.pid"
 # ================================

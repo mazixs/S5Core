@@ -108,6 +108,43 @@ func (l *mockListener) Accept() (net.Conn, error) {
 func (l *mockListener) Close() error   { close(l.conns); return nil }
 func (l *mockListener) Addr() net.Addr { return nil }
 
+func TestFail2BanStoreConcurrent(t *testing.T) {
+	mockStore := socks5.StaticCredentials{
+		"admin": "secret",
+	}
+
+	maxRetries := 3
+	banTime := 100 * time.Millisecond
+	f2b := newFail2banStore(mockStore, maxRetries, banTime, nil)
+
+	// Concurrent failed attempts from multiple goroutines
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func() {
+			for j := 0; j < maxRetries; j++ {
+				f2b.Valid("admin", "wrong")
+			}
+			done <- struct{}{}
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// User should be banned
+	if f2b.Valid("admin", "secret") {
+		t.Error("Expected user to be banned after concurrent failures")
+	}
+
+	// Wait for ban to expire
+	time.Sleep(banTime + 20*time.Millisecond)
+
+	if !f2b.Valid("admin", "secret") {
+		t.Error("Expected user to be unbanned and login successfully")
+	}
+}
+
 func TestCustomListenerWhitelist(t *testing.T) {
 	ml := &mockListener{conns: make(chan net.Conn, 2)}
 

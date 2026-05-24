@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -390,4 +391,93 @@ func TestStore_FlushTraffic(t *testing.T) {
 	if delta != 0 {
 		t.Errorf("after flush trafficDelta = %d, want 0", delta)
 	}
+}
+
+func TestCredentialAdapter_LazyMigration(t *testing.T) {
+	users := []UserAccount{
+		{ID: "u-001", Username: "alice", Password: "pass", Enabled: true},
+	}
+	path := createTestFile(t, users)
+	s := NewStore(nil)
+	if err := s.LoadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewCredentialAdapter(s)
+
+	// First valid login triggers migration
+	if !adapter.Valid("alice", "pass") {
+		t.Fatal("adapter.Valid should return true for valid creds")
+	}
+
+	// Password should now be hashed
+	acc, _ := s.Lookup("alice")
+	if acc.PasswordHash == "" {
+		t.Error("PasswordHash should be set after migration")
+	}
+	if acc.Password != "" {
+		t.Error("Plaintext Password should be cleared after migration")
+	}
+
+	// Second login should work with hash
+	if !adapter.Valid("alice", "pass") {
+		t.Error("adapter.Valid should still work after migration")
+	}
+}
+
+func TestCredentialAdapter_Argon2idUser(t *testing.T) {
+	// Pre-hashed user (simulating already-migrated user)
+	users := []UserAccount{
+		{ID: "u-001", Username: "alice", PasswordHash: "$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", Enabled: true},
+	}
+	path := createTestFile(t, users)
+	s := NewStore(nil)
+	if err := s.LoadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+
+	// This should fail because the hash is invalid (base64 decode will produce wrong length)
+	// But it should not panic
+	adapter := NewCredentialAdapter(s)
+	if adapter.Valid("alice", "pass") {
+		t.Error("adapter.Valid should return false for invalid hash")
+	}
+}
+
+func TestStore_LoadFromFile_TooLarge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "users.json")
+	// Create a file slightly over the limit
+	data := make([]byte, maxUsersFileSize+1)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewStore(nil)
+	err := s.LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error for oversized file")
+	}
+	if !strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("expected 'exceeds limit' in error, got: %v", err)
+	}
+}
+
+func TestStore_PeriodicFlush_DoubleStartStop(t *testing.T) {
+	users := []UserAccount{
+		{ID: "u-001", Username: "alice", Password: "pass", Enabled: true},
+	}
+	path := createTestFile(t, users)
+	s := NewStore(nil)
+	if err := s.LoadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+
+	// Double start should be a no-op
+	s.StartPeriodicFlush(path, 100*time.Millisecond)
+	s.StartPeriodicFlush(path, 100*time.Millisecond)
+
+	// Double stop should not panic
+	s.StopPeriodicFlush()
+	s.StopPeriodicFlush()
 }

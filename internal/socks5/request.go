@@ -97,7 +97,7 @@ func NewRequest(conn io.Reader) (*Request, error) {
 	}
 
 	// Ensure we are compatible
-	if header[0] != socks5Version {
+	if header[0] != Socks5Version {
 		return nil, fmt.Errorf("unsupported command version: %v", header[0])
 	}
 
@@ -108,7 +108,7 @@ func NewRequest(conn io.Reader) (*Request, error) {
 	}
 
 	request := &Request{
-		Version:  socks5Version,
+		Version:  Socks5Version,
 		Command:  header[1],
 		DestAddr: dest,
 		bufConn:  conn,
@@ -118,9 +118,7 @@ func NewRequest(conn io.Reader) (*Request, error) {
 }
 
 // handleRequest is used for request processing after authentication
-func (s *Server) handleRequest(req *Request, conn conn) error {
-	ctx := context.Background()
-
+func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) error {
 	// Resolve the address if we have a FQDN
 	dest := req.DestAddr
 	if dest.FQDN != "" {
@@ -207,10 +205,11 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	username := extractUsername(req)
 
 	// Start proxying
+	proxyCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	errCh := make(chan error, 2)
 	if s.config.TrafficCallback != nil && username != "" {
-		// Resolve the atomic counter once, before the hot loop.
-		// This avoids map lookups and RLock on every chunk.
 		counter := s.config.TrafficCounter(username)
 		if counter != nil {
 			go proxyWithTraffic(target, req.bufConn, errCh, counter)
@@ -224,15 +223,24 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		go proxy(conn, target, errCh)
 	}
 
-	// Wait
+	// Wait for either side to finish
+	var firstErr error
 	for i := 0; i < 2; i++ {
-		e := <-errCh
-		if e != nil {
-			// return from this function closes target (and conn).
-			return e
+		select {
+		case e := <-errCh:
+			if e != nil && firstErr == nil {
+				firstErr = e
+				cancel()
+				// Force-close connections to unblock the other goroutine
+				_ = target.Close()
+				if nc, ok := conn.(net.Conn); ok {
+					_ = nc.Close()
+				}
+			}
+		case <-proxyCtx.Done():
 		}
 	}
-	return nil
+	return firstErr
 }
 
 // handleBind is used to handle a connect command
@@ -267,18 +275,18 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	// Handle on a per type basis
 	switch addrType[0] {
 	case ipv4Address:
-		addr := make([]byte, 4)
-		if _, err := io.ReadFull(r, addr); err != nil {
+		var addr [4]byte
+		if _, err := io.ReadFull(r, addr[:]); err != nil {
 			return nil, err
 		}
-		d.IP = net.IP(addr)
+		d.IP = net.IP(addr[:])
 
 	case ipv6Address:
-		addr := make([]byte, 16)
-		if _, err := io.ReadFull(r, addr); err != nil {
+		var addr [16]byte
+		if _, err := io.ReadFull(r, addr[:]); err != nil {
 			return nil, err
 		}
-		d.IP = net.IP(addr)
+		d.IP = net.IP(addr[:])
 
 	case fqdnAddress:
 		if _, err := io.ReadFull(r, addrType[:]); err != nil {
@@ -338,7 +346,7 @@ func sendReply(w io.Writer, resp uint8, addr *AddrSpec) error {
 
 	// Format the message
 	var msg [260]byte
-	msg[0] = socks5Version
+	msg[0] = Socks5Version
 	msg[1] = resp
 	msg[2] = 0 // Reserved
 	msg[3] = addrType
@@ -372,7 +380,10 @@ func proxy(dst io.Writer, src io.Reader, errCh chan error) {
 	if tcpConn, ok := dst.(closeWriter); ok {
 		_ = tcpConn.CloseWrite()
 	}
-	errCh <- err
+	select {
+	case errCh <- err:
+	default:
+	}
 }
 
 // proxyWithTraffic is like proxy but also atomically increments a
@@ -393,7 +404,10 @@ func proxyWithTraffic(dst io.Writer, src io.Reader, errCh chan error, counter *a
 		if tcpConn, ok := dst.(closeWriter); ok {
 			_ = tcpConn.CloseWrite()
 		}
-		errCh <- e
+		select {
+		case errCh <- e:
+		default:
+		}
 	}
 
 	for {

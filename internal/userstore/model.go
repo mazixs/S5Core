@@ -7,7 +7,8 @@ import "time"
 type UserAccount struct {
 	ID                string     `json:"id"`
 	Username          string     `json:"username"`
-	Password          string     `json:"password"`
+	Password          string     `json:"password,omitempty"`      // Deprecated: use PasswordHash
+	PasswordHash      string     `json:"password_hash,omitempty"` // Argon2id PHC hash
 	Comment           string     `json:"comment,omitempty"`
 	ValidFrom         *time.Time `json:"valid_from,omitempty"`
 	ValidUntil        *time.Time `json:"valid_until,omitempty"`

@@ -105,7 +105,7 @@ By defining an optional `USERS_FILE`, you can enable multi-account support with 
     {
       "id": "u-001",
       "username": "premium_user",
-      "password": "secure123",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=1$...",
       "comment": "100GB limit, expires in 2027",
       "valid_until": "2027-01-01T00:00:00Z",
       "traffic_limit_bytes": 107374182400,
@@ -115,12 +115,14 @@ By defining an optional `USERS_FILE`, you can enable multi-account support with 
     {
       "id": "u-002",
       "username": "unlimited_user",
-      "password": "anotherpassword",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=1$...",
       "enabled": true
     }
   ]
 }
 ```
+
+> **Security:** Passwords are stored as **Argon2id** hashes. Plaintext `password` fields are supported for backward compatibility but are automatically migrated to hashes on the first successful login.
 
 > **Hot Reloading:** Send `SIGHUP` to the S5Core process to reload `users.json` on the fly without dropping connections! Traffic metrics are preserved and merged during reload.
 
@@ -224,6 +226,7 @@ When running the standalone binary or Docker image, configuration is entirely dr
 | `FAIL2BAN_TIME` | Duration | `5m` | How long a user/IP is banned after failing authentication. |
 | `TRAFFIC_FLUSH_INTERVAL` | Duration | `30s` | Interval to flush user traffic metrics to disk (if `USERS_FILE` is used). |
 | `METRICS_PORT` | String | `8080` | Port to expose OpenTelemetry/Prometheus `/metrics` and `/health` endpoints. |
+| `METRICS_BIND_ADDR` | String | `127.0.0.1` | Bind address for the metrics endpoint. **Warning:** do not expose to the public internet without a reverse proxy or firewall. Set to `0.0.0.0` only inside a trusted network or VPN. |
 | `OBFS_ENABLED` | Boolean | `false` | Enable traffic obfuscation on a separate port. |
 | `OBFS_PORT` | String | `1443` | Separate port for obfuscated connections from `s5client`. |
 | `OBFS_PSK` | String | *Empty* | Pre-shared key for obfuscation. **Must be exactly 32 bytes.** |
@@ -296,7 +299,7 @@ ROUTE_DOMAINS="*.google.com,*.youtube.com" \
 docker run -d \
   --name s5core \
   -p 1080:1080 \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -e PROXY_USER=myuser \
   -e PROXY_PASSWORD=supersecure \
   -e ALLOWED_IPS=192.168.1.10,10.0.0.5 \
@@ -353,6 +356,8 @@ Available metrics:
 - `s5core_traffic_bytes_out` (Counter): Total volume of outgoing traffic in bytes (TCP + UDP).
 
 > **Note:** UDP traffic flowing through the standard UDP Associate relay is tracked with batched counters (flushed every 1 MB) to minimize performance overhead. UDP traffic tunneled via `s5client` (command `0x83`) is automatically counted as TCP bytes since it flows through the obfuscated TCP connection.
+
+> **Security Warning:** By default, the metrics endpoint binds to `127.0.0.1:8080` and is not exposed outside the host. If you change `METRICS_BIND_ADDR` to `0.0.0.0`, ensure the port is protected by a firewall, VPN, or reverse proxy with authentication. The `/metrics` endpoint may reveal internal counters and connection details.
 
 You can also use `http://<IP>:8080/health` as a readiness/liveness probe for your orchestration systems (e.g., Kubernetes).
 
