@@ -1,6 +1,8 @@
 module github.com/mazixs/S5Core
 
-go 1.25.0
+go 1.26
+
+toolchain go1.26.3
 
 require (
 	github.com/caarlos0/env/v11 v11.4.0
@@ -9,6 +11,7 @@ require (
 	go.opentelemetry.io/otel/exporters/prometheus v0.62.0
 	go.opentelemetry.io/otel/metric v1.40.0
 	go.opentelemetry.io/otel/sdk/metric v1.40.0
+	golang.org/x/crypto v0.48.0
 	golang.org/x/net v0.51.0
 )
 

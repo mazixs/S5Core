@@ -14,6 +14,10 @@ import (
 // DefaultMTU is the default maximum frame size on the wire.
 const DefaultMTU = 1400
 
+// MinMTU is the smallest acceptable MTU. It must accommodate the 4-byte
+// frame header, 12-byte nonce, 16-byte GCM tag, and a 4-byte minimum payload.
+const MinMTU = 64
+
 // Config holds the configuration for the obfuscation layer.
 type Config struct {
 	// PSK is the pre-shared key for AES-GCM encryption (must be 32 bytes for AES-256).
@@ -23,6 +27,9 @@ type Config struct {
 	// MTU is the maximum transmission unit for obfuscated frames.
 	// If zero, DefaultMTU (1400) is used.
 	MTU int
+	// ReplayWindow is the number of recent nonces to remember per connection
+	// for replay protection. Zero disables replay protection.
+	ReplayWindow int
 }
 
 // conn is the obfuscation wrapper around net.Conn.
@@ -45,6 +52,9 @@ type conn struct {
 	readHdr  [4]byte // frame header
 	readBuf  []byte  // reusable frame read buffer
 	readRest []byte  // unconsumed payload from previous Read
+
+	// Replay protection (per-connection, single reader goroutine — no mutex needed)
+	replay *replayWindow
 }
 
 // NewConn wraps an existing net.Conn with obfuscation.
@@ -87,6 +97,7 @@ func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
 		nonce:    make([]byte, nonceSize),
 		readBuf:  make([]byte, readBufSize),
 		randPos:  4096, // force fill on first use
+		replay:   newReplayWindow(cfg.ReplayWindow),
 	}
 
 	return oc, nil
@@ -225,6 +236,11 @@ func (c *conn) Read(b []byte) (int, error) {
 	plaintext, err := c.aead.Open(ciphertextBytes[:0], nonce, ciphertextBytes, nil)
 	if err != nil {
 		return 0, fmt.Errorf("obfs: failed to decrypt: %w", err)
+	}
+
+	// Replay protection: check nonce only after successful AEAD verification
+	if !c.replay.checkAndAdd(nonce) {
+		return 0, fmt.Errorf("obfs: replay detected")
 	}
 
 	if len(plaintext) < 4 {

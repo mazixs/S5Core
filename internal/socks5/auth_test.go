@@ -21,7 +21,7 @@ func TestNoAuth(t *testing.T) {
 	}
 
 	out := resp.Bytes()
-	if !bytes.Equal(out, []byte{socks5Version, NoAuth}) {
+	if !bytes.Equal(out, []byte{Socks5Version, NoAuth}) {
 		t.Fatalf("bad: %v", out)
 	}
 }
@@ -59,7 +59,7 @@ func TestPasswordAuth_Valid(t *testing.T) {
 	}
 
 	out := resp.Bytes()
-	if !bytes.Equal(out, []byte{socks5Version, UserPassAuth, 1, authSuccess}) {
+	if !bytes.Equal(out, []byte{Socks5Version, UserPassAuth, 1, authSuccess}) {
 		t.Fatalf("bad: %v", out)
 	}
 }
@@ -86,7 +86,7 @@ func TestPasswordAuth_Invalid(t *testing.T) {
 	}
 
 	out := resp.Bytes()
-	if !bytes.Equal(out, []byte{socks5Version, UserPassAuth, 1, authFailure}) {
+	if !bytes.Equal(out, []byte{Socks5Version, UserPassAuth, 1, authFailure}) {
 		t.Fatalf("bad: %v", out)
 	}
 }
@@ -113,7 +113,7 @@ func TestNoSupportedAuth(t *testing.T) {
 	}
 
 	out := resp.Bytes()
-	if !bytes.Equal(out, []byte{socks5Version, noAcceptable}) {
+	if !bytes.Equal(out, []byte{Socks5Version, noAcceptable}) {
 		t.Fatalf("bad: %v", out)
 	}
 }

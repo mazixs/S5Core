@@ -88,11 +88,12 @@ type Config struct {
 	Telemetry       *Telemetry // Optional custom telemetry
 
 	// Obfuscation settings
-	ObfsEnabled    bool
-	ObfsPort       string // Separate port for obfuscated connections
-	ObfsPSK        string
-	ObfsMaxPadding int
-	ObfsMTU        int
+	ObfsEnabled      bool
+	ObfsPort         string // Separate port for obfuscated connections
+	ObfsPSK          string
+	ObfsMaxPadding   int
+	ObfsMTU          int
+	ObfsReplayWindow int // Per-connection nonce replay window (0 = disabled)
 
 	// Multi-account settings
 	UsersFile            string        // Path to JSON file with user accounts
@@ -102,15 +103,35 @@ type Config struct {
 // DefaultConfig returns a configuration with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Port:            "1080",
-		ListenIP:        "0.0.0.0",
-		RequireAuth:     true,
-		ReadTimeout:     30 * time.Second,
-		WriteTimeout:    30 * time.Second,
-		MaxConnections:  10000,
-		Fail2BanRetries: 5,
-		Fail2BanTime:    5 * time.Minute,
+		Port:             "1080",
+		ListenIP:         "0.0.0.0",
+		RequireAuth:      true,
+		ReadTimeout:      30 * time.Second,
+		WriteTimeout:     30 * time.Second,
+		MaxConnections:   10000,
+		Fail2BanRetries:  5,
+		Fail2BanTime:     5 * time.Minute,
+		ObfsReplayWindow: 2048,
 	}
+}
+
+// ValidateConfig checks that the configuration is valid before starting the server.
+func ValidateConfig(cfg Config) error {
+	if cfg.ObfsEnabled {
+		if len(cfg.ObfsPSK) != 32 {
+			return fmt.Errorf("OBFS_PSK must be exactly 32 bytes, got %d", len(cfg.ObfsPSK))
+		}
+		if cfg.ObfsMaxPadding < 0 {
+			return fmt.Errorf("OBFS_MAX_PADDING must be >= 0, got %d", cfg.ObfsMaxPadding)
+		}
+		if cfg.ObfsMTU < 0 {
+			return fmt.Errorf("OBFS_MTU must be > 0, got %d", cfg.ObfsMTU)
+		}
+		if cfg.ObfsMTU > 0 && cfg.ObfsMTU < obfs.MinMTU {
+			return fmt.Errorf("OBFS_MTU must be >= %d, got %d", obfs.MinMTU, cfg.ObfsMTU)
+		}
+	}
+	return nil
 }
 
 // timeoutConn wraps a net.Conn with read and write timeouts.
@@ -251,45 +272,34 @@ func newFail2banStore(store socks5.CredentialStore, maxRetries int, banTime time
 }
 
 func (s *fail2banStore) Valid(user, password string) bool {
-	s.mu.RLock()
-	banExpiry, isBanned := s.banned[user]
-	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if isBanned {
-		if time.Now().Before(banExpiry) {
+	now := time.Now()
+
+	if banExpiry, isBanned := s.banned[user]; isBanned {
+		if now.Before(banExpiry) {
 			if s.telemetry != nil {
 				s.telemetry.AuthFailures.Add(context.Background(), 1)
 			}
 			return false
 		}
-		s.mu.Lock()
 		delete(s.banned, user)
 		delete(s.failures, user)
-		s.mu.Unlock()
 	}
 
 	valid := s.store.Valid(user, password)
 
 	if !valid {
-		s.mu.Lock()
 		s.failures[user]++
 		if s.failures[user] >= s.maxRetries {
-			s.banned[user] = time.Now().Add(s.banTime)
+			s.banned[user] = now.Add(s.banTime)
 		}
-		s.mu.Unlock()
 		if s.telemetry != nil {
 			s.telemetry.AuthFailures.Add(context.Background(), 1)
 		}
 	} else {
-		s.mu.RLock()
-		failures := s.failures[user]
-		s.mu.RUnlock()
-
-		if failures > 0 {
-			s.mu.Lock()
-			delete(s.failures, user)
-			s.mu.Unlock()
-		}
+		delete(s.failures, user)
 	}
 
 	return valid
@@ -372,9 +382,10 @@ func (l *serverListener) Accept() (net.Conn, error) {
 // obfsListener wraps a serverListener and applies obfuscation to accepted connections.
 type obfsListener struct {
 	*serverListener
-	psk        []byte
-	maxPadding int
-	mtu        int
+	psk           []byte
+	maxPadding    int
+	mtu           int
+	replayWindow  int
 }
 
 func (ol *obfsListener) Accept() (net.Conn, error) {
@@ -385,9 +396,10 @@ func (ol *obfsListener) Accept() (net.Conn, error) {
 	}
 
 	cfg := obfs.Config{
-		PSK:        ol.psk,
-		MaxPadding: ol.maxPadding,
-		MTU:        ol.mtu,
+		PSK:          ol.psk,
+		MaxPadding:   ol.maxPadding,
+		MTU:          ol.mtu,
+		ReplayWindow: ol.replayWindow,
 	}
 
 	obfsConn, err := obfs.NewConn(conn, cfg)

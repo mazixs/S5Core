@@ -8,3 +8,6 @@ services:
     ports:
       - "1080:1080"
       - "1443:1443"
+      # Metrics exposed on localhost only by default.
+      # Change METRICS_BIND_ADDR in .env to 0.0.0.0:8080 for external scraping.
+      - "127.0.0.1:8080:8080"

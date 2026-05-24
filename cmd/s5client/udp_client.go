@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync/atomic"
 )
 
 // handleUDPAssociate handles the client side of UDP Associate.
@@ -38,7 +39,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		slog.Error("Failed to bind local UDP socket", "error", err)
-		_, _ = clientConn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // General failure
+		_, _ = clientConn.Write([]byte{socks5Ver, socks5GenFailure, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // General failure
 		return
 	}
 	defer udpConn.Close()
@@ -79,8 +80,8 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 	slog.Info("UDP Tunnel established", "local_udp", boundAddr.String())
 
 	// 4. Multiplexing Loop
-	errCh := make(chan error, 2)
-	clientUDPAddr := &net.UDPAddr{} // We learn this from the first incoming packet
+	errCh := make(chan error, 3)
+	var clientUDPAddr atomic.Pointer[net.UDPAddr]
 
 	// Go routine A: Read from application (UDP) -> write to obfsConn (TCP)
 	go func() {
@@ -97,7 +98,15 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 			if rAddr.IP.String() != appIP {
 				continue // Drop packets from strangers
 			}
-			clientUDPAddr = rAddr
+
+			// Deep copy to avoid aliasing the reusable buffer
+			addrCopy := &net.UDPAddr{
+				IP:   make(net.IP, len(rAddr.IP)),
+				Port: rAddr.Port,
+				Zone: rAddr.Zone,
+			}
+			copy(addrCopy.IP, rAddr.IP)
+			clientUDPAddr.Store(addrCopy)
 
 			// The packet from the application MUST start with a SOCKS5 UDP header
 			// We just tunnel this entire frame verbatim inside length-prefixed TCP
@@ -135,12 +144,13 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 			}
 
 			// Must know where the client is to send UDP back
-			if clientUDPAddr.IP == nil {
+			addr := clientUDPAddr.Load()
+			if addr == nil || addr.IP == nil {
 				slog.Warn("Dropping returning UDP packet because client address unknown")
 				continue
 			}
 
-			if _, err := udpConn.WriteToUDP(frameBuf, clientUDPAddr); err != nil {
+			if _, err := udpConn.WriteToUDP(frameBuf, addr); err != nil {
 				slog.Warn("Failed to send UDP packet to application", "error", err)
 			}
 		}

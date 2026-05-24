@@ -32,14 +32,16 @@ type params struct {
 	WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" envDefault:"30s"`
 	MaxConnections  int           `env:"MAX_CONNECTIONS" envDefault:"10000"`
 	MetricsPort     string        `env:"METRICS_PORT" envDefault:"8080"`
+	MetricsBindAddr string        `env:"METRICS_BIND_ADDR" envDefault:"127.0.0.1"`
 	Fail2BanRetries int           `env:"FAIL2BAN_RETRIES" envDefault:"5"`
 	Fail2BanTime    time.Duration `env:"FAIL2BAN_TIME" envDefault:"5m"`
 	ObfsEnabled     bool          `env:"OBFS_ENABLED" envDefault:"false"`
 	ObfsPort        string        `env:"OBFS_PORT" envDefault:"1443"`
 	ObfsPSK         string        `env:"OBFS_PSK" envDefault:""`
-	ObfsMaxPadding  int           `env:"OBFS_MAX_PADDING" envDefault:"256"`
-	ObfsMTU         int           `env:"OBFS_MTU" envDefault:"1400"`
-	UsersFile       string        `env:"USERS_FILE" envDefault:""`
+	ObfsMaxPadding   int           `env:"OBFS_MAX_PADDING" envDefault:"256"`
+	ObfsMTU          int           `env:"OBFS_MTU" envDefault:"1400"`
+	ObfsReplayWindow int           `env:"OBFS_REPLAY_WINDOW" envDefault:"2048"`
+	UsersFile        string        `env:"USERS_FILE" envDefault:""`
 	TrafficFlush    time.Duration `env:"TRAFFIC_FLUSH_INTERVAL" envDefault:"60s"`
 }
 
@@ -76,7 +78,7 @@ func main() {
 
 	// Start metrics server (Legacy Prometheus endpoint)
 	if cfg.MetricsPort != "" {
-		go startMetricsServer(ctx, cfg.ListenIP, cfg.MetricsPort)
+		go startMetricsServer(ctx, cfg.MetricsBindAddr, cfg.MetricsPort)
 	}
 
 	if err := srv.Start(ctx); err != nil {
@@ -114,6 +116,7 @@ func setupServer(cfg params, telemetry *s5server.Telemetry) (*s5server.Server, e
 		ObfsPSK:              cfg.ObfsPSK,
 		ObfsMaxPadding:       cfg.ObfsMaxPadding,
 		ObfsMTU:              cfg.ObfsMTU,
+		ObfsReplayWindow:     cfg.ObfsReplayWindow,
 		UsersFile:            cfg.UsersFile,
 		TrafficFlushInterval: cfg.TrafficFlush,
 	}

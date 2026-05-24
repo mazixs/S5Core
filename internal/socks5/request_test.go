@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"log/slog"
@@ -72,7 +73,7 @@ func TestRequest_Connect(t *testing.T) {
 		t.Errorf("err: %v", err)
 	}
 
-	if err := s.handleRequest(req, resp); err != nil {
+	if err := s.handleRequest(context.Background(), req, resp); err != nil {
 		t.Errorf("err: %v", err)
 	}
 
@@ -147,7 +148,7 @@ func TestRequest_Connect_RuleFail(t *testing.T) {
 		t.Errorf("err: %v", err)
 	}
 
-	if err := s.handleRequest(req, resp); !strings.Contains(err.Error(), "blocked by rules") {
+	if err := s.handleRequest(context.Background(), req, resp); !strings.Contains(err.Error(), "blocked by rules") {
 		t.Errorf("err: %v", err)
 	}
 

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	socks5Version = uint8(5)
+	Socks5Version = uint8(5)
 )
 
 // Config is used to setup and configure a Server
@@ -120,19 +120,31 @@ func (s *Server) ListenAndServe(network, addr string) error {
 	return s.Serve(l)
 }
 
-// Serve is used to serve connections from a listener
+// Serve is used to serve connections from a listener with a background context.
+// Deprecated: use ServeContext to pass a proper context for cancellation.
 func (s *Server) Serve(l net.Listener) error {
+	return s.ServeContext(context.Background(), l)
+}
+
+// ServeContext is used to serve connections from a listener with the given context.
+func (s *Server) ServeContext(ctx context.Context, l net.Listener) error {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			return err
 		}
-		go func(c net.Conn) { _ = s.ServeConn(c) }(conn)
+		go func(c net.Conn) { _ = s.ServeConnContext(ctx, c) }(conn)
 	}
 }
 
-// ServeConn is used to serve a single connection.
+// ServeConn is used to serve a single connection with a background context.
+// Deprecated: use ServeConnContext to pass a proper context for cancellation.
 func (s *Server) ServeConn(conn net.Conn) error {
+	return s.ServeConnContext(context.Background(), conn)
+}
+
+// ServeConnContext is used to serve a single connection with the given context.
+func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
 
 	// Read the version byte
@@ -147,7 +159,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	}
 
 	// Ensure we are compatible
-	if version[0] != socks5Version {
+	if version[0] != Socks5Version {
 		err := fmt.Errorf("unsupported SOCKS version: %v", version)
 		s.config.Logger.Debug("socks: unsupported SOCKS version", "version", version, "err", err)
 		return err
@@ -176,7 +188,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	}
 
 	// Process the client request
-	if err := s.handleRequest(request, conn); err != nil {
+	if err := s.handleRequest(ctx, request, conn); err != nil {
 		err = fmt.Errorf("failed to handle request: %v", err)
 		s.config.Logger.Debug("socks: failed to handle request", "err", err)
 		return err

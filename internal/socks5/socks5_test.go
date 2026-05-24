@@ -82,7 +82,7 @@ func TestSOCKS5_Connect(t *testing.T) {
 
 	// Verify response
 	expected := []byte{
-		socks5Version, UserPassAuth,
+		Socks5Version, UserPassAuth,
 		1, authSuccess,
 		5,
 		0,

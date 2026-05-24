@@ -12,6 +12,13 @@ func NewCredentialAdapter(store *Store) *CredentialAdapter {
 
 // Valid implements socks5.CredentialStore. It checks username/password
 // and all business rules (enabled, TTL, traffic limit).
+// After a successful validation with a legacy plaintext password, it triggers
+// a lazy migration to Argon2id.
 func (a *CredentialAdapter) Valid(user, password string) bool {
-	return a.store.IsValid(user, password)
+	if !a.store.IsValid(user, password) {
+		return false
+	}
+	// Lazy migration: hash plaintext password on first successful use.
+	a.store.MigratePassword(user, password)
+	return true
 }

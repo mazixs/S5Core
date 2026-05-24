@@ -1,6 +1,7 @@
 package userstore
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,7 +10,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/passwordhash"
 )
+
+const maxUsersFileSize = 10 << 20 // 10 MiB
 
 // Store is a thread-safe in-memory user store backed by a JSON file.
 // It supports periodic flushing of traffic counters and hot-reload.
@@ -20,6 +25,7 @@ type Store struct {
 	filePath  string
 	logger    *slog.Logger
 	stopFlush chan struct{}
+	flushOnce sync.Once
 }
 
 // userEntry holds a user account and an atomic traffic counter
@@ -40,10 +46,22 @@ func NewStore(logger *slog.Logger) *Store {
 	}
 }
 
+// readFileLimited reads a file with a size limit to prevent unbounded memory consumption.
+func readFileLimited(path string, maxSize int64) ([]byte, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.Size() > maxSize {
+		return nil, fmt.Errorf("file size %d exceeds limit %d", fi.Size(), maxSize)
+	}
+	return os.ReadFile(path)
+}
+
 // LoadFromFile reads and parses a users JSON file into the store.
 // Existing users are replaced entirely. Traffic counters are reset.
 func (s *Store) LoadFromFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxUsersFileSize)
 	if err != nil {
 		return fmt.Errorf("userstore: read file %s: %w", path, err)
 	}
@@ -74,7 +92,7 @@ func (s *Store) LoadFromFile(path string) error {
 // Reload re-reads the JSON file, merging current traffic counters
 // into the freshly loaded data so in-flight traffic is not lost.
 func (s *Store) Reload(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxUsersFileSize)
 	if err != nil {
 		return fmt.Errorf("userstore: reload read %s: %w", path, err)
 	}
@@ -118,7 +136,11 @@ func (s *Store) SaveToFile(path string) error {
 	s.mu.RLock()
 	accounts := s.collectAccountsLocked()
 	s.mu.RUnlock()
+	return s.writeAccounts(path, accounts)
+}
 
+// writeAccounts performs the actual file write without holding the store lock.
+func (s *Store) writeAccounts(path string, accounts []UserAccount) error {
 	data, err := json.MarshalIndent(UsersFile{Users: accounts}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("userstore: marshal: %w", err)
@@ -176,31 +198,39 @@ func (s *Store) FlushTraffic() {
 
 // StartPeriodicFlush starts a background goroutine that periodically
 // flushes traffic counters to the JSON file. Call Stop() to terminate.
+// It is safe to call multiple times — only the first call starts the goroutine.
 func (s *Store) StartPeriodicFlush(path string, interval time.Duration) {
-	s.stopFlush = make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				s.FlushTraffic()
-				if err := s.SaveToFile(path); err != nil {
-					s.logger.Error("Failed to flush user traffic", "error", err)
+	s.flushOnce.Do(func() {
+		s.stopFlush = make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					s.FlushTraffic()
+					if err := s.SaveToFile(path); err != nil {
+						s.logger.Error("Failed to flush user traffic", "error", err)
+					}
+				case <-s.stopFlush:
+					return
 				}
-			case <-s.stopFlush:
-				return
 			}
-		}
-	}()
-	s.logger.Info("Periodic traffic flush started", "interval", interval, "path", path)
+		}()
+		s.logger.Info("Periodic traffic flush started", "interval", interval, "path", path)
+	})
 }
 
 // StopPeriodicFlush stops the background flush goroutine and performs
-// a final flush+save.
+// a final flush+save. It is safe to call multiple times.
 func (s *Store) StopPeriodicFlush() {
 	if s.stopFlush != nil {
-		close(s.stopFlush)
+		select {
+		case <-s.stopFlush:
+			// already closed
+		default:
+			close(s.stopFlush)
+		}
 	}
 
 	// Final flush
@@ -235,38 +265,85 @@ func (s *Store) Lookup(username string) (UserAccount, bool) {
 // enabled, TTL, traffic limit.
 func (s *Store) IsValid(username, password string) bool {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	entry, ok := s.users[username]
 	if !ok {
+		s.mu.RUnlock()
 		return false
 	}
+	acc := entry.account
+	s.mu.RUnlock()
 
-	acc := &entry.account
 	if !acc.Enabled {
 		return false
 	}
-	if acc.Password != password {
+
+	// Verify password: prefer Argon2id hash, fallback to plaintext.
+	if acc.PasswordHash != "" {
+		ok, _ = passwordhash.Verify(password, acc.PasswordHash)
+		if !ok {
+			return false
+		}
+	} else if acc.Password != "" {
+		if subtle.ConstantTimeCompare([]byte(acc.Password), []byte(password)) != 1 {
+			return false
+		}
+	} else {
 		return false
 	}
 
 	now := time.Now()
-	if acc.IsExpired(now) {
-		return false
-	}
-	if acc.IsNotYetActive(now) {
+	if acc.IsExpired(now) || acc.IsNotYetActive(now) {
 		return false
 	}
 
 	// Check traffic limit with unflushed delta
 	if acc.TrafficLimitBytes > 0 {
+		s.mu.RLock()
 		totalUsed := acc.TrafficUsedBytes + entry.trafficDelta.Load()
+		s.mu.RUnlock()
 		if totalUsed >= acc.TrafficLimitBytes {
 			return false
 		}
 	}
 
 	return true
+}
+
+// MigratePassword hashes a plaintext password using Argon2id and persists the
+// change to disk. It is a no-op if the user already has a PasswordHash.
+func (s *Store) MigratePassword(username, password string) {
+	s.mu.Lock()
+	entry, ok := s.users[username]
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
+	acc := &entry.account
+	if acc.PasswordHash != "" || acc.Password == "" {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+
+	hash, err := passwordhash.Hash(password)
+	if err != nil {
+		s.logger.Error("Failed to hash password during migration", "user", username, "error", err)
+		return
+	}
+
+	s.mu.Lock()
+	acc.PasswordHash = hash
+	acc.Password = "" // clear plaintext
+	path := s.filePath
+	s.mu.Unlock()
+
+	if path != "" {
+		if err := s.SaveToFile(path); err != nil {
+			s.logger.Error("Failed to save users file after password migration", "error", err)
+		} else {
+			s.logger.Info("Password migrated to Argon2id", "user", username)
+		}
+	}
 }
 
 // AddTraffic atomically increments the traffic counter for a user.

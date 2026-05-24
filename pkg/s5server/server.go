@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/s5core"
@@ -19,16 +20,22 @@ type Server struct {
 	cfg        Config
 	socks5     *socks5.Server
 	listener   *serverListener
+	obfsListen net.Listener
 	tcpListen  net.Listener
 	credStore  *fail2banStore
 	userStore  *userstore.Store
 	logger     *slog.Logger
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+	wg         sync.WaitGroup
 }
 
 // NewServer initializes a new SOCKS5 server with the given configuration.
 func NewServer(cfg Config) (*Server, error) {
+	if err := ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
+
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -210,11 +217,16 @@ func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("Start listening proxy service (plain SOCKS5)", "address", listenAddr)
 
 	errCh := make(chan error, 2)
-	go func() {
-		if err := s.socks5.Serve(s.listener); err != nil {
-			errCh <- err
-		}
-	}()
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			if err := s.socks5.ServeContext(s.ctx, s.listener); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+		}()
 
 	// Start obfuscated listener on a separate port if enabled
 	if s.cfg.ObfsEnabled && s.cfg.ObfsPort != "" {
@@ -227,6 +239,7 @@ func (s *Server) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to listen obfs on %s: %w", obfsAddr, err)
 		}
+		s.obfsListen = obfsL
 
 		obfsServerListener := &serverListener{
 			Listener:     obfsL,
@@ -240,6 +253,7 @@ func (s *Server) Start(ctx context.Context) error {
 			psk:            []byte(s.cfg.ObfsPSK),
 			maxPadding:     s.cfg.ObfsMaxPadding,
 			mtu:            s.cfg.ObfsMTU,
+			replayWindow:   s.cfg.ObfsReplayWindow,
 		}
 
 		s.logger.Info("Obfuscation ENABLED on separate port",
@@ -249,9 +263,14 @@ func (s *Server) Start(ctx context.Context) error {
 			"psk_length", len(s.cfg.ObfsPSK),
 		)
 
+		s.wg.Add(1)
 		go func() {
-			if err := s.socks5.Serve(ol); err != nil {
-				errCh <- err
+			defer s.wg.Done()
+			if err := s.socks5.ServeContext(s.ctx, ol); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
 			}
 		}()
 	} else {
@@ -285,7 +304,11 @@ func (s *Server) Stop() error {
 		s.cancelFunc()
 	}
 	if s.listener != nil {
-		return s.listener.Close()
+		_ = s.listener.Close()
 	}
+	if s.obfsListen != nil {
+		_ = s.obfsListen.Close()
+	}
+	s.wg.Wait()
 	return nil
 }
