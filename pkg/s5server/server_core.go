@@ -3,6 +3,7 @@ package s5server
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"net"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
+	"github.com/mazixs/S5Core/pkg/transport/tlsdecoy"
+	"github.com/mazixs/S5Core/pkg/transport/ws"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -95,6 +98,17 @@ type Config struct {
 	ObfsMTU          int
 	ObfsReplayWindow int // Per-connection nonce replay window (0 = disabled)
 
+	// WebSocket-over-TLS (stealth transport) settings
+	WSEnabled     bool
+	WSAddr        string // e.g. ":443"; if empty, uses ListenIP:443
+	WSCertFile    string
+	WSKeyFile     string
+	WSPath        string
+	WSSubprotocol string
+	WSMinFrame    int           // minimum WS frame payload size (default 512)
+	WSMaxFrame    int           // maximum WS frame payload size (default 4096)
+	WSMaxJitter   time.Duration // max per-frame jitter (default 0)
+
 	// Multi-account settings
 	UsersFile            string        // Path to JSON file with user accounts
 	TrafficFlushInterval time.Duration // Interval for flushing traffic counters to disk
@@ -124,6 +138,9 @@ func ValidateConfig(cfg Config) error {
 		if cfg.ObfsMaxPadding < 0 {
 			return fmt.Errorf("OBFS_MAX_PADDING must be >= 0, got %d", cfg.ObfsMaxPadding)
 		}
+		if cfg.ObfsMaxPadding > 4096 {
+			return fmt.Errorf("OBFS_MAX_PADDING must be <= 4096, got %d", cfg.ObfsMaxPadding)
+		}
 		if cfg.ObfsMTU < 0 {
 			return fmt.Errorf("OBFS_MTU must be > 0, got %d", cfg.ObfsMTU)
 		}
@@ -131,7 +148,16 @@ func ValidateConfig(cfg Config) error {
 			return fmt.Errorf("OBFS_MTU must be >= %d, got %d", obfs.MinMTU, cfg.ObfsMTU)
 		}
 	}
+	if cfg.WSEnabled {
+		if cfg.WSCertFile == "" || cfg.WSKeyFile == "" {
+			return fmt.Errorf("WS_CERT_FILE and WS_KEY_FILE are required when WS_ENABLED is true")
+		}
+	}
 	return nil
+}
+
+type closeWriter interface {
+	CloseWrite() error
 }
 
 // timeoutConn wraps a net.Conn with read and write timeouts.
@@ -161,10 +187,18 @@ func (c *timeoutConn) Write(b []byte) (int, error) {
 	return c.Conn.Write(b)
 }
 
+func (c *timeoutConn) CloseWrite() error {
+	if cw, ok := c.Conn.(closeWriter); ok {
+		return cw.CloseWrite()
+	}
+	return fmt.Errorf("timeoutConn: underlying connection does not support CloseWrite")
+}
+
 // metricsConn is designed to count traffic and reduce GC using buffer pools.
 type metricsConn struct {
 	net.Conn
 	telemetry *Telemetry
+	closeOnce sync.Once
 }
 
 func (c *metricsConn) Read(b []byte) (int, error) {
@@ -242,67 +276,132 @@ func (c *metricsConn) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (c *metricsConn) Close() error {
-	if c.telemetry != nil {
-		c.telemetry.ActiveConnections.Add(context.Background(), -1)
-	}
+	c.closeOnce.Do(func() {
+		if c.telemetry != nil {
+			c.telemetry.ActiveConnections.Add(context.Background(), -1)
+		}
+	})
 	return c.Conn.Close()
 }
 
+func (c *metricsConn) CloseWrite() error {
+	if cw, ok := c.Conn.(closeWriter); ok {
+		return cw.CloseWrite()
+	}
+	return fmt.Errorf("metricsConn: underlying connection does not support CloseWrite")
+}
+
+const fail2banShards = 256
+
+type fail2banShard struct {
+	mu          sync.RWMutex
+	failures    map[string]int
+	banned      map[string]time.Time
+	lastCleanup time.Time
+}
+
 // fail2banStore implements socks5.CredentialStore with rate limiting and bans.
+// It uses 256 sharded maps to eliminate the global lock bottleneck.
 type fail2banStore struct {
 	store      socks5.CredentialStore
 	maxRetries int
 	banTime    time.Duration
+	telemetry  *Telemetry
 
-	mu        sync.RWMutex
-	failures  map[string]int
-	banned    map[string]time.Time
-	telemetry *Telemetry
+	mu     sync.RWMutex // protects store mutations (AddUser / RemoveUser)
+	shards [fail2banShards]fail2banShard
 }
 
 func newFail2banStore(store socks5.CredentialStore, maxRetries int, banTime time.Duration, t *Telemetry) *fail2banStore {
-	return &fail2banStore{
+	f := &fail2banStore{
 		store:      store,
 		maxRetries: maxRetries,
 		banTime:    banTime,
-		failures:   make(map[string]int),
-		banned:     make(map[string]time.Time),
 		telemetry:  t,
 	}
+	for i := range f.shards {
+		f.shards[i] = fail2banShard{
+			failures:    make(map[string]int),
+			banned:      make(map[string]time.Time),
+			lastCleanup: time.Now(),
+		}
+	}
+	return f
+}
+
+func (s *fail2banStore) shardFor(key string) *fail2banShard {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	return &s.shards[h.Sum32()%fail2banShards]
 }
 
 func (s *fail2banStore) Valid(user, password string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	shard := s.shardFor(user)
+	shard.mu.RLock()
 	now := time.Now()
 
-	if banExpiry, isBanned := s.banned[user]; isBanned {
+	if banExpiry, isBanned := shard.banned[user]; isBanned {
 		if now.Before(banExpiry) {
+			shard.mu.RUnlock()
 			if s.telemetry != nil {
 				s.telemetry.AuthFailures.Add(context.Background(), 1)
 			}
 			return false
 		}
-		delete(s.banned, user)
-		delete(s.failures, user)
+		// Expired ban: upgrade to write lock to clean it
+		shard.mu.RUnlock()
+		shard.mu.Lock()
+		delete(shard.banned, user)
+		delete(shard.failures, user)
+		shard.mu.Unlock()
+	} else {
+		shard.mu.RUnlock()
 	}
 
+	// Heavy validation (Argon2id etc.) outside any lock
 	valid := s.store.Valid(user, password)
 
 	if !valid {
-		s.failures[user]++
-		if s.failures[user] >= s.maxRetries {
-			s.banned[user] = now.Add(s.banTime)
+		shard.mu.Lock()
+		shard.failures[user]++
+		if shard.failures[user] >= s.maxRetries {
+			shard.banned[user] = now.Add(s.banTime)
 		}
+		// Periodic cleanup of stale entries to prevent unbounded growth
+		if now.Sub(shard.lastCleanup) > 5*time.Minute {
+			s.cleanupShardLocked(shard, now)
+			shard.lastCleanup = now
+		}
+		shard.mu.Unlock()
 		if s.telemetry != nil {
 			s.telemetry.AuthFailures.Add(context.Background(), 1)
 		}
 	} else {
-		delete(s.failures, user)
+		shard.mu.Lock()
+		delete(shard.failures, user)
+		shard.mu.Unlock()
 	}
 
 	return valid
+}
+
+func (s *fail2banStore) cleanupShardLocked(shard *fail2banShard, now time.Time) {
+	for u, expiry := range shard.banned {
+		if now.After(expiry) {
+			delete(shard.banned, u)
+			delete(shard.failures, u)
+		}
+	}
+	// Heuristic: if failures map grew large, clear entries for users that are
+	// not currently banned. This prevents memory exhaustion under random-username
+	// brute-force attacks.
+	if len(shard.failures) > s.maxRetries*100 {
+		for u := range shard.failures {
+			if _, banned := shard.banned[u]; !banned {
+				delete(shard.failures, u)
+			}
+		}
+	}
 }
 
 // serverListener wraps net.Listener to apply IP whitelisting and timeout wrappers.
@@ -319,6 +418,13 @@ func (l *serverListener) setWhitelist(ips []net.IP) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.whitelist = ips
+}
+
+func (l *serverListener) setTimeouts(read, write time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.readTimeout = read
+	l.writeTimeout = write
 }
 
 func (l *serverListener) Accept() (net.Conn, error) {
@@ -388,6 +494,10 @@ type obfsListener struct {
 	replayWindow  int
 }
 
+func (ol *obfsListener) setTimeouts(read, write time.Duration) {
+	ol.serverListener.setTimeouts(read, write)
+}
+
 func (ol *obfsListener) Accept() (net.Conn, error) {
 	// Get a plain connection from the underlying serverListener
 	conn, err := ol.serverListener.Accept()
@@ -406,6 +516,46 @@ func (ol *obfsListener) Accept() (net.Conn, error) {
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("obfs: failed to wrap connection: %w", err)
+	}
+
+	return obfsConn, nil
+}
+
+// wsListener wraps a tlsdecoy.Listener and applies obfuscation on top of
+// the WebSocket connection. This produces the full stealth stack:
+// TLS -> WebSocket -> obfs -> SOCKS5.
+type wsListener struct {
+	*tlsdecoy.Listener
+	psk          []byte
+	maxPadding   int
+	mtu          int
+	replayWindow int
+	wsMinFrame   int
+	wsMaxFrame   int
+	wsMaxJitter  time.Duration
+}
+
+func (wl *wsListener) Accept() (net.Conn, error) {
+	conn, err := wl.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	if wsConn, ok := conn.(*ws.Conn); ok && wl.wsMaxFrame > 0 {
+		conn = ws.NewShapedConn(wsConn, wl.wsMinFrame, wl.wsMaxFrame, wl.wsMaxJitter)
+	}
+
+	cfg := obfs.Config{
+		PSK:          wl.psk,
+		MaxPadding:   wl.maxPadding,
+		MTU:          wl.mtu,
+		ReplayWindow: wl.replayWindow,
+	}
+
+	obfsConn, err := obfs.NewConn(conn, cfg)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("obfs: failed to wrap ws connection: %w", err)
 	}
 
 	return obfsConn, nil

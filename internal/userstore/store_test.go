@@ -463,6 +463,76 @@ func TestStore_LoadFromFile_TooLarge(t *testing.T) {
 	}
 }
 
+func TestStore_AddUser_RemoveUser(t *testing.T) {
+	s := NewStore(nil)
+	if err := s.AddUser("alice", "password"); err != nil {
+		t.Fatalf("AddUser failed: %v", err)
+	}
+	if s.UserCount() != 1 {
+		t.Errorf("UserCount = %d, want 1", s.UserCount())
+	}
+	if !s.IsValid("alice", "password") {
+		t.Error("IsValid should return true for newly added user")
+	}
+	if err := s.AddUser("alice", "other"); err == nil {
+		t.Error("expected error when adding duplicate user")
+	}
+	if err := s.RemoveUser("alice"); err != nil {
+		t.Fatalf("RemoveUser failed: %v", err)
+	}
+	if s.UserCount() != 0 {
+		t.Errorf("UserCount = %d, want 0", s.UserCount())
+	}
+	if err := s.RemoveUser("alice"); err == nil {
+		t.Error("expected error when removing non-existent user")
+	}
+}
+
+func TestStore_Reload_PreservesTrafficDeltaPointer(t *testing.T) {
+	users := []UserAccount{
+		{ID: "u-001", Username: "alice", Password: "pass", TrafficUsedBytes: 100, Enabled: true},
+	}
+	path := createTestFile(t, users)
+	s := NewStore(nil)
+	if err := s.LoadFromFile(path); err != nil {
+		t.Fatal(err)
+	}
+
+	counter := s.TrafficCounterFor("alice")
+	s.AddTraffic("alice", 50)
+	if counter.Load() != 50 {
+		t.Errorf("trafficDelta before reload = %d, want 50", counter.Load())
+	}
+
+	// Reload should preserve the same userEntry (and thus the same pointer)
+	if err := s.Reload(path); err != nil {
+		t.Fatal(err)
+	}
+
+	if counter == nil {
+		t.Fatal("TrafficCounterFor returned nil")
+	}
+	// Delta was merged into base and reset
+	if counter.Load() != 0 {
+		t.Errorf("trafficDelta after reload = %d, want 0", counter.Load())
+	}
+
+	acc, _ := s.Lookup("alice")
+	if acc.TrafficUsedBytes != 150 {
+		t.Errorf("TrafficUsedBytes after reload = %d, want 150", acc.TrafficUsedBytes)
+	}
+
+	s.AddTraffic("alice", 25)
+	if counter.Load() != 25 {
+		t.Errorf("trafficDelta after reload add = %d, want 25", counter.Load())
+	}
+
+	acc, _ = s.Lookup("alice")
+	if acc.TrafficUsedBytes != 175 {
+		t.Errorf("TrafficUsedBytes after reload + add = %d, want 175", acc.TrafficUsedBytes)
+	}
+}
+
 func TestStore_PeriodicFlush_DoubleStartStop(t *testing.T) {
 	users := []UserAccount{
 		{ID: "u-001", Username: "alice", Password: "pass", Enabled: true},

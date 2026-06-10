@@ -35,6 +35,28 @@ func TestMatchDomain(t *testing.T) {
 	}
 }
 
+func TestMatchDomain_IDN(t *testing.T) {
+	patterns := []string{"*.münchen.de", "münchen.de"}
+
+	tests := []struct {
+		fqdn    string
+		matched bool
+	}{
+		{"münchen.de", true},
+		{"MÜNCHEN.DE", true},          // case insensitive
+		{"www.münchen.de", true},      // wildcard match
+		{"xn--mnchen-3ya.de", true},   // already punycode
+		{"other.de", false},
+	}
+
+	for _, tt := range tests {
+		result := matchDomain(tt.fqdn, patterns)
+		if result != tt.matched {
+			t.Errorf("matchDomain(%q, %v) = %v, want %v", tt.fqdn, patterns, result, tt.matched)
+		}
+	}
+}
+
 func TestMatchDomain_EmptyPatterns(t *testing.T) {
 	if matchDomain("example.com", nil) {
 		t.Error("expected no match with empty patterns")

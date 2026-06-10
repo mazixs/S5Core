@@ -65,6 +65,18 @@ func TestVerifyMalformedHash(t *testing.T) {
 	}
 }
 
+func TestVerifyUnsafeParameters(t *testing.T) {
+	// Craft a hash with memory way above the safe limit
+	unsafeHash := "$argon2id$v=19$m=999999999,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	ok, err := Verify("password", unsafeHash)
+	if err == nil {
+		t.Error("expected error for unsafe argon2 parameters")
+	}
+	if ok {
+		t.Error("expected Verify to return false for unsafe parameters")
+	}
+}
+
 func TestDifferentPasswordsProduceDifferentHashes(t *testing.T) {
 	h1, _ := Hash("password1")
 	h2, _ := Hash("password1") // same password, should still differ due to random salt

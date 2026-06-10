@@ -98,6 +98,20 @@ func TestRequest_Connect(t *testing.T) {
 	}
 }
 
+func TestSendReply_MaxFQDN(t *testing.T) {
+	// FQDN of exactly 255 bytes must not panic.
+	fqdn := strings.Repeat("a", 255)
+	addr := &AddrSpec{FQDN: fqdn, Port: 1080}
+	var buf bytes.Buffer
+	if err := sendReply(&buf, successReply, addr); err != nil {
+		t.Fatalf("sendReply failed: %v", err)
+	}
+	// Expected length: VER(1)+REP(1)+RSV(1)+ATYP(1)+LEN(1)+FQDN(255)+PORT(2) = 262
+	if got := buf.Len(); got != 262 {
+		t.Fatalf("expected reply length 262, got %d", got)
+	}
+}
+
 func TestRequest_Connect_RuleFail(t *testing.T) {
 	// Create a local listener
 	l, err := net.Listen("tcp", "127.0.0.1:0")

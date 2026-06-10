@@ -138,6 +138,12 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	if s.config.Rewriter != nil {
 		ctx, req.realDestAddr = s.config.Rewriter.Rewrite(ctx, req)
 	}
+	if req.realDestAddr == nil {
+		if err := sendReply(conn, serverFailure, nil); err != nil {
+			return fmt.Errorf("failed to send reply: %v", err)
+		}
+		return fmt.Errorf("rewrite returned nil address")
+	}
 
 	// Switch on the command
 	switch req.Command {
@@ -173,7 +179,7 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	dial := s.config.Dial
 	if dial == nil {
 		dial = func(ctx context.Context, net_, addr string) (net.Conn, error) {
-			return net.Dial(net_, addr)
+			return (&net.Dialer{}).DialContext(ctx, net_, addr)
 		}
 	}
 	target, err := dial(ctx, "tcp", req.realDestAddr.Address())
@@ -195,7 +201,10 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	}()
 
 	// Send success
-	local := target.LocalAddr().(*net.TCPAddr)
+	local, ok := target.LocalAddr().(*net.TCPAddr)
+	if !ok {
+		local = &net.TCPAddr{IP: net.IPv4zero, Port: 0}
+	}
 	bind := AddrSpec{IP: local.IP, Port: local.Port}
 	if err := sendReply(conn, successReply, &bind); err != nil {
 		return fmt.Errorf("failed to send reply: %v", err)
@@ -344,18 +353,13 @@ func sendReply(w io.Writer, resp uint8, addr *AddrSpec) error {
 		return fmt.Errorf("failed to format address: %v", addr)
 	}
 
-	// Format the message
-	var msg [260]byte
-	msg[0] = Socks5Version
-	msg[1] = resp
-	msg[2] = 0 // Reserved
-	msg[3] = addrType
-	copy(msg[4:], addrBody)
-	msg[4+len(addrBody)] = byte(addrPort >> 8)
-	msg[4+len(addrBody)+1] = byte(addrPort & 0xff)
+	msg := make([]byte, 0, 6+len(addrBody))
+	msg = append(msg, Socks5Version, resp, 0, addrType)
+	msg = append(msg, addrBody...)
+	msg = append(msg, byte(addrPort>>8), byte(addrPort&0xff))
 
 	// Send the message
-	_, err := w.Write(msg[:6+len(addrBody)])
+	_, err := w.Write(msg)
 	return err
 }
 

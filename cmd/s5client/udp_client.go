@@ -6,7 +6,23 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"sync/atomic"
+)
+
+var (
+	udpReadBufPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, 65535)
+			return &b
+		},
+	}
+	udpFramePool = sync.Pool{
+		New: func() any {
+			b := make([]byte, 65535+2)
+			return &b
+		},
+	}
 )
 
 // handleUDPAssociate handles the client side of UDP Associate.
@@ -85,7 +101,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 
 	// Go routine A: Read from application (UDP) -> write to obfsConn (TCP)
 	go func() {
-		buf := make([]byte, 65535)
+		bufPtr := udpReadBufPool.Get().(*[]byte)
+		buf := *bufPtr
+		defer udpReadBufPool.Put(bufPtr)
 		for {
 			n, rAddr, err := udpConn.ReadFromUDP(buf)
 			if err != nil {
@@ -110,14 +128,17 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 
 			// The packet from the application MUST start with a SOCKS5 UDP header
 			// We just tunnel this entire frame verbatim inside length-prefixed TCP
-			frame := make([]byte, 2+n)
+			framePtr := udpFramePool.Get().(*[]byte)
+			frame := (*framePtr)[:2+n]
 			binary.BigEndian.PutUint16(frame[0:2], uint16(n))
 			copy(frame[2:], buf[:n])
 
 			if _, err := obfsConn.Write(frame); err != nil {
+				udpFramePool.Put(framePtr)
 				errCh <- fmt.Errorf("tunnel write failed: %w", err)
 				return
 			}
+			udpFramePool.Put(framePtr)
 		}
 	}()
 
@@ -137,8 +158,10 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 			}
 
 			// Read inner SOCKS5 UDP frame
-			frameBuf := make([]byte, packetLen)
+			framePtr := udpFramePool.Get().(*[]byte)
+			frameBuf := (*framePtr)[:packetLen]
 			if _, err := io.ReadFull(obfsConn, frameBuf); err != nil {
+				udpFramePool.Put(framePtr)
 				errCh <- fmt.Errorf("tunnel read frame failed: %w", err)
 				return
 			}
@@ -147,12 +170,14 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn) {
 			addr := clientUDPAddr.Load()
 			if addr == nil || addr.IP == nil {
 				slog.Warn("Dropping returning UDP packet because client address unknown")
+				udpFramePool.Put(framePtr)
 				continue
 			}
 
 			if _, err := udpConn.WriteToUDP(frameBuf, addr); err != nil {
 				slog.Warn("Failed to send UDP packet to application", "error", err)
 			}
+			udpFramePool.Put(framePtr)
 		}
 	}()
 

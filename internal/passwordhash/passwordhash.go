@@ -17,6 +17,11 @@ const (
 	parallelism = 1
 	saltLength  = 16
 	keyLength   = 32
+
+	// Hard caps to prevent DoS via crafted hash strings
+	maxMemory      = 512 * 1024 // 512 MiB in KiB
+	maxIters       = 10
+	maxParallelism = 4
 )
 
 // Hash generates an Argon2id hash of the given password and returns it as a
@@ -60,6 +65,10 @@ func Verify(password, encodedHash string) (bool, error) {
 	var mem, iters, par int
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &mem, &iters, &par); err != nil {
 		return false, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	if mem > maxMemory || iters > maxIters || par > maxParallelism {
+		return false, fmt.Errorf("argon2 parameters exceed safe limits")
 	}
 
 	salt, err := base64.RawURLEncoding.DecodeString(parts[4])

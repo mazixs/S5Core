@@ -12,6 +12,7 @@ import (
 	"github.com/mazixs/S5Core/internal/s5core"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/userstore"
+	"github.com/mazixs/S5Core/pkg/transport/tlsdecoy"
 	"golang.org/x/net/netutil"
 )
 
@@ -21,6 +22,9 @@ type Server struct {
 	socks5     *socks5.Server
 	listener   *serverListener
 	obfsListen net.Listener
+	obfsL      *obfsListener
+	wsListen   net.Listener
+	wsL        *wsListener
 	tcpListen  net.Listener
 	credStore  *fail2banStore
 	userStore  *userstore.Store
@@ -121,10 +125,16 @@ func (s *Server) ReloadUsers() error {
 	return s.userStore.Reload(s.cfg.UsersFile)
 }
 
-// AddUser adds a new user for authentication
+// AddUser adds a new user for authentication.
+// When userstore (USERS_FILE) is active the password is hashed with Argon2id
+// and the user is persisted in-memory.
 func (s *Server) AddUser(username, password string) error {
 	if s.credStore == nil {
 		return fmt.Errorf("authentication is not enabled")
+	}
+
+	if s.userStore != nil {
+		return s.userStore.AddUser(username, password)
 	}
 
 	s.credStore.mu.Lock()
@@ -139,10 +149,14 @@ func (s *Server) AddUser(username, password string) error {
 	return nil
 }
 
-// RemoveUser removes a user from authentication
+// RemoveUser removes a user from authentication.
 func (s *Server) RemoveUser(username string) error {
 	if s.credStore == nil {
 		return fmt.Errorf("authentication is not enabled")
+	}
+
+	if s.userStore != nil {
+		return s.userStore.RemoveUser(username)
 	}
 
 	s.credStore.mu.Lock()
@@ -175,6 +189,16 @@ func (s *Server) UpdateWhitelist(ips []string) error {
 		s.listener.setWhitelist(whitelist)
 	}
 	return nil
+}
+
+// UpdateTimeouts updates read/write timeouts on the fly.
+func (s *Server) UpdateTimeouts(read, write time.Duration) {
+	if s.listener != nil {
+		s.listener.setTimeouts(read, write)
+	}
+	if s.obfsL != nil {
+		s.obfsL.setTimeouts(read, write)
+	}
 }
 
 // Start begins listening and serving traffic. It blocks until stopped.
@@ -255,6 +279,7 @@ func (s *Server) Start(ctx context.Context) error {
 			mtu:            s.cfg.ObfsMTU,
 			replayWindow:   s.cfg.ObfsReplayWindow,
 		}
+		s.obfsL = ol
 
 		s.logger.Info("Obfuscation ENABLED on separate port",
 			"obfs_port", s.cfg.ObfsPort,
@@ -275,6 +300,57 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	} else {
 		s.logger.Warn("Obfuscation DISABLED — only plain SOCKS5 is available")
+	}
+
+	// Start WebSocket-over-TLS listener if enabled
+	if s.cfg.WSEnabled {
+		wsAddr := s.cfg.WSAddr
+		if wsAddr == "" {
+			wsAddr = net.JoinHostPort(s.cfg.ListenIP, "443")
+			if s.cfg.ListenIP == "" {
+				wsAddr = ":443"
+			}
+		}
+
+		tdl, err := tlsdecoy.NewListener(tlsdecoy.Config{
+			Addr:         wsAddr,
+			CertFile:     s.cfg.WSCertFile,
+			KeyFile:      s.cfg.WSKeyFile,
+			WSPath:       s.cfg.WSPath,
+			Subprotocols: []string{s.cfg.WSSubprotocol},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to start WS listener on %s: %w", wsAddr, err)
+		}
+
+		wl := &wsListener{
+			Listener:     tdl,
+			psk:          []byte(s.cfg.ObfsPSK),
+			maxPadding:   s.cfg.ObfsMaxPadding,
+			mtu:          s.cfg.ObfsMTU,
+			replayWindow: s.cfg.ObfsReplayWindow,
+			wsMinFrame:   s.cfg.WSMinFrame,
+			wsMaxFrame:   s.cfg.WSMaxFrame,
+			wsMaxJitter:  s.cfg.WSMaxJitter,
+		}
+		s.wsListen = tdl
+		s.wsL = wl
+
+		s.logger.Info("WebSocket stealth transport ENABLED",
+			"ws_addr", wsAddr,
+			"ws_path", s.cfg.WSPath,
+		)
+
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			if err := s.socks5.ServeContext(s.ctx, wl); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+		}()
 	}
 
 	// Start periodic traffic flush if user store is configured
@@ -309,6 +385,18 @@ func (s *Server) Stop() error {
 	if s.obfsListen != nil {
 		_ = s.obfsListen.Close()
 	}
+	if s.wsListen != nil {
+		_ = s.wsListen.Close()
+	}
 	s.wg.Wait()
 	return nil
+}
+
+// WSAddr returns the network address of the WebSocket stealth listener,
+// or empty string if WS is not enabled.
+func (s *Server) WSAddr() string {
+	if s.wsListen != nil {
+		return s.wsListen.Addr().String()
+	}
+	return ""
 }

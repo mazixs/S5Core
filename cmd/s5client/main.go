@@ -12,10 +12,13 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
+	"github.com/mazixs/S5Core/pkg/transport/ws"
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -25,6 +28,7 @@ const (
 	socks5UserPassAuth  = 0x02
 	socks5CmdNotSup     = 0x07
 	socks5GenFailure    = 0x01
+	replyNotAllowed     = 0x02 // connection not allowed by ruleset
 )
 
 type clientParams struct {
@@ -36,6 +40,17 @@ type clientParams struct {
 	MaxPadding   int    `env:"OBFS_MAX_PADDING" envDefault:"256"`
 	MTU          int    `env:"OBFS_MTU" envDefault:"1400"`
 	RouteDomains string `env:"ROUTE_DOMAINS" envDefault:""`
+
+	// WebSocket stealth transport
+	WSUrl          string `env:"WS_URL" envDefault:""`
+	WSHost         string `env:"WS_HOST" envDefault:""`
+	WSOrigin       string `env:"WS_ORIGIN" envDefault:""`
+	WSUserAgent    string `env:"WS_USER_AGENT" envDefault:""`
+	TLSFingerprint string `env:"TLS_FINGERPRINT" envDefault:""`
+	ServerName     string `env:"SERVER_NAME" envDefault:""`
+	WSMinFrame     int    `env:"WS_MIN_FRAME" envDefault:"512"`
+	WSMaxFrame     int    `env:"WS_MAX_FRAME" envDefault:"4096"`
+	WSMaxJitterMs  int    `env:"WS_MAX_JITTER_MS" envDefault:"0"`
 }
 
 func main() {
@@ -56,6 +71,8 @@ func main() {
 		slog.Error("OBFS_PSK must be exactly 32 bytes")
 		os.Exit(1)
 	}
+
+	checkTimezone(cfg.ServerAddr)
 
 	// Parse domain routing patterns
 	var routePatterns []string
@@ -93,6 +110,8 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
+	var wg sync.WaitGroup
+
 	go func() {
 		<-sigCh
 		slog.Info("Shutting down s5client...")
@@ -109,8 +128,14 @@ func main() {
 			continue
 		}
 
-		go handleClient(clientConn, cfg, routePatterns)
+		wg.Add(1)
+		go func(c net.Conn) {
+			defer wg.Done()
+			handleClient(c, cfg, routePatterns)
+		}(clientConn)
 	}
+
+	wg.Wait()
 }
 
 func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string) {
@@ -153,7 +178,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 
 	// Handle normal CONNECT
 	// Read CONNECT response from server
-	connectResp := make([]byte, 256)
+	connectResp := make([]byte, 512)
 	rn, err := obfsConn.Read(connectResp)
 	if err != nil {
 		slog.Error("Failed to read CONNECT response", "error", err)
@@ -226,16 +251,38 @@ func checkRouting(clientConn net.Conn, destFQDN string, routePatterns []string) 
 	}
 
 	slog.Info("Domain not in route list, rejecting", "domain", destFQDN)
-	clientConn.Write([]byte{socks5Ver, socks5UserPassAuth, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
+	clientConn.Write([]byte{socks5Ver, replyNotAllowed, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
 	return false
 }
 
 // dialObfsTunnel establishes an obfuscated connection to the server and forwards
 // the SOCKS5 handshake through the encrypted tunnel.
 func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
-	serverConn, err := net.Dial("tcp", cfg.ServerAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to server: %w", err)
+	var serverConn net.Conn
+	var err error
+
+	if cfg.WSUrl != "" {
+		wsOpts := ws.DialOpts{
+			URL:            cfg.WSUrl,
+			Host:           cfg.WSHost,
+			Origin:         cfg.WSOrigin,
+			UserAgent:      cfg.WSUserAgent,
+			TLSFingerprint: cfg.TLSFingerprint,
+		}
+		wsConn, err := ws.Dial(wsOpts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial WS: %w", err)
+		}
+		if cfg.WSMaxFrame > 0 {
+			serverConn = ws.NewShapedConn(wsConn, cfg.WSMinFrame, cfg.WSMaxFrame, time.Duration(cfg.WSMaxJitterMs)*time.Millisecond)
+		} else {
+			serverConn = wsConn
+		}
+	} else {
+		serverConn, err = net.Dial("tcp", cfg.ServerAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to server: %w", err)
+		}
 	}
 
 	obfsCfg := obfs.Config{
@@ -418,10 +465,17 @@ func readSocks5Request(r io.Reader) ([]byte, byte, string, error) {
 
 // matchDomain checks if FQDN matches any of the routing patterns.
 // Supports exact match and wildcard subdomain matching (*.example.com).
+// IDN domains are normalized to ASCII (punycode) before comparison.
 func matchDomain(fqdn string, patterns []string) bool {
 	fqdn = strings.ToLower(fqdn)
+	if ascii, err := idna.ToASCII(fqdn); err == nil {
+		fqdn = ascii
+	}
 	for _, p := range patterns {
 		p = strings.ToLower(strings.TrimSpace(p))
+		if ascii, err := idna.ToASCII(p); err == nil {
+			p = ascii
+		}
 
 		if p == fqdn {
 			return true
