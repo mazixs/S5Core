@@ -25,7 +25,6 @@ type Store struct {
 	filePath  string
 	logger    *slog.Logger
 	stopFlush chan struct{}
-	flushOnce sync.Once
 }
 
 // userEntry holds a user account and an atomic traffic counter
@@ -107,20 +106,21 @@ func (s *Store) Reload(path string) error {
 	}
 
 	newUsers := make(map[string]*userEntry, len(uf.Users))
-	for _, u := range uf.Users {
-		newUsers[u.Username] = &userEntry{account: u}
-	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Merge traffic: preserve current runtime traffic into new entries.
-	for username, oldEntry := range s.users {
-		if newEntry, ok := newUsers[username]; ok {
-			// Add unflushed delta from runtime to the file's traffic_used_bytes
-			delta := oldEntry.trafficDelta.Load()
-			newEntry.account.TrafficUsedBytes = oldEntry.account.TrafficUsedBytes + delta
-			// Reset the delta since we incorporated it
+	for _, u := range uf.Users {
+		if oldEntry, ok := s.users[u.Username]; ok {
+			// Preserve existing entry (keeps the same trafficDelta pointer
+			// so in-flight TCP proxy goroutines continue counting correctly).
+			oldEntry.account = u
+			// Flush any unflushed delta into the base counter so the
+			// new file state starts from an accurate baseline.
+			oldEntry.account.TrafficUsedBytes += oldEntry.trafficDelta.Swap(0)
+			newUsers[u.Username] = oldEntry
+		} else {
+			newUsers[u.Username] = &userEntry{account: u}
 		}
 	}
 
@@ -198,32 +198,37 @@ func (s *Store) FlushTraffic() {
 
 // StartPeriodicFlush starts a background goroutine that periodically
 // flushes traffic counters to the JSON file. Call Stop() to terminate.
-// It is safe to call multiple times — only the first call starts the goroutine.
+// It is safe to call multiple times — if already running it is a no-op.
 func (s *Store) StartPeriodicFlush(path string, interval time.Duration) {
-	s.flushOnce.Do(func() {
-		s.stopFlush = make(chan struct{})
-		go func() {
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					s.FlushTraffic()
-					if err := s.SaveToFile(path); err != nil {
-						s.logger.Error("Failed to flush user traffic", "error", err)
-					}
-				case <-s.stopFlush:
-					return
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopFlush != nil {
+		// already running
+		return
+	}
+	s.stopFlush = make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.FlushTraffic()
+				if err := s.SaveToFile(path); err != nil {
+					s.logger.Error("Failed to flush user traffic", "error", err)
 				}
+			case <-s.stopFlush:
+				return
 			}
-		}()
-		s.logger.Info("Periodic traffic flush started", "interval", interval, "path", path)
-	})
+		}
+	}()
+	s.logger.Info("Periodic traffic flush started", "interval", interval, "path", path)
 }
 
 // StopPeriodicFlush stops the background flush goroutine and performs
 // a final flush+save. It is safe to call multiple times.
 func (s *Store) StopPeriodicFlush() {
+	s.mu.Lock()
 	if s.stopFlush != nil {
 		select {
 		case <-s.stopFlush:
@@ -231,7 +236,9 @@ func (s *Store) StopPeriodicFlush() {
 		default:
 			close(s.stopFlush)
 		}
+		s.stopFlush = nil
 	}
+	s.mu.Unlock()
 
 	// Final flush
 	s.FlushTraffic()
@@ -370,6 +377,41 @@ func (s *Store) TrafficCounterFor(username string) *atomic.Int64 {
 		return nil
 	}
 	return &entry.trafficDelta
+}
+
+// AddUser creates a new user with an Argon2id-hashed password.
+func (s *Store) AddUser(username, password string) error {
+	hash, err := passwordhash.Hash(password)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.users[username]; exists {
+		return fmt.Errorf("user %q already exists", username)
+	}
+
+	s.users[username] = &userEntry{
+		account: UserAccount{
+			ID:           username,
+			Username:     username,
+			PasswordHash: hash,
+			Enabled:      true,
+		},
+	}
+	return nil
+}
+
+// RemoveUser deletes a user from the store.
+func (s *Store) RemoveUser(username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.users[username]; !exists {
+		return fmt.Errorf("user %q not found", username)
+	}
+	delete(s.users, username)
+	return nil
 }
 
 // UserCount returns the number of loaded users.

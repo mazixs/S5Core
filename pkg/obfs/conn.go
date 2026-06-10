@@ -264,6 +264,18 @@ func (c *conn) Read(b []byte) (int, error) {
 	return copied, nil
 }
 
+type closeWriter interface {
+	CloseWrite() error
+}
+
+// CloseWrite delegates half-close to the underlying connection if supported.
+func (c *conn) CloseWrite() error {
+	if cw, ok := c.Conn.(closeWriter); ok {
+		return cw.CloseWrite()
+	}
+	return fmt.Errorf("obfs: underlying connection does not support CloseWrite")
+}
+
 // SetDeadline overrides net.Conn.SetDeadline
 func (c *conn) SetDeadline(t time.Time) error {
 	return c.Conn.SetDeadline(t)

@@ -160,6 +160,9 @@ func setupHotReload(ctx context.Context, srv *s5server.Server) {
 					slog.Info("Whitelist reloaded successfully")
 				}
 
+				srv.UpdateTimeouts(newCfg.ReadTimeout, newCfg.WriteTimeout)
+				slog.Info("Timeouts reloaded successfully")
+
 				if err := srv.ReloadUsers(); err != nil {
 					slog.Error("Failed to reload users during SIGHUP", "error", err)
 				} else {

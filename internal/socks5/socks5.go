@@ -131,9 +131,21 @@ func (s *Server) ServeContext(ctx context.Context, l net.Listener) error {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			return err
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				return err
+			}
 		}
-		go func(c net.Conn) { _ = s.ServeConnContext(ctx, c) }(conn)
+		go func(c net.Conn) {
+			defer func() {
+				if r := recover(); r != nil {
+					s.config.Logger.Error("panic in socks5 handler", "recover", r)
+				}
+			}()
+			_ = s.ServeConnContext(ctx, c)
+		}(conn)
 	}
 }
 

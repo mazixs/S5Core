@@ -1,6 +1,7 @@
 package s5server
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -181,4 +182,68 @@ func TestCustomListenerWhitelist(t *testing.T) {
 
 	// In a real test we'd mock the RemoteAddr interface properly to return a blocked IP,
 	// but for brevity we rely on the logic validation done via manual review and focus on CI setup.
+}
+
+func TestMetricsConnCloseIdempotent(t *testing.T) {
+	tele, err := InitTelemetry(nil)
+	if err != nil {
+		t.Fatalf("InitTelemetry: %v", err)
+	}
+
+	mc := &metricsConn{
+		Conn:      &mockConn{},
+		telemetry: tele,
+	}
+
+	// Simulate two close calls (e.g. defer + explicit close)
+	if err := mc.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := mc.Close(); err != nil {
+		t.Fatalf("second close: %v", err)
+	}
+	// No panic and no double-decrement is the success criteria.
+}
+
+func TestFail2BanStoreSharding(t *testing.T) {
+	mockStore := socks5.StaticCredentials{}
+	f2b := newFail2banStore(mockStore, 3, time.Minute, nil)
+
+	shards := make(map[uint32]struct{})
+	for i := 0; i < 1000; i++ {
+		user := fmt.Sprintf("user%d", i)
+		shard := f2b.shardFor(user)
+		// find shard index
+		for idx := range f2b.shards {
+			if &f2b.shards[idx] == shard {
+				shards[uint32(idx)] = struct{}{}
+				break
+			}
+		}
+	}
+
+	if len(shards) < 2 {
+		t.Errorf("expected users distributed across multiple shards, got %d", len(shards))
+	}
+}
+
+func TestFail2BanStoreCleanup(t *testing.T) {
+	mockStore := socks5.StaticCredentials{"alice": "secret"}
+	f2b := newFail2banStore(mockStore, 2, 50*time.Millisecond, nil)
+
+	// Trigger ban
+	f2b.Valid("alice", "wrong")
+	f2b.Valid("alice", "wrong")
+
+	if f2b.Valid("alice", "secret") {
+		t.Error("expected alice to be banned")
+	}
+
+	// Wait for expiry + cleanup interval
+	time.Sleep(60 * time.Millisecond)
+
+	// This call should trigger cleanup and then succeed because ban expired
+	if !f2b.Valid("alice", "secret") {
+		t.Error("expected ban to be expired and valid login to succeed")
+	}
 }

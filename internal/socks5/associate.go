@@ -293,13 +293,15 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			socksFrame := BuildUDPHeader(srcSpec, buf[:n])
 
 			// Prepend 16-bit length prefix for TCP framing
-			frame := make([]byte, 2+len(socksFrame))
+			framePtr := udpBufPool.Get().(*[]byte)
+			frame := (*framePtr)[:2+len(socksFrame)]
 			binary.BigEndian.PutUint16(frame[0:2], uint16(len(socksFrame)))
 			copy(frame[2:], socksFrame)
 
 			tcpWriteMu.Lock()
 			_, err = tcpConn.Write(frame)
 			tcpWriteMu.Unlock()
+			udpBufPool.Put(framePtr)
 			if err != nil {
 				stopTunnel(fmt.Errorf("tcp write error: %w", err))
 				return
@@ -330,8 +332,10 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 				continue // Keep-alive
 			}
 
-			frameBuf := make([]byte, packetLen)
+			framePtr := udpBufPool.Get().(*[]byte)
+			frameBuf := (*framePtr)[:packetLen]
 			if _, err := io.ReadFull(tcpConn, frameBuf); err != nil {
+				udpBufPool.Put(framePtr)
 				if tunnelCtx.Err() != nil {
 					return
 				}
@@ -341,6 +345,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 
 			hdrLen, dstAddr, err := ParseUDPHeader(frameBuf)
 			if err != nil {
+				udpBufPool.Put(framePtr)
 				s.config.Logger.Warn("socks: invalid udp-tcpmux header", "error", err)
 				continue
 			}
@@ -349,6 +354,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			if dstAddr.FQDN != "" {
 				_, resolvedIP, err := s.config.Resolver.Resolve(ctx, dstAddr.FQDN)
 				if err != nil {
+					udpBufPool.Put(framePtr)
 					s.config.Logger.Warn("socks: udp-tcpmux fqdn resolve failed", "error", err)
 					continue
 				}
@@ -364,12 +370,20 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			if _, err := udpConn.WriteToUDP(payload, dUDP); err != nil {
 				s.config.Logger.Warn("socks: udp-tcpmux write to internet failed", "error", err)
 			}
+			udpBufPool.Put(framePtr)
 		}
 	}()
 
 	// Block until either side errors; defer closes udpConn
 	err = <-errCh
 	return err
+}
+
+var udpBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 65535+2)
+		return &b
+	},
 }
 
 // isTimeout checks if an error is a network timeout.
