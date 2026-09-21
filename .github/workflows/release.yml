@@ -10,13 +10,6 @@ permissions:
   packages: write
 
 jobs:
-  # Ничего не публикуется до того, как проверки пройдены. CI (ci.yml) висит на
-  # push в main и на pull request, а тег - ни то, ни другое: до этого тег
-  # публиковал образ, а на Windows-сборке падал уже после публикации (F09,
-  # docs/reports/code-quality-audit-2026-09-20.md). Проверки те же самые -
-  # один скрипт, тот же образ, - чтобы вердикт не зависел от того, кто его
-  # спрашивает. Кросс-сборка всей заявленной матрицы входит в тесты
-  # (internal/arch/platforms_test.go читает список платформ из этого файла).
   checks:
     runs-on: ubuntu-latest
     container: golang:1.26.6
@@ -88,8 +81,6 @@ jobs:
 
       - name: Build binaries
         env:
-          # Ends up in the s5core_build_info metric, so a running server can be
-          # matched to a release without guessing.
           LDFLAGS: -s -w -X github.com/mazixs/S5Core/internal/buildinfo.version=${{ github.ref_name }}
         run: |
           mkdir -p dist

@@ -1,5 +1,4 @@
-# Единственный источник правды по статическому анализу.
-# Запускается через scripts/pre-commit.sh, тем же скриптом в CI (см. .github/workflows/ci.yml).
+# Общий конфиг для локального прогона и CI: scripts/pre-commit.sh.
 version: "2"
 
 run:
@@ -7,7 +6,7 @@ run:
   tests: true
 
 linters:
-  default: standard        # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
   enable:
     - bodyclose
     - copyloopvar
@@ -21,9 +20,7 @@ linters:
 
   settings:
     errcheck:
-      # Ошибка Close/SetDeadline на пути освобождения ресурса недейственна:
-      # обработать ее нечем, а обертка `_ =` только прячет реальные находки.
-      # Исключение - CloseWrite: его отказ учитывается метрикой (задача Ф1-5).
+      # Ошибки очистки игнорируются; CloseWrite остается под проверкой.
       exclude-functions:
         - (io.Closer).Close
         - (net.Conn).Close
@@ -50,13 +47,9 @@ linters:
   exclusions:
     generated: lax
     rules:
-      # В тестах проверка ошибок закрытия и записи не несет смысла:
-      # падение теста и так фиксируется утверждениями.
       - path: _test\.go
         linters: [errcheck, noctx, bodyclose, prealloc]
-      # Слушателю контекст не нужен: net.Listen не блокируется и снимается
-      # через Close. noctx остается включенным для Dial и HTTP - там он
-      # указывает на реальное отсутствие дедлайна (задачи Ф3-1, Ф3-3).
+      # Жизненным циклом слушателя управляет Close; Dial и HTTP проверяются.
       - linters: [noctx]
         text: "net.Listen must not be called"
 

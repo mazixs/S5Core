@@ -15,18 +15,14 @@
 /wirebench
 dist/
 build/
-# Where the docs tell you to build the measurement tools (docs/gates/README.md).
 bin/
 
-# Test binary, built with `go test -c`
+# Test artifacts
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Coverage and profiles
 coverage.txt
 *.out
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
 
 # Go workspace file
 go.work
@@ -44,3 +40,7 @@ go.work.sum
 .DS_Store
 scripts/transparent_proxy.sh
 bench/
+
+# Local Compose accounts and TLS keys
+/data/
+/certs/

@@ -1,0 +1,12 @@
+services:
+  s5core:
+    environment:
+      REQUIRE_AUTH: "true"
+      USERS_FILE: /var/lib/s5core/users.json
+    volumes:
+      # Mount the directory: saving accounts uses temp-file + rename.
+      - type: bind
+        source: ${S5CORE_DATA_DIR:?Set S5CORE_DATA_DIR to the writable accounts directory}
+        target: /var/lib/s5core
+        bind:
+          create_host_path: false
