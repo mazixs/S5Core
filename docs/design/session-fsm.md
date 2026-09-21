@@ -1,18 +1,28 @@
 # S5Core — Finite State Machine Design Document
 
-**Version:** 1.0  
-**Date:** 2026-05-30  
+**Version:** 1.1  
+**Date:** 2026-05-30, section 6 added 2026-09-19  
 **Author:** Senior Go Engineer (Code Review Agent)
+
+> **How to read this document (plan task Ф6-6).** Sections 2 to 5 are the
+> as-is analysis of 2026-05-30 and the refactor they proposed. They describe
+> the code **before** `internal/session` existed and are kept for the
+> reasoning, not as a description of the repository. **Section 6 is the
+> current state**: what plan task Ф6-1 actually implemented, and where it
+> departs from the proposal. When the two disagree, section 6 is right.
 
 ---
 
 ## 1. Executive Summary
 
-The current SOCKS5 / obfuscation / UDP-relay logic in S5Core is **implicitly** stateful. State transitions are scattered across function calls (`ServeConnContext -> authenticate -> handleRequest -> handleConnect/Associate/UDPTcpmux`). There is no central state machine type, no per-state timeout enforcement, and no formal guard logic. This document:
+When this was written, the SOCKS5 / obfuscation / UDP-relay logic in S5Core was **implicitly** stateful (it is not any more - see section 6). State transitions are scattered across function calls (`ServeConnContext -> authenticate -> handleRequest -> handleConnect/Associate/UDPTcpmux`). There is no central state machine type, no per-state timeout enforcement, and no formal guard logic. This document:
 
 1. Reverse-engineers the **current de-facto FSM**.
 2. Documents the **gaps and hazards** that arise from the implicit design.
 3. Proposes a **unified, explicit FSM architecture** for the next major refactor.
+
+Section 6 records what was actually implemented in `internal/session` (plan
+task Ф6-1) and where it departs from the proposal in sections 3-5.
 
 ---
 
@@ -65,7 +75,7 @@ The current SOCKS5 / obfuscation / UDP-relay logic in S5Core is **implicitly** s
 | `WAIT_VERSION` and `WAIT_AUTH_MTH` share the same read timeout (`timeoutConn`) | A slow client can burn a connection slot indefinitely by sending one byte every 29 s. |
 | `AUTHENTICATE` has no sub-state | `UserPassAuthenticator` is a blocking black-box; the outer server cannot enforce a per-auth timeout. |
 | `WAIT_REQUEST` allows any command | No pre-validation of address type bounds before `readAddrSpec`. |
-| `PROXY_TCP` has no half-close sub-states | EOF from client immediately triggers full `Close()` on both sides (see P1-6). |
+| `PROXY_TCP` has no half-close sub-states | The relay half-closes each direction as it ends (`halfClose` in `internal/socks5/request.go`) and Ф4-9 made that signal cross the tunnel, but the state machine still has no state for "one direction closed": how long a half-closed relay may live is not expressed anywhere. |
 | `PROXY_UDP` uses polling (`SetReadDeadline(500ms)`) instead of event-driven select | Wastes CPU and adds 0-500 ms latency to UDP relay teardown. |
 | `PROXY_UDPTCP` (0x83) has no keep-alive / idle-timeout | A silent client holds the socket forever. |
 
@@ -99,8 +109,8 @@ The current SOCKS5 / obfuscation / UDP-relay logic in S5Core is **implicitly** s
 | Observation | Risk |
 |-------------|------|
 | No handshake state | `NewConn` instantiates the cipher immediately; there is no version / capability negotiation. |
-| No `CloseWrite` state | Cannot signal half-close through the encrypted tunnel (P1-6). |
-| Replay window is implicit | Lives inside `conn` struct but is not a state variable; hard to inspect or reset. |
+| ~~No `CloseWrite` state~~ | Closed by Ф4-9: the frame carries a kind byte, `CloseWrite` sends a FIN frame, and the peer's `Read` ends with `io.EOF` while the reverse direction keeps working. The signal no longer depends on the transport underneath, which is what made it work over WebSocket. |
+| ~~Replay window is implicit~~ | Closed by Ф4-4: the per-connection nonce window is gone, replaced by `obfs.SaltHistory` on the server - one explicit, inspectable structure shared by all obfuscated listeners. |
 | `FRAME_READ` allocates if `frameSize > cap(readBuf)` | DoS vector: send a 128 KB frame and force a heap alloc on every read. |
 
 ### 2.3 Authentication & Account FSM
@@ -305,20 +315,21 @@ const (
 )
 ```
 
-**New frame types:**
+**Frame types** (implemented by Ф4-8 and Ф4-9; the kind byte is the first byte
+inside the AEAD):
 
 | Type Byte | Meaning |
 |-----------|---------|
-| `0x00` | Data frame (current) |
-| `0x01` | CloseWrite frame (signals half-close) |
-| `0x02` | Keep-alive frame (zero payload) |
+| `0x00` | Data frame |
+| `0x01` | Keep-alive frame (zero payload, padded to the size of a real frame) |
+| `0x02` | FIN frame (signals half-close, padded the same way) |
 
 **Transitions:**
 
 - `ObfsStateReady` + `Write(payload)` -> `ObfsStateFrameWrite` -> encrypt -> emit -> back to `Ready`.
 - `ObfsStateReady` + `Read()` -> `ObfsStateFrameRead` -> read header -> `ObfsStateFrameBody` -> read body -> `ObfsStateDecrypt` -> return payload -> back to `Ready`.
-- `ObfsStateReady` + `CloseWrite()` -> send frame type `0x01` -> `ObfsStateHalfClosed`.
-- `ObfsStateReady` + receive frame type `0x01` -> propagate `CloseWrite()` to underlying `net.Conn`.
+- `ObfsStateReady` + `CloseWrite()` -> send frame type `0x02` -> `ObfsStateHalfClosed`; a later `Write` is refused.
+- `ObfsStateReady` + receive frame type `0x02` -> `Read` returns `io.EOF` from then on. The half-close is **not** propagated to the underlying `net.Conn`: a WebSocket has none, and a transport that ends a stream differently from its peer ends it correctly on neither.
 
 ### 3.4 Proposed Fail2Ban FSM (Per-Identity)
 
@@ -423,3 +434,98 @@ const (
 | Fail2ban | Global mutex, username-only | 256 shards, IP + username keys |
 | Traffic reload | Map replacement (data loss) | In-place merge (pointer stability) |
 | Observability | Connection-level counters | Per-state histograms + span events |
+
+---
+
+## 6. Implemented: Orthogonal Regions (`internal/session`, plan task Ф6-1)
+
+Sections 2-5 are the design as it was written. This section is what was
+actually built, and where it departs from the proposal above.
+
+### 6.1 Three regions instead of one machine
+
+Section 3.2 proposed one flat state list. Building it showed that the states
+in that list change independently of each other: a frame can be half-read
+while the protocol is relaying, and an account can run out at any point. A
+flat machine would have to multiply those out - `RelayAwaitBodyInGrace` and
+its siblings - so the implementation keeps them as three orthogonal regions,
+each with its own transition table, in `internal/session`:
+
+| Region | States | Owner |
+|---|---|---|
+| `protocol` | `accepted` → `handshake` → `dialing` → `relay` → `half_closed` → `closed` | `internal/socks5` |
+| `frames` | `await_header` ⇄ `await_body` → `deliver`, or `frame_error` | `pkg/obfs` |
+| `account` | `within_quota` → `grace` → `quota_exceeded`, or `expired` | `internal/userstore` via the relay |
+
+The regions are stored as three atomics on one `session.Session`, so a
+transition is a compare-and-swap and a call to the observer. There is no
+`for state != Closed { state = transition(...) }` loop: the drivers stayed
+where they were and now report what they do, which is what made the change
+reviewable instead of a rewrite of the request path.
+
+`Unframed` is not a state the frames region sits in - it is the region not
+existing. The plain listener publishes no frames cells at all.
+
+### 6.2 Kind is an attribute, not a state
+
+`Relay` covers a TCP stream, a UDP association and the `0x83` tunnel. What
+differs between them is which deadlines apply, not which transitions are
+legal, so `Kind` (`Stream`/`Tunnel`) is set once by whoever entered the relay
+and read by the deadline logic. Three relay states would have tripled the
+transition table to express one boolean.
+
+### 6.3 Per-state SLA replaces the single timeout
+
+`session.SLA` carries `Handshake`, `Dial`, `ReadIdle`, `WriteIdle`,
+`FrameBody` and `Grace`. The transport no longer knows about regimes: on each
+read and write it asks the session for the deadline to arm
+(`Session.ReadDeadline`/`WriteDeadline`), and the session answers from the
+states it is in - the strictest of the applicable budgets. The string-based
+`SetDeadlinePolicy` plumbing of the previous design is gone.
+
+Two consequences worth keeping: a `Tunnel` in `relay` gets no idle deadline
+at all, because it is silent by design; the same tunnel stopped mid-frame
+still gets `FrameBody`, because that is a peer that owes bytes. One idle
+timeout could not say both.
+
+### 6.4 The one coupling
+
+Orthogonal regions that never interact would be three metrics, not a state
+machine. There is exactly one edge between them, and it is the reason the
+account region exists as a region: `Session.Exhaust` moves `account` to
+`grace` and, from there, moves `protocol` to `half_closed`. The quota takes
+effect in flight - what is already on the wire drains for `SLA.Grace`,
+nothing new is sent on - rather than at the next connection. With
+`SLA.Grace == 0` the session ends where the quota is noticed, which is a
+configuration choice (`QUOTA_GRACE`), not a missing default.
+
+`internal/socks5/grace_test.go` is the test that pins this: a client whose
+account runs out mid-transfer still receives the bytes already in flight, and
+the protocol region is observed going `relay → half_closed → closed`.
+
+### 6.5 Every transition is observable
+
+`session.Observer` is called on each move, including the ones the machine
+refuses (`illegal=true`) - a refused move is counted rather than silently
+dropped, because an illegal transition is a bug in a driver and a metric is
+how it surfaces. `pkg/s5server` turns the observer into
+`s5core_session_transitions_total` and the registry of open sessions into the
+`s5core_sessions` gauge, read at scrape time so the hot path pays one atomic
+store per transition and nothing per metric.
+
+This is what section 4's "Grafana dashboard panels per state" became, and it
+is the direct answer to bug 1 of the bug report: connections parked waiting
+for a reply to `CONNECT` are now a cell of their own
+(`region="protocol", state="dialing"`) instead of being indistinguishable
+from healthy ones in `s5core_connections_active`.
+
+### 6.6 What section 3 still proposes and this does not do
+
+- The client FSM (section 3.5) is unchanged; `cmd/s5client/transport.go`
+  holds the transport policy and does not report regions.
+- Fail2ban (section 3.4) stayed a sharded store in `pkg/s5server`, not a
+  per-identity state machine. Its states have no deadlines and no ordering
+  worth a table.
+- OTel span events per transition (section 4) were not added. The counter
+  and the gauge answer the questions that were asked of them; a span event
+  per read would not.

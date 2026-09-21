@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S5Core - технический аудит и план работ</title>
+<style>
+:root{
+  --bg:#f7f8fa; --panel:#ffffff; --ink:#15181d; --muted:#5b6472; --line:#e2e6ec;
+  --accent:#2f6df6; --accent-soft:#e8efff;
+  --p0:#c92a2a; --p0-bg:#fdecec; --p1:#b06000; --p1-bg:#fff3e0; --p2:#2b6a3f; --p2-bg:#e9f6ee;
+  --code-bg:#f2f4f7; --ok:#2b6a3f; --warn:#b06000; --bad:#c92a2a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161b22; --ink:#e6eaf0; --muted:#9aa4b2; --line:#252c36;
+    --accent:#6ea0ff; --accent-soft:#182740;
+    --p0:#ff8a8a; --p0-bg:#2c1618; --p1:#ffc069; --p1-bg:#2c2214; --p2:#87d3a2; --p2-bg:#152417;
+    --code-bg:#11161c; --ok:#87d3a2; --warn:#ffc069; --bad:#ff8a8a;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px 96px}
+header.top{padding:56px 0 28px;border-bottom:1px solid var(--line);margin-bottom:28px}
+h1{font-size:2.1rem;line-height:1.2;margin:0 0 10px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:1.02rem;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.chip{font-size:.8rem;padding:4px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--panel)}
+.layout{display:grid;grid-template-columns:250px 1fr;gap:36px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}nav.toc{position:static!important;max-height:none!important}}
+nav.toc{position:sticky;top:20px;max-height:calc(100vh - 40px);overflow:auto;font-size:.88rem;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+nav.toc b{display:block;font-size:.74rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 10px}
+nav.toc a{display:block;color:var(--ink);text-decoration:none;padding:5px 8px;border-radius:7px;margin-bottom:1px}
+nav.toc a:hover{background:var(--accent-soft);color:var(--accent)}
+h2{font-size:1.5rem;margin:52px 0 14px;letter-spacing:-.01em;scroll-margin-top:24px}
+h2:first-of-type{margin-top:8px}
+h3{font-size:1.12rem;margin:30px 0 10px;scroll-margin-top:24px}
+h4{font-size:1rem;margin:20px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.8rem}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:22px}
+li{margin:5px 0}
+code{font-family:var(--mono);font-size:.875em;background:var(--code-bg);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
+pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:.82rem;line-height:1.55}
+pre code{background:none;border:none;padding:0}
+table{width:100%;border-collapse:collapse;margin:14px 0 20px;font-size:.9rem;display:block;overflow-x:auto}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.76rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;white-space:nowrap}
+tbody tr:hover{background:var(--accent-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0}
+.card.p0{border-left:4px solid var(--p0)}
+.card.p1{border-left:4px solid var(--p1)}
+.card.p2{border-left:4px solid var(--p2)}
+.badge{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:5px;letter-spacing:.04em;white-space:nowrap}
+.b0{background:var(--p0-bg);color:var(--p0)}
+.b1{background:var(--p1-bg);color:var(--p1)}
+.b2{background:var(--p2-bg);color:var(--p2)}
+.bok{background:var(--p2-bg);color:var(--ok)}
+.bn{background:var(--code-bg);color:var(--muted);border:1px solid var(--line)}
+.fid{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+.kv{display:flex;gap:10px;font-size:.9rem;margin:4px 0}
+.kv b{min-width:132px;color:var(--muted);font-weight:600;flex:none}
+blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0}
+blockquote p:last-child{margin:0}
+svg{max-width:100%;height:auto;display:block;margin:18px auto}
+.small{font-size:.86rem;color:var(--muted)}
+hr{border:none;border-top:1px solid var(--line);margin:40px 0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.84rem;color:var(--muted);margin:10px 0 0}
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>S5Core: технический аудит кодовой базы, разбор боевого багрепорта и план работ</h1>
+  <p class="sub">Статический аудит ветки <code>main</code> (коммит 71971ed) со сверкой против релиза v1.4.4, по которому составлен отчет о боевом прогоне. Приоритеты заданы по сложности и критичности: P0, P1, P2. Оценки времени намеренно не приводятся.</p>
+  <div class="meta">
+    <span class="chip">Дата: 18.09.2026</span>
+    <span class="chip">Ветка: main @ 71971ed</span>
+    <span class="chip">Релиз в проде: v1.4.4</span>
+    <span class="chip">Кода: ~5071 строк Go</span>
+    <span class="chip">Тестов: ~3956 строк</span>
+    <span class="chip">Go 1.26</span>
+  </div>
+</header>
+
+<div class="layout">
+<nav class="toc">
+  <b>Содержание</b>
+  <a href="#summary">1. Резюме</a>
+  <a href="#arch">2. Архитектура как она есть</a>
+  <a href="#strong">3. Сильные стороны</a>
+  <a href="#weak">4. Слабые стороны</a>
+  <a href="#bugreport">5. Разбор багрепорта v1.4.4</a>
+  <a href="#fsm">6. FSM и HFSM: диагноз</a>
+  <a href="#dead">7. Мертвый и висячий код</a>
+  <a href="#refactor">8. Оценка рефактора по модулям</a>
+  <a href="#dpi">9. Эвристики DPI и новый протокол</a>
+  <a href="#users">10. Пересмотр ролей и пользователей</a>
+  <a href="#plan">11. План работ P0 / P1 / P2</a>
+  <a href="#findings">12. Реестр находок</a>
+  <a href="#method">13. Методика и ограничения</a>
+</nav>
+
+<main>
+
+<h2 id="summary">1. Резюме</h2>
+
+<p>S5Core - это компактное, аккуратно написанное ядро SOCKS5 с собственным слоем обфускации, UDP-over-TCP туннелем и SDK. Инженерное качество отдельных модулей высокое: sharded fail2ban, atomic-счетчики трафика, buffer pool, atomic-rename при записи users.json, recover в горутине обработчика, продуманные интеграционные тесты. Проект переживает быструю фазу роста: за три коммита после v1.4.4 добавлены Argon2id, replay-защита, WebSocket-транспорт, TLS-decoy и uTLS.</p>
+
+<p>Именно скорость роста и создала основные проблемы. Главный системный дефект не в конкретной строке, а в отсутствии явной модели состояний: соединение проходит через рукопожатие, аутентификацию, обмен командами и релей без единой переменной состояния, без таймаута на каждое состояние и без событий наблюдаемости. Из-за этого боевой баг с зависанием 30-40 процентов соединений невозможно было диагностировать по логам, и по той же причине он мог жить в релизе.</p>
+
+<div class="card p0">
+<p><b>Главные выводы по багрепорту.</b></p>
+<ol>
+<li><b>Баг 1 (зависания CONNECT) найден и в main уже устранен</b>, но не тем механизмом, который защитил бы от повторения. Корневая причина в v1.4.4: <code>socks5Handshake</code> читал приветствие одним вызовом <code>Read</code> в буфер на 256 байт. Когда клиент (mihomo, curl) отправлял приветствие и CONNECT одним TCP-сегментом, запрос CONNECT попадал в тот же буфер и молча выбрасывался. Дальше клиент вечно ждал данных, которые уже пришли и были потеряны. Это точно объясняет бинарный характер отказа: либо мгновенный успех за 0.174 с, либо тишина навсегда.</li>
+<li><b>Гипотеза про tlsdecoy неверна.</b> Пакеты <code>pkg/transport/tlsdecoy</code> и <code>pkg/transport/ws</code> появились уже после тега v1.4.4 и в тестируемом бинарнике физически отсутствовали. В main они тоже не могут влиять на обфусцированный порт: это отдельный слушатель на отдельном порту, ветвления "свой или чужой" на порту obfs нет.</li>
+<li><b>Класс бага не закрыт.</b> В клиенте по-прежнему нет ни одного дедлайна: ни на <code>net.Dial</code>, ни на чтение ответа сервера, ни на чтение ответа CONNECT. Любая будущая потеря кадра снова даст вечное зависание без единой строки лога. Это отдельная задача P0.</li>
+<li><b>Баги 2, 3, 4 из отчета в main не исправлены</b> ни в одной части: длина кадра по-прежнему идет открытым текстом, MTU по-прежнему не ограничивает размер кадра при записи, комментарий о потокобезопасности <code>Write</code> по-прежнему неверен.</li>
+</ol>
+</div>
+
+<p>Помимо багрепорта аудит обнаружил три вещи, которые надо знать до планирования релиза.</p>
+
+<ul>
+<li><b>Ветка main не проходит собственный CI.</b> Как минимум четыре файла нарушают <code>gofmt -s</code>, а шаг форматирования в CI завершает сборку с ошибкой. Значит последний коммит делался без <code>scripts/pre-commit.sh</code>, и релиз с текущего main не соберется.</li>
+<li><b>Транспорт WebSocket over TLS не подключен к бинарнику сервера.</b> Около 700 строк кода (<code>ws</code>, <code>tlsdecoy</code>, <code>utls</code>) существуют, покрыты тестами и доступны только через SDK. В <code>cmd/s5core/main.go</code> нет ни одной переменной окружения <code>WS_*</code>, хотя README и <code>.env.example</code> их описывают. Для пользователя бинарника функции не существует.</li>
+<li><b>Цель "неотличимо от шума" не достигнута и частично противоречит современным эвристикам.</b> Открытая длина кадра - это лишь верхний слой проблемы. Более важно, что линия "чистый высокоэнтропийный шум" сама по себе является признаком для эвристик детектирования полностью зашифрованного трафика. Требуется смена стратегии, а не только заплатка на заголовок.</li>
+</ul>
+
+<h4>Распределение находок</h4>
+<table>
+<thead><tr><th>Приоритет</th><th>Смысл</th><th>Находок</th><th>Ключевые темы</th></tr></thead>
+<tbody>
+<tr><td><span class="badge b0">P0</span></td><td>Блокирует использование, ломает заявленную функцию или безопасность</td><td>7</td><td>Таймауты клиента, idle-таймаут рвет UDP, MITM на WSS, утечка на ipapi.co, открытая длина кадра, красный CI</td></tr>
+<tr><td><span class="badge b1">P1</span></td><td>Деградация надежности, безопасности или ресурсов</td><td>13</td><td>Память обфускации, Argon2id на каждое соединение, lockout чужого аккаунта, ACL без якорей, лимит соединений мимо obfs, паника при shutdown, WS не подключен</td></tr>
+<tr><td><span class="badge b2">P2</span></td><td>Долг, чистка, документация, качество API</td><td>14</td><td>Мертвый код, устаревшие документы, bufio на рукопожатии, аллокации UDP, различия имен переменных</td></tr>
+</tbody>
+</table>
+
+<h2 id="arch">2. Архитектура как она есть</h2>
+
+<p>Продукт состоит из двух бинарников и одного SDK. Ядром является форк <code>armon/go-socks5</code>, размещенный в <code>internal/socks5</code> и расширенный собственной командой <code>0x83</code> для туннелирования UDP внутри TCP.</p>
+
+<svg viewBox="0 0 980 470" role="img" aria-label="Схема слоев S5Core">
+  <defs>
+    <style>
+      .bx{fill:var(--panel);stroke:var(--line);stroke-width:1.5;rx:8}
+      .t{font:13px var(--mono);fill:var(--ink)}
+      .tt{font:12px var(--mono);fill:var(--muted)}
+      .h{font:600 13px sans-serif;fill:var(--ink)}
+      .ar{stroke:var(--accent);stroke-width:1.6;fill:none;marker-end:url(#a)}
+      .dash{stroke:var(--muted);stroke-width:1.3;fill:none;stroke-dasharray:5 4}
+    </style>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3.2" orient="auto">
+      <path d="M0,0 L8,3.2 L0,6.4 z" fill="var(--accent)"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="22" class="h">Клиентская сторона (s5client)</text>
+  <rect class="bx" x="20" y="34" width="180" height="46" rx="8"/>
+  <text x="34" y="54" class="t">Приложение</text><text x="34" y="70" class="tt">браузер, mihomo, tun2socks</text>
+
+  <rect class="bx" x="20" y="100" width="180" height="60" rx="8"/>
+  <text x="34" y="120" class="t">s5client</text>
+  <text x="34" y="136" class="tt">локальный SOCKS5</text>
+  <text x="34" y="151" class="tt">127.0.0.1:1080</text>
+
+  <rect class="bx" x="20" y="180" width="180" height="46" rx="8"/>
+  <text x="34" y="200" class="t">obfs.Conn</text><text x="34" y="216" class="tt">AES-256-GCM + padding</text>
+
+  <rect class="bx" x="20" y="246" width="180" height="60" rx="8"/>
+  <text x="34" y="266" class="t">транспорт</text>
+  <text x="34" y="282" class="tt">TCP  или  uTLS + WSS</text>
+  <text x="34" y="297" class="tt">ShapedConn (шейпинг)</text>
+
+  <path class="ar" d="M110,80 L110,98"/>
+  <path class="ar" d="M110,160 L110,178"/>
+  <path class="ar" d="M110,226 L110,244"/>
+
+  <path class="ar" d="M200,276 C300,276 300,200 380,200"/>
+  <text x="240" y="245" class="tt">интернет, DPI</text>
+
+  <text x="380" y="22" class="h">Серверная сторона (s5core)</text>
+
+  <rect class="bx" x="380" y="120" width="230" height="52" rx="8"/>
+  <text x="394" y="140" class="t">obfsListener :1443</text>
+  <text x="394" y="158" class="tt">serverListener + obfs.NewConn</text>
+
+  <rect class="bx" x="380" y="186" width="230" height="52" rx="8"/>
+  <text x="394" y="206" class="t">wsListener :443</text>
+  <text x="394" y="224" class="tt">tlsdecoy + ws + obfs</text>
+
+  <rect class="bx" x="380" y="252" width="230" height="52" rx="8"/>
+  <text x="394" y="272" class="t">plain listener :1080</text>
+  <text x="394" y="290" class="tt">LimitListener + whitelist</text>
+
+  <rect class="bx" x="660" y="150" width="200" height="120" rx="8"/>
+  <text x="674" y="172" class="t">socks5.Server</text>
+  <text x="674" y="192" class="tt">authenticate</text>
+  <text x="674" y="209" class="tt">NewRequest</text>
+  <text x="674" y="226" class="tt">handleConnect 0x01</text>
+  <text x="674" y="243" class="tt">handleAssociate 0x03</text>
+  <text x="674" y="260" class="tt">handleUDPTcpmux 0x83</text>
+
+  <path class="ar" d="M610,146 C640,146 640,180 658,190"/>
+  <path class="ar" d="M610,212 L658,212"/>
+  <path class="ar" d="M610,278 C640,278 640,240 658,232"/>
+
+  <rect class="bx" x="660" y="296" width="200" height="46" rx="8"/>
+  <text x="674" y="316" class="t">userstore + fail2ban</text>
+  <text x="674" y="332" class="tt">Argon2id, квоты, SIGHUP</text>
+  <path class="dash" d="M760,270 L760,294"/>
+
+  <rect class="bx" x="380" y="330" width="230" height="46" rx="8"/>
+  <text x="394" y="350" class="t">metrics :8080</text>
+  <text x="394" y="366" class="tt">OTel -> Prometheus</text>
+
+  <rect class="bx" x="660" y="368" width="200" height="46" rx="8"/>
+  <text x="674" y="388" class="t">Интернет</text>
+  <text x="674" y="404" class="tt">TCP dial, UDP relay</text>
+  <path class="ar" d="M760,342 L760,366"/>
+
+  <text x="20" y="400" class="tt">Пунктир - внутренние зависимости. Сплошные стрелки - путь данных.</text>
+  <text x="20" y="422" class="tt">Три слушателя обслуживаются одним socks5.Server, поэтому все политики</text>
+  <text x="20" y="440" class="tt">должны применяться на уровне слушателя. Сейчас часть применяется только к plain.</text>
+</svg>
+
+<h4>Ключевые инварианты, которые надо держать в голове при правках</h4>
+<ul>
+<li>Клиент склеивает приветствие SOCKS5 и запрос CONNECT в один вызов <code>obfs.Write</code>, то есть в один кадр на проводе. Сервер читает поток по одному-двум байтам через <code>io.ReadFull</code> прямо из <code>obfs.Conn</code>, а остаток кадра хранится в <code>readRest</code>. Инвариант держится только потому, что <code>obfs.Read</code> корректно буферизует хвост кадра. Любая замена чтения на прямые вызовы <code>Read</code> с фиксированным буфером мимо этого механизма снова приведет к потере данных.</li>
+<li>Команда <code>0x83</code> - это протокольное расширение поверх RFC 1928. Формат кадра внутри туннеля: <code>[len uint16][SOCKS5 UDP header][payload]</code>. Он продублирован в трех местах: <code>internal/socks5/associate.go</code>, <code>cmd/s5client/udp_client.go</code> и тесты. Единого описания формата в коде нет.</li>
+<li>Слои оборачивают друг друга в порядке <code>obfs(metricsConn(timeoutConn(tcp)))</code>. Любая попытка управлять дедлайном изнутри верхнего слоя перекрывается <code>timeoutConn</code>, который выставляет дедлайн заново на каждом вызове <code>Read</code> и <code>Write</code>. Это уже стреляет, см. раздел про UDP.</li>
+</ul>
+
+<h2 id="strong">3. Сильные стороны</h2>
+
+<div class="grid2">
+<div class="card">
+<p><b>Инженерная культура ядра</b></p>
+<ul>
+<li>Sharded fail2ban на 256 шардов с вынесением дорогой проверки пароля за пределы блокировки. Это грамотное решение, снявшее реальное узкое место.</li>
+<li>Учет трафика на горячем пути через <code>*atomic.Int64</code>, разрешаемый один раз при установке соединения, с накоплением и сбросом раз в 64 КБ.</li>
+<li>Запись <code>users.json</code> через временный файл и <code>rename</code>, слияние счетчиков при hot reload по SIGHUP.</li>
+<li><code>recover</code> в горутине обработчика соединения: одна паника не убивает процесс.</li>
+<li>Argon2id с жесткими верхними границами параметров при разборе PHC-строки. Защита от DoS через подсунутый хеш сделана правильно.</li>
+</ul>
+</div>
+<div class="card">
+<p><b>Продукт и эксплуатация</b></p>
+<ul>
+<li>Реальный SDK, а не "библиотека по факту": <code>pkg/s5server</code> отделен, имеет <code>Config</code>, <code>ValidateConfig</code>, управление списком адресов и пользователями на лету.</li>
+<li>UDP-over-TCP через <code>0x83</code> - сильная и редкая фича, закрывающая утечки WebRTC и QUIC. По отчету она работает.</li>
+<li>Distroless-образ, nonroot, статическая сборка, кросс-компиляция, подтвержденный запуск на aarch64-роутере без зависимостей.</li>
+<li>Тесты: 3956 строк, включая интеграционные сценарии, тест на фрагментированное рукопожатие, тест повторного воспроизведения кадра, замеры энтропии в <code>demo_test.go</code>.</li>
+<li>Документы <code>docs/design/session-fsm.md</code> и <code>docs/archive/ice-audit-2026-05-30.md</code> показывают, что проект уже мыслит категориями состояний и приоритетов. Большая часть пунктов ICE закрыта.</li>
+</ul>
+</div>
+</div>
+
+<blockquote><p>Отдельно стоит отметить качество предыдущего аудита: из 20 пунктов <code>docs/archive/ice-audit-2026-05-30.md</code> в коде закрыто около 85 процентов (панику в <code>sendReply</code>, контекст в dial, идемпотентный <code>Close</code>, ограничение параметров Argon2, очистка карт fail2ban, IDN в маршрутизации, half-close через <code>CloseWrite</code>). Это редкая дисциплина.</p></blockquote>
+
+<h2 id="weak">4. Слабые стороны</h2>
+
+<h3>4.1 Надежность: отсутствие временных границ</h3>
+<p>Это главная категория. В клиенте нет ни одного дедлайна на сетевые операции: <code>net.Dial</code> без таймаута, <code>io.ReadFull(obfsConn, resp[:])</code> при чтении ответа на приветствие без дедлайна, <code>obfsConn.Read(connectResp)</code> при ожидании ответа CONNECT без дедлайна. Симптом, описанный в багрепорте ("ответа нет никогда, в логах ни одного WARN"), - прямое следствие этой конструкции, а не отдельный дефект логирования.</p>
+
+<p>На сервере обратная крайность: <code>READ_TIMEOUT</code> применяется как таймаут простоя ко всему жизненному циклу соединения, включая фазу релея. Для HTTP это почти незаметно, для длинных соединений и для UDP-туннеля это разрыв каждые 30 секунд. Хуже того, попытка обойти это в <code>handleUDPTcpmux</code> не работает:</p>
+
+<pre><code>// internal/socks5/associate.go:254
+_ = tcpConn.SetDeadline(time.Time{}) // Disable timeouts, this is a long-lived tunnel</code></pre>
+
+<p>Дедлайн действительно снимается, но следующий же вызов <code>timeoutConn.Read</code> ставит его обратно:</p>
+
+<pre><code>// pkg/s5server/server_core.go:170
+func (c *timeoutConn) Read(b []byte) (int, error) {
+	if c.readTimeout &gt; 0 {
+		err := c.SetReadDeadline(time.Now().Add(c.readTimeout))
+		...</code></pre>
+
+<p>То же касается монитора TCP в <code>handleAssociate</code>: горутина, читающая один байт для детекта закрытия, получит таймаут через <code>READ_TIMEOUT</code> и закроет UDP-релей, хотя клиент жив.</p>
+
+<h3>4.2 Ресурсы: цена обфускации на соединение</h3>
+<p>Каждое обфусцированное соединение на сервере сразу получает три преаллоцированных объекта.</p>
+
+<table>
+<thead><tr><th>Объект</th><th>Размер</th><th>Откуда</th></tr></thead>
+<tbody>
+<tr><td><code>writeBuf</code></td><td>около 65.8 КБ</td><td><code>4 + 12 + (2 + 65535 + 2 + MaxPadding) + 16</code>, не зависит от MTU</td></tr>
+<tr><td><code>replay.seen</code> + <code>order</code></td><td>около 82 КБ</td><td><code>map[[12]byte]struct{}</code> с емкостью 2048 плюс слайс на 2048 записей</td></tr>
+<tr><td><code>readBuf</code></td><td>4 КБ</td><td><code>max(MTU*2, 4096)</code></td></tr>
+</tbody>
+</table>
+
+<p>Итого около 152 КБ на соединение. При <code>MAX_CONNECTIONS=5000</code> это 760 МБ только под буферы обфускации, до единого байта полезных данных. На типичном VPS с 1-2 ГБ это OOM. Отдельно отмечу, что <code>MTU=1400</code> при этом никак не уменьшает <code>writeBuf</code>, потому что запись не сегментируется.</p>
+
+<h3>4.3 Производительность: почему 30-35 МБ/с, а не сотни</h3>
+<p>AES-256-GCM на процессоре с AES-NI дает единицы гигабайт в секунду. Измеренные в проекте 30-35 МБ/с означают, что узкое место не в шифре. Механика следующая: <code>io.CopyBuffer</code> использует буфер 32 КБ, значит <code>obfs.Write</code> получает до 32 КБ за раз и пишет их одним кадром. На приемной стороне <code>readBuf</code> равен <code>MTU*2</code>, то есть 2800 байт, поэтому каждый такой кадр уходит в ветку <code>make([]byte, frameSize)</code> - аллокация 32 КБ на каждый кадр. Плюс копия хвоста в <code>readRest</code>. Заявленный zero-alloc на практике превращается в аллокацию на каждый Read под нагрузкой.</p>
+
+<p>Здесь важна системная связка: исправление бага 3 (сегментация по MTU) одновременно чинит и память (буфер по MTU вместо 64 КБ), и аллокации на чтении, и распределение длин на проводе. Это одна задача, а не три.</p>
+
+<h3>4.4 Безопасность</h3>
+<ul>
+<li><b>WSS без проверки сертификата.</b> <code>internal/utls/dialer.go</code> задает <code>InsecureSkipVerify: true</code> с комментарием, что вызывающая сторона должна проверить сертификат через пиннинг. Ни <code>ws.Dial</code>, ни клиент этого не делают. Транспорт, созданный ради скрытности, открыт для MITM.</li>
+<li><b>Утечка при старте клиента.</b> <code>cmd/s5client/timezone.go</code> при каждом запуске делает HTTPS-запрос на <code>ipapi.co/&lt;IP сервера&gt;/timezone/</code>. Третья сторона получает связку "адрес клиента - адрес прокси-сервера", а наблюдатель на канале получает устойчивый предвестник подключения к прокси. Для инструмента обхода цензуры это недопустимо по умолчанию.</li>
+<li><b>Блокировка чужого аккаунта.</b> Fail2ban ключуется по имени пользователя. Зная имя, любой может тремя неверными паролями заблокировать легитимного пользователя на <code>FAIL2BAN_TIME</code>. Ключ должен включать адрес источника.</li>
+<li><b>ACL без якорей.</b> <code>PermitDestAddrPattern</code> применяет <code>MatchString</code> без якорей, поэтому паттерн <code>example\.com</code> разрешает <code>evil-example.community</code>. Кроме того, правило проверяется после DNS-резолвинга, то есть запрещенное имя все равно резолвится.</li>
+<li><b>Один статический ключ.</b> PSK используется напрямую как ключ AES-256, один и тот же для всех пользователей, всех соединений и обоих направлений, без вывода сессионных ключей. Нет прямой секретности: компрометация PSK раскрывает весь ранее записанный трафик. Общее пространство случайных 96-битных nonce для двух направлений дополнительно ухудшает границы безопасности.</li>
+<li><b>Лимит соединений мимо obfs.</b> <code>netutil.LimitListener</code> оборачивает только plain-слушатель. Обфусцированный и WS-слушатели принимают соединения без ограничения, то есть <code>MAX_CONNECTIONS</code> не защищает основной боевой порт.</li>
+</ul>
+
+<h3>4.5 Процесс и документация</h3>
+<ul>
+<li><b>CI на main красный.</b> Нарушения <code>gofmt -s</code> минимум в <code>pkg/s5server/server.go</code> (двойной отступ в блоке запуска plain-слушателя), <code>pkg/s5server/server_core.go</code> (поля <code>obfsListener</code>), <code>cmd/s5client/main.go</code> (блок констант), <code>cmd/s5core/main.go</code> (поля <code>params</code>), <code>internal/utls/dialer.go</code> (блок констант). Шаг CI "Check code formatting" завершится ошибкой.</li>
+<li><b>Документация обещает то, чего нет в бинарнике</b>: переменные <code>WS_*</code> и <code>TLS_FINGERPRINT</code> на стороне сервера.</li>
+<li>Расхождение имен: на сервере <code>PROXY_PASSWORD</code>, на клиенте <code>PROXY_PASS</code>. В отчете это уже отмечено, в main не исправлено.</li>
+<li><code>docker-compose.yml</code> по-прежнему пробрасывает <code>1080:1080</code> и <code>1443:1443</code> жестко, хотя порты настраиваются переменными. Замечание про метрики при этом закрыто корректно.</li>
+<li>README рекомендует <code>OBFS_PORT=1443</code>. На портах семейства 443 DPI ожидает TLS ClientHello, а S5Core отдает высокоэнтропийный шум с первого байта. Дефолт работает против продукта.</li>
+</ul>
+
+<h2 id="bugreport">5. Разбор багрепорта v1.4.4 против текущего main</h2>
+
+<p>Ниже сверка каждого пункта отчета с кодом ветки main. Между v1.4.4 и main лежат три коммита: <code>6381d9a</code>, <code>7306fb5</code>, <code>71971ed</code>.</p>
+
+<h3>5.1 Баг 1: зависание CONNECT в 30-40 процентах соединений</h3>
+
+<div class="card p0">
+<div class="kv"><b>Статус</b><span><span class="badge bok">корневая причина устранена в main</span> <span class="badge b0">класс дефекта открыт</span></span></div>
+<div class="kv"><b>Файл в v1.4.4</b><span class="fid">cmd/s5client/main.go, функция socks5Handshake</span></div>
+<div class="kv"><b>Исправлено в</b><span class="fid">коммит 6381d9a, функции readSocks5Greeting и readSocks5Request</span></div>
+</div>
+
+<p>Код релиза выглядел так:</p>
+
+<pre><code>buf := make([]byte, 256)
+
+// Read SOCKS5 greeting
+n, err := clientConn.Read(buf)            // (1) один Read, не ReadFull
+if err != nil || n &lt; 2 || buf[0] != 0x05 { ... }
+
+clientConn.Write([]byte{0x05, 0x00})
+
+// Read SOCKS5 request
+n, err = clientConn.Read(buf)             // (2) тот же буфер, один Read
+if err != nil || n &lt; 7 { ... }
+return buf[:n], cmd, destFQDN, nil</code></pre>
+
+<p>Разбор механики отказа.</p>
+<ol>
+<li>Приложение (mihomo, curl) отправляет приветствие <code>05 01 00</code> и, не дожидаясь ответа либо получив его в том же цикле планировщика, запрос CONNECT. При определенных таймингах ядро отдает оба сообщения одним вызовом <code>Read</code>.</li>
+<li>Строка (1) читает все доступные байты: три байта приветствия плюс весь CONNECT. Клиент анализирует только первые байты и отвечает <code>05 00</code>.</li>
+<li>Строка (2) перезаписывает <code>buf</code> и блокируется в ожидании запроса, который уже был прочитан и потерян вместе с содержимым буфера.</li>
+<li>Приложение считает, что запрос отправлен, и ждет ответ. Ни одна из сторон больше ничего не отправит. Соединение висит до таймаута приложения.</li>
+</ol>
+
+<p>Совпадение с наблюдениями отчета полное:</p>
+<table>
+<thead><tr><th>Наблюдение в отчете</th><th>Объяснение механикой потери склеенного запроса</th></tr></thead>
+<tbody>
+<tr><td>Локальное рукопожатие проходит всегда</td><td>Ответ <code>05 00</code> отправляется до потери данных</td></tr>
+<tr><td>Разброс успешных всего 4 мс, промежуточных состояний нет</td><td>Исход определяется тем, склеились сообщения в один сегмент или нет. Это булево событие, а не нагрузка</td></tr>
+<tr><td>Не зависит от типа адреса, доля висов выше на IP-литерале</td><td>При IP-литерале запрос короче и чаще уходит в один сегмент с приветствием</td></tr>
+<tr><td>Пауза 3 с между запросами не влияет</td><td>Склейка происходит внутри одного соединения, между соединениями связи нет</td></tr>
+<tr><td>В логах нет ни одной ошибки</td><td>Горутина заблокирована в <code>Read</code> без дедлайна. Логировать нечего, ошибки не возникает</td></tr>
+</tbody>
+</table>
+
+<p>В main обе функции переписаны на точное чтение по длине через <code>io.ReadFull</code>, поэтому склейка обрабатывается корректно: лишние байты остаются в сокете и читаются следующим шагом. Дополнительно клиент теперь сам склеивает приветствие и CONNECT в один кадр к серверу, экономя один RTT, и это работает благодаря буферизации хвоста в <code>obfs.Read</code>.</p>
+
+<div class="card p1">
+<p><b>Что осталось незакрытым после фикса.</b></p>
+<ul>
+<li>Нет теста на склейку. Есть тест на фрагментацию (<code>TestSocks5Handshake_ReadsFragmentedFrames</code>), но именно обратный сценарий - приветствие и запрос в одном <code>Write</code> - не покрыт. Регрессия может вернуться незамеченной.</li>
+<li>Нет дедлайнов. Повторю: <code>net.Dial</code>, чтение ответа на приветствие, чтение ответа CONNECT - все без временных границ. Любая другая причина потери кадра даст ту же неотличимую картину.</li>
+<li>Нет журналирования переходов. Ни одна фаза рукопожатия не логируется на уровне debug с идентификатором соединения, поэтому воспроизвести диагностику по логам все еще нельзя.</li>
+</ul>
+</div>
+
+<h4>Проверка гипотезы про tlsdecoy</h4>
+<p>Гипотеза из отчета: на обфусцированном порту есть ветка распознавания "свой или чужой", и часть клиентов уходит в decoy. Проверено и отклонено по трем причинам.</p>
+<ul>
+<li>Пакеты <code>pkg/transport/tlsdecoy</code> и <code>pkg/transport/ws</code> целиком добавлены после тега v1.4.4 (<code>git diff v1.4.4..main</code> показывает их как новые файлы). В тестируемом образе их не было.</li>
+<li>В main decoy живет на отдельном слушателе (<code>wsListener</code> поверх <code>tlsdecoy.Listener</code>) и поднимается только при <code>WSEnabled</code>. Обфусцированный порт обрабатывается <code>obfsListener</code>, где нет ни одной проверки содержимого: <code>obfs.NewConn</code> не делает ввода-вывода вообще.</li>
+<li>В бинарнике <code>s5core</code> <code>WSEnabled</code> невозможно включить: переменные окружения для него не читаются.</li>
+</ul>
+
+<h3>5.2 Баг 2: длина кадра идет открытым текстом</h3>
+
+<div class="card p0">
+<div class="kv"><b>Статус</b><span><span class="badge b0">не исправлено в main</span></span></div>
+<div class="kv"><b>Файл</b><span class="fid">pkg/obfs/conn.go:179</span></div>
+</div>
+
+<p>Диагноз в отчете верен и даже мягок. Кроме двух всегда нулевых старших байтов есть еще два наблюдаемых признака.</p>
+<ul>
+<li><b>Постоянный оверхед структуры.</b> На проводе каждый кадр имеет ровно 4 байта длины и 12 байт nonce до начала шифротекста. Даже без анализа значений это дает устойчивую периодичность: позиция следующего заголовка вычисляется тривиально, что позволяет классификатору восстановить границы кадров и строить распределение длин полезной нагрузки.</li>
+<li><b>Случайный nonce в каждом кадре.</b> 12 байт на кадр тратятся зря: счетчик дал бы ту же криптостойкость при нулевом оверхеде на проводе и снял бы риск повтора nonce при длинной работе одного PSK.</li>
+</ul>
+
+<p>Предложение из отчета (шифровать длину, рандомизировать первый пакет, разбрасывать длины) правильное, но недостаточное как стратегия. Подробный разбор и конкретный формат - в разделе 9.</p>
+
+<h3>5.3 Баг 3: MTU не применяется при записи</h3>
+
+<div class="card p1">
+<div class="kv"><b>Статус</b><span><span class="badge b1">не исправлено в main</span></span></div>
+<div class="kv"><b>Файл</b><span class="fid">pkg/obfs/conn.go:131 (Write), pkg/obfs/conn.go:87 (readBufSize)</span></div>
+</div>
+
+<p>Подтверждаю полностью. Добавлю то, чего в отчете нет: этот баг является источником сразу трех других проблем. Из-за него <code>writeBuf</code> приходится держать под 64 КБ на соединение, из-за него приемная сторона аллоцирует буфер на каждый крупный кадр, и из-за него на проводе возникает характерное распределение длин, привязанное к 32 КБ буферу <code>io.CopyBuffer</code>. Исправление одно, эффекта три.</p>
+
+<h3>5.4 Баг 4: неверное допущение о потокобезопасности Write</h3>
+
+<div class="card p2">
+<div class="kv"><b>Статус</b><span><span class="badge b2">не исправлено, сейчас не стреляет</span></span></div>
+<div class="kv"><b>Файл</b><span class="fid">pkg/obfs/conn.go:41-44</span></div>
+</div>
+
+<p>Комментарий действительно неверен: <code>net.Conn</code> прямо документирует возможность одновременных вызовов из нескольких горутин. Проверка всех путей записи в main показала, что фактической конкуренции сейчас нет.</p>
+<ul>
+<li>В <code>handleConnect</code> в obfs-соединение пишет только горутина "цель к клиенту", вторая читает.</li>
+<li>В <code>handleUDPTcpmux</code> запись идет из одной горутины, причем уже под собственным мьютексом <code>tcpWriteMu</code> (то есть мьютекс там избыточен, но безвреден).</li>
+<li>Ответ <code>sendReply</code> отправляется до старта горутин релея.</li>
+</ul>
+<p>Вывод: это мина, а не активный дефект. Но чинить надо, потому что любой будущий мультиплексор (а он понадобится, см. раздел 9) немедленно приведет к порче кадров. Правильное решение - не мьютекс на весь <code>Write</code>, а перенос буфера в контекст вызова либо один writer-горутина с очередью.</p>
+
+<h3>5.5 Замечания по документации и дефолтам</h3>
+<table>
+<thead><tr><th>Замечание</th><th>Статус в main</th><th>Комментарий</th></tr></thead>
+<tbody>
+<tr><td>Мусорный проброс портов в docker-compose</td><td><span class="badge b1">открыто</span></td><td>Порты жестко зашиты, хотя настраиваются переменными</td></tr>
+<tr><td>Порт метрик открыт наружу</td><td><span class="badge bok">закрыто</span></td><td><code>127.0.0.1:8080:8080</code> и предупреждение в <code>.env.example</code></td></tr>
+<tr><td>Рекомендация по выбору OBFS_PORT</td><td><span class="badge b1">открыто</span></td><td>Дефолт 1443, README не предупреждает про эвристику "на TLS-порту не-TLS трафик"</td></tr>
+<tr><td>PROXY_PASSWORD против PROXY_PASS</td><td><span class="badge b2">открыто</span></td><td>Нужен алиас с предупреждением, а не переименование одним махом</td></tr>
+</tbody>
+</table>
+
+<h2 id="fsm">6. FSM и HFSM: главный системный диагноз</h2>
+
+<p>В репозитории уже есть <code>docs/design/session-fsm.md</code>, который верно описывает де-факто автомат и предлагает явную модель. Документ актуален и не реализован. Я усилю его двумя аргументами, которых там нет.</p>
+
+<h3>6.1 Баг 1 - это дефект автомата, а не дефект чтения</h3>
+<p>Потеря склеенного CONNECT возможна только потому, что переход <code>LOCAL_GREET -&gt; LOCAL_REQUEST</code> не имел определения "сколько байт составляет сообщение". Состояние читало "сколько дадут". В явной модели каждое состояние описывает ожидаемое сообщение точно: его минимальную длину, правила достаточности и действие при избыточных байтах (перенос в буфер следующего состояния). При такой конструкции класс дефекта исключен по построению, а не проверкой ревьюера.</p>
+
+<p>Второе свойство того же перехода: отсутствие таймаута. Состояние <code>AWAIT_SERVER_REPLY</code> на клиенте не имело временной границы, поэтому отказ выглядел как вечная тишина. В модели с per-state SLA этот же отказ дал бы переход в <code>FAILED</code> с причиной и записью в лог через заданный интервал.</p>
+
+<h3>6.2 Иерархия вместо плоского списка состояний</h3>
+<p>Плоский автомат здесь не подходит: у соединения есть параллельные измерения - фаза протокола, состояние транспорта и состояние учета квот. Их произведение дает комбинаторный взрыв. Нужна иерархическая модель с ортогональными регионами.</p>
+
+<svg viewBox="0 0 960 430" role="img" aria-label="Иерархическая машина состояний соединения">
+  <defs>
+    <style>
+      .r{fill:none;stroke:var(--line);stroke-width:1.5;rx:10}
+      .s{fill:var(--panel);stroke:var(--line);stroke-width:1.4;rx:7}
+      .sa{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.4;rx:7}
+      .lb{font:12px var(--mono);fill:var(--ink)}
+      .lm{font:11px var(--mono);fill:var(--muted)}
+      .ttl{font:600 12px sans-serif;fill:var(--muted);letter-spacing:.05em}
+      .ln{stroke:var(--accent);stroke-width:1.5;fill:none;marker-end:url(#b)}
+      .lx{stroke:var(--bad);stroke-width:1.4;fill:none;marker-end:url(#c);stroke-dasharray:4 3}
+    </style>
+    <marker id="b" markerWidth="9" markerHeight="9" refX="8" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 z" fill="var(--accent)"/></marker>
+    <marker id="c" markerWidth="9" markerHeight="9" refX="8" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 z" fill="var(--bad)"/></marker>
+  </defs>
+
+  <rect class="r" x="14" y="26" width="932" height="180"/>
+  <text x="26" y="20" class="ttl">РЕГИОН 1: ПРОТОКОЛ СОЕДИНЕНИЯ</text>
+
+  <rect class="s" x="30" y="46" width="120" height="44"/><text x="44" y="68" class="lb">ACCEPTED</text><text x="44" y="83" class="lm">T=2s</text>
+  <rect class="sa" x="180" y="46" width="150" height="44"/><text x="194" y="68" class="lb">HANDSHAKE</text><text x="194" y="83" class="lm">вложенная HFSM</text>
+  <rect class="s" x="360" y="46" width="130" height="44"/><text x="374" y="68" class="lb">DIALING</text><text x="374" y="83" class="lm">T=10s</text>
+  <rect class="s" x="520" y="46" width="130" height="44"/><text x="534" y="68" class="lb">RELAY</text><text x="534" y="83" class="lm">idle T=конфиг</text>
+  <rect class="s" x="680" y="46" width="130" height="44"/><text x="694" y="68" class="lb">HALF_CLOSED</text><text x="694" y="83" class="lm">T=30s</text>
+  <rect class="s" x="820" y="46" width="110" height="44"/><text x="834" y="68" class="lb">CLOSED</text>
+
+  <path class="ln" d="M150,68 L178,68"/>
+  <path class="ln" d="M330,68 L358,68"/>
+  <path class="ln" d="M490,68 L518,68"/>
+  <path class="ln" d="M650,68 L678,68"/>
+  <path class="ln" d="M810,68 L818,68"/>
+
+  <rect class="s" x="180" y="120" width="150" height="40"/><text x="194" y="140" class="lb">AWAIT_FRAME0</text><text x="194" y="154" class="lm">точная длина</text>
+  <rect class="s" x="360" y="120" width="130" height="40"/><text x="374" y="140" class="lb">AUTH_TAG</text><text x="374" y="154" class="lm">O(1) поиск</text>
+  <rect class="s" x="520" y="120" width="130" height="40"/><text x="534" y="140" class="lb">KEYS_READY</text>
+  <rect class="s" x="680" y="120" width="130" height="40" style="stroke:var(--bad)"/><text x="694" y="140" class="lb">DECOY</text><text x="694" y="154" class="lm">обратный прокси</text>
+
+  <path class="ln" d="M255,92 L255,118"/>
+  <path class="ln" d="M330,140 L358,140"/>
+  <path class="ln" d="M490,140 L518,140"/>
+  <path class="lx" d="M490,150 C560,178 620,178 700,162"/>
+  <text x="540" y="192" class="lm">неверный тег, повтор, просроченная метка времени</text>
+  <path class="ln" d="M585,118 C585,104 585,100 585,92"/>
+
+  <rect class="r" x="14" y="226" width="460" height="176"/>
+  <text x="26" y="220" class="ttl">РЕГИОН 2: ТРАНСПОРТ КАДРОВ</text>
+  <rect class="s" x="34" y="246" width="130" height="40"/><text x="48" y="266" class="lb">AWAIT_HDR</text><text x="48" y="280" class="lm">18 байт</text>
+  <rect class="s" x="190" y="246" width="130" height="40"/><text x="204" y="266" class="lb">AWAIT_BODY</text><text x="204" y="280" class="lm">len из заголовка</text>
+  <rect class="s" x="190" y="316" width="130" height="40"/><text x="204" y="336" class="lb">DELIVER</text>
+  <rect class="s" x="340" y="316" width="118" height="40" style="stroke:var(--bad)"/><text x="354" y="336" class="lb">FRAME_ERR</text>
+  <path class="ln" d="M164,266 L188,266"/>
+  <path class="ln" d="M255,286 L255,314"/>
+  <path class="ln" d="M190,336 C120,336 100,300 100,288"/>
+  <path class="lx" d="M320,336 L338,336"/>
+
+  <rect class="r" x="494" y="226" width="452" height="176"/>
+  <text x="506" y="220" class="ttl">РЕГИОН 3: УЧЕТ И ПОЛИТИКИ</text>
+  <rect class="s" x="514" y="246" width="140" height="40"/><text x="528" y="266" class="lb">WITHIN_QUOTA</text>
+  <rect class="s" x="690" y="246" width="140" height="40"/><text x="704" y="266" class="lb">GRACE</text><text x="704" y="280" class="lm">предупреждение</text>
+  <rect class="s" x="690" y="316" width="140" height="40" style="stroke:var(--bad)"/><text x="704" y="336" class="lb">QUOTA_EXCEEDED</text>
+  <rect class="s" x="514" y="316" width="140" height="40"/><text x="528" y="336" class="lb">EXPIRED</text>
+  <path class="ln" d="M654,266 L688,266"/>
+  <path class="lx" d="M760,286 L760,314"/>
+  <path class="lx" d="M690,336 L656,336"/>
+  <text x="514" y="382" class="lm">Событие из региона 3 вызывает переход региона 1 в HALF_CLOSED,</text>
+  <text x="514" y="396" class="lm">то есть квота действует в процессе, а не только при входе.</text>
+</svg>
+
+<p>Практическая ценность этой модели для S5Core не теоретическая, а прямая.</p>
+<ul>
+<li><b>Диагностируемость.</b> Метрика "число соединений по состояниям" мгновенно показала бы картину багрепорта: рост счетчика в <code>AWAIT_SERVER_REPLY</code> при нормальном <code>RELAY</code>.</li>
+<li><b>Правильные таймауты.</b> Сейчас один <code>READ_TIMEOUT</code> обслуживает и рукопожатие, и релей, что одновременно слишком строго для UDP-туннеля и слишком мягко для медленного клиента, удерживающего слот. В модели у каждого состояния свой SLA.</li>
+<li><b>Место для decoy.</b> Переход в <code>DECOY</code> при неудачной аутентификации - единственный корректный способ ответить на активное зондирование. В плоской модели такой переход некуда встроить, поэтому сервер сейчас просто рвет соединение, чем и выдает себя.</li>
+<li><b>Квоты в процессе.</b> Сейчас лимит трафика проверяется только при аутентификации, и пользователь, превысивший квоту в середине сессии, качает дальше. Регион 3 решает это без вмешательства в горячий путь: сравнение счетчика происходит на границе сброса раз в 64 КБ.</li>
+</ul>
+
+<h3>6.3 Объектная декомпозиция</h3>
+<p>Сейчас ответственности размазаны: <code>pkg/s5server</code> знает про obfs, ws, tlsdecoy, fail2ban и userstore одновременно; <code>internal/socks5</code> знает про учет трафика и телеметрию; формат UDP-кадра продублирован в клиенте и сервере. Предлагаемая декомпозиция без революции:</p>
+
+<table>
+<thead><tr><th>Пакет</th><th>Ответственность</th><th>Что уходит</th></tr></thead>
+<tbody>
+<tr><td><code>pkg/veil</code> (новый)</td><td>Криптографический протокол: рукопожатие, кадрирование, ключи, replay-кеш</td><td>Из <code>pkg/obfs</code></td></tr>
+<tr><td><code>pkg/transport/*</code></td><td>Только доставка байтов: TCP, WSS, шейпинг. Никакой криптографии</td><td>Ничего, но <code>ShapedConn</code> надо чинить</td></tr>
+<tr><td><code>internal/session</code> (новый)</td><td>HFSM соединения, таймауты состояний, метрики переходов</td><td>Из <code>internal/socks5</code> и <code>pkg/s5server</code></td></tr>
+<tr><td><code>internal/socks5</code></td><td>Только разбор и сборка сообщений SOCKS5, без релея и без учета</td><td>Учет трафика, телеметрия, релей</td></tr>
+<tr><td><code>internal/relay</code> (новый)</td><td>Двунаправленное копирование, half-close, буферы, счетчики</td><td>Из <code>request.go</code></td></tr>
+<tr><td><code>internal/identity</code> (новый)</td><td>Пользователи, ключи, роли, квоты, политики</td><td>Из <code>userstore</code> плюс fail2ban из <code>s5server</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="dead">7. Мертвый код, висячий код и устаревшие файлы</h2>
+
+<h3>7.1 Мертвый код (можно удалять без последствий)</h3>
+<table>
+<thead><tr><th>Место</th><th>Что это</th><th>Почему под нож</th></tr></thead>
+<tbody>
+<tr><td><code>cmd/s5client/main.go:500</code></td><td><code>func init() { _ = filepath.Base(os.Args[0]) }</code></td><td>Не делает ничего. Тянет импорт <code>path/filepath</code> ради пустого выражения</td></tr>
+<tr><td><code>internal/socks5/associate.go:401</code></td><td><code>var _ = unsafe.Sizeof(atomic.Pointer[net.UDPAddr]{})</code></td><td>Карго-культ выравнивания. <code>atomic.Pointer</code> выравнивается сам. Тянет импорт <code>unsafe</code> в сетевой код</td></tr>
+<tr><td><code>pkg/obfs/replay.go:80</code></td><td><code>var _ = (*replayWindow)(nil)</code></td><td>Комментарий "ensure type is used" бессмысленен для приватного типа, который используется</td></tr>
+<tr><td><code>pkg/obfs/replay.go:69</code></td><td><code>func (r *replayWindow) reset()</code></td><td>Не вызывается нигде, включая тесты</td></tr>
+<tr><td><code>pkg/transport/ws/upgrader.go:56</code></td><td><code>func IsWSRequest</code></td><td>Экспортирована, не используется. Проверка неверна для регистра заголовка <code>Connection</code></td></tr>
+<tr><td><code>pkg/transport/ws/common.go:9</code></td><td><code>defaultPingInterval</code></td><td>Константа есть, keepalive не реализован. Без пингов WSS через CDN или nginx будет рваться по idle</td></tr>
+<tr><td><code>internal/socks5/socks5.go:125,154</code></td><td><code>Serve</code>, <code>ServeConn</code></td><td>Помечены deprecated, внутри проекта не используются. Для форка внутреннего пакета совместимость не нужна</td></tr>
+<tr><td><code>internal/socks5/ruleset.go:18</code></td><td><code>PermitNone</code></td><td>Не используется</td></tr>
+<tr><td><code>cmd/s5client/main.go:50</code></td><td><code>ServerName</code> в <code>clientParams</code></td><td>Переменная <code>SERVER_NAME</code> читается, но нигде не применяется. Пользователь может думать, что задает SNI</td></tr>
+<tr><td><code>cmd/s5client/main.go:30</code></td><td><code>socks5GenFailure</code></td><td>Используется, оставить. Внесено в список для полноты проверки</td></tr>
+</tbody>
+</table>
+
+<h3>7.2 Код, висящий в воздухе (написан, но не подключен)</h3>
+
+<div class="card p1">
+<p><b>Самый крупный случай: весь стелс-транспорт не подключен к серверу.</b></p>
+<p><code>pkg/transport/ws</code> (5 файлов), <code>pkg/transport/tlsdecoy</code> (2 файла) и <code>internal/utls</code> полностью реализованы, покрыты тестами и интегрированы в <code>pkg/s5server</code>. Но <code>cmd/s5core/main.go</code> не читает ни <code>WS_ENABLED</code>, ни <code>WS_CERT_FILE</code>, ни <code>WS_KEY_FILE</code>, ни <code>WS_PATH</code>, ни параметры шейпинга. В структуре <code>params</code> этих полей нет вообще. Клиент при этом умеет WSS полностью. Асимметрия: клиентская половина функции доступна, серверная - нет.</p>
+<p>Решение - подключить (задача небольшая), а не удалять: транспорт нужен для стратегии из раздела 9.</p>
+</div>
+
+<ul>
+<li><code>metricsConn.ReadFrom</code> и <code>WriteTo</code> реализованы ради быстрого пути <code>io.CopyBuffer</code>, но на обфусцированном пути они не видны: <code>obfs.conn</code> их не проксирует. То есть половина оптимизации работает только для plain-режима.</li>
+<li><code>tcpWriteMu</code> в <code>handleUDPTcpmux</code> защищает запись, которая выполняется из единственной горутины. Либо мьютекс лишний, либо в него надо завести и второго писателя. Сейчас это утверждение о конкуренции, которого нет.</li>
+<li><code>Config.WSSubprotocol</code> передается как <code>[]string{s.cfg.WSSubprotocol}</code>, то есть при пустом значении получается срез с одной пустой строкой вместо <code>nil</code>. Тонкий след в заголовках WebSocket, который как раз работает против скрытности.</li>
+<li><code>Server.UpdateWhitelist</code> обновляет только plain-слушатель, obfs и ws остаются со старым списком. Функция выглядит рабочей, но применяется к одной трети поверхности.</li>
+</ul>
+
+<h3>7.3 Устаревшие файлы</h3>
+<table>
+<thead><tr><th>Файл</th><th>Состояние</th><th>Рекомендация</th></tr></thead>
+<tbody>
+<tr><td><code>docs/archive/ice-audit-2026-05-30.md</code></td><td>Около 85 процентов пунктов закрыто в коде. Незакрытыми остаются P3-4 (аллокации в UDP) и частично P2-4</td><td>Перенести в <code>docs/archive/</code> с пометкой о дате и закрытых пунктах. Держать в корне закрытый аудит вводит в заблуждение</td></tr>
+<tr><td><code>docs/design/session-fsm.md</code></td><td>Актуален, не реализован</td><td>Оставить, обновить разделом про ортогональные регионы и связать с планом работ</td></tr>
+<tr><td><code>internal/socks5/README.md</code>, <code>.travis.yml</code>, <code>.gitignore</code>, <code>LICENSE</code></td><td>Наследие апстрима <code>armon/go-socks5</code>. <code>.travis.yml</code> описывает Go 1.x и Travis CI</td><td><code>LICENSE</code> оставить обязательно (условие лицензии). <code>.travis.yml</code> удалить. README заменить коротким файлом о том, что это форк и чем он отличается</td></tr>
+<tr><td><code>docs/reports/v1.4.4-field-run.md</code></td><td>Отработан этим аудитом</td><td>После закрытия задач перенести в <code>docs/reports/</code></td></tr>
+<tr><td>Замеры производительности в README</td><td>30-35 МБ/с зафиксированы как норма продукта</td><td>После оптимизации перемерить. Текущие числа занижены из-за аллокаций, а не из-за шифра</td></tr>
+</tbody>
+</table>
+
+<h2 id="refactor">8. Оценка необходимости рефактора по модулям</h2>
+
+<table>
+<thead><tr><th>Модуль</th><th>Состояние</th><th>Вердикт</th><th>Обоснование</th></tr></thead>
+<tbody>
+<tr><td><code>pkg/obfs</code></td><td>Работает, но архитектурно исчерпан</td><td><span class="badge b0">переписать</span></td><td>Открытая длина, один статический ключ, случайный nonce, буфер 64 КБ на соединение, нет рукопожатия, нет сегментации. Заплатки дадут франкенштейна. Нужен новый пакет с миграционным режимом совместимости</td></tr>
+<tr><td><code>internal/socks5</code></td><td>Форк с расширением</td><td><span class="badge b1">разделить</span></td><td>Смешаны разбор протокола, релей, учет трафика и телеметрия. Вынести релей и учет, оставить чистый кодек сообщений</td></tr>
+<tr><td><code>pkg/s5server</code></td><td>Хороший SDK с разросшимся Start</td><td><span class="badge b1">рефактор умеренный</span></td><td><code>Start</code> на 130 строк с тремя копиями блока запуска слушателя. Политики (лимит, whitelist, таймауты) применяются неравномерно. Нужна единая абстракция listener pipeline</td></tr>
+<tr><td><code>internal/userstore</code></td><td>Аккуратный, но модель устарела</td><td><span class="badge b1">пересмотреть модель</span></td><td>Код качественный, проблема в политике: Argon2id на каждое соединение, квоты только на входе, роли отсутствуют. См. раздел 10</td></tr>
+<tr><td><code>pkg/transport/ws</code></td><td>Новый, частично нерабочий по назначению</td><td><span class="badge b1">доработать</span></td><td>Шейпинг не срабатывает на типичных кадрах, нет keepalive, нет проверки сертификата на стороне клиента</td></tr>
+<tr><td><code>pkg/transport/tlsdecoy</code></td><td>Новый, с дефектами жизненного цикла</td><td><span class="badge b1">доработать</span></td><td>Паника при закрытии канала во время апгрейда, нет таймаутов HTTP-сервера, статичная страница-приманка слишком бедна для устойчивости к зондированию</td></tr>
+<tr><td><code>cmd/s5client</code></td><td>Работает, но без границ</td><td><span class="badge b0">доработать</span></td><td>Нет таймаутов, нет ретраев, нет диагностических логов, внешний запрос к ipapi.co при старте</td></tr>
+<tr><td><code>cmd/s5core</code></td><td>Тонкая обертка</td><td><span class="badge b1">дополнить</span></td><td>Не читает WS-конфигурацию, не вызывает <code>Stop</code>, использует глобальный <code>DefaultServeMux</code> для метрик</td></tr>
+<tr><td><code>internal/passwordhash</code></td><td>Корректный</td><td><span class="badge b2">оставить</span></td><td>Претензий нет. Меняется только место применения, а не реализация</td></tr>
+<tr><td><code>internal/s5core</code> (ruleset)</td><td>25 строк, дырявая семантика</td><td><span class="badge b1">переписать</span></td><td>Нет якорей, нет обработки IP-литералов, проверка после резолвинга</td></tr>
+</tbody>
+</table>
+
+<h2 id="dpi">9. Эвристики DPI и собственный протокол обфускации</h2>
+
+<h3>9.1 Что сегодня действительно детектирует цензор</h3>
+<p>Актуальная модель угроз состоит из четырех классов детекторов, и текущий S5Core проигрывает трем из них.</p>
+
+<table>
+<thead><tr><th>Класс</th><th>Механика</th><th>Текущий S5Core</th></tr></thead>
+<tbody>
+<tr><td>Эвристики полностью зашифрованного трафика</td><td>Набор дешевых правил на первых пакетах: доля печатных ASCII, длина максимальной печатной подпоследовательности, отсутствие совпадения с известными протоколами, энтропия начала потока. Соединение, не похожее ни на один известный протокол и состоящее из шума, блокируется по совокупности</td><td><span class="badge b0">уязвим</span> Поток - чистый шум с первого байта, ни одной протокольной сигнатуры</td></tr>
+<tr><td>Структурные сигнатуры</td><td>Фиксированные позиции полей, постоянные байты, предсказуемые длины первого сообщения</td><td><span class="badge b0">уязвим</span> Четыре байта длины с двумя нулями, фиксированные 12 байт nonce, фиксированная длина первого сообщения аутентификации</td></tr>
+<tr><td>Статистика длин и таймингов</td><td>Классификаторы на последовательности размеров и интервалов первых N пакетов. Отдельная ветвь - обнаружение вложенного TLS внутри TLS по характерной динамике размеров записей</td><td><span class="badge b1">уязвим</span> Длины детерминированы буфером 32 КБ и MTU, паддинг равномерный, что само по себе является признаком</td></tr>
+<tr><td>Активное зондирование</td><td>Цензор переигрывает записанный первый пакет клиента или подключается сам и смотрит на поведение сервера</td><td><span class="badge b0">уязвим</span> Replay-окно хранится на соединение, поэтому повтор в новом соединении проходит. Сервер отвечает приветствием SOCKS5, то есть подтверждает себя</td></tr>
+</tbody>
+</table>
+
+<blockquote><p>Важный вывод, который меняет стратегию: линия "неотличимо от случайного шума" сама по себе стала признаком. Классификатор ищет не сигнатуру прокси, а отсутствие сигнатуры чего-либо известного. Поэтому цель нужно переформулировать: не "шум", а "поток, который выглядит как конкретный ожидаемый на этом порту протокол, и ведет себя как он под зондированием".</p></blockquote>
+
+<h3>9.2 Требования к собственному протоколу</h3>
+<ol>
+<li><b>Ни одного открытого поля на проводе.</b> Длина, тип, версия, номер - все под шифром.</li>
+<li><b>Нулевой дополнительный RTT.</b> Адрес назначения и первые данные идут в первом же кадре, вместе с аутентификацией.</li>
+<li><b>Устойчивость к активному зондированию.</b> Глобальный, а не посессионный, контроль повторов. Неаутентифицированный клиент получает поведение обычного веб-сервера, а не разрыв.</li>
+<li><b>Прямая секретность.</b> Компрометация долговременного ключа не раскрывает записанный трафик.</li>
+<li><b>Идентификация пользователя без дорогих вычислений.</b> Поиск за O(1), без Argon2id на горячем пути.</li>
+<li><b>Дешево на слабом железе.</b> Роутер на aarch64 без аппаратного AES должен получать ChaCha20-Poly1305 автоматически.</li>
+<li><b>Управляемый профиль длин.</b> Кадрирование должно формировать распределение длин, а не наследовать его от размера буфера копирования.</li>
+</ol>
+
+<h3>9.3 Предлагаемый протокол: S5Veil</h3>
+<p>Название рабочее. Конструкция намеренно не повторяет ни один из существующих: от VMess отличается отсутствием проверки по времени в открытой части и использованием эллиптики вместо хеша идентификатора, от VLESS и Trojan - тем, что не полагается на внешний TLS как единственный слой скрытности, от Shadowsocks-2022 - схемой кадрирования и профилями формы, от Hysteria 2 - тем, что не строится на QUIC и не наследует его фингерпринт.</p>
+
+<h4>Формат первого кадра (0-RTT)</h4>
+<pre><code>Frame0 (отправляется клиентом сразу после TCP handshake):
+
+  X    32 байта   эфемерный публичный ключ X25519, закодированный так,
+                  чтобы быть статистически неотличимым от случайных байт
+                  (обратимое отображение точки в строку)
+  TAG  16 байт    HMAC-SHA256(K_user, X || epoch)[0:16]
+                  epoch = floor(unixtime / 30)
+  LEN' 2  байта   длина зашифрованной части, замаскирована потоковым
+                  ключом klen = HKDF(K_user, X, "len")
+  CT   N  байт    AEAD(K0, nonce=0, plaintext), где
+                  K0 = HKDF(K_user, X, "0rtt")
+                  plaintext = [ts uint64][cmd][addr][initial data][pad]
+
+Итого фиксированная часть: 50 байт, дальше переменная длина.
+Все 50 байт статистически неотличимы от случайных.</code></pre>
+
+<p>Обработка на сервере, по шагам и без ветвлений, выдающих различие во времени:</p>
+<ol>
+<li>Прочитать 50 байт. Вычислить набор ожидаемых TAG для всех пользователей на epoch и epoch-1 (таблица пересчитывается раз в 30 секунд в фоне, поиск - хеш-таблица, O(1)). Не найден - переход в DECOY.</li>
+<li>Проверить X в глобальном кеше повторов (окно по времени, а не по числу записей). Найден - переход в DECOY. Это и есть защита от переигровки первого пакета.</li>
+<li>Расшифровать, проверить метку времени в пределах плюс-минус 90 секунд. Не прошло - DECOY.</li>
+<li>Выполнить X25519 между X и статическим ключом сервера, вывести сессионные ключи для двух направлений раздельно, ответить своим эфемерным ключом. С этого момента канал обладает прямой секретностью.</li>
+<li>Немедленно начать подключение к адресу назначения: команда уже получена в шаге 3. Дополнительный RTT не тратится.</li>
+</ol>
+
+<h4>Формат кадра данных</h4>
+<pre><code>  HDR  18 байт   AEAD(Klen_dir, counter, [len uint16])  - длина под шифром с тегом
+  BODY len байт  AEAD(Kdata_dir, counter, [payload][pad?])
+
+nonce   = счетчик направления, не передается по сети (экономия 12 байт на кадр)
+ключи   = раздельные для client->server и server->client
+padding = не в каждом кадре, а по профилю (см. ниже)</code></pre>
+
+<p>Сравнение оверхеда с текущим форматом: сейчас 4 + 12 + 16 на проводе плюс 4 байта внутренних длин, итого 36 байт на кадр. У S5Veil - 18 + 16 = 34 байта, при этом ни одного открытого байта и без риска повтора nonce. То есть скрытность растет, а оверхед снижается.</p>
+
+<h4>Профили формы трафика</h4>
+<p>Это ключевое отличие от "равномерного случайного паддинга", который сам по себе детектируем.</p>
+<table>
+<thead><tr><th>Профиль</th><th>Что делает</th><th>Когда применять</th></tr></thead>
+<tbody>
+<tr><td><code>veil-raw</code></td><td>Кадры по MTU, паддинг только в первых трех кадрах сессии, дальше без паддинга</td><td>Максимальная скорость там, где эвристик полностью зашифрованного трафика нет</td></tr>
+<tr><td><code>veil-web</code></td><td>Длины кадров сэмплируются из профиля, снятого с реального HTTPS-серфинга; первые кадры подгоняются под распределение TLS-записей браузера; вставка коротких кадров-заполнителей при простое</td><td>Режим по умолчанию под DPI с классификаторами длин</td></tr>
+<tr><td><code>veil-stream</code></td><td>Равномерные кадры около 1200 байт с постоянным темпом, имитация видеопотока</td><td>Долгие сессии, где важна устойчивость к анализу таймингов</td></tr>
+</tbody>
+</table>
+<p>Профиль задается одной переменной и является параметром кадрирования, а не отдельным кодом. Важное свойство: профиль применяется на стороне отправителя независимо, приемник профиль не знает и знать не должен.</p>
+
+<h4>Транспортные режимы</h4>
+<ul>
+<li><b>Прямой TCP.</b> Frame0 идет первым пакетом. Порт рекомендуется высокий, не из семейства 443.</li>
+<li><b>Внутри WSS.</b> Существующий стек <code>utls + ws + tlsdecoy</code> с исправлениями. Здесь Frame0 уже под TLS, поэтому его задача сводится к аутентификации без лишнего RTT. Профиль <code>veil-web</code> обязателен, иначе вложенный TLS выдает себя динамикой размеров.</li>
+<li><b>Ветка DECOY.</b> Вместо статичной страницы - настоящий обратный прокси на указанный в конфиге сайт. Сервер должен быть неотличим от обычного веб-сервера при любом зондировании, включая запрос несуществующего пути и повтор записанного трафика.</li>
+</ul>
+
+<h4>Почему это будет быстрее текущего решения</h4>
+<table>
+<thead><tr><th>Источник выигрыша</th><th>Сейчас</th><th>Станет</th></tr></thead>
+<tbody>
+<tr><td>Аллокации на приеме</td><td>make на каждый кадр больше 2800 байт</td><td>Кадр не больше MTU, буфер переиспользуется всегда</td></tr>
+<tr><td>Память на соединение</td><td>около 152 КБ</td><td>около 4-6 КБ (буферы по MTU, глобальный кеш повторов вместо посессионного)</td></tr>
+<tr><td>Round trips до первых данных</td><td>2 после TCP (приветствие, затем аутентификация с CONNECT)</td><td>0 после TCP</td></tr>
+<tr><td>Проверка пользователя</td><td>Argon2id 64 МБ на каждое соединение при USERS_FILE</td><td>Поиск тега в хеш-таблице</td></tr>
+<tr><td>Шифр на слабом железе</td><td>Только AES-256-GCM</td><td>Автовыбор ChaCha20-Poly1305 без аппаратного AES</td></tr>
+<tr><td>Оверхед на кадр</td><td>36 байт плюс в среднем 128 байт паддинга</td><td>34 байта, паддинг по профилю</td></tr>
+</tbody>
+</table>
+
+<h4>Миграция без разрыва</h4>
+<p>Сервер слушает старый и новый протокол на одном порту: первые 50 байт либо дают валидный TAG (новый протокол), либо трактуются как старый кадр по текущим правилам. Клиент выбирает протокол переменной окружения, по умолчанию - новый, с автоматическим откатом при отказе. Через два минорных релиза старый режим удаляется. Тесты энтропии из <code>demo_test.go</code> расширяются проверками: отсутствие постоянных байтов в фиксированных позициях, распределение длин, поведение при повторе Frame0 в новом соединении.</p>
+
+<h2 id="users">10. Пересмотр модели пользователей и ролей</h2>
+
+<h3>10.1 Что не так сейчас</h3>
+<ul>
+<li><b>Аутентификация живет внутри SOCKS5.</b> Это стоит одного RTT, дает оракул "здесь SOCKS5" любому, кто знает PSK, и заставляет тащить пароли туда, где нужен просто ключ.</li>
+<li><b>Argon2id на горячем пути.</b> 64 МБ памяти и десятки миллисекунд на каждое новое соединение. Браузер открывает 6-10 соединений на страницу. Это одновременно источник задержки и готовый вектор исчерпания ресурсов.</li>
+<li><b>Fail2ban по имени пользователя.</b> Позволяет заблокировать чужой аккаунт и не мешает перебору с разными именами.</li>
+<li><b>Квоты только на входе.</b> Превышение лимита в середине сессии не останавливает трафик.</li>
+<li><b>Ролей нет вообще.</b> В SDK <code>AddUser</code>, <code>RemoveUser</code>, <code>UpdateWhitelist</code> доступны всем, у кого есть указатель на объект. Для встраивания в панель управления это недостаточно.</li>
+<li><b>Два параллельных механизма.</b> <code>StaticCredentials</code> с паролями в открытом виде и <code>userstore</code> с Argon2id сосуществуют, причем <code>AddUser</code> в legacy-режиме кладет пароль в map как есть.</li>
+</ul>
+
+<h3>10.2 Целевая модель</h3>
+<pre><code>Identity (пользователь)
+  id            стабильный идентификатор
+  key           32 байта, секрет для транспорта (K_user)
+  role          user | operator | admin
+  policy        квоты, срок действия, лимит одновременных сессий,
+                разрешенные назначения, разрешенные профили формы
+  state         active | grace | suspended | expired
+
+Credential (доступ к управлению, не к трафику)
+  Argon2id-хеш пароля, только для панели и API. К трафику отношения не имеет.</code></pre>
+
+<table>
+<thead><tr><th>Роль</th><th>Права</th></tr></thead>
+<tbody>
+<tr><td><code>user</code></td><td>Пользоваться туннелем в рамках политики. Видеть собственную статистику</td></tr>
+<tr><td><code>operator</code></td><td>Создавать и отключать пользователей, менять квоты, читать метрики. Не может менять транспорт, ключи сервера и список адресов</td></tr>
+<tr><td><code>admin</code></td><td>Полный доступ, включая ротацию ключей, транспортные настройки и выгрузку конфигурации</td></tr>
+</tbody>
+</table>
+
+<p>Практические следствия.</p>
+<ul>
+<li>Идентификация пользователя в трафике - по криптографическому тегу из Frame0, за O(1). Пароли из горячего пути исчезают полностью.</li>
+<li>Argon2id остается ровно там, где он уместен: вход в панель управления, где 100 миллисекунд не имеют значения.</li>
+<li>Ограничение попыток ключуется парой "адрес источника, тег". Блокировка чужого аккаунта становится невозможной, а перебор тегов бессмысленным (пространство 2^128).</li>
+<li>Квоты и сроки проверяются в регионе 3 машины состояний, то есть непрерывно, с переводом сессии в <code>HALF_CLOSED</code> при исчерпании.</li>
+<li><code>StaticCredentials</code> и режим <code>PROXY_USER</code> или <code>PROXY_PASSWORD</code> уходят. Вместо них - генерация ключа при первом запуске и вывод готовой строки подключения для клиента. Это заодно устраняет расхождение <code>PROXY_PASS</code> и <code>PROXY_PASSWORD</code>: переменных больше нет.</li>
+<li>Формат <code>users.json</code> расширяется полями <code>key</code>, <code>role</code>, <code>policy</code> с миграцией: при загрузке старого файла ключ генерируется, пароль сохраняется только для панели, в лог пишется предупреждение и новая строка подключения.</li>
+</ul>
+
+<h2 id="plan">11. План работ</h2>
+<p class="small">Приоритет отражает сложность и критичность, не срок. P0 - без этого продуктом нельзя пользоваться или он не выполняет обещанного. P1 - надежность, безопасность и ресурсы. P2 - долг и качество.</p>
+
+<h3><span class="badge b0">P0</span> Блокирующее</h3>
+<table>
+<thead><tr><th>Задача</th><th>Где</th><th>Критерий готовности</th></tr></thead>
+<tbody>
+<tr><td><b>P0-1.</b> Вернуть зеленый CI: привести файлы к <code>gofmt -s</code></td><td><code>pkg/s5server/server.go</code>, <code>server_core.go</code>, <code>cmd/s5client/main.go</code>, <code>cmd/s5core/main.go</code>, <code>internal/utls/dialer.go</code></td><td><code>gofmt -s -l .</code> пуст, <code>go vet</code> чист, pre-commit прогнан</td></tr>
+<tr><td><b>P0-2.</b> Таймауты и диагностика в клиенте: дедлайн на dial, на ответ приветствия, на ответ CONNECT, на ответ 0x83. При истечении - запись в лог с адресом назначения и фазой</td><td><code>cmd/s5client/main.go</code>, <code>udp_client.go</code></td><td>Тест: сервер принимает TCP и молчит. Клиент возвращает ошибку SOCKS5 приложению и пишет WARN за заданный интервал</td></tr>
+<tr><td><b>P0-3.</b> Разделить таймаут рукопожатия и таймаут простоя релея. Убрать переустановку дедлайна в <code>timeoutConn</code> после перехода в фазу релея</td><td><code>pkg/s5server/server_core.go</code>, <code>internal/socks5/associate.go</code></td><td>Туннель 0x83 живет более 10 минут при паузах в трафике. Медленный клиент на рукопожатии отключается за секунды</td></tr>
+<tr><td><b>P0-4.</b> Убрать запрос к ipapi.co из старта клиента. Оставить проверку как явную команду или флаг, по умолчанию выключенную</td><td><code>cmd/s5client/timezone.go</code></td><td>При старте клиента исходящих соединений, кроме как к серверу, нет. Проверяется тестом на уровне сетевого хука</td></tr>
+<tr><td><b>P0-5.</b> Включить проверку сертификата в uTLS-дилере: либо валидация по системным корням, либо пиннинг отпечатка из конфигурации</td><td><code>internal/utls/dialer.go</code>, <code>pkg/transport/ws/dialer.go</code></td><td><code>InsecureSkipVerify</code> отсутствует в коде. Тест с подменным сертификатом падает с ошибкой проверки</td></tr>
+<tr><td><b>P0-6.</b> Скрыть длину кадра и убрать постоянные байты из заголовка (этап 1 нового формата)</td><td><code>pkg/obfs</code> или новый <code>pkg/veil</code></td><td>Тест: в первых 4 КБ потока нет байтов, чье значение повторяется в фиксированной позиции чаще случайного. Энтропия начала потока не ниже 7.9 бит на байт</td></tr>
+<tr><td><b>P0-7.</b> Сегментация записи по MTU и согласование буферов чтения</td><td><code>pkg/obfs/conn.go</code></td><td>При записи 1 МБ ни один кадр не превышает MTU, аллокаций в <code>Read</code> нет (проверяется <code>testing.AllocsPerRun</code>)</td></tr>
+</tbody>
+</table>
+
+<h3><span class="badge b1">P1</span> Надежность, безопасность, ресурсы</h3>
+<table>
+<thead><tr><th>Задача</th><th>Где</th><th>Критерий готовности</th></tr></thead>
+<tbody>
+<tr><td><b>P1-1.</b> Глобальный кеш повторов по времени вместо посессионного окна на 2048 записей</td><td><code>pkg/obfs/replay.go</code></td><td>Повтор первого кадра в новом соединении отклоняется. Память на соединение падает на 82 КБ</td></tr>
+<tr><td><b>P1-2.</b> Подключить WS-транспорт к бинарнику сервера</td><td><code>cmd/s5core/main.go</code></td><td>Переменные <code>WS_*</code> и <code>TLS_FINGERPRINT</code> работают. Интеграционный тест поднимает сервер из окружения и проходит через WSS</td></tr>
+<tr><td><b>P1-3.</b> Применять <code>MAX_CONNECTIONS</code>, whitelist и таймауты ко всем слушателям одинаково. Единый конструктор конвейера слушателя</td><td><code>pkg/s5server/server.go</code></td><td>Тест: при лимите 2 третье соединение на obfs-порт отклоняется. <code>UpdateWhitelist</code> действует на все слушатели</td></tr>
+<tr><td><b>P1-4.</b> Fail2ban по паре "адрес источника, идентификатор" вместо имени пользователя</td><td><code>pkg/s5server/server_core.go</code></td><td>Тест: неверные пароли с адреса A не блокируют того же пользователя с адреса B</td></tr>
+<tr><td><b>P1-5.</b> Убрать Argon2id с пути установки соединения</td><td><code>internal/userstore</code>, <code>internal/socks5/auth.go</code></td><td>Установка 100 соединений в секунду не поднимает потребление памяти сервером выше базового уровня</td></tr>
+<tr><td><b>P1-6.</b> Якорение и семантика ACL: якоря по умолчанию, обработка IP-литералов, проверка правил до резолвинга</td><td><code>internal/s5core/ruleset.go</code>, <code>internal/socks5/request.go</code></td><td>Тест: паттерн <code>example.com</code> не пропускает <code>evil-example.community</code>. Запрещенное имя не резолвится</td></tr>
+<tr><td><b>P1-7.</b> Исправить жизненный цикл tlsdecoy: не закрывать канал при активных апгрейдах, добавить таймауты HTTP-сервера, валидировать <code>WSPath</code></td><td><code>pkg/transport/tlsdecoy/listener.go</code></td><td>Тест на гонку: закрытие во время апгрейда не приводит к панике. Пустой путь дает понятную ошибку конфигурации</td></tr>
+<tr><td><b>P1-8.</b> Корректное завершение: вызывать <code>Stop</code> из <code>main</code>, закрывать все слушатели, гарантировать финальный сброс счетчиков трафика</td><td><code>cmd/s5core/main.go</code>, <code>pkg/s5server/server.go</code></td><td>После SIGTERM файл users.json содержит трафик последнего интервала, процесс завершается без утечки горутин</td></tr>
+<tr><td><b>P1-9.</b> Раздельные ключи направлений и вывод сессионных ключей из PSK</td><td>новый <code>pkg/veil</code></td><td>Два направления используют разные ключи, nonce - счетчики, повтор nonce невозможен по построению</td></tr>
+<tr><td><b>P1-10.</b> Квоты и сроки действия в процессе сессии</td><td><code>internal/relay</code>, <code>internal/identity</code></td><td>Тест: при исчерпании лимита в середине передачи сессия закрывается в пределах 64 КБ</td></tr>
+<tr><td><b>P1-11.</b> Починить шейпинг WS: убрать быстрый путь, при котором один кадр obfs равен одному кадру WS</td><td><code>pkg/transport/ws/shaped.go</code></td><td>Тест на распределение: длины кадров WS не коррелируют с длинами кадров внутреннего протокола</td></tr>
+<tr><td><b>P1-12.</b> Keepalive для WSS (пинги) и обработка простоя</td><td><code>pkg/transport/ws</code></td><td>Соединение через промежуточный прокси живет дольше его таймаута простоя</td></tr>
+<tr><td><b>P1-13.</b> Тест на склейку приветствия и запроса в одном сегменте</td><td><code>cmd/s5client/main_test.go</code></td><td>Тест отправляет оба сообщения одним <code>Write</code> и проверяет корректный разбор. Регрессия бага 1 закрыта тестом</td></tr>
+</tbody>
+</table>
+
+<h3><span class="badge b2">P2</span> Долг, чистка, качество</h3>
+<table>
+<thead><tr><th>Задача</th><th>Где</th></tr></thead>
+<tbody>
+<tr><td><b>P2-1.</b> Удалить мертвый код из раздела 7.1</td><td>семь файлов, список приведен</td></tr>
+<tr><td><b>P2-2.</b> Перенести <code>docs/archive/ice-audit-2026-05-30.md</code> в архив, обновить <code>docs/design/session-fsm.md</code>, убрать <code>.travis.yml</code> из форка</td><td>корень, <code>internal/socks5</code></td></tr>
+<tr><td><b>P2-3.</b> Буферизованное чтение рукопожатия на сервере вместо чтения по одному байту</td><td><code>internal/socks5/socks5.go</code></td></tr>
+<tr><td><b>P2-4.</b> Убрать аллокацию на каждый UDP-пакет в <code>BuildUDPHeader</code>, перейти на запись в переданный буфер</td><td><code>internal/socks5/udp.go</code></td></tr>
+<tr><td><b>P2-5.</b> Вынести формат UDP-кадра 0x83 в один пакет с константами и тестами вместо трех копий</td><td><code>internal/socks5</code>, <code>cmd/s5client</code></td></tr>
+<tr><td><b>P2-6.</b> Метрики на своем мультиплексоре вместо <code>http.DefaultServeMux</code>, с таймаутами чтения заголовков</td><td><code>cmd/s5core/main.go</code></td></tr>
+<tr><td><b>P2-7.</b> Защита от неверной конфигурации SDK: <code>TrafficCallback</code> без <code>TrafficCounter</code> должен давать ошибку в <code>ValidateConfig</code>, а не разыменование nil</td><td><code>pkg/s5server</code></td></tr>
+<tr><td><b>P2-8.</b> Документация: убрать обещания WS до их подключения, заменить рекомендацию порта 1443, свести имена переменных клиента и сервера, поправить docker-compose</td><td>README, <code>.env.example</code>, <code>docker-compose.yml</code></td></tr>
+<tr><td><b>P2-9.</b> Разделение ответственностей по разделу 6.3 (relay, session, identity)</td><td>новые пакеты</td></tr>
+<tr><td><b>P2-10.</b> Явная HFSM с метриками переходов и per-state таймаутами</td><td><code>internal/session</code></td></tr>
+<tr><td><b>P2-11.</b> Убрать избыточный мьютекс записи в 0x83 либо задокументировать второго писателя</td><td><code>internal/socks5/associate.go</code></td></tr>
+<tr><td><b>P2-12.</b> Обновить замеры в README после оптимизаций, добавить бенчмарк на слабом ARM</td><td>README, бенчмарки</td></tr>
+<tr><td><b>P2-13.</b> Исправить <code>WSSubprotocol</code>: пустое значение должно давать nil, а не срез с пустой строкой</td><td><code>pkg/s5server/server.go</code></td></tr>
+<tr><td><b>P2-14.</b> Заменить статичную страницу приманки на обратный прокси к настоящему сайту</td><td><code>pkg/transport/tlsdecoy</code></td></tr>
+</tbody>
+</table>
+
+<h3>Порядок исполнения</h3>
+<p>Задачи связаны, и порядок важнее списка.</p>
+<ol>
+<li><b>Волна 1 (разблокировка).</b> P0-1, P0-2, P0-3, P0-4, P0-5. Это независимые правки, после них продуктом можно пользоваться и диагностировать его.</li>
+<li><b>Волна 2 (формат кадра).</b> P0-6 и P0-7 делаются вместе, поскольку меняют один файл и один инвариант. Сразу за ними P1-1 и P1-9: они завершают криптографическую часть и снимают 82 КБ на соединение.</li>
+<li><b>Волна 3 (поверхность и политики).</b> P1-3, P1-4, P1-5, P1-6, P1-8, P1-10. Здесь же подключение WS (P1-2), потому что после волны 2 его есть смысл включать.</li>
+<li><b>Волна 4 (структура).</b> P2-9 и P2-10: разделение пакетов и явная машина состояний. Делать после волн 1-3, иначе рефакторинг будет переносить дефекты.</li>
+<li><b>Волна 5 (протокол целиком).</b> Полный S5Veil из раздела 9 с профилями формы и веткой decoy. К этому моменту все предпосылки (сегментация, ключи, глобальный replay, HFSM, роли) уже готовы, и протокол становится их композицией, а не отдельной стройкой.</li>
+</ol>
+
+<h2 id="findings">12. Реестр находок</h2>
+<table>
+<thead><tr><th>ID</th><th>Приоритет</th><th>Находка</th><th>Файл</th></tr></thead>
+<tbody>
+<tr><td>CR-1</td><td><span class="badge b0">P0</span></td><td>Клиент не имеет дедлайнов ни на одной сетевой операции, отказ выглядит как вечная тишина без логов</td><td class="fid">cmd/s5client/main.go:182, 282, 322</td></tr>
+<tr><td>CR-2</td><td><span class="badge b0">P0</span></td><td>READ_TIMEOUT работает как таймаут простоя релея, снятие дедлайна в туннеле 0x83 не работает из-за timeoutConn</td><td class="fid">server_core.go:170, associate.go:254</td></tr>
+<tr><td>SEC-1</td><td><span class="badge b0">P0</span></td><td>uTLS-дилер отключает проверку сертификата, пиннинг не реализован</td><td class="fid">internal/utls/dialer.go:35</td></tr>
+<tr><td>SEC-2</td><td><span class="badge b0">P0</span></td><td>Клиент при старте отправляет адрес прокси-сервера третьей стороне</td><td class="fid">cmd/s5client/timezone.go:21</td></tr>
+<tr><td>SEC-3</td><td><span class="badge b0">P0</span></td><td>Длина кадра в открытом виде, два постоянных нулевых байта, фиксированные позиции полей</td><td class="fid">pkg/obfs/conn.go:179</td></tr>
+<tr><td>PERF-1</td><td><span class="badge b0">P0</span></td><td>MTU не ограничивает размер кадра, аллокация на каждый крупный кадр при чтении</td><td class="fid">pkg/obfs/conn.go:131, 87</td></tr>
+<tr><td>CI-1</td><td><span class="badge b0">P0</span></td><td>Нарушения gofmt в пяти файлах, CI на main падает на шаге форматирования</td><td class="fid">server.go:243, server_core.go:492, main.go:25</td></tr>
+<tr><td>SEC-4</td><td><span class="badge b1">P1</span></td><td>Replay-защита посессионная, повтор первого кадра в новом соединении проходит, активное зондирование не отражается</td><td class="fid">pkg/obfs/replay.go</td></tr>
+<tr><td>PERF-2</td><td><span class="badge b1">P1</span></td><td>Около 152 КБ преаллокаций на соединение, при 5000 соединений более 700 МБ</td><td class="fid">pkg/obfs/conn.go:82-100</td></tr>
+<tr><td>PERF-3</td><td><span class="badge b1">P1</span></td><td>Argon2id 64 МБ на каждое новое соединение при USERS_FILE</td><td class="fid">internal/userstore/store.go:273</td></tr>
+<tr><td>SEC-5</td><td><span class="badge b1">P1</span></td><td>Fail2ban по имени пользователя позволяет заблокировать чужой аккаунт</td><td class="fid">pkg/s5server/server_core.go:338</td></tr>
+<tr><td>SEC-6</td><td><span class="badge b1">P1</span></td><td>ACL без якорей, регулярное выражение совпадает с подстрокой, резолвинг до проверки правил</td><td class="fid">internal/s5core/ruleset.go:26</td></tr>
+<tr><td>SEC-7</td><td><span class="badge b1">P1</span></td><td>Единый статический ключ на все соединения и оба направления, без вывода сессионных ключей и прямой секретности</td><td class="fid">pkg/obfs/conn.go:70</td></tr>
+<tr><td>CR-3</td><td><span class="badge b1">P1</span></td><td>MAX_CONNECTIONS и UpdateWhitelist применяются только к plain-слушателю</td><td class="fid">pkg/s5server/server.go:216, 175</td></tr>
+<tr><td>CR-4</td><td><span class="badge b1">P1</span></td><td>Close закрывает канал, в который может писать обработчик апгрейда: паника при завершении</td><td class="fid">pkg/transport/tlsdecoy/listener.go:86, 101</td></tr>
+<tr><td>CR-5</td><td><span class="badge b1">P1</span></td><td>Пустой WSPath приводит к панике регистрации обработчика, значение "/" конфликтует с приманкой</td><td class="fid">pkg/transport/tlsdecoy/listener.go:58</td></tr>
+<tr><td>CR-6</td><td><span class="badge b1">P1</span></td><td>main не вызывает Stop, при отмене контекста закрывается только plain-слушатель, финальный сброс трафика не выполняется</td><td class="fid">cmd/s5core/main.go:84, server.go:373</td></tr>
+<tr><td>ARCH-1</td><td><span class="badge b1">P1</span></td><td>WS-транспорт не подключен к бинарнику сервера, документация описывает несуществующие переменные</td><td class="fid">cmd/s5core/main.go:23-46</td></tr>
+<tr><td>PERF-4</td><td><span class="badge b1">P1</span></td><td>Шейпинг WS не срабатывает: типичный кадр obfs проходит быстрым путем без разбиения</td><td class="fid">pkg/transport/ws/shaped.go:49</td></tr>
+<tr><td>ARCH-2</td><td><span class="badge b1">P1</span></td><td>Нет явной машины состояний, отсутствуют per-state таймауты и метрики фаз</td><td class="fid">весь путь соединения</td></tr>
+<tr><td>CR-7</td><td><span class="badge b1">P1</span></td><td>Отсутствует тест на склейку приветствия и запроса, то есть на сценарий исходного бага</td><td class="fid">cmd/s5client/main_test.go</td></tr>
+<tr><td>CR-8</td><td><span class="badge b2">P2</span></td><td>Комментарий о гарантиях последовательности вызовов Write неверен, общие буферы без защиты</td><td class="fid">pkg/obfs/conn.go:41</td></tr>
+<tr><td>CR-9</td><td><span class="badge b2">P2</span></td><td>TrafficCallback без TrafficCounter приводит к разыменованию nil в SDK</td><td class="fid">internal/socks5/request.go:221</td></tr>
+<tr><td>PERF-5</td><td><span class="badge b2">P2</span></td><td>Чтение рукопожатия по одному байту без буферизации</td><td class="fid">internal/socks5/socks5.go:164</td></tr>
+<tr><td>PERF-6</td><td><span class="badge b2">P2</span></td><td>Аллокация на каждый UDP-пакет в BuildUDPHeader, мутация входного AddrSpec</td><td class="fid">internal/socks5/udp.go:71</td></tr>
+<tr><td>CR-10</td><td><span class="badge b2">P2</span></td><td>UDP Associate использует один сокет для клиента и целей, различение по адресу источника</td><td class="fid">internal/socks5/associate.go:117</td></tr>
+<tr><td>CR-11</td><td><span class="badge b2">P2</span></td><td>Сервер метрик на глобальном мультиплексоре, без таймаутов чтения заголовков</td><td class="fid">cmd/s5core/main.go:180</td></tr>
+<tr><td>DEAD-1</td><td><span class="badge b2">P2</span></td><td>Мертвый код: init-заглушка, unsafe.Sizeof, var _ replayWindow, reset, IsWSRequest, defaultPingInterval, PermitNone, Serve, ServeConn, ServerName</td><td class="fid">семь файлов</td></tr>
+<tr><td>DOC-1</td><td><span class="badge b2">P2</span></td><td>Расхождение PROXY_PASS и PROXY_PASSWORD, жесткие порты в compose, рекомендация порта 1443</td><td class="fid">README, docker-compose.yml</td></tr>
+<tr><td>DOC-2</td><td><span class="badge b2">P2</span></td><td>docs/archive/ice-audit-2026-05-30.md закрыт на 85 процентов и вводит в заблуждение в корне репозитория</td><td class="fid">docs/archive/ice-audit-2026-05-30.md</td></tr>
+<tr><td>DEAD-2</td><td><span class="badge b2">P2</span></td><td>Наследие апстрима: .travis.yml и README форка в internal/socks5</td><td class="fid">internal/socks5</td></tr>
+<tr><td>CR-12</td><td><span class="badge b2">P2</span></td><td>WSSubprotocol передается как срез с пустой строкой вместо nil</td><td class="fid">pkg/s5server/server.go:320</td></tr>
+</tbody>
+</table>
+
+<h2 id="method">13. Методика и ограничения</h2>
+<ul>
+<li>Аудит статический: прочитан весь непроверочный код (около 5071 строки), ключевые тесты, конфигурация CI, Dockerfile, compose, README, <code>.env.example</code>, а также <code>docs/design/session-fsm.md</code> и <code>docs/archive/ice-audit-2026-05-30.md</code>.</li>
+<li>Сверка с релизом выполнена через <code>git diff v1.4.4..main</code> по каждому затронутому файлу, поэтому утверждения о том, что появилось после релиза, проверены, а не предположены.</li>
+<li><b>Ограничение:</b> в этом окружении не установлен Go, поэтому <code>go build</code>, <code>go test -race</code>, <code>gofmt</code> и <code>go vet</code> запустить не удалось. Нарушения форматирования определены по исходным байтам файлов (смешанные отступы и выравнивание), что дает высокую, но не стопроцентную уверенность. Первое, что стоит сделать при наличии тулчейна, - прогнать <code>scripts/pre-commit.sh</code> и подтвердить пункт P0-1.</li>
+<li>Числовые оценки памяти рассчитаны аналитически из размеров структур и параметров конфигурации по умолчанию, а не измерены профайлером. Порядок величин надежен, точные значения стоит подтвердить <code>pprof</code>.</li>
+<li>Выводы по эвристикам DPI опираются на публичную исследовательскую практику детектирования полностью зашифрованных протоколов и классификаторов длин и таймингов. Конкретные пороги у разных операторов различаются, поэтому предложенная архитектура сделана параметрической: профиль формы выбирается конфигурацией, а не зашит в код.</li>
+</ul>
+
+<footer>
+S5Core, статический аудит ветки main (71971ed) со сверкой против v1.4.4 и боевого отчета от 18.09.2026. Документ автономный: открывается без сети, все стили встроены.
+</footer>
+
+</main>
+</div>
+</div>
+</body>
+</html>

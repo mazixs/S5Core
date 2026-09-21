@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S5Core - план реализации и исправления ядра</title>
+<style>
+:root{
+  --bg:#f7f8fa; --panel:#ffffff; --ink:#15181d; --muted:#5b6472; --line:#e2e6ec;
+  --accent:#2f6df6; --accent-soft:#e8efff;
+  --p0:#c92a2a; --p0-bg:#fdecec; --p1:#b06000; --p1-bg:#fff3e0;
+  --p2:#1f6f8b; --p2-bg:#e6f2f6; --gate:#7a3fb8; --gate-bg:#f3ebfb;
+  --code-bg:#f2f4f7; --ok:#2b6a3f; --ok-bg:#e8f5ec;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#161b22; --ink:#e6eaf0; --muted:#9aa4b2; --line:#252c36;
+    --accent:#6ea0ff; --accent-soft:#182740;
+    --p0:#ff8a8a; --p0-bg:#2c1618; --p1:#ffc069; --p1-bg:#2c2214;
+    --p2:#7fc7dd; --p2-bg:#13252b; --gate:#c79bec; --gate-bg:#241a2e;
+    --code-bg:#11161c; --ok:#87d3a2; --ok-bg:#14251a;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px 90px}
+header.top{padding:52px 0 24px;border-bottom:1px solid var(--line);margin-bottom:26px}
+h1{font-size:2rem;line-height:1.2;margin:0 0 10px;letter-spacing:-.02em}
+.sub{color:var(--muted);margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.chip{font-size:.8rem;padding:4px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--panel)}
+h2{font-size:1.4rem;margin:48px 0 12px;letter-spacing:-.01em;scroll-margin-top:20px}
+h2:first-of-type{margin-top:6px}
+h3{font-size:1.05rem;margin:26px 0 8px}
+p{margin:0 0 13px}
+ul,ol{margin:0 0 13px;padding-left:22px}
+li{margin:5px 0}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.875em;background:var(--code-bg);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
+pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow:auto;font-family:var(--mono);font-size:.82rem;line-height:1.5}
+pre code{background:none;border:none;padding:0}
+table{width:100%;border-collapse:collapse;margin:14px 0 20px;font-size:.89rem;display:block;overflow-x:auto}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;white-space:nowrap}
+tbody tr:hover{background:var(--accent-soft)}
+.task{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 18px;margin:13px 0}
+.task.t0{border-left:4px solid var(--p0)}
+.task.t1{border-left:4px solid var(--p1)}
+.task.t2{border-left:4px solid var(--p2)}
+.task h3{margin:0 0 8px;font-size:1.02rem;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.id{font-family:var(--mono);font-size:.82rem;color:var(--muted);flex:none}
+.badge{display:inline-block;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:5px;letter-spacing:.04em;white-space:nowrap}
+.b0{background:var(--p0-bg);color:var(--p0)}
+.b1{background:var(--p1-bg);color:var(--p1)}
+.b2{background:var(--p2-bg);color:var(--p2)}
+.bok{background:var(--ok-bg);color:var(--ok)}
+.bsrc{background:var(--code-bg);color:var(--muted);border:1px solid var(--line);font-family:var(--mono);font-weight:600}
+.row{display:flex;gap:10px;font-size:.92rem;margin:6px 0;align-items:baseline}
+.row b{min-width:104px;color:var(--muted);font-weight:600;flex:none;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+.gate{background:var(--gate-bg);border:1px solid var(--line);border-left:4px solid var(--gate);border-radius:12px;padding:15px 18px;margin:18px 0}
+.gate h3{margin:0 0 8px;font-size:1.02rem;color:var(--gate)}
+blockquote{margin:14px 0;padding:10px 15px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0}
+blockquote p:last-child{margin:0}
+.phase{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:20px 0 6px}
+.phase h2{margin:0 0 6px;font-size:1.25rem}
+.phase .goal{color:var(--muted);font-size:.92rem;margin:0}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:18px 0}
+.legend div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:.87rem}
+.small{font-size:.86rem;color:var(--muted)}
+.toc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 20px;margin:20px 0}
+.toc ol{margin:0;padding-left:20px;columns:2;column-gap:32px}
+.toc li{margin:4px 0;break-inside:avoid}
+footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+@media (max-width:640px){.toc ol{columns:1}.row{flex-direction:column;gap:2px}.row b{min-width:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>S5Core: план реализации и исправления ядра</h1>
+  <p class="sub">Сведение трех документов в один исполнимый план: <code>docs/plan/audit.html</code> (34 находки, P0-P2), <code>docs/plan/blockers.html</code> (29 блокеров, типы A-D), <code>docs/plan/research.html</code> (35 гипотез, решения развилок D1-D4). Каждая задача имеет файл, критерий готовности и трассировку к исходной находке. Между фазами стоят шлюзы: их результат не только разрешает следующий шаг, но и отменяет работу, которая оказалась ненужной.</p>
+  <div class="meta">
+    <span class="chip">Дата: 18.09.2026</span>
+    <span class="chip">Ветка: main @ 71971ed</span>
+    <span class="chip">Фаз: 7</span>
+    <span class="chip">Задач: 58</span>
+    <span class="chip">Шлюзов: 5</span>
+    <span class="chip">Горизонт: 6-7 недель</span>
+  </div>
+</header>
+
+<div class="toc">
+<ol>
+  <li><a href="#facts">Состояние на сегодня: что проверено прогоном</a></li>
+  <li><a href="#howto">Как читать план</a></li>
+  <li><a href="#principles">Шесть принципов, определяющих порядок</a></li>
+  <li><a href="#map">Карта фаз и шлюзов</a></li>
+  <li><a href="#f0">Фаза 0. Контур сборки</a></li>
+  <li><a href="#f1">Фаза 1. Зрение</a></li>
+  <li><a href="#f2">Фаза 2. Факты и измерения</a></li>
+  <li><a href="#f3">Фаза 3. Безопасность и надежность</a></li>
+  <li><a href="#f4">Фаза 4. Форма трафика и кадрирование</a></li>
+  <li><a href="#f5">Фаза 5. Рукопожатие S5Veil</a></li>
+  <li><a href="#f6">Фаза 6. Структура и долг</a></li>
+  <li><a href="#decisions">Решения, которые принимает владелец</a></li>
+  <li><a href="#stealth">Критерий приемки стелса</a></li>
+  <li><a href="#slo">Целевые показатели</a></li>
+  <li><a href="#antiscope">Что намеренно не делаем</a></li>
+  <li><a href="#risks">Риски плана</a></li>
+  <li><a href="#trace">Трассировка: находка - задача</a></li>
+</ol>
+</div>
+
+<h2 id="facts">1. Состояние на сегодня: что проверено прогоном</h2>
+
+<p>Аудит делался статически: в том окружении не было Go, и вывод про красный CI был обоснованным предположением. Сейчас toolchain доступен (<code>go1.26.3</code>, версия совпадает с CI), и проверки выполнены фактически. Результат меняет стартовую точку плана.</p>
+
+<table>
+<thead><tr><th>Проверка</th><th>Результат</th><th>Что это значит</th></tr></thead>
+<tbody>
+<tr><td><code>go build ./cmd/s5core ./cmd/s5client</code></td><td class="small"><b>Проходит</b></td><td class="small">Оба бинаря собираются. Продукт работоспособен, проблема не в сборке</td></tr>
+<tr><td><code>gofmt -s -l .</code></td><td class="small"><b>9 файлов</b>: cmd/s5client/main.go, cmd/s5client/main_test.go, cmd/s5core/main.go, internal/utls/dialer.go, pkg/obfs/replay.go, pkg/s5server/server.go, pkg/s5server/server_core.go, pkg/s5server/ws_integration_test.go, pkg/transport/ws/conn_test.go</td><td class="small">Аудит называл 5 файлов, фактически 9. Шаг CI "Check code formatting" падает</td></tr>
+<tr><td><code>go vet ./...</code></td><td class="small"><b>Падает</b>: <code>pkg/transport/ws/bench_test.go:10: "time" imported and not used</code></td><td class="small">Новая находка, в аудите ее нет. Пакет <code>ws</code> не компилируется в тестовом режиме</td></tr>
+<tr><td><code>go test ./...</code></td><td class="small"><b>FAIL</b>: <code>pkg/transport/ws [build failed]</code>. Остальные 8 пакетов зеленые</td><td class="small">Три бенчмарка WS, на которые ссылается README, не запускались с момента последней правки</td></tr>
+<tr><td>Мертвый код из раздела 7.1 аудита</td><td class="small"><b>Подтвержден весь</b>, кроме одного пункта</td><td class="small">Все семь мест на месте; <code>.travis.yml</code> и <code>.gitignore</code> из <code>internal/socks5</code> уже удалены, там остались только LICENSE и README.md</td></tr>
+<tr><td><code>LOG_LEVEL</code>, <code>WS_*</code> в бинарниках</td><td class="small"><b>Отсутствуют</b>: 0 упоминаний <code>WS_</code> в <code>cmd/s5core/main.go</code>, 0 упоминаний <code>LOG_LEVEL</code> во всем коде, три захардкоженных <code>slog.LevelInfo</code></td><td class="small">A1 и C8 из блокеров подтверждены прогоном, а не чтением</td></tr>
+<tr><td><code>InsecureSkipVerify</code>, <code>ipapi.co</code></td><td class="small"><b>На месте</b>: <code>internal/utls/dialer.go:35</code>, <code>cmd/s5client/timezone.go:15</code></td><td class="small">SEC-1 и SEC-2 актуальны</td></tr>
+</tbody>
+</table>
+
+<blockquote>
+<p><b>Вывод, меняющий первый день.</b> CI красный не на одном шаге, а на трех из шести: форматирование, <code>go vet</code>, тесты. Причем <code>vet</code> и тесты падают из-за одной строки в тестовом файле. Это значит, что ни один критерий готовности из аудита и ресерча сейчас нельзя проверить автоматически: любая правка упирается в то, что прогон и так красный, и отличить свою регрессию от унаследованной невозможно. Фаза 0 занимает часы и должна быть выполнена до всего остального.</p>
+</blockquote>
+
+<h2 id="howto">2. Как читать план</h2>
+
+<div class="legend">
+  <div><span class="badge b0">блокирующее</span><br>Без этого продукт не выполняет обещанного или небезопасен. Соответствует P0 аудита.</div>
+  <div><span class="badge b1">надежность</span><br>Деградация надежности, безопасности или ресурсов. Соответствует P1.</div>
+  <div><span class="badge b2">долг</span><br>Чистка, документация, структура. Соответствует P2.</div>
+  <div><span class="badge bok">приборы</span><br>Не чинит дефект, а делает его видимым. Идет раньше того, что чинит.</div>
+</div>
+
+<p>У каждой задачи есть строка <b>Источник</b> со ссылками в трех системах нумерации: <code>P0-2</code> - план аудита, <code>CR-1</code> - реестр находок аудита, <code>A1</code> - блокеры, <code>H6</code> - гипотезы ресерча. Так любую задачу можно развернуть обратно в ее обоснование, не пересказывая его здесь.</p>
+
+<p>Строка <b>Готово, когда</b> - это проверяемое условие, а не описание работы. Если условие нельзя проверить командой или тестом, задача сформулирована плохо и переписывается.</p>
+
+<p><b>Шлюзы</b> (G0-G4) - точки, где результат эксперимента определяет состав дальнейшей работы. Шлюз может отменить целый трек: например, если полоса упирается в канал VPS, оптимизация кадрирования переходит из работы в гигиену.</p>
+
+<h2 id="principles">3. Шесть принципов, определяющих порядок</h2>
+
+<ol>
+<li><b>Приборы раньше протокола.</b> Семь блокеров типа A ("нечем увидеть") порождают почти все блокеры типа B ("причина не установлена"). Фазы 1 и 2 конвертируют треть списка из неизвестного в известное, не трогая ни одной строки протокола.</li>
+<li><b>Ни одной правки hot path без замера до и после.</b> <code>CLAUDE.md</code> уже требует этого, но выполнить требование нечем: бенчмарков <code>pkg/obfs</code> не существует. Требование становится исполнимым после задачи Ф2-2, и только с этого момента правки кадрирования разрешены.</li>
+<li><b>Приборы антицензурного сервера приватны по умолчанию.</b> Подробный лог на соединение - это база данных о пользователях. Правила фиксируются до включения первой метрики, а не после инцидента.</li>
+<li><b>Формат первого кадра проектируется один раз.</b> Контекстная метка версии в выводе ключей, узловой идентификатор в теге и тип кадра для FIN стоят ноль сейчас и невозможны потом: клиенты стоят на роутерах и обновляются вручную.</li>
+<li><b>Рефакторинг после починки, а не вместо.</b> Разделение пакетов и HFSM (фаза 6) выполняется после фазы 3, иначе рефакторинг переносит дефекты в новую структуру и делает их менее заметными.</li>
+<li><b>Зеленый тест - не приемка стелса.</b> Чек-лист уровней 1-2 фиксирует отсутствие известных признаков, а не необнаружимость. Настоящая обратная связь эксплуатационная и приходит постфактум.</li>
+</ol>
+
+<h2 id="map">4. Карта фаз и шлюзов</h2>
+
+<table>
+<thead><tr><th>Фаза</th><th>Срок</th><th>Цель</th><th>Закрывает</th><th>Шлюз на выходе</th></tr></thead>
+<tbody>
+<tr><td><b>Ф0</b> Контур сборки</td><td class="small">1-2 дня</td><td class="small">Проверки выполняются одинаково локально и в CI, вердикт один</td><td class="small">A7, C6, CI-1, P0-1</td><td class="small"><b>G0</b>: зеленый прогон</td></tr>
+<tr><td><b>Ф1</b> Зрение</td><td class="small">неделя 1</td><td class="small">Отказы, фазы соединения и режим работы видны без пересборки</td><td class="small">A1, A2, A5, C8, ARCH-1</td><td class="small">-</td></tr>
+<tr><td><b>Ф2</b> Факты</td><td class="small">недели 1-2</td><td class="small">Числа вместо гипотез: полоса, аллокации, цена Argon2id, воспроизведение бага</td><td class="small">A3, A6, B1, B2, B3, B4</td><td class="small"><b>G1</b> полоса, <b>G2</b> Argon2id</td></tr>
+<tr><td><b>Ф3</b> Безопасность и надежность</td><td class="small">недели 2-3</td><td class="small">Закрытие P0 и P1, не зависящих от формата кадра</td><td class="small">CR-1..6, SEC-1,2,5,6, C7</td><td class="small">-</td></tr>
+<tr><td><b>Ф4</b> Форма трафика</td><td class="small">недели 3-4</td><td class="small">Критерий стелса, сегментация, скрытая длина, шейпер, keepalive</td><td class="small">A4, C1..C5, D5, D6, D8, D9, SEC-3,4,7</td><td class="small"><b>G3</b> нужен ли новый формат</td></tr>
+<tr><td><b>Ф5</b> Рукопожатие</td><td class="small">недели 5-6</td><td class="small">S5Veil: ключи, эпохи, узловой идентификатор, версия в KDF, миграция</td><td class="small">D1, D2, D3, D4, D7</td><td class="small"><b>G4</b> схема ключа</td></tr>
+<tr><td><b>Ф6</b> Структура и долг</td><td class="small">параллельно с Ф4-Ф5</td><td class="small">HFSM, разделение пакетов, мертвый код, документация</td><td class="small">P2-1..P2-14, ARCH-2</td><td class="small">-</td></tr>
+</tbody>
+</table>
+
+<p class="small">Сроки указаны как порядок величины и как последовательность, а не как обязательство. Единственное жесткое требование к порядку: Ф0 перед всем, Ф2-1 перед любой оптимизацией, G3 перед началом <code>pkg/veil</code>.</p>
+
+<div class="phase" id="f0">
+<h2>Фаза 0. Контур сборки</h2>
+<p class="goal">Цель: один скрипт, дающий одинаковый вердикт локально и в CI. Без этого критерии готовности всех остальных задач непроверяемы. Объем - один вечер.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф0-1</span> Починить компиляцию тестов пакета ws <span class="badge b0">блокирующее</span> <span class="badge bsrc">новое</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/transport/ws/bench_test.go:10</code></span></div>
+<div class="row"><b>Что</b><span>Убрать неиспользуемый импорт <code>time</code>. Проверить, что три бенчмарка (<code>BenchmarkShapedWriteSizes</code> и соседние) действительно запускаются, а не только компилируются.</span></div>
+<div class="row"><b>Готово, когда</b><span><code>go vet ./...</code> чист, <code>go test ./...</code> не содержит <code>build failed</code>.</span></div>
+<div class="row"><b>Замечание</b><span>Этой находки нет ни в одном из трех входных документов: статический аудит ее увидеть не мог. Она же объясняет, почему бенчмарки WS не показывали дефект шейпера - их не запускали.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф0-2</span> Привести код к gofmt -s <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-1 / CI-1</span></h3>
+<div class="row"><b>Где</b><span>9 файлов, список в разделе 1. Аудит называл 5, фактический прогон дал 9 (добавились три тестовых файла и <code>pkg/obfs/replay.go</code>).</span></div>
+<div class="row"><b>Что</b><span><code>gofmt -s -w</code> по списку. Правка механическая, отдельным коммитом, чтобы не смешивать с содержательными изменениями.</span></div>
+<div class="row"><b>Готово, когда</b><span><code>gofmt -s -l .</code> пуст.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф0-3</span> go mod tidy: перевести прямые зависимости из indirect <span class="badge b1">надежность</span> <span class="badge bsrc">C6 / H32</span></h3>
+<div class="row"><b>Где</b><span><code>go.mod</code>: <code>gorilla/websocket v1.5.3</code> и <code>refraction-networking/utls v1.8.2</code> помечены <code>// indirect</code>, хотя импортируются напрямую.</span></div>
+<div class="row"><b>Что</b><span><code>go mod tidy</code>. Это же прямое доказательство, что <code>scripts/pre-commit.sh</code> не запускался после добавления транспортов: шаг tidiness в нем есть.</span></div>
+<div class="row"><b>Готово, когда</b><span>После <code>go mod tidy</code> рабочее дерево чистое, шаг tidiness в pre-commit проходит.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф0-4</span> Свести CI и pre-commit.sh к одному источнику истины <span class="badge b1">надежность</span> <span class="badge bsrc">C6 / H32 / A7</span></h3>
+<div class="row"><b>Где</b><span><code>.github/workflows/ci.yml</code>, <code>scripts/pre-commit.sh</code></span></div>
+<div class="row"><b>Что</b><span>Сейчас скрипт обещает шесть проверок, CI выполняет пять и другие: в CI нет <code>golangci-lint</code> и <code>govulncheck</code>, в скрипте нет сборки бинарей. Сделать скрипт единственной точкой: CI вызывает его же. Зафиксировать окружение контейнером <code>golang:1.26.3</code>, чтобы локальный прогон и CI совпадали по версии toolchain. Установку golangci-lint и govulncheck описать в том же скрипте (сейчас он только советует команду и выходит с ошибкой).</span></div>
+<div class="row"><b>Готово, когда</b><span><code>docker run --rm -v $PWD:/src -w /src golang:1.26.3 ./scripts/pre-commit.sh</code> и job в GitHub дают одинаковый вердикт. Первый зеленый прогон обоих - это и есть шлюз G0.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф0-5</span> Правила приватности приборов <span class="badge bok">приборы</span> <span class="badge bsrc">H4</span></h3>
+<div class="row"><b>Где</b><span>новый <code>docs/design/observability-policy.md</code></span></div>
+<div class="row"><b>Что</b><span>Одна страница: что запрещено в логах и метриках (адрес клиента в лейблах, имя пользователя в лейблах, целевой хост, содержимое кадров), что разрешено (агрегированные счетчики, гистограммы, статусы), как включается временный подробный режим и с каким TTL живут счетчики в памяти. Написать до первой метрики из фазы 1, а не после.</span></div>
+<div class="row"><b>Готово, когда</b><span>По дампу <code>/metrics</code> и логов уровня Info невозможно восстановить, кто и куда ходил. Проверяется ревью каждой добавляемой метрики против этого документа.</span></div>
+<div class="row"><b>Почему рано</b><span>Прямолинейное закрытие A1 и A2 создает на сервере базу данных о пользователях, которая опаснее диагностируемых ей проблем. Переделывать приборы после инцидента дороже, чем написать страницу текста сейчас.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф0-6</span> Зафиксировать четыре целевых показателя <span class="badge bok">приборы</span> <span class="badge bsrc">H35 / B1</span></h3>
+<div class="row"><b>Где</b><span><code>README.md</code>, раздел рядом с числами производительности</span></div>
+<div class="row"><b>Что</b><span>Записать показатели с порогами и окном измерения (см. раздел 15 этого плана) и правило: правка hot path сопровождается сравнением <code>benchstat</code> до и после, правка формата кадра - прогоном чек-листа стелса. Без этого три несовместимых числа пропускной способности в README воспроизведутся снова.</span></div>
+<div class="row"><b>Готово, когда</b><span>В README нет ни одной цифры производительности без указания, каким бенчмарком и на каком стенде она получена.</span></div>
+</div>
+
+<div class="gate">
+<h3>Шлюз G0. Зеленый контур</h3>
+<p><b>Условие:</b> <code>pre-commit.sh</code> проходит локально в контейнере и в CI.</p>
+<p><b>Если не выполнено:</b> дальше не идем ни при каких обстоятельствах. Любая задача фазы 1 и далее имеет критерий готовности в виде теста или прогона; на красном контуре эти критерии не значат ничего.</p>
+<p><b>Побочный результат:</b> <code>govulncheck</code> впервые прогоняется по проекту. Если он найдет уязвимости в зависимостях, их разбор вставляется сюда же, до фазы 1.</p>
+</div>
+
+<div class="phase" id="f1">
+<h2>Фаза 1. Зрение</h2>
+<p class="goal">Цель: отказы, фазы соединения и фактический режим работы сервера становятся наблюдаемыми без пересборки. Ни одного архитектурного решения здесь не принимается. Это самая дешевая часть плана с самой высокой отдачей.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф1-1</span> Управляемый уровень логов <span class="badge b0">блокирующее</span> <span class="badge bok">приборы</span> <span class="badge bsrc">A1 / H1</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5core/main.go:49</code>, <code>cmd/s5client/main.go:57</code>, <code>pkg/s5server/server.go:47</code>, <code>.env.example</code></span></div>
+<div class="row"><b>Что</b><span>Ввести <code>LOG_LEVEL</code> и <code>slog.LevelVar</code> - потокобезопасный изменяемый уровень, передаваемый в обработчик один раз. Переключение вынести на уже существующий обработчик <code>SIGHUP</code> (он сейчас перезагружает <code>USERS_FILE</code>, туда же добавить перечитывание уровня). Проверить, что аргументы Debug-вызовов не собираются до проверки уровня: <code>slog</code> проверяет <code>Enabled</code> до вычисления атрибутов, но конкатенация строк прямо в аргументах эту защиту обходит.</span></div>
+<div class="row"><b>Готово, когда</b><span>Уровень меняется на работающем процессе без рестарта; вся протокольная диагностика в <code>ServeConnContext</code> становится достижимой; <code>benchstat</code> не показывает разницы между Info и Debug при выключенном Debug (p &gt; 0.05).</span></div>
+<div class="row"><b>Почему первое</b><span>Это причина фразы "за весь прогон ни одного WARN или ERROR" в боевом отчете. Без этой задачи нельзя проверить ни C5 (полузакрытие в WSS), ни C7 (fail2ban), ни B4 (вторая причина зависаний).</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф1-2</span> Счетчики отказов обфускации с классификацией причин <span class="badge b0">блокирующее</span> <span class="badge bok">приборы</span> <span class="badge bsrc">A2 / H2 / SEC-4</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/conn.go</code>, <code>pkg/obfs/replay.go</code>, инструменты OTel в <code>pkg/s5server/server_core.go</code></span></div>
+<div class="row"><b>Что</b><span>Сейчас <code>obfs: failed to decrypt</code> и <code>obfs: replay detected</code> растворяются в общем пути закрытия: ни лога, ни метрики. Ввести <code>obfs_handshake_failures_total{reason}</code> с разделением как минимум на <code>decrypt_fail</code>, <code>replay</code>, <code>short_frame</code>, <code>oversize</code>, <code>eof_before_frame</code>, плюс гистограмму числа байт, полученных до отказа. Эталон конструкции - метрика <code>tcp_probes</code> в outline-ss-server: статус и объем есть, адреса и содержимого нет.</span></div>
+<div class="row"><b>Готово, когда</b><span>Четыре разных события (опечатка в PSK у клиента, зондирование, переигровка записанного трафика, обычный обрыв) различимы по метрикам. Лейблы не содержат адреса источника - иначе это утечка и взрыв кардинальности одновременно.</span></div>
+<div class="row"><b>Двойная роль</b><span>Это не только диагностика, но и единственный доступный канал обратной связи от цензора: устойчивый фон отказов, не объяснимый активностью своих клиентов, и есть признак активного зондирования.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф1-3</span> Фазовые метрики жизненного цикла соединения <span class="badge b1">надежность</span> <span class="badge bok">приборы</span> <span class="badge bsrc">A5 / B2 / H3</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/s5server/server_core.go</code>, <code>internal/socks5/socks5.go</code>, <code>internal/socks5/request.go</code></span></div>
+<div class="row"><b>Что</b><span>Пять гистограмм по модели логов HAProxy: время до завершения рукопожатия, время аутентификации, время установки соединения к цели, время до первого байта от цели, полное время сессии. Плюс счетчик соединений по текущей фазе. Ситуация "треть соединений висит в ожидании ответа на CONNECT" должна быть видна в Prometheus как аномалия, а не как норма.</span></div>
+<div class="row"><b>Готово, когда</b><span>Сумма измеренных фаз объясняет наблюдаемые 0,31 с до первого байта с остатком менее 20 мс. Если остаток больше - он и есть предмет оптимизации, и это уже конкретный адрес, а не догадка.</span></div>
+<div class="row"><b>Дешевый дубль</b><span>То же разложение можно получить без единой правки кода инструментами eBPF (<code>tcpconnlat</code>, <code>tcplife</code>) прямо на боевом сервере. Делается в тот же день и служит перекрестной проверкой правильности собственных метрик.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф1-4</span> Подключить WS-транспорт к бинарнику и печатать сводку транспортов <span class="badge b1">надежность</span> <span class="badge bsrc">C8 / ARCH-1 / P1-2 / H5</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5core/main.go</code> (в структуре <code>params</code> нет ни одного поля <code>WS_*</code>), <code>README.md</code>, <code>.env.example</code></span></div>
+<div class="row"><b>Что</b><span>Около 700 строк рабочего кода (<code>pkg/transport/ws</code>, <code>pkg/transport/tlsdecoy</code>, <code>internal/utls</code>) подключены к SDK, но недоступны пользователю бинарника, при том что README и <code>.env.example</code> их документируют. Прочитать <code>WS_ENABLED</code>, <code>WS_CERT_FILE</code>, <code>WS_KEY_FILE</code>, <code>WS_PATH</code>, параметры шейпинга и <code>TLS_FINGERPRINT</code>. Добавить единственную стартовую строку вида <code>активные транспорты: plain:1080, obfs:1443, ws:выключен</code> и метрику <code>build_info</code> с версией и списком включенных транспортов.</span></div>
+<div class="row"><b>Готово, когда</b><span>Интеграционный тест поднимает сервер из переменных окружения и проходит через WSS. По метрикам сервера видно, сколько клиентов какой версии и через какой транспорт подключены.</span></div>
+<div class="row"><b>Зачем сводка</b><span>Опаснее самого разрыва то, что его нельзя обнаружить в рантайме: пользователь может считать, что работает скрытно, тогда как сервер слушает только обфусцированный порт. Та же метрика дает первые данные для оценки объема миграции (D4).</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф1-5</span> Счетчик неуспешных CloseWrite <span class="badge b2">долг</span> <span class="badge bok">приборы</span> <span class="badge bsrc">C5 / H28</span></h3>
+<div class="row"><b>Где</b><span><code>internal/socks5/request.go</code> (сейчас ошибка гасится через <code>_ =</code>), <code>pkg/obfs/conn.go</code></span></div>
+<div class="row"><b>Что</b><span>Цепочка <code>obfs.CloseWrite</code> ищет <code>CloseWrite</code> у нижележащего соединения; у <code>pkg/transport/ws.Conn</code> такого метода нет, ошибка возвращается и молча игнорируется. Пока полузакрытие не реализовано (задача Ф4-9), нужен хотя бы счетчик: сколько раз половинное закрытие не удалось и на каком транспорте.</span></div>
+<div class="row"><b>Готово, когда</b><span>Разница поведения между прямым TCP и WSS видна в метриках. Это превращает C5 из "неизвестно, что сломается в поле" в измеряемую величину.</span></div>
+</div>
+
+<div class="phase" id="f2">
+<h2>Фаза 2. Факты и измерения</h2>
+<p class="goal">Цель: заменить гипотезы числами. Два эксперимента этой фазы (Ф2-1 и Ф2-5) могут отменить или, наоборот, сделать срочной работу целых треков, поэтому они выполняются раньше любой оптимизации.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф2-1</span> Базовая линия канала: iperf3 без прокси <span class="badge b0">блокирующее</span> <span class="badge bok">приборы</span> <span class="badge bsrc">B1 / H6</span></h3>
+<div class="row"><b>Где</b><span>боевой VPS, без правок кода</span></div>
+<div class="row"><b>Что</b><span><code>iperf3 -c &lt;тот же VPS&gt; -t 30</code> в обе стороны, затем тот же объем через туннель. Наблюдаемые 12,5 МБ/с - это ровно 100 Мбит/с, настолько типичная полоса VPS, что проверка обязана быть первой.</span></div>
+<div class="row"><b>Готово, когда</b><span>Есть два числа: полоса канала и полоса через туннель, снятые одним инструментом в одном направлении.</span></div>
+<div class="row"><b>Цена</b><span>Полчаса. Это эксперимент с наибольшим отношением снятой неизвестности к затратам во всем плане.</span></div>
+</div>
+
+<div class="gate">
+<h3>Шлюз G1. Полоса: канал или код</h3>
+<p><b>Если baseline около 100 Мбит/с и туннель дает 85-95% от него:</b> код упирается не в себя, а в канал. Трек оптимизации производительности сворачивается до гигиены: сегментация по MTU (Ф4-2) все равно делается, но ради памяти, формы трафика и предсказуемости, а не ради скорости. Освободившееся время идет в фазы 4 и 5.</p>
+<p><b>Если baseline существенно выше:</b> 30-35 МБ/с становятся реальной задачей, и Ф2-2, Ф2-6, Ф4-2 получают высокий приоритет. Разрыв между 400-500 МБ/с микробенчмарка и боем объясняется методикой: на loopback нет потерь, RTT около 0,05 мс, MTU 65536, и измеряется стоимость аллокаций и планировщика, а не поведение транспорта.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф2-2</span> Бенчмарки обфускации: три уровня и гейт в CI <span class="badge b0">блокирующее</span> <span class="badge bok">приборы</span> <span class="badge bsrc">A3 / H7 / P2-12</span></h3>
+<div class="row"><b>Где</b><span>новый <code>pkg/obfs/bench_test.go</code>, <code>.github/workflows/ci.yml</code>, <code>README.md</code></span></div>
+<div class="row"><b>Что</b><span>Три уровня измерения: только шифр, только кадрирование, сквозной путь. Профили записи 1400, 4096 и 32768 байт - последний воспроизводит реальную подачу от <code>io.CopyBuffer</code>. Обязательно <code>-benchmem</code>. Отчет по p50/p95/p99, а не по среднему. Сравнение через <code>benchstat</code>, гейт в CI, падающий при регрессии сверх порога. Отдельно включить в набор ChaCha20-Poly1305: на процессорах без AES-NI, а это большинство роутеров, он обгоняет AES-GCM в разы, и это понадобится в фазе 5.</span></div>
+<div class="row"><b>Готово, когда</b><span>Требование <code>CLAUDE.md</code> "изменения буферов проверять бенчмарками" становится физически исполнимым. README не содержит чисел без указания методики.</span></div>
+<div class="row"><b>Зависит от</b><span>Ф0-4 (работающий контур). Блокирует: Ф4-2, Ф4-3, Ф4-7 - любую правку hot path.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф2-3</span> Тест на склейку, перебор точек разрыва, фаззер рукопожатия <span class="badge b0">блокирующее</span> <span class="badge bsrc">A6 / B4 / CR-7 / P1-13 / H33</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5client/main_test.go</code>, <code>internal/socks5/socks5_test.go</code></span></div>
+<div class="row"><b>Что</b><span>Три теста. (1) Приветствие SOCKS5 и CONNECT в одном <code>Write</code> - ровно механика бага 1: на коде v1.4.4 падает, на main зеленый. В репозитории есть обратный тест (<code>TestSocks5Handshake_ReadsFragmentedFrames</code>), а именно этого сценария нет. (2) Параметризованный тест: тот же поток, разбитый во всех возможных точках. (3) Фаззер разбора рукопожатия с корпусом, сохраняемым в репозитории при падении. Все на <code>net.Pipe</code>, без сети.</span></div>
+<div class="row"><b>Готово, когда</b><span>Сценарий из боевого отчета воспроизводится в unit-тесте детерминированно. Это то, что превращает баг 1 из "объяснен" в "закрыт".</span></div>
+<div class="row"><b>Живой кандидат</b><span>Сервер читает рукопожатие мелкими порциями через <code>io.ReadFull</code> прямо из <code>obfs.Conn</code>, а тот хранит непрочитанный хвост кадра в <code>readRest</code>. Этот механизм - единственное, что держит инвариант; любая ошибка в нем дает ту же картину молчаливого зависания. Перебор точек разрыва целится именно в него.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф2-4</span> Тесты на тайминги на виртуальном времени <span class="badge b2">долг</span> <span class="badge bsrc">H34</span></h3>
+<div class="row"><b>Где</b><span>новые тесты рядом с таймаутами и keepalive</span></div>
+<div class="row"><b>Что</b><span>Пакет <code>testing/synctest</code> (доступен, в проекте Go 1.26) выполняет тест в изолированном пузыре с фиктивными часами: ожидание таймера происходит мгновенно. Это снимает главное препятствие к появлению тестов на таймауты - они перестают быть медленными и нестабильными.</span></div>
+<div class="row"><b>Готово, когда</b><span>Полный набор тестов на тайминги выполняется меньше секунды и стабилен при 100 повторах с <code>-race</code>.</span></div>
+<div class="row"><b>Обслуживает</b><span>Ф3-1 (таймауты клиента), Ф3-2 (разделение таймаутов), Ф4-8 (keepalive), Ф5-3 (окна эпох на границе часа).</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф2-5</span> Замер Argon2id в целевой конфигурации <span class="badge b0">блокирующее</span> <span class="badge bsrc">B3 / PERF-3 / H30</span></h3>
+<div class="row"><b>Где</b><span>стенд, идентичный боевому; <code>internal/userstore/store.go:273</code></span></div>
+<div class="row"><b>Что</b><span>Боевые 0,174 с и 12,5 МБ/с получены в legacy-режиме с <code>PROXY_PASSWORD</code>, то есть путь через <code>USERS_FILE</code> с Argon2id (64 МБ, три прохода) не выполнялся ни разу. Замерить 10 одновременных подключений с <code>USERS_FILE</code>: пиковая RSS, время до первого байта, число успешных подключений. Затем то же под нагрузкой 100 соединений в секунду.</span></div>
+<div class="row"><b>Готово, когда</b><span>Известно, сколько стоит переход на целевую конфигурацию. Ожидание: браузер открывает 6-10 соединений на страницу, при 64 МБ на каждое это 384-640 МБ пиковой памяти и десятки миллисекунд CPU на соединение.</span></div>
+<div class="row"><b>Почему это важнее, чем кажется</b><span>Это единственный блокер, который при штатном переходе на целевую конфигурацию превращается не в неудобство, а в отказ продукта - причем без всякой уязвимости в коде.</span></div>
+</div>
+
+<div class="gate">
+<h3>Шлюз G2. Срочность выноса KDF из hot path</h3>
+<p><b>Если замер подтверждает рост RSS в сотни мегабайт и рост задержки в разы:</b> задача Ф3-6 (вынос Argon2id) поднимается в начало фазы 3 и выполняется до перехода любого боевого сервера на <code>USERS_FILE</code>. До ее выполнения переход на целевую конфигурацию запрещен явно, в README.</p>
+<p><b>Если деградация умеренная:</b> Ф3-6 остается в общем порядке фазы 3, но не отменяется: ни один рассмотренный прокси не выполняет KDF на соединение, и правильная постановка вопроса не "сколько стоит Argon2id", а "почему KDF вообще на hot path".</p>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф2-6</span> Профилирование под нагрузкой <span class="badge b1">надежность</span> <span class="badge bsrc">B1 / C2 / H8</span></h3>
+<div class="row"><b>Где</b><span>боевой сервер, <code>go tool pprof</code></span></div>
+<div class="row"><b>Что</b><span>Профили CPU и аллокаций под реальной нагрузкой. Проверяемая гипотеза: буфер чтения равен удвоенному MTU (2800 байт), отправитель подает блоки до 32 КБ, поэтому каждый крупный кадр уходит в ветку с выделением памяти плюс копия хвоста. Если так, заявленная zero-allocation архитектура ломается на сочетании размеров, а не на алгоритме, и лечится согласованием размеров плюс пулом буферов, без изменения формата кадра.</span></div>
+<div class="row"><b>Готово, когда</b><span>Источник аллокаций назван по имени функции. Если это не <code>obfs.Read</code> - искать в шейпере WebSocket, и тогда приоритет получает Ф4-7.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф2-7</span> Повторный боевой прогон на 30-50 соединений <span class="badge b1">надежность</span> <span class="badge bsrc">B4</span></h3>
+<div class="row"><b>Где</b><span>боевой стенд, после Ф1-1, Ф1-2 и Ф2-3</span></div>
+<div class="row"><b>Что</b><span>Воспроизвести сценарий боевого отчета при включенном Debug и работающих счетчиках отказов. Механика потери склеенного CONNECT объясняет все наблюдения отчета без остатка, и фикс в main корректен, но подтверждения на том же стенде нет.</span></div>
+<div class="row"><b>Готово, когда</b><span>Ноль зависаний на 50 соединениях, а в метриках видно, что отказов обфускации не было. Только после этого баг 1 считается закрытым, а не объясненным.</span></div>
+</div>
+
+<div class="phase" id="f3">
+<h2>Фаза 3. Безопасность и надежность</h2>
+<p class="goal">Цель: закрыть все P0 и P1 аудита, не зависящие от формата кадра. Задачи независимы друг от друга и могут идти параллельно. После этой фазы продуктом можно пользоваться и его отказы диагностируемы.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф3-1</span> Дедлайны и диагностика в клиенте <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-2 / CR-1</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5client/main.go:182, 282, 322</code>, <code>cmd/s5client/udp_client.go</code></span></div>
+<div class="row"><b>Что</b><span>В клиенте нет ни одного дедлайна: <code>net.Dial</code> без таймаута, чтение ответа на приветствие и ответа CONNECT без дедлайна. Симптом "ответа нет никогда, в логах ни одного WARN" - прямое следствие этой конструкции. Добавить дедлайн на dial, на ответ приветствия, на ответ CONNECT и на ответ команды <code>0x83</code>; при истечении - ошибка SOCKS5 приложению и запись в лог с адресом назначения и фазой.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест: сервер принимает TCP и молчит. Клиент возвращает приложению ошибку и пишет WARN за заданный интервал. Тест на виртуальном времени (Ф2-4).</span></div>
+<div class="row"><b>Класс дефекта</b><span>Корневая причина бага 1 устранена, но класс открыт: любая будущая потеря кадра снова даст вечное зависание без единой строки лога.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф3-2</span> Разделить таймаут рукопожатия и таймаут простоя релея <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-3 / CR-2</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/s5server/server_core.go:170</code> (<code>timeoutConn.Read</code>), <code>internal/socks5/associate.go:254</code></span></div>
+<div class="row"><b>Что</b><span><code>READ_TIMEOUT</code> применяется как таймаут простоя ко всему жизненному циклу, включая фазу релея. Попытка обойти это в <code>handleUDPTcpmux</code> (<code>SetDeadline(time.Time{})</code>) не работает: следующий же вызов <code>timeoutConn.Read</code> ставит дедлайн обратно. То же касается монитора TCP в <code>handleAssociate</code>. Развести три разных таймаута: рукопожатие (секунды), релей TCP (конфигурируемый idle), туннель <code>0x83</code> (без idle-разрыва или с большим значением).</span></div>
+<div class="row"><b>Готово, когда</b><span>Туннель <code>0x83</code> живет более 10 минут при паузах в трафике; медленный клиент на рукопожатии отключается за секунды.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф3-3</span> Убрать запрос к ipapi.co из старта клиента <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-4 / SEC-2</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5client/timezone.go:15</code></span></div>
+<div class="row"><b>Что</b><span>При каждом запуске клиент делает HTTPS-запрос на <code>ipapi.co/&lt;IP сервера&gt;/timezone/</code>. Третья сторона получает связку "адрес клиента - адрес прокси-сервера", а наблюдатель на канале получает устойчивый предвестник подключения к прокси. Оставить как явную команду или флаг, по умолчанию выключенную.</span></div>
+<div class="row"><b>Готово, когда</b><span>При старте клиента исходящих соединений, кроме как к серверу, нет. Проверяется тестом на уровне сетевого хука.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф3-4</span> Включить проверку сертификата в uTLS-дилере <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-5 / SEC-1</span></h3>
+<div class="row"><b>Где</b><span><code>internal/utls/dialer.go:35</code>, <code>pkg/transport/ws/dialer.go</code></span></div>
+<div class="row"><b>Что</b><span><code>InsecureSkipVerify: true</code> с комментарием, что вызывающая сторона должна проверить сертификат через пиннинг, но ни <code>ws.Dial</code>, ни клиент этого не делают. Транспорт, созданный ради скрытности, открыт для MITM. Реализовать валидацию по системным корням либо пиннинг отпечатка из конфигурации.</span></div>
+<div class="row"><b>Готово, когда</b><span><code>InsecureSkipVerify</code> отсутствует в непроверочном коде; тест с подменным сертификатом падает с ошибкой проверки.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-5</span> Fail2ban: ключ по источнику, мягкий счетчик по аккаунту <span class="badge b1">надежность</span> <span class="badge bsrc">P1-4 / SEC-5 / C7 / H29</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/s5server/server_core.go:338</code> (<code>fail2banStore</code>)</span></div>
+<div class="row"><b>Что</b><span>Сейчас ключ блокировки - имя пользователя, то есть механизм делает обратное заявленному: распределенный перебор с множества адресов не тормозится, а любой, кто знает чужое имя, блокирует владельца тремя запросами. Схема: жесткий лимит и бан по адресу или подсети источника, отдельный мягкий счетчик по аккаунту, который поднимает алерт и включает задержку, но не отказ. Счетчики в памяти с коротким TTL, адреса не попадают в логи.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест 1: 100 попыток с разных адресов по разным именам блокируются по источникам и не затрагивают аккаунты. Тест 2: 5 попыток с одного адреса по чужому имени не лишают владельца доступа. Сейчас оба сценария проваливаются.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-6</span> Вынести Argon2id с пути установки соединения <span class="badge b1">надежность</span> <span class="badge bsrc">P1-5 / PERF-3 / H30</span></h3>
+<div class="row"><b>Где</b><span><code>internal/userstore/store.go</code>, <code>internal/socks5/auth.go</code></span></div>
+<div class="row"><b>Что</b><span>Один раз при загрузке <code>USERS_FILE</code> получить верификатор и держать его в памяти; на соединении делать сравнение за константное время. Параметры Argon2id при этом остаются высокими - они применяются к файлу учеток, а не к трафику. Сам Argon2id остается там, где уместен: вход в панель управления, где 100 мс не имеют значения.</span></div>
+<div class="row"><b>Готово, когда</b><span>Время открытия страницы с <code>USERS_FILE</code> отличается от legacy-режима не более чем на 5%; установка 100 соединений в секунду не поднимает потребление памяти выше базового уровня.</span></div>
+<div class="row"><b>Приоритет</b><span>Определяется шлюзом G2.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-7</span> Якорение и семантика ACL <span class="badge b1">надежность</span> <span class="badge bsrc">P1-6 / SEC-6</span></h3>
+<div class="row"><b>Где</b><span><code>internal/s5core/ruleset.go:26</code>, <code>internal/socks5/request.go</code></span></div>
+<div class="row"><b>Что</b><span><code>PermitDestAddrPattern</code> применяет <code>MatchString</code> без якорей, поэтому паттерн <code>example\.com</code> разрешает <code>evil-example.community</code>. Кроме того, правило проверяется после DNS-резолвинга, то есть запрещенное имя все равно резолвится. Добавить якоря по умолчанию, обработку IP-литералов, перенести проверку до резолвинга.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест: паттерн <code>example.com</code> не пропускает <code>evil-example.community</code>; запрещенное имя не резолвится.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-8</span> Единый конвейер слушателя: лимиты и whitelist на все три порта <span class="badge b1">надежность</span> <span class="badge bsrc">P1-3 / CR-3</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/s5server/server.go:175, 216</code> (<code>Start</code> на 130 строк с тремя копиями блока запуска)</span></div>
+<div class="row"><b>Что</b><span><code>netutil.LimitListener</code> оборачивает только plain-слушатель: <code>MAX_CONNECTIONS</code> не защищает основной боевой порт. <code>UpdateWhitelist</code> обновляет тоже только plain, то есть работает на трети поверхности. Ввести единый конструктор конвейера слушателя (лимит, whitelist, таймауты, метрики) и применять ко всем трем.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест: при лимите 2 третье соединение на obfs-порт отклоняется; <code>UpdateWhitelist</code> действует на все слушатели.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-9</span> Жизненный цикл tlsdecoy <span class="badge b1">надежность</span> <span class="badge bsrc">P1-7 / CR-4 / CR-5</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/transport/tlsdecoy/listener.go:58, 86, 101</code></span></div>
+<div class="row"><b>Что</b><span><code>Close</code> закрывает канал, в который может писать обработчик апгрейда - паника при завершении. Пустой <code>WSPath</code> приводит к панике регистрации обработчика, значение <code>/</code> конфликтует с приманкой. Добавить таймауты HTTP-сервера и валидацию пути в <code>ValidateConfig</code>.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест на гонку: закрытие во время апгрейда не приводит к панике. Пустой путь дает понятную ошибку конфигурации, а не панику.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-10</span> Корректное завершение процесса <span class="badge b1">надежность</span> <span class="badge bsrc">P1-8 / CR-6</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5core/main.go:84</code>, <code>pkg/s5server/server.go:373</code></span></div>
+<div class="row"><b>Что</b><span><code>main</code> не вызывает <code>Stop</code>: при отмене контекста закрывается только plain-слушатель, финальный сброс счетчиков трафика не выполняется. Вызвать <code>Stop</code>, закрыть все слушатели, гарантировать сброс накопленного трафика в <code>users.json</code>.</span></div>
+<div class="row"><b>Готово, когда</b><span>После SIGTERM файл содержит трафик последнего интервала, процесс завершается без утечки горутин (проверяется <code>goleak</code> или эквивалентом).</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф3-11</span> Квоты и сроки действия в процессе сессии <span class="badge b1">надежность</span> <span class="badge bsrc">P1-10</span></h3>
+<div class="row"><b>Где</b><span><code>internal/socks5/request.go</code> (релей), <code>internal/userstore</code></span></div>
+<div class="row"><b>Что</b><span>Сейчас лимит трафика проверяется только при аутентификации: пользователь, превысивший квоту в середине сессии, качает дальше. Сравнение счетчика делать на уже существующей границе сброса раз в 64 КБ - это не добавляет работы в горячий путь.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест: при исчерпании лимита в середине передачи сессия закрывается в пределах 64 КБ.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф3-12</span> Защита от неверной конфигурации SDK <span class="badge b2">долг</span> <span class="badge bsrc">P2-7 / CR-9</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/s5server</code> (<code>ValidateConfig</code>), <code>internal/socks5/request.go:221</code></span></div>
+<div class="row"><b>Что</b><span><code>TrafficCallback</code> без <code>TrafficCounter</code> приводит к разыменованию nil в рантайме. Должно быть ошибкой конфигурации на старте.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест: такая конфигурация отвергается <code>ValidateConfig</code> с понятным сообщением.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф3-13</span> Документация и дефолты <span class="badge b2">долг</span> <span class="badge bsrc">P2-8 / DOC-1 / C1</span></h3>
+<div class="row"><b>Где</b><span><code>README.md</code>, <code>.env.example</code>, <code>docker-compose.yml</code>, <code>CLAUDE.md</code></span></div>
+<div class="row"><b>Что</b><span>Четыре правки. (1) Исправить ложный инвариант: совпадать обязан только <code>OBFS_PSK</code>; <code>OBFS_MAX_PADDING</code> на приемной стороне не используется вообще (длина паддинга берется из расшифрованного заголовка), <code>OBFS_MTU</code> влияет только на размер буфера чтения. Сейчас документация заставляет людей проверять совпадение параметров, которое ни на что не влияет, и маскирует настоящий дефект (см. Ф4-2). (2) Ввести алиас <code>PROXY_PASS</code> к <code>PROXY_PASSWORD</code> с предупреждением, а не переименование одним махом. (3) Убрать жесткий проброс портов в <code>docker-compose.yml</code>. (4) Заменить рекомендацию <code>OBFS_PORT=1443</code>: на портах семейства 443 DPI ожидает TLS ClientHello, а продукт отдает высокоэнтропийный шум с первого байта, то есть дефолт работает против продукта.</span></div>
+<div class="row"><b>Готово, когда</b><span>В документации нет утверждений, опровергаемых чтением кода. Проверяется отдельным проходом по README против исходников.</span></div>
+</div>
+
+<div class="phase" id="f4">
+<h2>Фаза 4. Форма трафика и кадрирование</h2>
+<p class="goal">Цель: получить критерий приемки стелса и устранить дефекты формы, не переписывая протокол целиком. Начинается только после Ф2-2: все задачи здесь трогают hot path.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф4-1</span> Заменить энтропийный тест чек-листом стелса <span class="badge b0">блокирующее</span> <span class="badge bok">приборы</span> <span class="badge bsrc">A4 / D6 / H10 / H11</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/demo_test.go</code> (полностью переписывается), новый инструмент анализа корпуса</span></div>
+<div class="row"><b>Что</b><span>Текущий тест считает среднюю энтропию Шеннона по всему буферу и падает только ниже 5,0 бит на байт - порог, который проходит практически любой сжатый или шифрованный поток, и остается зеленым ровно тогда, когда продукт детектируем. Замена - три уровня из раздела 14 этого плана: правила Ex1-Ex5 по первому пакету, позиционные и распределительные проверки по корпусу, эксплуатационная обратная связь.</span></div>
+<div class="row"><b>Готово, когда</b><span>Для корпуса первых пакетов доля потоков, не попавших ни под одно исключение Ex1-Ex5, известна и зафиксирована. По корпусу из 1000 соединений нет позиционных пиков и мультимодальных распределений длин.</span></div>
+<div class="row"><b>Ключевой факт</b><span>Правило Ex1 симметрично: поток, слишком близкий к идеально случайному, блокируется так же, как открытый текст. Цель "неотличимо от шума" не просто недостигнута - она поставлена неверно.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф4-2</span> Сегментация записи по MTU и согласование буферов <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-7 / PERF-1 / C2 / H8 / H22</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/conn.go:131</code> (Write), <code>pkg/obfs/conn.go:87</code> (readBufSize)</span></div>
+<div class="row"><b>Что</b><span>Одно исправление с тремя эффектами: <code>writeBuf</code> перестает быть 65,8 КБ на соединение (сейчас он рассчитан на максимальный payload 65535 и не зависит от MTU), приемная сторона перестает аллоцировать буфер на каждый крупный кадр, и на проводе исчезает распределение длин, привязанное к 32-килобайтному буферу <code>io.CopyBuffer</code>. Добавить пул буферов с классами размеров.</span></div>
+<div class="row"><b>Готово, когда</b><span>При записи 1 МБ ни один кадр не превышает MTU; <code>testing.AllocsPerRun</code> дает ноль или единицы аллокаций на крупных блоках; <code>benchstat</code> до и после не показывает регрессии пропускной способности.</span></div>
+<div class="row"><b>Память</b><span>Ожидаемое падение с примерно 152 КБ до единиц килобайт на соединение вместе с Ф4-4. При <code>MAX_CONNECTIONS=5000</code> это разница между 760 МБ под буферы и десятками мегабайт.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф4-3</span> Скрыть длину кадра и убрать постоянные байты <span class="badge b0">блокирующее</span> <span class="badge bsrc">P0-6 / SEC-3</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/conn.go:179</code></span></div>
+<div class="row"><b>Что</b><span>Сейчас каждый кадр имеет 4 байта длины (из них два всегда нулевые) и 12 байт nonce открытым текстом, то есть позиция следующего заголовка вычисляется тривиально и классификатор восстанавливает границы кадров. Маскировать поле длины потоковым ключом (модель obfs4: SipHash в режиме OFB) либо шифровать заголовок AEAD с отдельным ключом. Одновременно заменить случайный nonce счетчиком направления: 12 байт на кадр тратятся зря, счетчик дает ту же стойкость при нулевом оверхеде на проводе и снимает риск повтора nonce при длинной работе одного PSK.</span></div>
+<div class="row"><b>Готово, когда</b><span>Чек-лист уровня 2 (Ф4-1) зеленый: в первых 4 КБ потока нет байтов, чье значение повторяется в фиксированной позиции чаще случайного.</span></div>
+<div class="row"><b>Связь</b><span>Делается вместе с Ф4-2: обе задачи меняют один файл и один инвариант. Порядок внутри пары: сначала сегментация, потом заголовок.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф4-4</span> Реплей-история на уровне сервера вместо посессионного окна <span class="badge b1">надежность</span> <span class="badge bsrc">P1-1 / SEC-4 / C4 / H12</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/replay.go</code></span></div>
+<div class="row"><b>Что</b><span>Окно живет внутри одного соединения и стоит около 82 КБ на соединение, при этом атакующий, переигрывающий записанный первый кадр в новом соединении, проходит проверку всегда - то есть защита не закрывает основной сценарий активного зондирования. На стороне клиента параметр окна вообще не задается. Перенести историю на уровень сервера с ограниченным временным окном: кольцевая история порядка 10 000 записей по 20 байт - это сотни килобайт на весь сервер вместо 82 КБ на соединение. Вероятностные структуры (фильтр Блума) не применять: ложное срабатывание рвет легитимное соединение.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест-зонд: записать первый кадр валидного соединения и повторить его в новом подключении. Реакция сервера неотличима от реакции на мусорные данные по времени до закрытия и объему ответа.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф4-5</span> Раздельные ключи направлений и вывод сессионных ключей <span class="badge b1">надежность</span> <span class="badge bsrc">P1-9 / SEC-7</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/conn.go:70</code> или уже новый <code>pkg/veil</code></span></div>
+<div class="row"><b>Что</b><span>PSK используется напрямую как ключ AES-256 - один и тот же для всех пользователей, всех соединений и обоих направлений, без вывода сессионных ключей. Прямой секретности нет: компрометация PSK раскрывает весь ранее записанный трафик. Общее пространство 96-битных nonce для двух направлений дополнительно ухудшает границы безопасности. Ввести HKDF от PSK с раздельными метками направлений и счетчики nonce.</span></div>
+<div class="row"><b>Готово, когда</b><span>Два направления используют разные ключи; nonce - счетчики; повтор nonce невозможен по построению.</span></div>
+<div class="row"><b>Замечание</b><span>Это подготовка формата к фазе 5: та же схема вывода ключей примет контекстную метку версии и узловой идентификатор.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф4-6</span> Решение по писателю: очередь или смена библиотеки <span class="badge b1">надежность</span> <span class="badge bsrc">D7 / CR-8 / H24 / H27</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/transport/ws</code>, <code>pkg/obfs/conn.go:41-44</code></span></div>
+<div class="row"><b>Что</b><span>Комментарий в <code>obfs</code> о том, что <code>net.Conn</code> гарантирует последовательные вызовы Write, неверен, но сейчас не стреляет: писатель фактически один. Как только появится keepalive (Ф4-8) или мультиплексирование, общие преаллоцированные буферы начнут портить кадры - редко, под нагрузкой и невоспроизводимо. Два варианта одной цены: единственная горутина-писатель с очередью (как в smux и yamux, где через ту же очередь идут keepalive-кадры) либо замена <code>gorilla/websocket</code> на библиотеку, штатно поддерживающую конкурентную запись. Прототипировать оба, выбрать замером.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест с двумя горутинами, пишущими в одно соединение, проходит под <code>-race</code>. Критерий выбора: разница задержки p95 менее 1 мс - берется вариант с меньшим объемом кода, больше - берется быстрый. Решение принимается одно для обоих слоев (obfs и ws), а не два разных.</span></div>
+<div class="row"><b>Блокирует</b><span>Ф4-8 (keepalive). Выполняется раньше нее.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф4-7</span> Починить шейпинг WebSocket <span class="badge b1">надежность</span> <span class="badge bsrc">P1-11 / PERF-4 / C3 / H13 / H21</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/transport/ws/shaped.go:49</code></span></div>
+<div class="row"><b>Что</b><span>Быстрый путь срабатывает на записях не больше максимального кадра (по умолчанию 4096), а типичный кадр обфускации 1400-1700 байт, то есть шейпинг не применяется никогда и внешняя граница кадра WebSocket в точности повторяет внутреннюю. Это не потеря маскировки, а ее инверсия: вложенная структура выдает протокол точнее, чем голый обфусцированный поток. Убрать быстрый путь. Форму задавать не снятым профилем браузера, а ограничениями: диапазоны длин, доля кадров максимальной длины, отсутствие постоянных интервалов. Для паддинга использовать нормальное распределение, а не равномерное - равномерное само по себе нетипично и распознается при накоплении наблюдений.</span></div>
+<div class="row"><b>Готово, когда</b><span>Гистограмма длин кадров WebSocket по 200 соединениям не имеет пика в районе 1400-1700 байт и не коррелирует с длинами внутренних кадров. Накладные расходы не выше 10% по полосе и задержке, иначе шейпинг применяется только к фазе рукопожатия.</span></div>
+<div class="row"><b>Побочно</b><span>Существующий <code>BenchmarkShapedWriteSizes</code> измеряет скорость функции, а не результат ее работы. Заменить или дополнить тестом на распределение.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф4-8</span> Keepalive с джиттером и матрица проверки через промежуточные узлы <span class="badge b1">надежность</span> <span class="badge bsrc">P1-12 / D8 / D9 / H25 / H26</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/transport/ws</code> (константа <code>defaultPingInterval</code> объявлена, keepalive не реализован)</span></div>
+<div class="row"><b>Что</b><span>Три требования (не рвать долгие сессии, не держать мертвые слоты, не создавать распознаваемый рисунок) конфликтуют только при фиксированном интервале. Снимается тремя правилами: интервал случаен в диапазоне, пинг подавляется при недавнем полезном трафике, кадр keepalive неотличим по размеру от кадра данных. Числовые ориентиры для выбора диапазона: Cloudflare рвет WebSocket после примерно 100 секунд простоя на Free и Pro, AWS NAT Gateway - 350 секунд, Azure Load Balancer - 4 минуты, обратные прокси обычно около 60 секунд. Отсюда рабочий интервал порядка 45-60 секунд с разбросом.</span></div>
+<div class="row"><b>Готово, когда</b><span>Матрица {прямое соединение, за nginx, за CDN, через мобильный CGNAT} x {без keepalive, 45 с, 90 с} измерена, время до разрыва при простое сведено в таблицу в README, дефолт выбран по данным. Распределение интервалов между кадрами не дает пика на константе (проверка Ф4-1).</span></div>
+<div class="row"><b>Зависит от</b><span>Ф4-6 (второй писатель).</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф4-9</span> Полузакрытие, работающее одинаково на обоих транспортах <span class="badge b1">надежность</span> <span class="badge bsrc">C5 / H28</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/obfs/conn.go</code>, <code>pkg/transport/ws/conn.go</code>, <code>internal/socks5/request.go</code></span></div>
+<div class="row"><b>Что</b><span>WebSocket не имеет полузакрытия в смысле TCP: обмен close-кадрами завершает соединение целиком. Поэтому нужен собственный сигнал конца потока - тип кадра FIN в слое обфускации, транслируемый в <code>CloseWrite</code> на другой стороне. Правило реализации: при EOF в одном направлении вызывать <code>CloseWrite</code> и продолжать читать обратное до его EOF; при невозможности - закрывать соединение целиком, но с записью в метрику, а не молча.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест с протоколом, использующим полузакрытие, дает одинаковое поведение в режимах прямого TCP и WSS.</span></div>
+<div class="row"><b>Важно</b><span>Появление типа кадра - изменение формата. Выполняется в одной версии формата с Ф4-3 и с контекстной меткой версии из Ф5-4, а не отдельно.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф4-10</span> Измерить цену UDP-over-TCP на канале с потерями <span class="badge b2">долг</span> <span class="badge bsrc">D8 / H23</span></h3>
+<div class="row"><b>Где</b><span>стенд с <code>tc netem</code>, без правок кода</span></div>
+<div class="row"><b>Что</b><span>Команда <code>0x83</code> закрывает утечки WebRTC, QUIC и DNS - правильное продуктовое решение с известной ценой: потеря одного TCP-сегмента останавливает доставку всех мультиплексированных потоков. Измерить задержку DNS и джиттер потока при потерях 0%, 1%, 3%.</span></div>
+<div class="row"><b>Готово, когда</b><span>Цена известна и записана. Если при 1% потерь p95 задержки растет более чем вдвое - нужен либо отдельный режим для чувствительных к задержке потоков, либо явное предупреждение в документации. Отказ от <code>0x83</code> не предполагается.</span></div>
+</div>
+
+<div class="gate">
+<h3>Шлюз G3. Нужен ли новый формат целиком</h3>
+<p><b>Вход:</b> результаты чек-листа стелса (Ф4-1) после выполнения Ф4-2, Ф4-3, Ф4-4, Ф4-5, Ф4-7.</p>
+<p><b>Если уровни 1 и 2 чек-листа проходят:</b> текущий формат после правок перестал быть детектируемым по известным признакам. Фаза 5 сокращается до того, что правками не закрывается в принципе: 0-RTT, прямая секретность, идентификация пользователя за O(1), ветка DECOY. Это уже не аварийная работа, а развитие.</p>
+<p><b>Если не проходят:</b> причина указывает адрес. Провал Ex1 означает, что нужен правдоподобный префикс в начале потока - это работа формата первого кадра, то есть фаза 5 в полном объеме. Провал позиционных проверок означает, что заплатка на заголовок недостаточна.</p>
+<p><b>В любом случае:</b> контекстная метка версии в выводе ключей (Ф5-4) закладывается уже здесь, при первой же смене формата в Ф4-3. Стоит ноль сейчас и невозможна потом.</p>
+</div>
+
+<div class="phase" id="f5">
+<h2>Фаза 5. Рукопожатие S5Veil</h2>
+<p class="goal">Цель: формат первого кадра, дающий 0-RTT, прямую секретность, идентификацию за O(1) и устойчивость к активному зондированию. Четыре развилки, объявленные в блокерах как "решения нет", закрываются решениями, проверенными в проде; ни одна не требует изобретения.</p>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф5-1</span> Спецификация формата как единственный источник истины <span class="badge b0">блокирующее</span> <span class="badge bsrc">D4 / P2-5</span></h3>
+<div class="row"><b>Где</b><span>новый <code>docs/veil-spec.md</code></span></div>
+<div class="row"><b>Что</b><span>Формат первого кадра, формат кадра данных, типы кадров, схема вывода ключей, правила паддинга - в одном документе до кода. Туда же переносится формат UDP-кадра команды <code>0x83</code>, который сейчас продублирован в трех местах (<code>internal/socks5/associate.go</code>, <code>cmd/s5client/udp_client.go</code>, тесты) и не описан нигде.</span></div>
+<div class="row"><b>Готово, когда</b><span>Обе стороны реализуются по документу, а не по чтению чужого кода. Расхождение реализации и документа - это баг документа или кода, а не вопрос вкуса.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф5-2</span> Схема аутентификации первого кадра <span class="badge b0">блокирующее</span> <span class="badge bsrc">D1 / H15 / H16</span></h3>
+<div class="row"><b>Где</b><span>новый <code>pkg/veil</code></span></div>
+<div class="row"><b>Что</b><span>Развилка D1 сведена исследованием к одному вопросу: принимаем ли мы вендоринг криптографического кода. Вариант А - Elligator2 поверх X25519, реализация <code>internal/x25519ell2</code> из obfs4proxy, работающая в сети мостов Tor много лет. Вариант Б - симметричная схема как в Shadowsocks 2022: случайная соль в начале, ключ сессии из PSK и соли через HKDF, никакой точки кривой на проводе. Подробности выбора - в разделе 13.</span></div>
+<div class="row"><b>Готово, когда</b><span>Для варианта А: доля успешной генерации представителя близка к 0,5, распределение старшего бита равномерно (его надо рандомизировать явно - негация представителя не меняет результат), выход проходит Ex1 и позиционные проверки. Для варианта Б: те же позиционные проверки, ключ сессии не выводится из одного лишь PSK.</span></div>
+<div class="row"><b>Требование к формату</b><span>Схема аутентификации должна заменяться без переделки остального формата. Это единственное, что защищает от ошибки в выборе.</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф5-3</span> Часовая эпоха вместо точного времени <span class="badge b0">блокирующее</span> <span class="badge bsrc">D2 / H17</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/veil</code>, <code>cmd/s5client</code></span></div>
+<div class="row"><b>Что</b><span>Все три варианта из блокера исходят из того, что нужна точная метка времени. Рабочая конструкция другая: в MAC рукопожатия входит грубая эпоха (час), сервер принимает E-1, E и E+1, что дает терпимость к расхождению часов в единицы часов. Это модель obfs4. Отрицательный пример рядом: VMess с окном плюс-минус 90 секунд стал источником массовых ошибок "invalid user", и в VLESS зависимость от времени убрали намеренно. Клиент на роутере Keenetic после перезагрузки без синхронизации - не гипотетический сценарий.</span></div>
+<div class="row"><b>Готово, когда</b><span>Клиент со сдвигом часов 45 минут и 2 часа работает; со сдвигом 25 часов получает явную ошибку "часы клиента рассинхронизированы", видимую в метрике из Ф1-2, а не молчаливый отказ. Тесты на границе часа - на виртуальном времени (Ф2-4).</span></div>
+</div>
+
+<div class="task t0">
+<h3><span class="id">Ф5-4</span> Узловой идентификатор и контекстная метка версии в выводе ключей <span class="badge b0">блокирующее</span> <span class="badge bsrc">D3 / D4 / H18 / H19</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/veil</code>, схема HKDF</span></div>
+<div class="row"><b>Что</b><span>Две вещи, которые стоят ноль сейчас и невозможны потом. (1) Идентификатор узла в аутентификационном теге: кадр, записанный на узле A, невалиден на узле B по построению, и распределенный кеш повторов перестает быть нужен - остается локальная история на время окна. Модель: MAC1 в WireGuard вычисляется с участием публичного ключа получателя. (2) Метка версии как контекстная строка HKDF, а не байт на проводе: явная версия - сама по себе детектируемая константа, а миграция сводится к периоду, когда сервер проверяет два контекста. Урок TLS 1.3, который не смог использовать поле версии по назначению из-за окостенения промежуточных узлов, здесь прямой.</span></div>
+<div class="row"><b>Готово, когда</b><span>Тест: кадр, принятый узлом A, отвергается узлом B. Сервер с поддержкой двух меток принимает клиентов обеих версий; сервер с одной меткой отвергает старых клиентов неотличимо от мусора. Стоимость двойной проверки - одна дополнительная операция HKDF на соединение.</span></div>
+<div class="row"><b>Цена решения</b><span>Anycast и прозрачная смена узла без смены конфигурации клиента становятся недоступны. Это осознанный размен: горизонтальное масштабирование в обмен на отсутствие сетевого запроса в критическом пути установки соединения.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф5-5</span> Автовыбор шифра и идентификация пользователя за O(1) <span class="badge b1">надежность</span> <span class="badge bsrc">раздел 9 и 10 аудита</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/veil</code>, <code>internal/userstore</code></span></div>
+<div class="row"><b>Что</b><span>ChaCha20-Poly1305 автоматически на процессорах без аппаратного AES (роутеры на aarch64). Идентификация пользователя по криптографическому тегу первого кадра через хеш-таблицу, пересчитываемую раз в эпоху в фоне: пароли уходят из горячего пути полностью, Argon2id остается только для входа в панель управления.</span></div>
+<div class="row"><b>Готово, когда</b><span>Бенчмарк на ARM показывает выигрыш ChaCha20; поиск пользователя не зависит от их числа.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф5-6</span> Ветка DECOY: обратный прокси вместо статической страницы <span class="badge b1">надежность</span> <span class="badge bsrc">P2-14 / D6</span></h3>
+<div class="row"><b>Где</b><span><code>pkg/transport/tlsdecoy</code></span></div>
+<div class="row"><b>Что</b><span>Неаутентифицированный клиент должен получать поведение обычного веб-сервера, а не разрыв: сервер, который рвет соединение на невалидных данных, тем самым себя подтверждает. Статичная страница-приманка слишком бедна для устойчивости к зондированию - нужен настоящий обратный прокси на указанный в конфиге сайт, неотличимый при запросе несуществующего пути и при повторе записанного трафика.</span></div>
+<div class="row"><b>Готово, когда</b><span>Проверка из уровня 2 чек-листа: время до закрытия и объем ответа при мусоре, при повторе записанного кадра и при валидном подключении неразличимы.</span></div>
+</div>
+
+<div class="task t1">
+<h3><span class="id">Ф5-7</span> Миграция клиентов в поле <span class="badge b1">надежность</span> <span class="badge bsrc">D4 / D10 / H20 / H31</span></h3>
+<div class="row"><b>Где</b><span><code>cmd/s5client</code>, <code>cmd/s5core</code>, конфигурация</span></div>
+<div class="row"><b>Что</b><span>Настоящий блокер миграции - не формат кадра, а отсутствие механизма обновления клиента: клиенты стоят на роутерах и обновляются вручную. Минимальный шаг, не требующий инфраструктуры: вынести параметры транспорта и обфускации в конфигурацию целиком (ни одной константы формы в коде) и добавить серверную рекомендацию транспорта внутри уже установленного туннеля, аутентифицированную тем же ключом. Клиент выбирает протокол переменной окружения, по умолчанию новый, с автоматическим откатом при отказе; через два минорных релиза старый режим удаляется.</span></div>
+<div class="row"><b>Готово, когда</b><span>Смена транспортного профиля у клиента в поле происходит без замены бинарника. По телеметрии видно распределение версий и транспортов.</span></div>
+<div class="row"><b>Почему это важнее выбора дефолта</b><span>При быстром обновлении ошибочный дефолт исправим, при отсутствии обновления правильный дефолт устаревает вместе со страной.</span></div>
+</div>
+
+<div class="gate">
+<h3>Шлюз G4. Схема ключа (решение принимается до кода Ф5-2)</h3>
+<p><b>Вход:</b> результат Ф1-3 и Ф2-1 - фактический вклад фаз в задержку 0,31 с.</p>
+<p><b>Правило выбора:</b> если разложение подтверждает, что примерно 6 RTT из наблюдаемых 0,31 с объясняются самой цепочкой установки, то 0-RTT экономит один-два цикла из шести, то есть 45-90 мс из 310. Тогда решающим становится не экономия RTT, а объем нового криптографического кода, и вариант Б (симметричная схема) предпочтителен: он дает те же свойства неотличимости без вендоринга Elligator2.</p>
+<p><b>Если выигрыш от 0-RTT окажется больше ожидаемого</b> или прямая секретность в первом кадре признана обязательной - вариант А с вендорингом <code>x25519ell2</code>, с явным принятием лицензионного долга и обязательства следить за апстримом.</p>
+<p><b>Общее для обоих:</b> формат первого кадра проектируется так, что схема аутентификации заменяется без переделки остального. Тогда ошибка в этом решении стоит одну задачу, а не одну миграцию.</p>
+</div>
+
+<div class="phase" id="f6">
+<h2>Фаза 6. Структура и долг</h2>
+<p class="goal">Цель: привести структуру в соответствие с тем, что к этому моменту уже работает. Идет параллельно фазам 4-5, но не раньше фазы 3: рефакторинг до починки переносит дефекты в новую структуру.</p>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф6-1</span> Явная HFSM соединения <span class="badge b2">долг</span> <span class="badge bsrc">P2-10 / ARCH-2 / A5</span></h3>
+<div class="row"><b>Где</b><span>новый <code>internal/session</code>, обновление <code>docs/design/session-fsm.md</code></span></div>
+<div class="row"><b>Что</b><span>Иерархическая модель с тремя ортогональными регионами: протокол соединения (ACCEPTED, HANDSHAKE, DIALING, RELAY, HALF_CLOSED, CLOSED), транспорт кадров (AWAIT_HDR, AWAIT_BODY, DELIVER, FRAME_ERR), учет и политики (WITHIN_QUOTA, GRACE, QUOTA_EXCEEDED, EXPIRED). Плоский автомат не подходит: произведение измерений дает комбинаторный взрыв. Каждое состояние получает свой SLA вместо общего <code>READ_TIMEOUT</code>, каждый переход - событие наблюдаемости.</span></div>
+<div class="row"><b>Готово, когда</b><span>Метрика "число соединений по состояниям" показывает картину багрепорта напрямую: рост в ожидании ответа при нормальном релее. Событие региона 3 переводит регион 1 в HALF_CLOSED, то есть квота действует в процессе.</span></div>
+<div class="row"><b>Почему это не первоочередное</b><span>Баг 1 - дефект автомата, и явная модель исключает его класс по построению. Но фазы 1-3 дают 80% той же наблюдаемости за 10% работы, поэтому HFSM идет после них, а не вместо.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф6-2</span> Разделение ответственностей по пакетам <span class="badge b2">долг</span> <span class="badge bsrc">P2-9 / раздел 6.3 аудита</span></h3>
+<div class="row"><b>Где</b><span>новые <code>internal/relay</code>, <code>internal/identity</code>; сокращение <code>internal/socks5</code> и <code>pkg/s5server</code></span></div>
+<div class="row"><b>Что</b><span>Сейчас <code>pkg/s5server</code> знает про obfs, ws, tlsdecoy, fail2ban и userstore одновременно; <code>internal/socks5</code> знает про учет трафика и телеметрию. Вынести: релей и half-close в <code>internal/relay</code>, пользователей, ключи, роли и квоты в <code>internal/identity</code> (туда же fail2ban из s5server), оставить в <code>internal/socks5</code> чистый кодек сообщений, в <code>pkg/transport/*</code> - только доставку байтов без криптографии.</span></div>
+<div class="row"><b>Готово, когда</b><span>Импорты подтверждают разделение: транспорт не импортирует криптографию, кодек не импортирует телеметрию.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф6-3</span> Модель пользователей и ролей <span class="badge b2">долг</span> <span class="badge bsrc">раздел 10 аудита</span></h3>
+<div class="row"><b>Где</b><span><code>internal/identity</code>, <code>internal/userstore/model.go</code></span></div>
+<div class="row"><b>Что</b><span>Разделить сущности: Identity (ключ для транспорта, роль, политика, состояние) и Credential (Argon2id-хеш пароля только для панели и API, к трафику отношения не имеет). Роли: user, operator, admin с разными правами в SDK - сейчас <code>AddUser</code>, <code>RemoveUser</code> и <code>UpdateWhitelist</code> доступны всем, у кого есть указатель на объект. Формат <code>users.json</code> расширяется полями key, role, policy с миграцией: при загрузке старого файла ключ генерируется, пароль сохраняется только для панели, в лог пишется предупреждение и новая строка подключения.</span></div>
+<div class="row"><b>Готово, когда</b><span>Существующие файлы учеток мигрируют без ручного вмешательства; два параллельных механизма (<code>StaticCredentials</code> и userstore) сведены к одному.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф6-4</span> Удалить мертвый код <span class="badge b2">долг</span> <span class="badge bsrc">P2-1 / DEAD-1</span></h3>
+<div class="row"><b>Где</b><span>Проверено прогоном, все на месте: <code>cmd/s5client/main.go:501</code> (пустой <code>init</code> с <code>filepath.Base</code>), <code>internal/socks5/associate.go:401</code> (<code>unsafe.Sizeof</code> ради выравнивания, которое <code>atomic.Pointer</code> обеспечивает сам), <code>pkg/obfs/replay.go:80</code> (<code>var _ = (*replayWindow)(nil)</code>), <code>pkg/obfs/replay.go:69</code> (<code>reset</code> не вызывается нигде), <code>pkg/transport/ws/upgrader.go:56</code> (<code>IsWSRequest</code> экспортирована, не используется, проверка неверна для регистра заголовка), <code>internal/socks5/ruleset.go:18</code> (<code>PermitNone</code>), <code>internal/socks5/socks5.go</code> (deprecated <code>Serve</code>, <code>ServeConn</code>), <code>cmd/s5client/main.go:50</code> (<code>ServerName</code> читается из окружения и нигде не применяется).</span></div>
+<div class="row"><b>Что</b><span>Удалить. Отдельно: <code>defaultPingInterval</code> в <code>pkg/transport/ws/common.go:9</code> не удалять - он становится живым в Ф4-8. <code>ServerName</code> либо применить как SNI, либо убрать из чтения окружения: сейчас пользователь может думать, что задает SNI.</span></div>
+<div class="row"><b>Готово, когда</b><span>Импорты <code>unsafe</code> и <code>path/filepath</code> уходят из сетевого кода; <code>golangci-lint</code> не сообщает о неиспользуемом коде.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф6-5</span> Мелкий долг производительности и API <span class="badge b2">долг</span> <span class="badge bsrc">P2-3..P2-6, P2-11, P2-13, CR-10, CR-11, PERF-5, PERF-6</span></h3>
+<div class="row"><b>Что</b><span>Семь независимых правок: буферизованное чтение рукопожатия на сервере вместо чтения по одному байту (<code>internal/socks5/socks5.go:164</code>); <code>BuildUDPHeader</code> без аллокации на каждый пакет и без мутации входного <code>AddrSpec</code> (<code>internal/socks5/udp.go:71</code>); метрики на своем мультиплексоре с таймаутами чтения заголовков вместо <code>http.DefaultServeMux</code> (<code>cmd/s5core/main.go:180</code>); убрать избыточный <code>tcpWriteMu</code> в <code>handleUDPTcpmux</code> либо завести в него второго писателя; <code>WSSubprotocol</code> при пустом значении должен давать nil, а не срез с одной пустой строкой (тонкий след в заголовках WebSocket, работающий против скрытности); <code>metricsConn.ReadFrom</code> и <code>WriteTo</code> не проксируются через <code>obfs.conn</code>, то есть половина оптимизации работает только в plain-режиме; разделение сокетов клиента и целей в UDP Associate.</span></div>
+<div class="row"><b>Готово, когда</b><span>Каждая правка сопровождается тестом или бенчмарком, показывающим эффект.</span></div>
+</div>
+
+<div class="task t2">
+<h3><span class="id">Ф6-6</span> Привести документы репозитория в соответствие <span class="badge b2">долг</span> <span class="badge bsrc">P2-2 / DOC-2 / DEAD-2 / P2-12</span></h3>
+<div class="row"><b>Что</b><span><code>docs/archive/ice-audit-2026-05-30.md</code> закрыт примерно на 85% и в корне репозитория вводит в заблуждение - перенести в <code>docs/archive/</code> с пометкой о дате и закрытых пунктах. <code>docs/design/session-fsm.md</code> актуален, но не реализован - обновить разделом про ортогональные регионы и связать с Ф6-1. <code>docs/reports/v1.4.4-field-run.md</code> отработан - в <code>docs/reports/</code>. <code>internal/socks5/README.md</code> заменить коротким файлом о том, что это форк и чем он отличается; <code>LICENSE</code> оставить обязательно. Замеры в README перемерить после Ф4-2 и добавить бенчмарк на слабом ARM.</span></div>
+<div class="row"><b>Готово, когда</b><span>В корне репозитория нет документов, описывающих несуществующее состояние.</span></div>
+</div>
+
+<h2 id="decisions">13. Решения, которые принимает владелец</h2>
+
+<p>Четыре развилки, объявленные в блокерах как "готового решения нет". Исследование показало, что три из них закрываются схемами, проверенными в проде более чем одним проектом. Решение требуется по всем четырем, но цена ошибки разная.</p>
+
+<table>
+<thead><tr><th>Развилка</th><th>Варианты</th><th>Рекомендация плана</th><th>Когда решать</th><th>Цена ошибки</th></tr></thead>
+<tbody>
+<tr>
+<td><b>D1</b><br><span class="small">кодирование ключа</span></td>
+<td class="small">А: вендоринг <code>x25519ell2</code> из obfs4 (Elligator2)<br>Б: симметричная схема с солью как в Shadowsocks 2022</td>
+<td class="small">Решать по шлюзу G4. Если 0-RTT дает один цикл из шести - вариант Б: те же свойства неотличимости при меньшем объеме нового криптографического кода</td>
+<td class="small">до кода Ф5-2</td>
+<td class="small"><b>Низкая</b>, если формат допускает замену схемы аутентификации. Это требование обязательно</td>
+</tr>
+<tr>
+<td><b>D2</b><br><span class="small">часы без RTC</span></td>
+<td class="small">Часовая эпоха с допуском соседей / узкое окно с синхронизацией / счетчик с состоянием на сервере</td>
+<td class="small">Часовая эпоха E-1/E/E+1. Узкое окно - доказанный источник массовых ошибок, счетчик требует состояния на каждого клиента</td>
+<td class="small">до кода Ф5-3</td>
+<td class="small"><b>Средняя</b>: ошибка проявляется как молчаливый отказ у части пользователей</td>
+</tr>
+<tr>
+<td><b>D3</b><br><span class="small">реплей при нескольких узлах</span></td>
+<td class="small">Узловой идентификатор в теге / внешнее хранилище / один узел</td>
+<td class="small">Узловой идентификатор. Внешнее хранилище кладет сетевой запрос в критический путь установки - ровно туда, где идет борьба за задержку</td>
+<td class="small">до кода Ф5-4</td>
+<td class="small"><b>Высокая</b>: формат первого кадра потом не изменить без миграции</td>
+</tr>
+<tr>
+<td><b>D4</b><br><span class="small">миграция без поля версии</span></td>
+<td class="small">Контекстная метка в KDF / байт версии на проводе / вечная поддержка обоих форматов</td>
+<td class="small">Контекстная метка в KDF. Байт версии на проводе - сам по себе детектируемая константа</td>
+<td class="small">немедленно, при первой смене формата в Ф4-3</td>
+<td class="small"><b>Критическая</b>: без метки любая будущая смена формата требует одновременного обновления всех клиентов в поле</td>
+</tr>
+<tr>
+<td><b>D10</b><br><span class="small">транспорт по умолчанию</span></td>
+<td class="small">Обфусцированный TCP / WSS через CDN / TLS с приманкой</td>
+<td class="small">Дефолта, правильного везде, не существует: вопрос имеет ответ на страну, а не глобально. Инженерная цель - сделать смену транспорта дешевой (Ф5-7), а дефолт выбрать по данным наблюдений</td>
+<td class="small">после месяца наблюдений</td>
+<td class="small"><b>Обратимая</b> при условии Ф5-7</td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="stealth">14. Критерий приемки стелса</h2>
+
+<p>Прямая замена энтропийному тесту в <code>pkg/obfs/demo_test.go</code>. Три уровня; первые два автоматизируются и становятся регрессионными, третий эксплуатационный и единственный дающий настоящий ответ.</p>
+
+<h3>Уровень 1. Правила блокировки полностью зашифрованного трафика</h3>
+<p>Применяются к первому пакету с полезной нагрузкой. Поток блокируется, если ни одно исключение не сработало. Задача обфускации - гарантированно попадать хотя бы под одно исключение.</p>
+<pre><code>// Ex1: доля единичных битов (popcount/длина) вне диапазона [3.4; 4.6] бит на байт
+//      ВАЖНО: идеально случайный поток попадает в середину диапазона,
+//      то есть максимальная энтропия работает ПРОТИВ нас.
+// Ex2: первые 6 байт - печатные ASCII (0x20..0x7e)
+// Ex3: доля печатных ASCII во всем пакете больше 50%
+// Ex4: более 20 подряд идущих печатных ASCII
+// Ex5: совпадение с префиксами известных протоколов (TLS 0x16 0x03, методы HTTP)
+//
+// Критерий теста: для корпуса первых пакетов доля потоков,
+// не попавших ни под одно исключение, равна нулю.</code></pre>
+
+<h3>Уровень 2. Собственные утечки структуры</h3>
+<ul>
+<li><b>Позиционная равномерность.</b> Для смещений 0-63 по корпусу от 1000 соединений частота каждого байтового значения на каждой позиции не отклоняется значимо от равномерной. Ловит фиксированные поля заголовка, константы версии, предсказуемые счетчики.</li>
+<li><b>Распределение длин кадров.</b> Гистограмма без узких пиков. Пик на характерном размере означает, что внешний слой обводит границы внутреннего - ровно дефект шейпера WebSocket.</li>
+<li><b>Распределение интервалов.</b> Без констант. Это проверка для keepalive.</li>
+<li><b>Повторяемость между соединениями.</b> Ни один байт первых 64 не совпадает между двумя соединениями чаще, чем ожидается случайно. Ловит переиспользование соли и детерминированные поля.</li>
+<li><b>Реакция на невалидные данные.</b> Время до закрытия и объем ответа при мусоре, при повторе записанного кадра и при валидном подключении неразличимы.</li>
+</ul>
+
+<h3>Уровень 3. Эксплуатационная проверка</h3>
+<ul>
+<li>Доля успешных подключений по транспортам и странам, собираемая приватно по правилам Ф0-5.</li>
+<li>Отслеживание сообщений о новых блокировках как рабочая процедура, а не разовое действие: net4people/bbs, GFW Report, OONI.</li>
+<li>Явная фиксация в документе приемки: чек-лист уровней 1-2 означает отсутствие известных признаков, а не необнаружимость. Правила меняются, и обратная связь приходит постфактум.</li>
+</ul>
+
+<h2 id="slo">15. Целевые показатели</h2>
+
+<p>Четыре показателя с порогами, записываемые в README задачей Ф0-6. Без них правка производительности или стелса остается ставкой: именно отсутствие определения достаточного и позволило трем несовместимым числам пропускной способности сосуществовать в одном документе.</p>
+
+<table>
+<thead><tr><th>Показатель</th><th>Порог</th><th>Чем измеряется</th><th>Доступен после</th></tr></thead>
+<tbody>
+<tr><td>Доля успешных установок соединения</td><td class="small">не ниже 99,5% за сутки</td><td class="small">счетчики фаз</td><td class="small">Ф1-3</td></tr>
+<tr><td>Время до первого байта, p95</td><td class="small">не выше 1,5 RTT сверх аналитического минимума цепочки</td><td class="small">фазовые гистограммы</td><td class="small">Ф1-3</td></tr>
+<tr><td>Доля полосы канала, доступная через туннель</td><td class="small">не ниже 85% от baseline iperf3</td><td class="small">iperf3 плюс прогон через туннель</td><td class="small">Ф2-1</td></tr>
+<tr><td>Доля соединений, отвергнутых с ошибкой обфускации</td><td class="small">фон известен и стабилен; всплеск - сигнал зондирования</td><td class="small">obfs_handshake_failures_total</td><td class="small">Ф1-2</td></tr>
+</tbody>
+</table>
+
+<p class="small">Для стелса роль порога играет чек-лист из раздела 14. Его особенность в том, что он не гарантирует необнаружение, а фиксирует отсутствие известных признаков - это прямо записывается в формулировке приемки.</p>
+
+<h2 id="antiscope">16. Что намеренно не делаем</h2>
+
+<ul>
+<li><b>Не снимаем профиль трафика реального браузера.</b> Данные устаревают вместе с версиями браузеров и настройками CDN, а снятый один раз профиль становится собственной сигнатурой, как только перестает совпадать с актуальным поведением. Вместо этого - шейпер, задаваемый ограничениями (Ф4-7).</li>
+<li><b>Не вводим внешнее хранилище реплей-кеша.</b> Сетевой запрос в критическом пути установки соединения бьет ровно по той задержке, ради которой все затевается. Вместо этого - привязка кадра к узлу (Ф5-4).</li>
+<li><b>Не добавляем байт версии протокола на провод.</b> Это детектируемая константа. Вместо этого - контекстная метка в выводе ключей (Ф5-4).</li>
+<li><b>Не начинаем <code>pkg/veil</code> до шлюза G3.</b> Возможно, после правок фазы 4 полный переписанный протокол окажется развитием, а не аварийной работой, и тогда его состав будет другим.</li>
+<li><b>Не оптимизируем кадрирование до Ф2-1.</b> Если полоса упирается в канал VPS, оптимизация не даст ничего измеримого.</li>
+<li><b>Не отказываемся от команды <code>0x83</code>.</b> UDP-over-TCP закрывает утечки WebRTC, QUIC и DNS - это правильное продуктовое решение. Измеряем его цену (Ф4-10), а не пересматриваем.</li>
+<li><b>Не делаем рефакторинг пакетов до фазы 3.</b> Перенос дефектов в новую структуру делает их менее заметными, а не менее опасными.</li>
+</ul>
+
+<h2 id="risks">17. Риски плана</h2>
+
+<table>
+<thead><tr><th>Риск</th><th>Проявление</th><th>Что делаем</th></tr></thead>
+<tbody>
+<tr><td class="small"><b>Смена формата ломает клиентов в поле</b></td><td class="small">Клиенты на роутерах обновляются вручную; после смены формата часть пользователей теряет связь молча</td><td class="small">Контекстная метка версии с первой же смены формата (Ф4-3 плюс Ф5-4), период двойной проверки, телеметрия версий (Ф1-4), профиль в конфигурации (Ф5-7)</td></tr>
+<tr><td class="small"><b>Приборы становятся утечкой</b></td><td class="small">Подробный лог на соединение превращается в базу данных о пользователях</td><td class="small">Правила приватности написаны до первой метрики (Ф0-5), ревью каждой метрики против них</td></tr>
+<tr><td class="small"><b>Шейпинг ухудшает скрытность</b></td><td class="small">Выдуманный профиль добавляет структуру там, где ее не было. В obfs4 режим управления интервалами по умолчанию выключен - это свидетельство, а не случайность</td><td class="small">Ограничения вместо профиля (Ф4-7), проверка результата по уровню 2 чек-листа, а не по скорости функции</td></tr>
+<tr><td class="small"><b>Вендоринг криптографического кода</b></td><td class="small">Лицензионный долг и обязательство следить за апстримом; известные грабли Elligator2 (половина ключей без представителя, старший бит)</td><td class="small">Решение по шлюзу G4; при выборе варианта А - тесты на три свойства из Ф5-2 и явная фиксация происхождения кода</td></tr>
+<tr><td class="small"><b>Argon2id в целевой конфигурации</b></td><td class="small">Переход на <code>USERS_FILE</code> дает отказ продукта на типовом VPS без всякой уязвимости в коде</td><td class="small">Замер до перехода (Ф2-5), шлюз G2, явный запрет перехода в README до выполнения Ф3-6</td></tr>
+<tr><td class="small"><b>Работа над стелсом без обратной связи</b></td><td class="small">Зеленые тесты при фактической блокируемости</td><td class="small">Уровень 3 чек-листа: наблюдение за OONI, GFW Report, net4people как процедура; метрика здоровья транспортов на клиенте</td></tr>
+<tr><td class="small"><b>План распухает</b></td><td class="small">58 задач, из которых часть может оказаться ненужной</td><td class="small">Пять шлюзов, два из которых (G1, G3) явно уполномочены отменять треки целиком</td></tr>
+</tbody>
+</table>
+
+<h2 id="trace">18. Трассировка: находка - задача</h2>
+
+<p>Проверка полноты: все 34 находки реестра аудита и все 29 блокеров имеют адрес в плане. Пустых строк нет.</p>
+
+<table>
+<thead><tr><th>Находка аудита</th><th>Блокер</th><th>Гипотеза</th><th>Задача</th></tr></thead>
+<tbody>
+<tr><td class="small">CI-1</td><td class="small">A7, C6</td><td class="small">H32</td><td class="small">Ф0-1, Ф0-2, Ф0-3, Ф0-4</td></tr>
+<tr><td class="small">-</td><td class="small">A1</td><td class="small">H1</td><td class="small">Ф1-1</td></tr>
+<tr><td class="small">SEC-4 (часть)</td><td class="small">A2</td><td class="small">H2</td><td class="small">Ф1-2</td></tr>
+<tr><td class="small">ARCH-2 (часть)</td><td class="small">A5, B2</td><td class="small">H3</td><td class="small">Ф1-3, Ф6-1</td></tr>
+<tr><td class="small">ARCH-1</td><td class="small">C8</td><td class="small">H5</td><td class="small">Ф1-4</td></tr>
+<tr><td class="small">-</td><td class="small">-</td><td class="small">H4</td><td class="small">Ф0-5</td></tr>
+<tr><td class="small">-</td><td class="small">B1</td><td class="small">H6</td><td class="small">Ф2-1, шлюз G1</td></tr>
+<tr><td class="small">-</td><td class="small">A3</td><td class="small">H7, H35</td><td class="small">Ф0-6, Ф2-2</td></tr>
+<tr><td class="small">CR-7</td><td class="small">A6, B4</td><td class="small">H33, H34</td><td class="small">Ф2-3, Ф2-4, Ф2-7</td></tr>
+<tr><td class="small">PERF-3</td><td class="small">B3</td><td class="small">H30</td><td class="small">Ф2-5, Ф3-6, шлюз G2</td></tr>
+<tr><td class="small">PERF-2</td><td class="small">C2</td><td class="small">H8</td><td class="small">Ф2-6, Ф4-2</td></tr>
+<tr><td class="small">CR-1</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-1</td></tr>
+<tr><td class="small">CR-2</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-2</td></tr>
+<tr><td class="small">SEC-2</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-3</td></tr>
+<tr><td class="small">SEC-1</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-4</td></tr>
+<tr><td class="small">SEC-5</td><td class="small">C7</td><td class="small">H29</td><td class="small">Ф3-5</td></tr>
+<tr><td class="small">SEC-6</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-7</td></tr>
+<tr><td class="small">CR-3</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-8</td></tr>
+<tr><td class="small">CR-4, CR-5</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-9</td></tr>
+<tr><td class="small">CR-6</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-10</td></tr>
+<tr><td class="small">-</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-11 (квоты в процессе)</td></tr>
+<tr><td class="small">CR-9</td><td class="small">-</td><td class="small">-</td><td class="small">Ф3-12</td></tr>
+<tr><td class="small">DOC-1</td><td class="small">C1</td><td class="small">H22</td><td class="small">Ф3-13, Ф4-2</td></tr>
+<tr><td class="small">-</td><td class="small">A4, D6</td><td class="small">H10, H11, H14</td><td class="small">Ф4-1, раздел 14</td></tr>
+<tr><td class="small">PERF-1</td><td class="small">C2</td><td class="small">H8, H22</td><td class="small">Ф4-2</td></tr>
+<tr><td class="small">SEC-3</td><td class="small">-</td><td class="small">-</td><td class="small">Ф4-3</td></tr>
+<tr><td class="small">SEC-4</td><td class="small">C4</td><td class="small">H12</td><td class="small">Ф4-4</td></tr>
+<tr><td class="small">SEC-7</td><td class="small">-</td><td class="small">-</td><td class="small">Ф4-5</td></tr>
+<tr><td class="small">CR-8</td><td class="small">D7</td><td class="small">H24, H27</td><td class="small">Ф4-6</td></tr>
+<tr><td class="small">PERF-4</td><td class="small">C3, D5</td><td class="small">H13, H21</td><td class="small">Ф4-7</td></tr>
+<tr><td class="small">-</td><td class="small">D8, D9</td><td class="small">H25, H26</td><td class="small">Ф4-8</td></tr>
+<tr><td class="small">-</td><td class="small">C5</td><td class="small">H28</td><td class="small">Ф1-5, Ф4-9</td></tr>
+<tr><td class="small">-</td><td class="small">-</td><td class="small">H23</td><td class="small">Ф4-10</td></tr>
+<tr><td class="small">-</td><td class="small">D1</td><td class="small">H15, H16</td><td class="small">Ф5-2, шлюз G4</td></tr>
+<tr><td class="small">-</td><td class="small">D2</td><td class="small">H17</td><td class="small">Ф5-3</td></tr>
+<tr><td class="small">-</td><td class="small">D3</td><td class="small">H18</td><td class="small">Ф5-4</td></tr>
+<tr><td class="small">-</td><td class="small">D4</td><td class="small">H19, H20</td><td class="small">Ф5-4, Ф5-7</td></tr>
+<tr><td class="small">-</td><td class="small">D10</td><td class="small">H31</td><td class="small">Ф5-7, раздел 13</td></tr>
+<tr><td class="small">-</td><td class="small">-</td><td class="small">H9</td><td class="small">шлюз G4</td></tr>
+<tr><td class="small">ARCH-2</td><td class="small">-</td><td class="small">-</td><td class="small">Ф6-1</td></tr>
+<tr><td class="small">-</td><td class="small">-</td><td class="small">-</td><td class="small">Ф6-2, Ф6-3 (структура, роли)</td></tr>
+<tr><td class="small">DEAD-1</td><td class="small">-</td><td class="small">-</td><td class="small">Ф6-4</td></tr>
+<tr><td class="small">PERF-5, PERF-6, CR-10, CR-11, CR-12</td><td class="small">-</td><td class="small">-</td><td class="small">Ф6-5</td></tr>
+<tr><td class="small">DOC-2, DEAD-2</td><td class="small">-</td><td class="small">-</td><td class="small">Ф6-6</td></tr>
+</tbody>
+</table>
+
+<blockquote>
+<p><b>Что дает этот порядок.</b> Фазы 0-2 занимают около двух недель, не содержат ни одного архитектурного решения и переводят примерно треть списка блокеров из неизвестного в известное. Два шлюза внутри них уполномочены отменить работу: G1 может закрыть весь трек производительности, G3 - сократить фазу 5. Единственное место, где решение принимается без полной информации, - выбор схемы аутентификации первого кадра, и именно там заложен запас: формат допускает замену схемы без переделки остального.</p>
+</blockquote>
+
+<footer>
+S5Core, план реализации и исправления ядра. Составлен 18.09.2026 из трех документов: <code>docs/plan/audit.html</code> (34 находки), <code>docs/plan/blockers.html</code> (29 блокеров), <code>docs/plan/research.html</code> (35 гипотез, 150 источников). Состояние ветки <code>main @ 71971ed</code> дополнительно проверено прогоном <code>go build</code>, <code>gofmt -s -l</code>, <code>go vet</code>, <code>go test</code> и чтением исходников - расхождения с аудитом отмечены в разделе 1. Документ автономный: открывается без сети, все стили встроены.
+</footer>
+
+</div>
+</body>
+</html>
