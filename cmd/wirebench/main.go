@@ -1,0 +1,288 @@
+// Command wirebench measures how much of a link a tunnel actually delivers.
+//
+// Plan task Ф2-1 asks for two numbers taken "with one instrument in one
+// direction": the bandwidth of the channel and the bandwidth through the
+// tunnel. iperf3 is the instrument for the first one and cannot take the
+// second - it speaks no SOCKS5 - so a number from each would compare two
+// programs as much as two paths. This one takes both: the same code, the same
+// buffers, the same payload, with and without the proxy in the way.
+//
+//	wirebench -serve :5301                      # on the server
+//	wirebench -url http://host:5301 -n 512MB    # the channel
+//	wirebench -url http://host:5301 -n 512MB -socks 127.0.0.1:1080
+//
+// The payload is incompressible random data, not zeroes: a zero stream
+// measures the compressor of whatever sits in the path, not the path.
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/net/proxy"
+)
+
+const chunkSize = 256 * 1024
+
+func main() {
+	serve := flag.String("serve", "", "run the far end on this address (e.g. :5301)")
+	url := flag.String("url", "", "far end to measure against (e.g. http://host:5301)")
+	size := flag.String("n", "256MB", "bytes to move per connection")
+	socks := flag.String("socks", "", "SOCKS5 proxy to go through (empty: straight to the far end)")
+	user := flag.String("user", "", "SOCKS5 username")
+	pass := flag.String("pass", "", "SOCKS5 password")
+	dir := flag.String("dir", "down", "direction: down (server to client) or up")
+	conns := flag.Int("conns", 1, "parallel connections")
+	label := flag.String("label", "", "name for this run in the output")
+	flag.Parse()
+
+	if *serve != "" {
+		runServer(*serve)
+		return
+	}
+	if *url == "" {
+		fmt.Fprintln(os.Stderr, "either -serve or -url is required")
+		os.Exit(2)
+	}
+	n, err := parseSize(*size)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if err := runClient(context.Background(), clientOpts{
+		url: *url, bytes: n, socks: *socks, user: *user, pass: *pass,
+		dir: *dir, conns: *conns, label: *label,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// runServer answers two routes: /down streams n bytes, /up reads the body and
+// reports how many arrived. Nothing touches the disk.
+func runServer(addr string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/down", func(w http.ResponseWriter, r *http.Request) {
+		n, err := parseSize(r.URL.Query().Get("n"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		chunk := randomChunk()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.FormatInt(n, 10))
+		for sent := int64(0); sent < n; {
+			end := int64(len(chunk))
+			if n-sent < end {
+				end = n - sent
+			}
+			written, err := w.Write(chunk[:end])
+			if err != nil {
+				return
+			}
+			sent += int64(written)
+		}
+	})
+	mux.HandleFunc("/up", func(w http.ResponseWriter, r *http.Request) {
+		n, err := io.Copy(io.Discard, r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// The count back is a courtesy; a failed write means the client
+		// already hung up, and there is nobody left to tell.
+		_, _ = fmt.Fprintf(w, "%d\n", n)
+	})
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	fmt.Printf("wirebench serving on %s\n", addr)
+	if err := srv.ListenAndServe(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+type clientOpts struct {
+	url   string
+	bytes int64
+	socks string
+	user  string
+	pass  string
+	dir   string
+	conns int
+	label string
+}
+
+type result struct {
+	bytes   int64
+	elapsed time.Duration
+	err     error
+}
+
+func runClient(ctx context.Context, o clientOpts) error {
+	transport, err := transportFor(o)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Transport: transport, Timeout: 10 * time.Minute}
+
+	results := make([]result, o.conns)
+	var wg sync.WaitGroup
+	start := time.Now()
+	for i := 0; i < o.conns; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = oneTransfer(ctx, client, o)
+		}(i)
+	}
+	wg.Wait()
+	wall := time.Since(start)
+
+	var total int64
+	var failed int
+	rates := make([]float64, 0, o.conns)
+	for _, r := range results {
+		if r.err != nil {
+			failed++
+			continue
+		}
+		total += r.bytes
+		rates = append(rates, float64(r.bytes)/r.elapsed.Seconds()/(1<<20))
+	}
+	name := o.label
+	if name == "" {
+		name = o.dir
+		if o.socks != "" {
+			name += " through " + o.socks
+		}
+	}
+	if len(rates) == 0 {
+		return fmt.Errorf("%s: every one of %d connections failed: %w", name, o.conns, results[0].err)
+	}
+	sort.Float64s(rates)
+	aggregate := float64(total) / wall.Seconds() / (1 << 20)
+	fmt.Printf("%-28s %8.2f MB/s aggregate (%7.1f Mbit/s)  per-conn median %6.2f MB/s  min %6.2f  max %6.2f  conns %d  failed %d  wall %v\n",
+		name, aggregate, aggregate*8, rates[len(rates)/2], rates[0], rates[len(rates)-1], o.conns, failed, wall.Round(time.Millisecond))
+	if failed > 0 {
+		for _, r := range results {
+			if r.err != nil {
+				fmt.Printf("  first failure: %v\n", r.err)
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func oneTransfer(ctx context.Context, client *http.Client, o clientOpts) result {
+	base := strings.TrimRight(o.url, "/")
+	start := time.Now()
+	if o.dir == "up" {
+		body := io.LimitReader(&randomReader{chunk: randomChunk()}, o.bytes)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/up", body)
+		if err != nil {
+			return result{err: err}
+		}
+		req.Header.Set("Content-Type", "application/octet-stream")
+		resp, err := client.Do(req)
+		if err != nil {
+			return result{err: err}
+		}
+		defer resp.Body.Close()
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			return result{err: err}
+		}
+		return result{bytes: o.bytes, elapsed: time.Since(start)}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/down?n=%d", base, o.bytes), nil)
+	if err != nil {
+		return result{err: err}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return result{err: err}
+	}
+	defer resp.Body.Close()
+	n, err := io.Copy(io.Discard, resp.Body)
+	if err != nil {
+		return result{err: err}
+	}
+	return result{bytes: n, elapsed: time.Since(start)}
+}
+
+func transportFor(o clientOpts) (*http.Transport, error) {
+	t := &http.Transport{
+		MaxIdleConnsPerHost: o.conns,
+		DisableCompression:  true,
+		// One TCP connection per parallel transfer, always a fresh one: a
+		// reused connection would measure the second transfer on a window
+		// the first one had already opened.
+		DisableKeepAlives: true,
+	}
+	if o.socks == "" {
+		return t, nil
+	}
+	var auth *proxy.Auth
+	if o.user != "" {
+		auth = &proxy.Auth{User: o.user, Password: o.pass}
+	}
+	dialer, err := proxy.SOCKS5("tcp", o.socks, auth, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("socks5 %s: %w", o.socks, err)
+	}
+	ctxDialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return nil, fmt.Errorf("socks5 dialer does not take a context")
+	}
+	t.DialContext = ctxDialer.DialContext
+	return t, nil
+}
+
+// randomChunk is the unit of payload. It is drawn once and repeated: drawing
+// it per write would measure crypto/rand, and a compressible payload would
+// measure whatever compresses it along the way.
+func randomChunk() []byte {
+	buf := make([]byte, chunkSize)
+	if _, err := rand.Read(buf); err != nil {
+		panic(err)
+	}
+	return buf
+}
+
+type randomReader struct{ chunk []byte }
+
+func (r *randomReader) Read(p []byte) (int, error) {
+	n := copy(p, r.chunk)
+	return n, nil
+}
+
+func parseSize(s string) (int64, error) {
+	s = strings.TrimSpace(strings.ToUpper(s))
+	if s == "" {
+		return 0, fmt.Errorf("no size given")
+	}
+	mult := int64(1)
+	switch {
+	case strings.HasSuffix(s, "GB"):
+		mult, s = 1<<30, strings.TrimSuffix(s, "GB")
+	case strings.HasSuffix(s, "MB"):
+		mult, s = 1<<20, strings.TrimSuffix(s, "MB")
+	case strings.HasSuffix(s, "KB"):
+		mult, s = 1<<10, strings.TrimSuffix(s, "KB")
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("size %q: %w", s, err)
+	}
+	return n * mult, nil
+}

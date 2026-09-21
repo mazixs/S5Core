@@ -139,7 +139,7 @@ func TestRequest_Connect_RuleFail(t *testing.T) {
 
 	// Make server
 	s := &Server{config: &Config{
-		Rules:    PermitNone(),
+		Rules:    &PermitCommand{},
 		Resolver: DNSResolver{},
 		Logger:   slog.Default(),
 	}}

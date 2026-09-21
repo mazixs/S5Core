@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -51,7 +52,7 @@ func TestUDPAssociate(t *testing.T) {
 	}
 	defer ln.Close()
 	go func() {
-		_ = server.Serve(ln)
+		_ = server.ServeContext(context.Background(), ln)
 	}()
 
 	// Connect to SOCKS5 server
@@ -176,7 +177,7 @@ func TestUDPTcpmux(t *testing.T) {
 	}
 	defer ln.Close()
 	go func() {
-		_ = server.Serve(ln)
+		_ = server.ServeContext(context.Background(), ln)
 	}()
 
 	// Connect to SOCKS5 server via TCP

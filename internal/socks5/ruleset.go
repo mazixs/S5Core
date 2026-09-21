@@ -4,7 +4,14 @@ import (
 	"context"
 )
 
-// RuleSet is used to provide custom rules to allow or prohibit actions
+// RuleSet is used to provide custom rules to allow or prohibit actions.
+//
+// It is asked twice on a UDP association: once for the ASSOCIATE request
+// itself, and once for every datagram that association carries, with
+// Request.Datagram set and DestAddr naming that datagram's destination. The
+// second question is the one about destinations - see Request.Datagram - and
+// it is asked before the name is resolved and before anything is sent, so a
+// refusal leaves no trace outside this process.
 type RuleSet interface {
 	Allow(ctx context.Context, req *Request) (context.Context, bool)
 }
@@ -12,11 +19,6 @@ type RuleSet interface {
 // PermitAll returns a RuleSet which allows all types of connections
 func PermitAll() RuleSet {
 	return &PermitCommand{true, true, true}
-}
-
-// PermitNone returns a RuleSet which disallows all types of connections
-func PermitNone() RuleSet {
-	return &PermitCommand{false, false, false}
 }
 
 // PermitCommand is an implementation of the RuleSet which

@@ -9,6 +9,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/mazixs/S5Core/internal/relay"
+	"github.com/mazixs/S5Core/internal/session"
 )
 
 const (
@@ -78,14 +82,57 @@ type Request struct {
 	RemoteAddr *AddrSpec
 	// AddrSpec of the desired destination
 	DestAddr *AddrSpec
+	// Datagram marks a request that is not a connection setup but one
+	// datagram of an established UDP association, put to the rules on its
+	// own. DestAddr is then the destination that datagram names, which is
+	// the only place a UDP destination appears at all: the address in the
+	// ASSOCIATE request that set the association up describes the client
+	// side of it and says nothing about where the client will send.
+	//
+	// A RuleSet that only looks at Command sees no difference and needs
+	// none. One that looks at DestAddr has to know which of the two
+	// questions it is being asked, or it ends up matching a destination
+	// pattern against the client's own address (F02 in
+	// docs/reports/code-quality-audit-2026-09-20.md).
+	Datagram bool
+	// attemptDeadline is when reaching the destination has to have happened.
+	// Resolving the name and dialing share it, because the client is waiting
+	// for the same reply throughout both, and it is zero when the session has
+	// no dial budget.
+	attemptDeadline time.Time
 	// AddrSpec of the actual destination (might be affected by rewrite)
 	realDestAddr *AddrSpec
 	bufConn      io.Reader
+	// session is the connection's state machine (plan task Ф6-1), nil when
+	// the connection did not come through a listener pipeline. Every method
+	// on a nil session is a no-op, so the handlers below do not check.
+	session *session.Session
 }
 
+// conn is what answering a request needs: somewhere to write the reply and
+// the address it came from. It is deliberately narrower than net.Conn, so a
+// handler can be driven from a buffer in a test.
 type conn interface {
 	Write([]byte) (int, error)
 	RemoteAddr() net.Addr
+}
+
+// socketOf hands back the client's socket. The UDP paths need one: an
+// association outlives the request that opened it, holds the client's TCP
+// connection as its lifetime marker, and takes that connection's local
+// address and its deadlines.
+//
+// They used to assert it three times without checking, which turns a caller
+// that passes anything else - a test double, the next wrapper somebody adds
+// - into a panic in the middle of an association rather than an error at its
+// start. The CONNECT path, which wants a socket only if there is one, keeps
+// asking with a comma-ok of its own.
+func socketOf(c conn) (net.Conn, error) {
+	nc, ok := c.(net.Conn)
+	if !ok {
+		return nil, fmt.Errorf("socks: a UDP association needs the client's socket, got %T", c)
+	}
+	return nc, nil
 }
 
 // NewRequest creates a new Request from the tcp connection
@@ -93,7 +140,7 @@ func NewRequest(conn io.Reader) (*Request, error) {
 	// Read the version byte
 	var header [3]byte
 	if _, err := io.ReadFull(conn, header[:]); err != nil {
-		return nil, fmt.Errorf("failed to get command version: %v", err)
+		return nil, fmt.Errorf("failed to get command version: %w", err)
 	}
 
 	// Ensure we are compatible
@@ -119,17 +166,58 @@ func NewRequest(conn io.Reader) (*Request, error) {
 
 // handleRequest is used for request processing after authentication
 func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) error {
+	// The rules are checked before the name is resolved. They used to be
+	// checked inside each command handler, after Resolve had already run, so a
+	// forbidden destination was still looked up: the DNS query went out, the
+	// resolver logged it, and an observer watching the server learned what the
+	// client had asked for. A destination that is not allowed should leave no
+	// trace outside this process.
+	ctx, allowed := s.config.Rules.Allow(ctx, req)
+	if !allowed {
+		if err := sendReply(conn, ruleFailure, nil); err != nil {
+			return fmt.Errorf("failed to send reply: %w", err)
+		}
+		return fmt.Errorf("request to %v blocked by rules", req.DestAddr)
+	}
+
+	// A CONNECT is dialing from here on: resolving the name is the first
+	// step of reaching the destination, and a client waiting for the reply
+	// is waiting for this too. The other commands have nothing to dial.
+	if req.Command == ConnectCommand {
+		req.session.Enter(session.Dialing)
+	}
+
+	// Reaching the destination gets one budget, and looking the name up is
+	// the first part of reaching it. The lookup used to run on the
+	// connection's own context, which has no deadline of its own: a resolver
+	// that never answered held the handler past every timeout the session
+	// has, while the client sat waiting for a reply nobody was working on
+	// (audit finding F12). The dial below now starts from what the lookup
+	// left of the same budget.
+	resolveCtx := ctx
+	if budget := req.session.SLA().Dial; budget > 0 {
+		req.attemptDeadline = time.Now().Add(budget)
+		var cancelAttempt context.CancelFunc
+		resolveCtx, cancelAttempt = context.WithDeadline(ctx, req.attemptDeadline)
+		defer cancelAttempt()
+	}
+
 	// Resolve the address if we have a FQDN
 	dest := req.DestAddr
 	if dest.FQDN != "" {
-		ctx_, addr, err := s.config.Resolver.Resolve(ctx, dest.FQDN)
+		ctx_, addr, err := s.config.Resolver.Resolve(resolveCtx, dest.FQDN)
 		if err != nil {
 			if err := sendReply(conn, hostUnreachable, nil); err != nil {
-				return fmt.Errorf("failed to send reply: %v", err)
+				return fmt.Errorf("failed to send reply: %w", err)
 			}
-			return fmt.Errorf("failed to resolve destination '%v': %v", dest.FQDN, err)
+			return fmt.Errorf("failed to resolve destination '%v': %w", dest.FQDN, err)
 		}
-		ctx = ctx_
+		// A resolver may hand back a context carrying values the rest of the
+		// request should see - that is what the interface returns one for.
+		// What it must not hand back is the lookup's deadline: everything
+		// after this, the relay included, lives as long as the connection
+		// does. keepValues takes the one and leaves the other.
+		ctx = keepValues(ctx, ctx_)
 		dest.IP = addr
 	}
 
@@ -140,7 +228,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	}
 	if req.realDestAddr == nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %v", err)
+			return fmt.Errorf("failed to send reply: %w", err)
 		}
 		return fmt.Errorf("rewrite returned nil address")
 	}
@@ -157,7 +245,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		return s.handleUDPTcpmux(ctx, conn, req)
 	default:
 		if err := sendReply(conn, commandNotSupported, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %v", err)
+			return fmt.Errorf("failed to send reply: %w", err)
 		}
 		return fmt.Errorf("unsupported command: %v", req.Command)
 	}
@@ -165,15 +253,9 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 
 // handleConnect is used to handle a connect command
 func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) error {
-	// Check if this is allowed
-	if ctx_, ok := s.config.Rules.Allow(ctx, req); !ok {
-		if err := sendReply(conn, ruleFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %v", err)
-		}
-		return fmt.Errorf("connect to %v blocked by rules", req.DestAddr)
-	} else {
-		ctx = ctx_
-	}
+	// The rules have already been applied in handleRequest, before the name
+	// was resolved.
+	sess := req.session
 
 	// Attempt to connect
 	dial := s.config.Dial
@@ -182,7 +264,23 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 			return (&net.Dialer{}).DialContext(ctx, net_, addr)
 		}
 	}
-	target, err := dial(ctx, "tcp", req.realDestAddr.Address())
+	// One attempt gets the session's dial budget. Without it the attempt
+	// runs on the operating system's own timeout, which is over two minutes
+	// on Linux - and every one of those minutes the client sits waiting for
+	// its reply, which is the picture the bug report drew.
+	//
+	// The deadline is the one handleRequest set before resolving the name,
+	// not a fresh budget: a slow lookup and a slow dial are the same wait
+	// seen by the client, and giving each the full budget doubled it.
+	dialCtx := ctx
+	if !req.attemptDeadline.IsZero() {
+		var cancelDial context.CancelFunc
+		dialCtx, cancelDial = context.WithDeadline(ctx, req.attemptDeadline)
+		defer cancelDial()
+	}
+	dialPhase := s.startPhase(PhaseDial)
+	target, err := dial(dialCtx, "tcp", req.realDestAddr.Address())
+	dialPhase.end(err == nil)
 	if err != nil {
 		msg := err.Error()
 		resp := hostUnreachable
@@ -192,9 +290,9 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 			resp = networkUnreachable
 		}
 		if err := sendReply(conn, resp, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %v", err)
+			return fmt.Errorf("failed to send reply: %w", err)
 		}
-		return fmt.Errorf("connect to %v failed: %v", req.DestAddr, err)
+		return fmt.Errorf("connect to %v failed: %w", req.DestAddr, err)
 	}
 	defer func() {
 		_ = target.Close()
@@ -207,46 +305,148 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	}
 	bind := AddrSpec{IP: local.IP, Port: local.Port}
 	if err := sendReply(conn, successReply, &bind); err != nil {
-		return fmt.Errorf("failed to send reply: %v", err)
+		return fmt.Errorf("failed to send reply: %w", err)
+	}
+
+	// The handshake is over. From here the connection is a relay: the
+	// transport asks the session for its deadlines, and the relay idle
+	// timeout replaces the handshake budget.
+	sess.Enter(session.Relay)
+
+	// The wait for the destination's first byte starts once the client has its
+	// success reply: from here on, any delay is the destination's or ours.
+	var targetSrc io.Reader = target
+	if fb := s.startPhase(PhaseFirstByte); fb != nil {
+		targetSrc = &firstByteReader{Reader: target, timer: fb}
+		defer fb.end(false)
 	}
 
 	// Extract username for per-user traffic tracking
 	username := extractUsername(req)
 
+	// Only the destination side is observed here. The client side is closed
+	// through the transport stack, which is the only place that knows whether
+	// the client arrived over plain TCP, obfs or a WebSocket - and that
+	// difference is exactly what is worth counting.
+	var targetWriteOnce sync.Once
+	closeTargetWrite := func() {
+		targetWriteOnce.Do(func() { relay.HalfClose(target, s.halfCloseObserver()) })
+	}
+	closeClientWrite := func() { relay.HalfClose(conn, nil) }
+
 	// Start proxying
 	proxyCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 2)
-	if s.config.TrafficCallback != nil && username != "" {
-		counter := s.config.TrafficCounter(username)
-		if counter != nil {
-			go proxyWithTraffic(target, req.bufConn, errCh, counter)
-			go proxyWithTraffic(conn, target, errCh, counter)
-		} else {
-			go proxy(target, req.bufConn, errCh)
-			go proxy(conn, target, errCh)
-		}
-	} else {
-		go proxy(target, req.bufConn, errCh)
-		go proxy(conn, target, errCh)
+	// Resolved once per connection: the relay asks a closure, not the store.
+	var status func() SessionStatus
+	if s.config.SessionStatus != nil && username != "" {
+		status = func() SessionStatus { return s.config.SessionStatus(username) }
 	}
 
-	// Wait for either side to finish
-	var firstErr error
-	for i := 0; i < 2; i++ {
-		select {
-		case e := <-errCh:
-			if e != nil && firstErr == nil {
-				firstErr = e
-				cancel()
-				// Force-close connections to unblock the other goroutine
-				_ = target.Close()
-				if nc, ok := conn.(net.Conn); ok {
-					_ = nc.Close()
+	// Resolved once per connection, and only if there is something to
+	// resolve: an unmetered server, or a user the store no longer knows, gets
+	// no counter. That says nothing about whether the account is asked - the
+	// relay asks Status regardless, which is the point of F01.
+	var counter *atomic.Int64
+	if s.config.TrafficCounter != nil && username != "" {
+		counter = s.config.TrafficCounter(username)
+	}
+
+	// exhaust is the one place the account region reaches the protocol
+	// region. The account can no longer transfer; whether the relay ends
+	// here or drains depends on the session's grace budget. During a drain
+	// the destination is told that no more requests come and gets until the
+	// end of the grace to answer the ones it has, nothing more goes towards
+	// it, and what it sends still reaches the client. Without a grace budget
+	// - or without a session, as in tests and SDK use - both halves end at
+	// once, which is the historical behaviour.
+	//
+	// It answers whether the calling half keeps copying: only the half
+	// towards the client does, and only during a drain.
+	exhaust := func(toClient bool) func(SessionStatus) bool {
+		return func(st SessionStatus) bool {
+			if sess.Exhaust(st.AccountState()) && sess.InGrace() {
+				closeTargetWrite()
+				if end, ok := sess.GraceDeadline(); ok {
+					_ = target.SetReadDeadline(end)
 				}
 			}
+			return toClient && sess.InGrace()
+		}
+	}
+
+	toDestination := &relay.Half{
+		Dst: target, Src: req.bufConn,
+		Counter: counter, Status: status, Exhaust: exhaust(false),
+		CloseDst: closeTargetWrite,
+	}
+	toClient := &relay.Half{
+		Dst: conn, Src: targetSrc,
+		Counter: counter, Status: status, Exhaust: exhaust(true),
+		CloseDst: closeClientWrite,
+	}
+
+	results := make(chan relay.Result, 2)
+	go func() { results <- relay.Result{ToDestination: true, Err: toDestination.Run()} }()
+	go func() { results <- relay.Result{Err: toClient.Run()} }()
+
+	closeBoth := func() {
+		cancel()
+		// Force-close connections to unblock the other goroutine
+		_ = target.Close()
+		if nc, ok := conn.(net.Conn); ok {
+			_ = nc.Close()
+		}
+	}
+
+	// Wait for both halves. A half that ends cleanly - its source sent EOF -
+	// leaves the other running: that is the half-closed state, and it is how
+	// a destination gets to finish its answer after the client is done
+	// asking. A half that fails takes the other down with it.
+	var firstErr error
+	for pending := 2; pending > 0; {
+		select {
+		case r := <-results:
+			pending--
+			switch {
+			case sess.InGrace():
+				// The account ended the session and the drain is running.
+				// The half towards the destination is expected to end - its
+				// side of the destination is closed - and the end of the
+				// drain is the end of the session.
+				if firstErr == nil {
+					firstErr = ErrSessionNotAllowed
+				}
+				if !r.ToDestination {
+					closeBoth()
+				}
+			case r.Err != nil:
+				if firstErr == nil {
+					firstErr = r.Err
+				}
+				closeBoth()
+			default:
+				sess.Enter(session.HalfClosed)
+			}
 		case <-proxyCtx.Done():
+			// The relay was ended by the context rather than by either peer:
+			// the server is stopping, or the caller gave up. Both sides are
+			// closed so the halves stop copying, and then they are waited
+			// for.
+			//
+			// This branch used to be empty, which meant returning while both
+			// halves were still running. The destination stayed open until
+			// the deferred close ran - and the halves kept copying through a
+			// connection the caller was closing, so a shutdown raced every
+			// live relay instead of ending it.
+			if firstErr == nil {
+				firstErr = proxyCtx.Err()
+			}
+			closeBoth()
+			for ; pending > 0; pending-- {
+				<-results
+			}
 		}
 	}
 	return firstErr
@@ -254,17 +454,11 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 
 // handleBind is used to handle a connect command
 func (s *Server) handleBind(ctx context.Context, conn conn, req *Request) error {
-	// Check if this is allowed
-	if _, ok := s.config.Rules.Allow(ctx, req); !ok {
-		if err := sendReply(conn, ruleFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %v", err)
-		}
-		return fmt.Errorf("bind to %v blocked by rules", req.DestAddr)
-	}
+	// Rules were applied in handleRequest, before any name was resolved.
 
 	// TODO: Support bind
 	if err := sendReply(conn, commandNotSupported, nil); err != nil {
-		return fmt.Errorf("failed to send reply: %v", err)
+		return fmt.Errorf("failed to send reply: %w", err)
 	}
 	return nil
 }
@@ -361,88 +555,6 @@ func sendReply(w io.Writer, resp uint8, addr *AddrSpec) error {
 	// Send the message
 	_, err := w.Write(msg)
 	return err
-}
-
-type closeWriter interface {
-	CloseWrite() error
-}
-
-var bufferPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 32*1024)
-		return &b
-	},
-}
-
-// proxy is used to suffle data from src to destination, and sends errors
-// down a dedicated channel
-func proxy(dst io.Writer, src io.Reader, errCh chan error) {
-	bufPtr := bufferPool.Get().(*[]byte)
-	defer bufferPool.Put(bufPtr)
-
-	_, err := io.CopyBuffer(dst, src, *bufPtr)
-	if tcpConn, ok := dst.(closeWriter); ok {
-		_ = tcpConn.CloseWrite()
-	}
-	select {
-	case errCh <- err:
-	default:
-	}
-}
-
-// proxyWithTraffic is like proxy but also atomically increments a
-// per-user traffic counter. The counter pointer is resolved once at
-// connection setup time so the hot loop is lock-free.
-func proxyWithTraffic(dst io.Writer, src io.Reader, errCh chan error, counter *atomic.Int64) {
-	bufPtr := bufferPool.Get().(*[]byte)
-	defer bufferPool.Put(bufPtr)
-	buf := *bufPtr
-
-	var accumulated int64
-	const flushThreshold = 64 * 1024 // flush every 64KB to reduce atomic op overhead
-
-	finish := func(e error) {
-		if accumulated > 0 {
-			counter.Add(accumulated)
-		}
-		if tcpConn, ok := dst.(closeWriter); ok {
-			_ = tcpConn.CloseWrite()
-		}
-		select {
-		case errCh <- e:
-		default:
-		}
-	}
-
-	for {
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if nw > 0 {
-				accumulated += int64(nw)
-				if accumulated >= flushThreshold {
-					counter.Add(accumulated)
-					accumulated = 0
-				}
-			}
-			if ew != nil {
-				finish(ew)
-				return
-			}
-			if nr != nw {
-				finish(io.ErrShortWrite)
-				return
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				finish(er)
-			} else {
-				finish(nil)
-			}
-			return
-		}
-	}
 }
 
 // extractUsername returns the authenticated username from the request, if any.

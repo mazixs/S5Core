@@ -16,6 +16,10 @@ type UpgraderOpts struct {
 	// CheckOrigin controls CORS. If nil, all origins are allowed (safe only
 	// when hidden behind TLS + obfs auth).
 	CheckOrigin func(r *http.Request) bool
+	// ReadLimit bounds one message from the peer. Zero means
+	// DefaultReadLimit; a negative value removes the limit. A server sets
+	// this only if it knows its clients batch more than the default allows.
+	ReadLimit int64
 }
 
 // Upgrader wraps a gorilla websocket.Upgrader and validates the request path.
@@ -33,7 +37,7 @@ func NewUpgrader(opts UpgraderOpts) *Upgrader {
 	return &Upgrader{
 		opts: opts,
 		up: websocket.Upgrader{
-			Subprotocols: opts.Subprotocols,
+			Subprotocols: namedSubprotocols(opts.Subprotocols),
 			CheckOrigin:  checkOrigin,
 		},
 	}
@@ -49,11 +53,5 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error
 	if err != nil {
 		return nil, fmt.Errorf("ws upgrade: %w", err)
 	}
-	return Wrap(wsConn), nil
-}
-
-// IsWSRequest returns true if the request looks like a WebSocket upgrade.
-func IsWSRequest(r *http.Request) bool {
-	return r.Header.Get("Upgrade") == "websocket" &&
-		r.Header.Get("Connection") == "Upgrade"
+	return WrapWithLimit(wsConn, u.opts.ReadLimit), nil
 }

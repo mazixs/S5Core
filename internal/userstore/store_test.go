@@ -551,3 +551,56 @@ func TestStore_PeriodicFlush_DoubleStartStop(t *testing.T) {
 	s.StopPeriodicFlush()
 	s.StopPeriodicFlush()
 }
+
+// SessionAllowed answers the question the relay asks every 64 KiB: may this
+// account keep transferring right now. Its difference from IsValid is that it
+// counts the traffic that has not reached the file yet - the relay's own bytes
+// are in that delta, so a quota that ignored it would only stop a session after
+// the next flush, up to a minute later.
+func TestSessionAllowedSeesTrafficThatHasNotBeenFlushed(t *testing.T) {
+	users := []UserAccount{
+		{ID: "u-001", Username: "alice", Password: "pass", TrafficLimitBytes: 100, TrafficUsedBytes: 50, Enabled: true},
+	}
+	s := NewStore(nil)
+	if err := s.LoadFromFile(createTestFile(t, users)); err != nil {
+		t.Fatal(err)
+	}
+
+	if !s.SessionAllowed("alice") {
+		t.Fatal("a session under its quota was refused")
+	}
+
+	// The counter the relay increments, not the field the file holds.
+	s.TrafficCounterFor("alice").Add(50)
+
+	if s.SessionAllowed("alice") {
+		t.Error("a session that reached its quota was allowed to continue")
+	}
+}
+
+func TestSessionAllowedRefusesAccountsThatCannotTransfer(t *testing.T) {
+	s := NewStore(nil)
+	if err := s.LoadFromFile(createTestFile(t, testUsers())); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		user    string
+		allowed bool
+	}{
+		{"active user", "alice", true},
+		{"user without a TTL", "bob", true},
+		{"disabled user", "disabled", false},
+		{"expired user", "expired", false},
+		{"user removed mid-session", "gone", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := s.SessionAllowed(tt.user); got != tt.allowed {
+				t.Errorf("SessionAllowed(%q) = %v, want %v", tt.user, got, tt.allowed)
+			}
+		})
+	}
+}
