@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -140,18 +141,21 @@ func NewRequest(conn io.Reader) (*Request, error) {
 	// Read the version byte
 	var header [3]byte
 	if _, err := io.ReadFull(conn, header[:]); err != nil {
-		return nil, fmt.Errorf("failed to get command version: %w", err)
+		return nil, connFailure("request", "header_read", err)
 	}
 
 	// Ensure we are compatible
 	if header[0] != Socks5Version {
-		return nil, fmt.Errorf("unsupported command version: %v", header[0])
+		return nil, protocolFailure("request", "header_read", fmt.Errorf("unsupported command version: %v", header[0]))
 	}
 
 	// Read in the destination address
 	dest, err := readAddrSpec(conn)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, errUnrecognizedAddrType) {
+			return nil, protocolFailure("request", "address_read", err)
+		}
+		return nil, connFailure("request", "address_read", err)
 	}
 
 	request := &Request{
@@ -174,10 +178,11 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	// trace outside this process.
 	ctx, allowed := s.config.Rules.Allow(ctx, req)
 	if !allowed {
+		failure := &ConnError{Stage: "request", Op: "rules", Kind: FailurePolicy, Err: errors.New("destination blocked by rules")}
 		if err := sendReply(conn, ruleFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %w", err)
+			return errors.Join(failure, connFailure("request", "reply_write", err))
 		}
-		return fmt.Errorf("request to %v blocked by rules", req.DestAddr)
+		return failure
 	}
 
 	// A CONNECT is dialing from here on: resolving the name is the first
@@ -207,10 +212,11 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	if dest.FQDN != "" {
 		ctx_, addr, err := s.config.Resolver.Resolve(resolveCtx, dest.FQDN)
 		if err != nil {
-			if err := sendReply(conn, hostUnreachable, nil); err != nil {
-				return fmt.Errorf("failed to send reply: %w", err)
+			failure := connFailure("dial", "resolve", err)
+			if replyErr := sendReply(conn, hostUnreachable, nil); replyErr != nil {
+				return errors.Join(failure, connFailure("request", "reply_write", replyErr))
 			}
-			return fmt.Errorf("failed to resolve destination '%v': %w", dest.FQDN, err)
+			return failure
 		}
 		// A resolver may hand back a context carrying values the rest of the
 		// request should see - that is what the interface returns one for.
@@ -228,7 +234,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	}
 	if req.realDestAddr == nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %w", err)
+			return connFailure("request", "reply_write", err)
 		}
 		return fmt.Errorf("rewrite returned nil address")
 	}
@@ -244,10 +250,11 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	case UDPTunnelCommand:
 		return s.handleUDPTcpmux(ctx, conn, req)
 	default:
+		failure := protocolFailure("request", "command", fmt.Errorf("unsupported command: %v", req.Command))
 		if err := sendReply(conn, commandNotSupported, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %w", err)
+			return errors.Join(failure, connFailure("request", "reply_write", err))
 		}
-		return fmt.Errorf("unsupported command: %v", req.Command)
+		return failure
 	}
 }
 
@@ -289,10 +296,11 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		} else if strings.Contains(msg, "network is unreachable") {
 			resp = networkUnreachable
 		}
-		if err := sendReply(conn, resp, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %w", err)
+		failure := connFailure("dial", "connect", err)
+		if replyErr := sendReply(conn, resp, nil); replyErr != nil {
+			return errors.Join(failure, connFailure("request", "reply_write", replyErr))
 		}
-		return fmt.Errorf("connect to %v failed: %w", req.DestAddr, err)
+		return failure
 	}
 	defer func() {
 		_ = target.Close()
@@ -305,7 +313,7 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	}
 	bind := AddrSpec{IP: local.IP, Port: local.Port}
 	if err := sendReply(conn, successReply, &bind); err != nil {
-		return fmt.Errorf("failed to send reply: %w", err)
+		return connFailure("request", "reply_write", err)
 	}
 
 	// The handshake is over. From here the connection is a relay: the
@@ -449,7 +457,7 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 			}
 		}
 	}
-	return firstErr
+	return connFailure("relay", "copy", firstErr)
 }
 
 // handleBind is used to handle a connect command
@@ -458,7 +466,7 @@ func (s *Server) handleBind(ctx context.Context, conn conn, req *Request) error 
 
 	// TODO: Support bind
 	if err := sendReply(conn, commandNotSupported, nil); err != nil {
-		return fmt.Errorf("failed to send reply: %w", err)
+		return connFailure("request", "reply_write", err)
 	}
 	return nil
 }

@@ -18,6 +18,7 @@ build/
 bin/
 
 # Test artifacts
+.ci-reports/
 *.test
 
 # Coverage and profiles
@@ -44,3 +45,6 @@ bench/
 # Local Compose accounts and TLS keys
 /data/
 /certs/
+
+# Private results from the live server probe
+/docs/benchmarks/live-2026-09-21-germany/

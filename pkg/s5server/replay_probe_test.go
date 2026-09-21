@@ -158,14 +158,14 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 	// below is measuring. In production it is DefaultHandshakeTimeout.
 	const handshakeBudget = 500 * time.Millisecond
 
-	startServer(t, Config{
+	srv := startServer(t, Config{
 		Port:             plainPort,
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      true,
 		UsersFile:        usersPath,
 		Fail2BanRetries:  1000,
 		Fail2BanTime:     time.Minute,
-		HandshakeTimeout: handshakeBudget,
+		HandshakeTimeout: DefaultHandshakeTimeout,
 		ObfsEnabled:      true,
 		ObfsPort:         obfsPort,
 		ObfsPSK:          testPSK,
@@ -174,7 +174,12 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 		ObfsReplayWindow: obfs.DefaultSaltHistory,
 	})
 
+	// Recording authenticates a legacy password and may run Argon2id and
+	// persist its hash. That cost is unrelated to replay refusal timing and
+	// can exceed 500 ms under -race on a busy runner. Use the production
+	// budget for this real connection; only probes get the short budget.
 	flight := recordFirstFlight(t, obfsPort, echoAddr)
+	srv.UpdateHandshakeTimeout(handshakeBudget)
 	if len(flight) < 40 {
 		t.Fatalf("the recorded flight is %d bytes, too short to be a salt and a frame", len(flight))
 	}

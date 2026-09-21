@@ -368,6 +368,24 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	// The connection's state machine, if the listener pipeline gave it one.
 	// It is closed by the transport wrapper that owns it, on Close above.
 	sess := session.Of(conn)
+	started := time.Now()
+	stage := "greeting"
+	defer func() {
+		if err == nil {
+			return
+		}
+		err = connFailure(stage, "handle", err)
+		var failure *ConnError
+		if errors.As(err, &failure) {
+			// No raw error: net.OpError may contain the client address.
+			s.config.Logger.Debug("SOCKS5 connection failed",
+				"stage", failure.Stage, "operation", failure.Op, "kind", failure.Kind,
+				"transport", sess.Transport(), "protocol_state", sess.Protocol().String(),
+				"handshake_budget", sess.SLA().Handshake, "elapsed", time.Since(started),
+				"protocol_reason", protocolReason(err),
+				"causes", failureCodes(err))
+		}
+	}()
 
 	// The handshake is read through a buffer, not field by field off the
 	// socket (plan task Ф6-5). A SOCKS5 handshake is a dozen fields of one
@@ -389,12 +407,7 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	// Read the version byte
 	var version [1]byte
 	if _, err := io.ReadFull(br, version[:]); err != nil {
-		if err == io.EOF {
-			s.config.Logger.Debug("socks: Connection closed before reading version byte", "err", err)
-		} else {
-			s.config.Logger.Debug("socks: Failed to get version byte", "err", err)
-		}
-		return err
+		return connFailure("greeting", "version_read", err)
 	}
 	// The first byte is in: a peer that speaks. Everything up to the reply
 	// to the request is the handshake.
@@ -402,25 +415,23 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 
 	// Ensure we are compatible
 	if version[0] != Socks5Version {
-		err := fmt.Errorf("unsupported SOCKS version: %v", version)
-		s.config.Logger.Debug("socks: unsupported SOCKS version", "version", version, "err", err)
-		return err
+		return protocolFailure("greeting", "version_read", fmt.Errorf("unsupported SOCKS version: %v", version))
 	}
 
 	// Authenticate the connection. The handshake phase ends where credentials
 	// start being read, so that password hashing is attributed to auth.
+	stage = "auth"
 	authContext, err := s.authenticate(conn, br, sourceOf(conn), s.tunnelIdentity(conn), handshake)
 	if err != nil {
-		err = fmt.Errorf("failed to authenticate: %w", err)
-		s.config.Logger.Debug("socks: failed to authenticate", "err", err)
-		return err
+		return connFailure("auth", "exchange", err)
 	}
 
+	stage = "request"
 	request, err := NewRequest(br)
 	if err != nil {
 		if errors.Is(err, errUnrecognizedAddrType) {
-			if err := sendReply(conn, addrTypeNotSupported, nil); err != nil {
-				return fmt.Errorf("failed to send reply: %w", err)
+			if replyErr := sendReply(conn, addrTypeNotSupported, nil); replyErr != nil {
+				return errors.Join(err, connFailure("request", "reply_write", replyErr))
 			}
 		}
 		return fmt.Errorf("failed to read destination address: %w", err)
@@ -433,9 +444,7 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 
 	// Process the client request
 	if err := s.handleRequest(ctx, request, conn); err != nil {
-		err = fmt.Errorf("failed to handle request: %w", err)
-		s.config.Logger.Debug("socks: failed to handle request", "err", err)
-		return err
+		return connFailure("request", "handle", err)
 	}
 
 	return nil

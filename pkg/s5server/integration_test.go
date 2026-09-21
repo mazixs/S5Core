@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -102,10 +104,21 @@ func startEchoServer(t *testing.T) string {
 	return l.Addr().String()
 }
 
+type testLogWriter struct{ t *testing.T }
+
+func (w testLogWriter) Write(p []byte) (int, error) {
+	w.t.Helper()
+	w.t.Logf("%s", p)
+	return len(p), nil
+}
+
 // startServer starts an s5server with given config and returns
 // a cleanup function. Blocks until the server is ready to accept.
 func startServer(t *testing.T, cfg Config) *Server {
 	t.Helper()
+	if cfg.Logger == nil {
+		cfg.Logger = slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
 
 	srv, err := NewServer(cfg)
 	if err != nil {
@@ -113,12 +126,15 @@ func startServer(t *testing.T, cfg Config) *Server {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	t.Cleanup(func() {
 		cancel()
 		srv.Stop()
+		<-done
 	})
 
 	go func() {
+		defer close(done)
 		if err := srv.Start(ctx); err != nil && ctx.Err() == nil {
 			t.Errorf("server error: %v", err)
 		}
@@ -140,8 +156,20 @@ func waitForPort(t *testing.T, port string) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
-			conn.Close()
-			return
+			// A successful dial only proves the kernel is listening. Wait
+			// for the server to finish this probe and release its slot:
+			// closing our socket alone races MAX_CONNECTIONS tests.
+			_ = conn.SetReadDeadline(deadline)
+			if err := conn.(*net.TCPConn).CloseWrite(); err == nil {
+				var reply [1]byte
+				_, readErr := conn.Read(reply[:])
+				_ = conn.Close()
+				if errors.Is(readErr, io.EOF) {
+					return
+				}
+			} else {
+				_ = conn.Close()
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
