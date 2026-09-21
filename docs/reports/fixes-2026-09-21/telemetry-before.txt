@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/s5server
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkFrameObserver/bare-16         	   10000	     21092 ns/op	1553.57 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare-16         	   10000	     21235 ns/op	1543.10 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare-16         	   11456	     21366 ns/op	1533.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare-16         	   10000	     20346 ns/op	1610.55 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare-16         	   10000	     20334 ns/op	1611.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare-16         	   10000	     21100 ns/op	1553.02 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	   10000	     20902 ns/op	1567.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	   10000	     20447 ns/op	1602.60 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	   10000	     20459 ns/op	1601.62 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	   10000	     20636 ns/op	1587.87 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	   10000	     20289 ns/op	1615.05 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	   10000	     20372 ns/op	1608.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	    9582	     25277 ns/op	1296.37 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	    9415	     25462 ns/op	1286.93 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	   10000	     25275 ns/op	1296.47 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	    9830	     26005 ns/op	1260.04 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	    8790	     25682 ns/op	1275.92 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	    9571	     25622 ns/op	1278.92 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	    9493	     26169 ns/op	1252.17 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	    9741	     26488 ns/op	1237.08 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	    9428	     27054 ns/op	1211.19 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	    9566	     26543 ns/op	1234.51 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	    9531	     26919 ns/op	1217.28 MB/s	    5440 B/op	      32 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	    9256	     27109 ns/op	1208.76 MB/s	    5440 B/op	      32 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	5.516s

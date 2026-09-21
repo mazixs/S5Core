@@ -1,0 +1,26 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestAuditWirebenchAcceptsFailedTransfers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Connection", "close")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprint(w, "unavailable")
+	}))
+	defer srv.Close()
+	for _, dir := range []string{"up", "down"} {
+		o := clientOpts{url: srv.URL, bytes: 64 << 20, dir: dir, conns: 1}
+		r := oneTransfer(context.Background(), srv.Client(), o)
+		t.Logf("dir=%s HTTP=503 requested=%d reported=%d err=%v", dir, o.bytes, r.bytes, r.err)
+		if r.err != nil {
+			t.Fatalf("expected current bug, got %v", r.err)
+		}
+	}
+}

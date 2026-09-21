@@ -1,0 +1,57 @@
+temporary servers and ARM clients started
+smoke 0 raw down: 8.63 MiB/s
+smoke 0 raw up: 6.58 MiB/s
+smoke 0 v2 down: 4.18 MiB/s
+smoke 0 v2 up: 5.7 MiB/s
+smoke 0 current down: 1.58 MiB/s
+smoke 0 current up: 5.65 MiB/s
+measure 1 raw down: 30.23 MiB/s
+measure 1 v2 down: 44.31 MiB/s
+measure 1 current down: 43.19 MiB/s
+measure 1 raw up: 40.45 MiB/s
+measure 1 v2 up: 32.77 MiB/s
+measure 1 current up: 33.54 MiB/s
+measure 2 raw up: 51.3 MiB/s
+measure 2 current up: 46.62 MiB/s
+measure 2 v2 up: 10.36 MiB/s
+measure 2 raw down: 32.0 MiB/s
+measure 2 current down: 43.47 MiB/s
+measure 2 v2 down: 27.95 MiB/s
+measure 3 v2 down: 38.11 MiB/s
+measure 3 raw down: 48.38 MiB/s
+measure 3 current down: 41.09 MiB/s
+measure 3 v2 up: 36.31 MiB/s
+measure 3 raw up: 52.05 MiB/s
+measure 3 current up: 46.97 MiB/s
+measure 4 v2 up: 46.52 MiB/s
+measure 4 current up: 33.46 MiB/s
+measure 4 raw up: 51.81 MiB/s
+measure 4 v2 down: 41.6 MiB/s
+measure 4 current down: 40.69 MiB/s
+measure 4 raw down: 31.08 MiB/s
+measure 5 current down: 37.46 MiB/s
+measure 5 raw down: 31.5 MiB/s
+measure 5 v2 down: 43.76 MiB/s
+measure 5 current up: 47.99 MiB/s
+stopped temporary processes on router
+stopped temporary processes on node-A
+Traceback (most recent call last):
+  File "TEMP_BUILD/run.py", line 113, in <module>
+    for mode in order: transfer(mode,direction,'128MB','measure',i)
+                       ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "TEMP_BUILD/run.py", line 94, in transfer
+    out=ssh('router',cmd,timeout=90)
+  File "TEMP_BUILD/run.py", line 21, in ssh
+    p = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, command],
+                       input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+  File "/usr/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 2153, in _communicate
+    ready = selector.select(timeout)
+  File "/usr/lib/python3.14/selectors.py", line 398, in select
+    fd_event_list = self._selector.poll(timeout)
+KeyboardInterrupt

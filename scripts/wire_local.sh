@@ -111,7 +111,7 @@ wb() { docker exec "${NET}-client" /bin5/wirebench "$@"; }
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"; cleanup' EXIT
 
-say "==> Прогон: $REPS повторов, $(python3 -c "print($SIZE//1048576)") МБ на замер"
+say "==> Прогон: $REPS повторов, $(python3 -c "print($SIZE//1048576)") МиБ на замер"
 for dir in $DIRS; do
   for rep in $(seq 1 "$REPS"); do
     wb -url "http://${NET}-target:5301" -dir "$dir" -n "$SIZE" -label "direct-$dir" \
@@ -129,19 +129,19 @@ import re, sys, statistics
 from collections import defaultdict
 vals = defaultdict(list)
 for line in open(sys.argv[1]):
-    m = re.match(r"(\S+)\s+([\d.]+) MB/s", line.strip())
+    m = re.match(r"(\S+)\s+([\d.]+) Mi?B/s", line.strip())
     if m:
         vals[m.group(1)].append(float(m.group(2)))
 base = {}
 for name in ("direct-down", "direct-up"):
     if vals.get(name):
         base[name.split("-")[1]] = statistics.median(vals[name])
-print(f"{'путь':14s} {'медиана МБ/с':>14s} {'Мбит/с':>10s} {'доля канала':>13s}")
+print(f"{'путь':14s} {'медиана МиБ/с':>14s} {'Мбит/с':>10s} {'доля канала':>13s}")
 for name in sorted(vals):
     med = statistics.median(vals[name])
     direction = name.split("-")[1]
     share = f"{100*med/base[direction]:.1f}%" if direction in base and base[direction] else "-"
-    print(f"{name:14s} {med:>14.2f} {med*8:>10.1f} {share:>13s}")
+    print(f"{name:14s} {med:>14.2f} {med*2**20*8/1e6:>10.1f} {share:>13s}")
 PY
 
 [ -n "$OUT" ] && cp "$TMP/raw.txt" "$OUT" && say "сырые строки: $OUT"

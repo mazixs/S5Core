@@ -241,7 +241,7 @@ func TestAMemberFromLastYearIsNotRecognised(t *testing.T) {
 
 // A directory whose background loop has not caught up must still answer
 // correctly - a member's connection is not allowed to depend on a ticker.
-func TestALookupBuildsAnEpochTheRefreshHasNotReached(t *testing.T) {
+func TestALookupCannotBuildAnEpochTheRefreshHasNotReached(t *testing.T) {
 	psk := testPSK()
 	alice := testMember(t, "alice")
 	at := time.Date(2026, 9, 19, 12, 30, 0, 0, time.UTC)
@@ -260,8 +260,17 @@ func TestALookupBuildsAnEpochTheRefreshHasNotReached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Identity != "alice" {
-		t.Error("a member was refused because the directory had not been refreshed")
+	if got.Identity != "" {
+		t.Fatal("a lookup built an unprepared epoch")
+	}
+	if len(dir.epochs) != 2*(dir.window()+1)+1 {
+		t.Fatal("lookup grew the directory")
+	}
+	at = later
+	dir.Refresh()
+	got, err = server.Accept(psk, wire)
+	if err != nil || got.Identity != "alice" {
+		t.Fatalf("refreshed directory refused member: %+v, %v", got, err)
 	}
 }
 

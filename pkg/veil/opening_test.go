@@ -1,7 +1,9 @@
 package veil
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"testing"
 )
 
@@ -47,7 +49,9 @@ func TestTheOpeningPadMovesWithTheSecret(t *testing.T) {
 	seen := map[int]int{}
 	const runs = 400
 	for i := 0; i < runs; i++ {
-		pad, err := OpeningPad(psk, randomSecret(t), ctx, limit)
+		secret := make([]byte, 32)
+		binary.LittleEndian.PutUint64(secret, uint64(i))
+		pad, err := OpeningPad(psk, secret, ctx, limit)
 		if err != nil {
 			t.Fatalf("OpeningPad: %v", err)
 		}
@@ -57,50 +61,47 @@ func TestTheOpeningPadMovesWithTheSecret(t *testing.T) {
 		seen[pad]++
 	}
 
-	// Every value in the range should turn up in 400 draws over 21 values; the
-	// expected count is 19, so an absent one is a bug, not bad luck.
+	// This fixed corpus covers every output value. Unlike random draws it
+	// cannot occasionally omit one merely by chance.
 	if len(seen) != limit+1 {
 		t.Fatalf("pads took %d of %d possible values in %d connections: %v",
 			len(seen), limit+1, runs, seen)
 	}
 }
 
-// A different PSK or a different context has to give a different pad for the
-// same secret: the pad is derived through the same labels as the keys, and a
-// pad that survived a context change would mean the label is not in the
-// derivation at all.
+// Each PSK/context field must affect the pad derivation. Individual outputs
+// may collide modulo 21, so compare a deterministic sequence for each field,
+// rather than demanding that three of four random outputs differ.
 func TestTheOpeningPadFollowsThePSKAndTheContext(t *testing.T) {
-	secret := randomSecret(t)
-	base, err := OpeningPad(testPSK(), secret, Context{Version: "v1"}, 20)
-	if err != nil {
-		t.Fatalf("OpeningPad: %v", err)
-	}
-
-	differs := 0
 	other := []struct {
 		name string
 		psk  []byte
 		ctx  Context
 	}{
-		{"another psk", randomSecret(t), Context{Version: "v1"}},
+		{"another psk", bytes.Repeat([]byte{0xa5}, 32), Context{Version: "v1"}},
 		{"another version", testPSK(), Context{Version: "v2"}},
 		{"another node", testPSK(), Context{Version: "v1", NodeID: "edge"}},
 		{"another cipher", testPSK(), Context{Version: "v1", Cipher: CipherChaCha}},
 	}
 	for _, o := range other {
-		pad, err := OpeningPad(o.psk, secret, o.ctx, 20)
-		if err != nil {
-			t.Fatalf("%s: OpeningPad: %v", o.name, err)
-		}
-		if pad != base {
-			differs++
-		}
-	}
-	// Each one differs with probability 20/21, so all four matching would be a
-	// one-in-200000 accident - but any single collision is ordinary. Requiring
-	// most of them to differ tests the derivation without being flaky.
-	if differs < len(other)-1 {
-		t.Fatalf("%d of %d context changes left the pad at %d", len(other)-differs, len(other), base)
+		t.Run(o.name, func(t *testing.T) {
+			differs := false
+			for i := range 32 {
+				secret := bytes.Repeat([]byte{byte(i)}, 32)
+				base, err := OpeningPad(testPSK(), secret, Context{Version: "v1"}, 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pad, err := OpeningPad(o.psk, secret, o.ctx, 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+				differs = differs || pad != base
+			}
+			if !differs {
+				t.Fatal("changing this field leaves the entire pad sequence unchanged")
+			}
+		})
 	}
 }
 

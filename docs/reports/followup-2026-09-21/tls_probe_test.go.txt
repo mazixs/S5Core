@@ -1,0 +1,18 @@
+package tlsdecoy
+import("crypto/tls";"net/http";"net/http/httptest";"testing";"time";"github.com/mazixs/S5Core/internal/testcert")
+func TestAuditShutdownWaitsBeyondWriteTimeout(t *testing.T){
+ entered,release:=make(chan struct{}),make(chan struct{})
+ up:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Length","1024");w.WriteHeader(200);w.(http.Flusher).Flush();close(entered);<-release}))
+ defer up.Close()
+ cert,key,err:=testcert.Generate(t.TempDir());if err!=nil{t.Fatal(err)}
+ l,err:=NewListener(Config{Addr:"127.0.0.1:0",CertFile:cert,KeyFile:key,WSPath:"/ws",DecoyUpstream:up.URL});if err!=nil{t.Fatal(err)}
+ tr:=&http.Transport{TLSClientConfig:&tls.Config{InsecureSkipVerify:true}};defer tr.CloseIdleConnections()
+ client:=&http.Client{Transport:tr};requestDone:=make(chan struct{})
+ go func(){defer close(requestDone);resp,err:=client.Get("https://"+l.Addr().String()+"/");if err==nil{resp.Body.Close()}}()
+ <-entered
+ stopped:=make(chan error,1);start:=time.Now();go func(){stopped<-l.Close()}()
+ select{case err:=<-stopped:close(release);t.Fatalf("unexpected early close: %v",err);case <-time.After(decoyWriteTimeout+time.Second):t.Logf("Close still blocked at %s; configured WriteTimeout=%s",time.Since(start),decoyWriteTimeout)}
+ close(release)
+ select{case err:=<-stopped:if err!=nil{t.Fatal(err)};case <-time.After(3*time.Second):t.Fatal("close did not resume after upstream released")}
+ <-requestDone
+}

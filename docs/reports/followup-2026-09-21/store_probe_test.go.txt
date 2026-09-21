@@ -1,0 +1,8 @@
+package userstore
+import("fmt";"testing";"time";"sort")
+func TestAuditFlushLockCost(t *testing.T){for _,n:=range []int{10000,32768,262144}{
+ s:=NewStore(nil);for i:=range n{key:=fmt.Sprint(i);s.users[key]=&userEntry{account:UserAccount{Username:key,Enabled:true}}}
+ var times []time.Duration
+ for range 20{start:=time.Now();s.FlushTraffic();times=append(times,time.Since(start))}
+ sort.Slice(times,func(i,j int)bool{return times[i]<times[j]});t.Logf("users=%d FlushTraffic holding global write lock median=%s max=%s",n,times[len(times)/2],times[len(times)-1])
+}}

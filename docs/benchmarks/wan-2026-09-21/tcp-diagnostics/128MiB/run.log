@@ -1,0 +1,30 @@
+control-before 1 raw: 53.48 MiB/s
+warm 1 v2: 4.58 MiB/s
+measure 1 v2: 50.32 MiB/s
+warm 1 current: 5.0 MiB/s
+measure 1 current: 48.02 MiB/s
+control-after 1 raw: 52.35 MiB/s
+control-before 2 raw: 51.05 MiB/s
+warm 2 current: 5.05 MiB/s
+measure 2 current: 33.54 MiB/s
+warm 2 v2: 5.1 MiB/s
+measure 2 v2: 32.04 MiB/s
+control-after 2 raw: 49.64 MiB/s
+control-before 3 raw: 48.71 MiB/s
+warm 3 v2: 4.72 MiB/s
+measure 3 v2: 33.62 MiB/s
+warm 3 current: 5.02 MiB/s
+measure 3 current: 47.6 MiB/s
+stopped temporary processes on router
+stopped temporary processes on node-A
+Traceback (most recent call last):
+  File "/LOCAL_EXPERIMENT/tcpdiag/run.py", line 116, in <module>
+    stop_server(mode)
+    ~~~~~~~~~~~^^^^^^
+  File "/LOCAL_EXPERIMENT/tcpdiag/run.py", line 105, in stop_server
+    ssh('node-A',cmd,timeout=10)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/LOCAL_EXPERIMENT/tcpdiag/run.py", line 25, in ssh
+    raise RuntimeError(f'{host}: command failed ({p.returncode}): {p.stderr.decode()[:300]}')
+RuntimeError: node-A: command failed (255): ssh: connect to host NODE_A port 22: Connection timed out
+

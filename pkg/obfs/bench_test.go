@@ -1,9 +1,11 @@
 package obfs
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"net"
 	"sort"
@@ -122,74 +124,53 @@ func BenchmarkFramingOnly(b *testing.B) {
 	}
 }
 
-// BenchmarkEndToEnd measures the full path over a real socket pair, and reports
-// p50/p95/p99 per operation. The average hides exactly what matters here: a
-// rare frame that takes ten times longer than the rest.
-func BenchmarkEndToEnd(b *testing.B) {
+// BenchmarkEndToEnd times confirmed delivery over loopback TCP. The receiver
+// verifies each payload and acknowledges it before the next operation starts.
+// It includes acknowledgement latency, but no SOCKS handshake, TLS or WAN.
+func BenchmarkEndToEnd(b *testing.B) { benchmarkDelivery(b, false) }
+
+// BenchmarkRoundTrip additionally returns and verifies the entire payload.
+func BenchmarkRoundTrip(b *testing.B) { benchmarkDelivery(b, true) }
+
+func benchmarkDelivery(b *testing.B, echo bool) {
 	for _, size := range benchSizes {
 		b.Run(sizeName("AESGCM", size), func(b *testing.B) {
 			client, server := benchPair(b)
-			payload := benchPayload(size)
-			buf := make([]byte, size)
-			latencies := make([]time.Duration, 0, b.N)
-
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				sink := make([]byte, size)
-				for {
-					if _, err := io.ReadFull(server, sink); err != nil {
-						return
-					}
-				}
-			}()
-
-			b.SetBytes(int64(size))
-			b.ReportAllocs()
-			b.ResetTimer()
-			for range b.N {
-				start := time.Now()
-				if _, err := client.Write(payload); err != nil {
-					b.Fatal(err)
-				}
-				latencies = append(latencies, time.Since(start))
-			}
-			b.StopTimer()
-
-			_ = client.Close()
-			<-done
-			_ = buf
-
-			reportPercentiles(b, latencies)
-		})
-	}
-}
-
-// BenchmarkRoundTrip measures write plus read of the same frame, which is the
-// number a client actually experiences.
-func BenchmarkRoundTrip(b *testing.B) {
-	for _, size := range benchSizes {
-		b.Run(sizeName("AESGCM", size), func(b *testing.B) {
-			client, server := benchPair(b)
+			_ = client.SetDeadline(time.Now().Add(5 * time.Minute))
+			_ = server.SetDeadline(time.Now().Add(5 * time.Minute))
 			payload := benchPayload(size)
 			latencies := make([]time.Duration, 0, b.N)
-
-			errCh := make(chan error, 1)
+			done := make(chan error, 1)
 			go func() {
+				defer server.Close()
 				buf := make([]byte, size)
-				for {
+				ack := []byte{1}
+				for range b.N {
 					if _, err := io.ReadFull(server, buf); err != nil {
-						errCh <- err
+						done <- err
 						return
 					}
-					if _, err := server.Write(buf); err != nil {
-						errCh <- err
+					if !bytes.Equal(buf, payload) {
+						done <- fmt.Errorf("receiver payload mismatch")
+						return
+					}
+					reply := ack
+					if echo {
+						reply = buf
+					}
+					if _, err := server.Write(reply); err != nil {
+						done <- err
 						return
 					}
 				}
+				done <- nil
 			}()
-
-			back := make([]byte, size)
+			back := make([]byte, 1)
+			want := []byte{1}
+			if echo {
+				back = make([]byte, size)
+				want = payload
+			}
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -201,11 +182,15 @@ func BenchmarkRoundTrip(b *testing.B) {
 				if _, err := io.ReadFull(client, back); err != nil {
 					b.Fatal(err)
 				}
+				if !bytes.Equal(back, want) {
+					b.Fatal("reply payload mismatch")
+				}
 				latencies = append(latencies, time.Since(start))
 			}
+			if err := <-done; err != nil {
+				b.Fatal(err)
+			}
 			b.StopTimer()
-
-			_ = client.Close()
 			reportPercentiles(b, latencies)
 		})
 	}

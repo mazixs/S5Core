@@ -268,14 +268,41 @@ func sessionTransitionObserver(t *Telemetry) session.Observer {
 		return nil
 	}
 	return func(tr session.Transition) {
-		t.SessionTransitions.Add(context.Background(), 1, metric.WithAttributes(
-			attribute.String("region", tr.Region.String()),
-			attribute.String("from", tr.FromName()),
-			attribute.String("to", tr.ToName()),
-			attribute.String("transport", tr.Transport),
-			attribute.Bool("illegal", tr.Illegal),
-		))
+		opts, ok := transitionOptions[tr]
+		if !ok {
+			opts = transitionMetricOptions(tr)
+		}
+		t.SessionTransitions.Add(context.Background(), 1, opts...)
 	}
+}
+
+// Finite state labels are constructed once, not on every encrypted frame.
+// Store the variadic slice too, so the interface slice does not escape anew.
+var transitionOptions = func() map[session.Transition][]metric.AddOption {
+	options := make(map[session.Transition][]metric.AddOption)
+	for _, transport := range []string{TransportPlain, TransportObfs, TransportWS} {
+		for region, states := range []uint8{uint8(session.Closed) + 1, uint8(session.FrameError) + 1, uint8(session.Expired) + 1} {
+			for from := uint8(0); from < states; from++ {
+				for to := uint8(0); to < states; to++ {
+					for _, illegal := range []bool{false, true} {
+						tr := session.Transition{Transport: transport, Region: session.Region(region), From: from, To: to, Illegal: illegal}
+						options[tr] = transitionMetricOptions(tr)
+					}
+				}
+			}
+		}
+	}
+	return options
+}()
+
+func transitionMetricOptions(tr session.Transition) []metric.AddOption {
+	return []metric.AddOption{metric.WithAttributes(
+		attribute.String("region", tr.Region.String()),
+		attribute.String("from", tr.FromName()),
+		attribute.String("to", tr.ToName()),
+		attribute.String("transport", tr.Transport),
+		attribute.Bool("illegal", tr.Illegal),
+	)}
 }
 
 // registerSessionGauge makes the session registry answer the s5core_sessions

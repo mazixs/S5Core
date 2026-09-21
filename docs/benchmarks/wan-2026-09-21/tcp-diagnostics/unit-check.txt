@@ -1,0 +1,18 @@
+link                          3159.23 MiB/s aggregate (26501.5 Mbit/s)  per-conn median 3170.22 MiB/s  min 3170.22  max 3170.22  conns 1  failed 0  wall 3ms
+link                          3234.81 MiB/s aggregate (27135.5 Mbit/s)  per-conn median 3246.25 MiB/s  min 3246.25  max 3246.25  conns 1  failed 0  wall 2ms
+link                          3429.41 MiB/s aggregate (28768.0 Mbit/s)  per-conn median 3443.54 MiB/s  min 3443.54  max 3443.54  conns 1  failed 0  wall 2ms
+link                          3584.85 MiB/s aggregate (30071.9 Mbit/s)  per-conn median 3599.55 MiB/s  min 3599.55  max 3599.55  conns 1  failed 0  wall 2ms
+
+медианы по 2 повторам, 8MB на соединение:
+  down:
+    link   3197.02 MiB/s (26818.5 Mbit/s)    base   разброс 3159.23..3234.81
+  up:
+    link   3507.13 MiB/s (29419.9 Mbit/s)    base   разброс 3429.41..3584.85
+
+путь            медиана МиБ/с     Мбит/с   доля канала
+direct-down           3159.23    26501.5        100.0%
+direct-up               53.48      448.6        100.0%
+
+go test -race ./cmd/wirebench: PASS
+go vet ./cmd/wirebench: PASS
+bash -n scripts/wire_local.sh scripts/wire_matrix.sh: PASS

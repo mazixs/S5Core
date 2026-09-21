@@ -1,0 +1,5 @@
+=== RUN   TestAuditUDPSerialDNS
+    audit_probe_test.go:41: 10 datagrams, same FQDN, 20ms DNS: resolver_calls=10 following_IP_datagram_elapsed=202.280669ms
+--- PASS: TestAuditUDPSerialDNS (0.20s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	0.205s

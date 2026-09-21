@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func benchmarkShapedThroughput(b *testing.B, shaped bool) {
@@ -33,6 +34,8 @@ func benchmarkShapedThroughput(b *testing.B, shaped bool) {
 
 	serverConn := <-serverConnCh
 	defer serverConn.Close()
+	_ = clientConn.SetDeadline(time.Now().Add(5 * time.Minute))
+	_ = serverConn.SetDeadline(time.Now().Add(5 * time.Minute))
 
 	var wr io.Writer = serverConn
 	var rd io.Reader = clientConn
@@ -41,17 +44,11 @@ func benchmarkShapedThroughput(b *testing.B, shaped bool) {
 		rd = NewShapedConn(clientConn, DefaultMinFrame, DefaultMaxFrame, 0)
 	}
 
-	// Drain reader
-	done := make(chan struct{})
+	// Loopback WS only (no TLS). Count delivery, not just buffered writes.
+	done := make(chan error, 1)
 	go func() {
-		defer close(done)
-		buf := make([]byte, 32*1024)
-		for {
-			_, err := rd.Read(buf)
-			if err != nil {
-				return
-			}
-		}
+		_, err := io.CopyN(io.Discard, rd, int64(b.N)*(1024*1024))
+		done <- err
 	}()
 
 	payload := make([]byte, 1024*1024) // 1 MB
@@ -66,10 +63,10 @@ func benchmarkShapedThroughput(b *testing.B, shaped bool) {
 			b.Fatal(err)
 		}
 	}
+	if err := <-done; err != nil {
+		b.Fatal(err)
+	}
 	b.StopTimer()
-
-	clientConn.Close()
-	<-done
 }
 
 func BenchmarkThroughput_PlainWS(b *testing.B) {
@@ -109,21 +106,18 @@ func benchmarkWriteLatency(b *testing.B, shaped bool) {
 
 	serverConn := <-serverConnCh
 	defer serverConn.Close()
+	_ = clientConn.SetDeadline(time.Now().Add(5 * time.Minute))
+	_ = serverConn.SetDeadline(time.Now().Add(5 * time.Minute))
 
 	var wr io.Writer = clientConn
 	if shaped {
 		wr = NewShapedConn(clientConn, DefaultMinFrame, DefaultMaxFrame, 0)
 	}
 
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		defer close(done)
-		buf := make([]byte, 32*1024)
-		for {
-			if _, err := serverConn.Read(buf); err != nil {
-				return
-			}
-		}
+		_, err := io.CopyN(io.Discard, serverConn, int64(b.N)*1422)
+		done <- err
 	}()
 
 	// One obfuscated frame carrying a full MTU of payload.
@@ -141,8 +135,11 @@ func benchmarkWriteLatency(b *testing.B, shaped bool) {
 	}
 	b.StopTimer()
 
-	clientConn.Close()
-	<-done
+	// This benchmark explicitly measures local Write latency. Delivery is
+	// still checked before closing, but is outside that measurement.
+	if err := <-done; err != nil {
+		b.Fatal(err)
+	}
 }
 
 func BenchmarkWriteLatency_PlainWS(b *testing.B) {

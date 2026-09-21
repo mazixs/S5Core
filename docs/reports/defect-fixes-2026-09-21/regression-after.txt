@@ -1,0 +1,30 @@
+=== RUN   TestCloseInterruptsHijackedUpgradeResponse
+--- PASS: TestCloseInterruptsHijackedUpgradeResponse (0.00s)
+=== RUN   TestCloseCancelsStreamingDecoy
+    shutdown_test.go:146: verified 131072 bytes over TLS; Close returned in 52.921µs (local failure reproduction)
+--- PASS: TestCloseCancelsStreamingDecoy (0.00s)
+=== RUN   TestCloseDrainsUnacceptedWebSockets
+--- PASS: TestCloseDrainsUnacceptedWebSockets (0.07s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	0.075s
+=== RUN   TestShapedCloseInterruptsJitter
+--- PASS: TestShapedCloseInterruptsJitter (0.00s)
+=== RUN   TestShapedCloseReleasesConcurrentWriters
+--- PASS: TestShapedCloseReleasesConcurrentWriters (0.00s)
+=== RUN   TestShapedWriteDeadlineInterruptsJitter
+--- PASS: TestShapedWriteDeadlineInterruptsJitter (0.00s)
+=== RUN   TestShapedDeadlineExtensionAndClearPreservePause
+--- PASS: TestShapedDeadlineExtensionAndClearPreservePause (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	0.003s
+=== RUN   TestWSStealth_EndToEnd
+2026/09/21 16:44:52 WARN Running the proxy server without authentication is NOT recommended
+2026/09/21 16:44:52 INFO Start listening proxy service (plain SOCKS5) address=:0
+2026/09/21 16:44:52 WARN Obfuscation DISABLED - only plain SOCKS5 is available
+2026/09/21 16:44:52 INFO WebSocket stealth transport ENABLED ws_addr=127.0.0.1:0 ws_path=/ws
+2026/09/21 16:44:52 INFO Active transports summary="plain:0, obfs:, ws:127.0.0.1:0/ws" version=devel go_version=go1.26.6
+    ws_integration_test.go:181: verified 1048576 bytes each direction over shaped WSS + obfs + SOCKS5
+2026/09/21 16:44:52 INFO Server context canceled, shutting down...
+--- PASS: TestWSStealth_EndToEnd (0.02s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	0.026s

@@ -1,0 +1,89 @@
+package obfs
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net"
+	"testing"
+	"time"
+)
+
+func BenchmarkAuditMatchedRoundTrip(b *testing.B) {
+	for _, size := range []int{64, 1400, 32768} {
+		b.Run(fmt.Sprintf("bytes=%d", size), func(b *testing.B) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer ln.Close()
+			ac := make(chan net.Conn, 1)
+			go func() { c, _ := ln.Accept(); ac <- c }()
+			raw, err := net.Dial("tcp", ln.Addr().String())
+			if err != nil {
+				b.Fatal(err)
+			}
+			far := <-ac
+			if far == nil {
+				b.Fatal("accept failed")
+			}
+			defer raw.Close()
+			defer far.Close()
+			_ = raw.SetDeadline(time.Now().Add(time.Minute))
+			_ = far.SetDeadline(time.Now().Add(time.Minute))
+			cfg := Config{PSK: []byte("01234567890123456789012345678901"), MaxPadding: 256, MTU: 1400}
+			client, server := auditWrap(b, raw, far, cfg)
+			done := make(chan error, 1)
+			go func() {
+				buf := make([]byte, size)
+				for {
+					if _, err := io.ReadFull(server, buf); err != nil {
+						done <- err
+						return
+					}
+					if _, err := server.Write(buf); err != nil {
+						done <- err
+						return
+					}
+				}
+			}()
+			payload := bytes.Repeat([]byte{0x67}, size)
+			back := make([]byte, size)
+			// Complete a round trip before timing, so both versions have initialized state.
+			if _, err = client.Write(payload); err != nil {
+				b.Fatal(err)
+			}
+			if _, err = io.ReadFull(client, back); err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.SetBytes(int64(size))
+			for b.Loop() {
+				if _, err = client.Write(payload); err != nil {
+					b.Fatal(err)
+				}
+				if _, err = io.ReadFull(client, back); err != nil {
+					b.Fatal(err)
+				}
+				if !bytes.Equal(back, payload) {
+					b.Fatal("payload mismatch")
+				}
+			}
+			_ = raw.Close()
+			_ = far.Close()
+			<-done
+		})
+	}
+}
+
+func auditWrap(b *testing.B, x, y net.Conn, cfg Config) (net.Conn, net.Conn) {
+	a, e := NewClientConn(x, cfg)
+	if e != nil {
+		b.Fatal(e)
+	}
+	z, e := NewServerConn(y, cfg)
+	if e != nil {
+		b.Fatal(e)
+	}
+	return a, z
+}

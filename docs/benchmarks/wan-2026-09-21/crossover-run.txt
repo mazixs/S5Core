@@ -1,0 +1,34 @@
+temporary servers and ARM clients started
+smoke 0 raw up: 9.06 MiB/s
+smoke 0 v2 up: 1.97 MiB/s
+smoke 0 current up: 4.03 MiB/s
+smoke 0 v2-current up: 7.35 MiB/s
+smoke 0 current-v2 up: 2.18 MiB/s
+measure 1 raw up: 39.02 MiB/s
+measure 1 v2 up: 34.15 MiB/s
+measure 1 current up: 37.03 MiB/s
+measure 1 v2-current up: 39.9 MiB/s
+measure 1 current-v2 up: 44.81 MiB/s
+measure 2 v2 up: 43.03 MiB/s
+measure 2 current up: 46.77 MiB/s
+measure 2 v2-current up: 33.36 MiB/s
+measure 2 current-v2 up: 44.06 MiB/s
+measure 2 raw up: 52.08 MiB/s
+measure 3 current up: 42.21 MiB/s
+measure 3 v2-current up: 21.33 MiB/s
+measure 3 current-v2 up: 26.15 MiB/s
+measure 3 raw up: 33.31 MiB/s
+measure 3 v2 up: 30.93 MiB/s
+measure 4 v2-current up: 45.04 MiB/s
+measure 4 current-v2 up: 47.04 MiB/s
+measure 4 raw up: 51.52 MiB/s
+measure 4 v2 up: 42.19 MiB/s
+measure 4 current up: 33.39 MiB/s
+measure 5 current-v2 up: 38.75 MiB/s
+measure 5 raw up: 51.38 MiB/s
+measure 5 v2 up: 48.53 MiB/s
+measure 5 current up: 26.44 MiB/s
+measure 5 v2-current up: 39.79 MiB/s
+measurement finished
+stopped temporary processes on router
+stopped temporary processes on node-A

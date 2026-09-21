@@ -1,0 +1,5 @@
+=== RUN   TestAuditCloseDoesNotInterruptShapingJitter
+    followup_audit_test.go:50: Write returned 1.206120304s after immediate Close, jitter=10s, seed=9
+--- PASS: TestAuditCloseDoesNotInterruptShapingJitter (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	0.003s

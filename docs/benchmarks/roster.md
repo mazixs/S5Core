@@ -77,13 +77,18 @@
 участников это 22 мс в час - 0,0006% одного ядра.
 
 Память - таблица, живущая между перестройками: по одной записи на участника
-на каждую эпоху окна, то есть на пять эпох при окне 2. Перестройка идет в
-отдельной горутине и соединений не держит.
+на каждую подготовленную эпоху. После исправления аудита 2026-09-21 при окне 2
+готовятся семь эпох: пять принимаемых и две запасные на границе часа.
+Приведенные выше исторические замеры поиска и отдельной перестройки не
+проверяли их взаимную блокировку. Теперь таблицы строятся вне блокировки
+читателей, а проверка пересечения выполняется отдельным
+`BenchmarkDirectoryLookupDuringRefresh` с p50/p95/p99. Публикация снимка
+по-прежнему кратко берет mutex, поэтому абсолютного отсутствия ожидания нет.
 
 ## Как повторить
 
 ```bash
-go test -run XXX -bench 'BenchmarkRosterAccept|BenchmarkClockedAccept|BenchmarkDirectoryRefresh' -count=3 ./pkg/veil/
+go test -run XXX -bench 'BenchmarkRosterAccept|BenchmarkClockedAccept|BenchmarkDirectoryRefresh|BenchmarkDirectoryLookupDuringRefresh' -count=3 ./pkg/veil/
 go test -run XXX -bench BenchmarkValidCachedPassword -count=3 ./internal/userstore/
 go test -run XXX -bench Argon2id ./internal/passwordhash/
 go test -race -run 'TestResolvingAMemberDoesNotDependOnHowManyThereAre' -v ./pkg/veil/

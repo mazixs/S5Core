@@ -1,0 +1,5 @@
+router: temporary files removed
+node-A: temporary files removed
+router: 18143
+18155
+node-A: running=true started=2026-09-21T10:28:43.375292552Z image=sha256:0802f19e7b5869681ee1725d81880e20a63650f9f230a2ffbe4313f6f0d000ef

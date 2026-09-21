@@ -97,8 +97,18 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	// the target-facing one - use atomic pointer.
 	var clientUDPAddrPtr atomic.Pointer[net.UDPAddr]
 
+	assocCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 3)
 	done := make(chan struct{})
+	var workers sync.WaitGroup
+	workers.Add(3)
+	defer func() {
+		cancel()
+		_ = client.SetDeadline(time.Now())
+		_ = clientConn.Close()
+		_ = targetConn.Close()
+		workers.Wait()
+	}()
 
 	// The TCP connection is now only a lifetime marker for the association: it
 	// carries no bytes and is expected to stay silent. As a tunnel it lives
@@ -115,6 +125,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	// from the socket would wait for a byte that has already arrived (plan
 	// task Ф6-5).
 	go func() {
+		defer workers.Done()
 		var b [1]byte
 		_, err := req.bufConn.Read(b[:])
 		_ = err
@@ -127,9 +138,24 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	// Client -> target. Everything that arrives here claims to be from the
 	// client, and is dropped unless it really is.
 	go func() {
+		defer workers.Done()
 		buf := make([]byte, 65535)
 		meter := newUDPMeter(acct)
-		defer meter.flush()
+		dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest *net.UDPAddr) bool {
+			nw, err := targetConn.WriteToUDP(payload, dest)
+			if err != nil || nw <= 0 {
+				return true
+			}
+			if st := meter.inbound(nw); st != SessionAllowed {
+				select {
+				case errCh <- s.endOfAssociation(req, st):
+				default:
+				}
+				return false
+			}
+			return true
+		}, meter.flush)
+		defer dispatcher.close()
 
 		for {
 			select {
@@ -171,25 +197,6 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 				continue
 			}
 
-			var dUDP *net.UDPAddr
-			if dstAddr.FQDN != "" {
-				// One datagram's lookup gets one datagram's budget: this
-				// goroutine is the only reader of the client's socket, so a
-				// lookup with no deadline stops the association rather than
-				// the datagram (audit finding F12).
-				resolvedIP, err := s.resolveWithin(ctx, req.session.SLA().Dial, dstAddr.FQDN)
-				if err != nil {
-					s.config.Logger.Warn("socks: udp fqdn resolve failed", "error", err)
-					continue
-				}
-				dUDP = &net.UDPAddr{IP: resolvedIP, Port: dstAddr.Port}
-			} else {
-				// Copy IP to avoid aliasing buf
-				ip := make(net.IP, len(dstAddr.IP))
-				copy(ip, dstAddr.IP)
-				dUDP = &net.UDPAddr{IP: ip, Port: dstAddr.Port}
-			}
-
 			// Remember client's actual UDP address (atomic store)
 			addrCopy := &net.UDPAddr{
 				IP:   make(net.IP, len(rAddr.IP)),
@@ -199,15 +206,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 			copy(addrCopy.IP, rAddr.IP)
 			clientUDPAddrPtr.Store(addrCopy)
 
-			// Send raw payload to target, from the egress socket
-			nw, werr := targetConn.WriteToUDP(buf[hdrLen:n], dUDP)
-			if werr != nil || nw <= 0 {
-				continue
-			}
-			if st := meter.inbound(nw); st != SessionAllowed {
-				errCh <- s.endOfAssociation(req, st)
-				return
-			}
+			dispatcher.submit(dstAddr, buf[hdrLen:n])
 		}
 	}()
 
@@ -215,6 +214,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	// it is a reply, and the only question is whether there is a client
 	// address to send it to yet.
 	go func() {
+		defer workers.Done()
 		buf := make([]byte, 65535)
 		meter := newUDPMeter(acct)
 		defer meter.flush()
@@ -267,8 +267,10 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		}
 	}()
 
-	// Wait for done (TCP close) or error
+	// Wait for TCP close, a relay failure, or server shutdown.
 	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-done:
 		return nil
 	case err := <-errCh:
@@ -603,7 +605,18 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	go func() {
 		defer halves.Done()
 		meter := newUDPMeter(acct)
-		defer meter.flush()
+		dispatcher := newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest *net.UDPAddr) bool {
+			nw, err := udpConn.WriteToUDP(payload, dest)
+			if err != nil {
+				return true
+			}
+			if st := meter.inbound(nw); st != SessionAllowed {
+				stopTunnel(s.endOfAssociation(req, st))
+				return false
+			}
+			return true
+		}, meter.flush)
+		defer dispatcher.close()
 		lenBuf := make([]byte, 2)
 		for {
 			select {
@@ -650,36 +663,8 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 				continue
 			}
 
-			var dUDP *net.UDPAddr
-			if dstAddr.FQDN != "" {
-				// Bounded for the same reason as the association above: the
-				// frame reader is this goroutine, and every other datagram in
-				// the tunnel waits behind this lookup.
-				resolvedIP, err := s.resolveWithin(ctx, req.session.SLA().Dial, dstAddr.FQDN)
-				if err != nil {
-					udpBufPool.Put(framePtr)
-					s.config.Logger.Warn("socks: udp-tcpmux fqdn resolve failed", "error", err)
-					continue
-				}
-				dUDP = &net.UDPAddr{IP: resolvedIP, Port: dstAddr.Port}
-			} else {
-				// Copy IP to avoid aliasing frameBuf
-				ip := make(net.IP, len(dstAddr.IP))
-				copy(ip, dstAddr.IP)
-				dUDP = &net.UDPAddr{IP: ip, Port: dstAddr.Port}
-			}
-
-			payload := frameBuf[hdrLen:]
-			nw, werr := udpConn.WriteToUDP(payload, dUDP)
+			dispatcher.submit(dstAddr, frameBuf[hdrLen:])
 			udpBufPool.Put(framePtr)
-			if werr != nil {
-				s.config.Logger.Warn("socks: udp-tcpmux write to internet failed", "error", werr)
-				continue
-			}
-			if st := meter.inbound(nw); st != SessionAllowed {
-				stopTunnel(s.endOfAssociation(req, st))
-				return
-			}
 		}
 	}()
 

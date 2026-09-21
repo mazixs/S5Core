@@ -233,7 +233,8 @@ func (r *Roster) search(psk, prologue []byte, mine int64, window int) (Member, i
 
 // diagnoseRoster is Clocked.diagnose for this layout: it looks further out
 // than the accepting window only to tell a skewed clock from a scanner, and
-// changes no decision. The rate limit is Clocked's, and for the same reason.
+// changes no decision. Only prepared epochs can resolve; diagnostics never
+// build tables. The rate limit is Clocked's, and for the same reason.
 func (r *Roster) diagnoseRoster(psk, prologue []byte, mine int64) {
 	if r.OnClockSkew == nil || r.DiagnosticWindow < 0 {
 		return
@@ -261,7 +262,8 @@ func (r *Roster) diagnoseRoster(psk, prologue []byte, mine int64) {
 // moves. A lookup is one read-locked map read; building is one HMAC per
 // member per epoch and happens off the connection path.
 //
-// It is safe for concurrent use.
+// It is safe for concurrent use. Configure Now and Window before starting
+// concurrent readers or refreshes.
 type Directory struct {
 	// Now is the clock, injectable for tests. Nil means time.Now.
 	Now func() time.Time
@@ -271,9 +273,10 @@ type Directory struct {
 	// looked up in a table that was never built.
 	Window int
 
-	mu      sync.RWMutex
-	members []Member
-	epochs  map[int64]map[[rosterIdentitySize]byte]Member
+	updateMu sync.Mutex // serializes rebuilds without blocking readers
+	mu       sync.RWMutex
+	members  []Member
+	epochs   map[int64]map[[rosterIdentitySize]byte]Member
 }
 
 // NewDirectory builds a directory over the given members and fills the
@@ -283,7 +286,6 @@ func NewDirectory(members []Member) (*Directory, error) {
 	if err := d.SetMembers(members); err != nil {
 		return nil, err
 	}
-	d.Refresh()
 	return d, nil
 }
 
@@ -296,16 +298,18 @@ func (d *Directory) SetMembers(members []Member) error {
 			return fmt.Errorf("veil: member %q has a %d-byte key, need %d", m.ID, len(m.Key), MemberKeySize)
 		}
 	}
-	// Copied: the caller may be holding the slice it just parsed.
+	// Own the keys too: later caller mutations must not change published tables.
 	own := make([]Member, len(members))
-	copy(own, members)
-
+	for i, m := range members {
+		own[i] = Member{ID: m.ID, Key: append([]byte(nil), m.Key...)}
+	}
+	d.updateMu.Lock()
+	defer d.updateMu.Unlock()
+	fresh := d.buildWindow(own, nil)
 	d.mu.Lock()
-	d.members = own
-	d.epochs = nil
+	d.members, d.epochs = own, fresh
 	d.mu.Unlock()
 
-	d.Refresh()
 	return nil
 }
 
@@ -334,27 +338,40 @@ func (d *Directory) window() int {
 // that have fallen out of the window. It is idempotent and safe to call as
 // often as convenient.
 func (d *Directory) Refresh() {
-	mine := d.now().Unix() / EpochSeconds
-	window := int64(d.window())
-
+	d.updateMu.Lock()
+	defer d.updateMu.Unlock()
+	d.mu.RLock()
+	members, previous := d.members, d.epochs
+	d.mu.RUnlock()
+	fresh := d.buildWindow(members, previous)
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	fresh := make(map[int64]map[[rosterIdentitySize]byte]Member, 2*window+1)
-	for epoch := mine - window; epoch <= mine+window; epoch++ {
-		if have, ok := d.epochs[epoch]; ok {
-			fresh[epoch] = have // already built, and members have not changed
-			continue
-		}
-		fresh[epoch] = d.buildLocked(epoch)
-	}
 	d.epochs = fresh
+	d.mu.Unlock()
 }
 
-// Run keeps the tables current until ctx is done. A server starts one of
-// these per directory; without it the tables are still correct, because a
-// lookup builds a missing epoch itself - but that build is the one thing
-// here whose cost grows with the number of members, and it belongs off the
-// connection path.
+func (d *Directory) buildWindow(members []Member, previous map[int64]map[[rosterIdentitySize]byte]Member) map[int64]map[[rosterIdentitySize]byte]Member {
+	mine := d.now().Unix() / EpochSeconds
+	// One guard epoch in each direction covers an hour boundary between
+	// refreshes. It does not widen the Roster's acceptance window.
+	window := int64(d.window()) + 1
+	fresh := make(map[int64]map[[rosterIdentitySize]byte]Member, 2*window+1)
+	for epoch := mine - window; epoch <= mine+window; epoch++ {
+		if have, ok := previous[epoch]; ok {
+			fresh[epoch] = have
+			continue
+		}
+		table := make(map[[rosterIdentitySize]byte]Member, len(members))
+		for _, m := range members {
+			table[memberTag(m.Key, epoch)] = m
+		}
+		fresh[epoch] = table
+	}
+	return fresh
+}
+
+// Run keeps the tables current until ctx is done. A server must run it or
+// call Refresh itself. Large clock jumps fail closed until the next refresh;
+// no handshake, including clock-skew diagnostics, builds directory tables.
 func (d *Directory) Run(ctx context.Context) {
 	// Four times an epoch: often enough that the boundary is always
 	// crossed by this loop rather than by a connection, rare enough to be
@@ -374,40 +391,9 @@ func (d *Directory) Run(ctx context.Context) {
 // lookup resolves an unmasked tag for one epoch.
 func (d *Directory) lookup(epoch int64, tag [rosterIdentitySize]byte) (Member, bool) {
 	d.mu.RLock()
-	table, ok := d.epochs[epoch]
-	if ok {
-		member, found := table[tag]
-		d.mu.RUnlock()
-		return member, found
-	}
+	member, found := d.epochs[epoch][tag]
 	d.mu.RUnlock()
-
-	// The epoch is not built: the window moved and Run has not caught up,
-	// or nothing is running it. Build it here rather than refuse a member
-	// whose clock is fine. This is the only path whose cost depends on the
-	// number of members, and it happens at most once per epoch.
-	d.mu.Lock()
-	if d.epochs == nil {
-		d.epochs = make(map[int64]map[[rosterIdentitySize]byte]Member, 1)
-	}
-	table, ok = d.epochs[epoch]
-	if !ok {
-		table = d.buildLocked(epoch)
-		d.epochs[epoch] = table
-	}
-	d.mu.Unlock()
-
-	member, found := table[tag]
 	return member, found
-}
-
-// buildLocked computes one epoch's table. The caller holds the lock.
-func (d *Directory) buildLocked(epoch int64) map[[rosterIdentitySize]byte]Member {
-	table := make(map[[rosterIdentitySize]byte]Member, len(d.members))
-	for _, m := range d.members {
-		table[memberTag(m.Key, epoch)] = m
-	}
-	return table
 }
 
 // Collisions reports members that share an identity tag in any epoch of the

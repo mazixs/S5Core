@@ -1,0 +1,68 @@
+package socks5
+
+import (
+	"context"
+	"github.com/mazixs/S5Core/internal/session"
+	"net"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+type auditSlowDNS struct{ calls atomic.Int64 }
+
+func (r *auditSlowDNS) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
+	r.calls.Add(1)
+	select {
+	case <-time.After(20 * time.Millisecond):
+		return ctx, net.ParseIP("127.0.0.1"), nil
+	case <-ctx.Done():
+		return ctx, nil, ctx.Err()
+	}
+}
+func TestAuditUDPSerialDNS(t *testing.T) {
+	sink := newUDPSink(t, true)
+	resolver := &auditSlowDNS{}
+	client := serveOverTCPWithSession(t, &Config{BindIP: net.ParseIP("127.0.0.1"), Resolver: resolver}, session.SLA{Dial: time.Second})
+	greet(t, client)
+	if _, err := client.Write([]byte{5, AssociateCommand, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	reply := readConnectReply(t, client)
+	proxy := &net.UDPAddr{IP: net.IPv4(reply[4], reply[5], reply[6], reply[7]), Port: int(reply[8])<<8 | int(reply[9])}
+	sender, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sender.Close()
+	start := time.Now()
+	for range 10 {
+		p := append(udpHeaderForName("same.example", sink.addr().Port), []byte("dns")...)
+		if _, err := sender.WriteToUDP(p, proxy); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := append(udpHeaderForIP(sink.addr()), []byte("tail-ip")...)
+	if _, err := sender.WriteToUDP(p, proxy); err != nil {
+		t.Fatal(err)
+	}
+	_ = sender.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 2048)
+	for {
+		n, _, err := sender.ReadFromUDP(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _, err := ParseUDPHeader(buf[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(buf[h:n]) == "tail-ip" {
+			break
+		}
+	}
+	t.Logf("10 datagrams, same FQDN, 20ms DNS: resolver_calls=%d following_IP_datagram_elapsed=%s", resolver.calls.Load(), time.Since(start))
+	if resolver.calls.Load() != 10 {
+		t.Fatal("expected uncached lookup for every datagram")
+	}
+}

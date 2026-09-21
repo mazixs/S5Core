@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkThroughput_PlainWS-16       	    1147	    207925 ns/op	5043.05 MB/s	      80 B/op	       3 allocs/op
+BenchmarkThroughput_PlainWS-16       	    1310	    182230 ns/op	5754.14 MB/s	      80 B/op	       3 allocs/op
+BenchmarkThroughput_PlainWS-16       	    1149	    178950 ns/op	5859.60 MB/s	      80 B/op	       3 allocs/op
+BenchmarkThroughput_PlainWS-16       	    1434	    182287 ns/op	5752.34 MB/s	      80 B/op	       3 allocs/op
+BenchmarkThroughput_PlainWS-16       	    1120	    209412 ns/op	5007.23 MB/s	      80 B/op	       3 allocs/op
+BenchmarkThroughput_PlainWS-16       	    1176	    202065 ns/op	5189.29 MB/s	      80 B/op	       3 allocs/op
+BenchmarkThroughput_ShapedWS-16      	     274	    851871 ns/op	1230.91 MB/s	   19627 B/op	     743 allocs/op
+BenchmarkThroughput_ShapedWS-16      	     284	    852505 ns/op	1229.99 MB/s	   19577 B/op	     742 allocs/op
+BenchmarkThroughput_ShapedWS-16      	     286	    837991 ns/op	1251.30 MB/s	   19584 B/op	     742 allocs/op
+BenchmarkThroughput_ShapedWS-16      	     277	    846796 ns/op	1238.29 MB/s	   19684 B/op	     745 allocs/op
+BenchmarkThroughput_ShapedWS-16      	     276	    896254 ns/op	1169.95 MB/s	   19657 B/op	     744 allocs/op
+BenchmarkThroughput_ShapedWS-16      	     286	    829564 ns/op	1264.01 MB/s	   19591 B/op	     742 allocs/op
+BenchmarkWriteLatency_PlainWS-16     	   70797	      3438 ns/op	 413.58 MB/s	      56 B/op	       2 allocs/op
+BenchmarkWriteLatency_PlainWS-16     	   70792	      3381 ns/op	 420.63 MB/s	      56 B/op	       2 allocs/op
+BenchmarkWriteLatency_PlainWS-16     	   73909	      3326 ns/op	 427.54 MB/s	      56 B/op	       2 allocs/op
+BenchmarkWriteLatency_PlainWS-16     	   68595	      3207 ns/op	 443.35 MB/s	      56 B/op	       2 allocs/op
+BenchmarkWriteLatency_PlainWS-16     	   70318	      3271 ns/op	 434.73 MB/s	      55 B/op	       1 allocs/op
+BenchmarkWriteLatency_PlainWS-16     	   68893	      3405 ns/op	 417.57 MB/s	      56 B/op	       2 allocs/op
+BenchmarkWriteLatency_ShapedWS-16    	   26036	      9528 ns/op	 149.24 MB/s	     164 B/op	       5 allocs/op
+BenchmarkWriteLatency_ShapedWS-16    	   27252	      9024 ns/op	 157.58 MB/s	     163 B/op	       5 allocs/op
+BenchmarkWriteLatency_ShapedWS-16    	   27428	      9007 ns/op	 157.89 MB/s	     164 B/op	       5 allocs/op
+BenchmarkWriteLatency_ShapedWS-16    	   26677	      8956 ns/op	 158.78 MB/s	     163 B/op	       5 allocs/op
+BenchmarkWriteLatency_ShapedWS-16    	   25827	      9401 ns/op	 151.27 MB/s	     164 B/op	       5 allocs/op
+BenchmarkWriteLatency_ShapedWS-16    	   26928	      9143 ns/op	 155.53 MB/s	     164 B/op	       5 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	8.001s

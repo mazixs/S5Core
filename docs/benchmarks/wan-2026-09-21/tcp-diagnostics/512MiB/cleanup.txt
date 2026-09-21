@@ -1,0 +1,5 @@
+router: cleaned
+18143 18155
+node-A: cleaned
+true 2026-09-21T10:28:43.375292552Z ghcr.io/mazixs/s5core:2.0.0
+State Recv-Q Send-Q Local Address:Port Peer Address:Port

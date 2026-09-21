@@ -1,0 +1,8 @@
+package session
+import("testing";"time";"sort")
+func TestAuditScrapeLockCost(t *testing.T){for _,n:=range []int{10000,32768,262144}{
+ r:=NewRegistry(nil);for range n{r.Open("obfs",true,SLA{})}
+ var times []time.Duration
+ for range 20{start:=time.Now();r.Snapshot();times=append(times,time.Since(start))}
+ sort.Slice(times,func(i,j int)bool{return times[i]<times[j]});t.Logf("sessions=%d Snapshot holding registry lock median=%s max=%s",n,times[len(times)/2],times[len(times)-1])
+}}

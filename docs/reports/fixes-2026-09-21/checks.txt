@@ -1,0 +1,31 @@
+golangci-lint run ./...
+0 issues.
+
+go vet ./...
+PASS (exit 0, no output)
+
+go mod verify
+all modules verified
+
+go mod tidy -diff
+PASS (exit 0, no output)
+
+govulncheck ./...
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 2 vulnerabilities in packages you import and 19
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.
+
+go build ./cmd/s5core and ./cmd/s5client
+PASS (binaries outside repository)
+
+bash -n scripts/conn_latency.sh
+PASS
+
+git diff --check
+PASS

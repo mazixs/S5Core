@@ -1,0 +1,7 @@
+=== RUN   TestAuditFlushLockCost
+    followup_audit_test.go:7: users=10000 FlushTraffic holding global write lock median=112.032µs max=346.804µs
+    followup_audit_test.go:7: users=32768 FlushTraffic holding global write lock median=560.462µs max=965.81µs
+    followup_audit_test.go:7: users=262144 FlushTraffic holding global write lock median=9.977235ms max=11.895153ms
+--- PASS: TestAuditFlushLockCost (0.31s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/userstore	0.316s

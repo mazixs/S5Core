@@ -2,6 +2,9 @@ package socks5
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -9,8 +12,8 @@ import (
 	"github.com/mazixs/S5Core/internal/session"
 )
 
-// A UDP association names its destination once per datagram, so it resolves
-// once per datagram - on the one goroutine that reads the client's socket.
+// A UDP association names its destination once per datagram. Historically it
+// resolved every name synchronously on the client socket reader.
 // A lookup with no deadline there does not delay a datagram, it stops the
 // association: every other datagram waits behind it, including the ones for
 // destinations that need no lookup at all (audit finding F12).
@@ -132,5 +135,96 @@ func TestALookupForOneDatagramDoesNotStopTheAssociation(t *testing.T) {
 	}
 	if got := string(buf[len(udpHeaderForIP(sink.addr())):n]); got != "second" {
 		t.Fatalf("the association answered with %q, want the echo of the second datagram", got)
+	}
+}
+
+type cancellationOnlyResolver struct{ started, cancelled chan struct{} }
+
+func (r *cancellationOnlyResolver) Resolve(ctx context.Context, _ string) (context.Context, net.IP, error) {
+	close(r.started)
+	<-ctx.Done()
+	close(r.cancelled)
+	return ctx, nil, ctx.Err()
+}
+
+// Exercise both actual handlers: DNS remains blocked until connection teardown,
+// so an echo arriving first proves absence of head-of-line DNS blocking.
+func TestBothUDPHandlersDeliverIPWhileDNSWaits(t *testing.T) {
+	for _, command := range []byte{AssociateCommand, UDPTunnelCommand} {
+		t.Run(fmt.Sprintf("command-%x", command), func(t *testing.T) {
+			resolver := &cancellationOnlyResolver{started: make(chan struct{}), cancelled: make(chan struct{})}
+			sink := newUDPSink(t, true)
+			client := serveOverTCPWithSession(t, &Config{BindIP: net.ParseIP("127.0.0.1"), Resolver: resolver}, session.SLA{Dial: time.Minute})
+			greet(t, client)
+			if _, err := client.Write([]byte{5, command, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil {
+				t.Fatal(err)
+			}
+			reply := readConnectReply(t, client)
+			if reply[1] != successReply {
+				t.Fatalf("reply: %x", reply)
+			}
+			sender, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sender.Close()
+			proxy := &net.UDPAddr{IP: net.IPv4(reply[4], reply[5], reply[6], reply[7]), Port: int(reply[8])<<8 | int(reply[9])}
+			send := func(body []byte) {
+				t.Helper()
+				var err error
+				if command == AssociateCommand {
+					_, err = sender.WriteToUDP(body, proxy)
+				} else {
+					frame := binary.BigEndian.AppendUint16(nil, uint16(len(body)))
+					frame = append(frame, body...)
+					_, err = client.Write(frame)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			send(append(udpHeaderForName("blocked.example", 53), []byte("first")...))
+			select {
+			case <-resolver.started:
+			case <-time.After(time.Second):
+				t.Fatal("DNS did not start")
+			}
+			send(append(udpHeaderForIP(sink.addr()), []byte("ip-echo")...))
+			var body []byte
+			if command == AssociateCommand {
+				sender.SetReadDeadline(time.Now().Add(time.Second))
+				buf := make([]byte, 2048)
+				n, _, err := sender.ReadFromUDP(buf)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body = buf[:n]
+			} else {
+				client.SetReadDeadline(time.Now().Add(time.Second))
+				var size [2]byte
+				if _, err := io.ReadFull(client, size[:]); err != nil {
+					t.Fatal(err)
+				}
+				body = make([]byte, binary.BigEndian.Uint16(size[:]))
+				if _, err := io.ReadFull(client, body); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h, _, err := ParseUDPHeader(body)
+			if err != nil || string(body[h:]) != "ip-echo" {
+				t.Fatalf("echo: %x, %v", body, err)
+			}
+			select {
+			case <-resolver.cancelled:
+				t.Fatal("DNS completed before IP echo")
+			default:
+			}
+			client.Close()
+			select {
+			case <-resolver.cancelled:
+			case <-time.After(time.Second):
+				t.Fatal("DNS survived association shutdown")
+			}
+		})
 	}
 }

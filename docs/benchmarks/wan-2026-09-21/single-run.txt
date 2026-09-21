@@ -1,0 +1,27 @@
+control-before 1 raw: 52.56 MiB/s
+warm 1 v2: 4.86 MiB/s
+measure 1 v2: 41.68 MiB/s
+warm 1 current: 5.05 MiB/s
+measure 1 current: 2.05 MiB/s
+control-after 1 raw: 25.38 MiB/s
+control-before 2 raw: 42.32 MiB/s
+warm 2 current: 2.81 MiB/s
+measure 2 current: 28.5 MiB/s
+warm 2 v2: 4.54 MiB/s
+measure 2 v2: 40.48 MiB/s
+control-after 2 raw: 27.99 MiB/s
+control-before 3 raw: 34.34 MiB/s
+warm 3 v2: 4.78 MiB/s
+measure 3 v2: 33.41 MiB/s
+warm 3 current: 4.45 MiB/s
+measure 3 current: 44.79 MiB/s
+control-after 3 raw: 53.01 MiB/s
+control-before 4 raw: 14.05 MiB/s
+warm 4 current: 4.18 MiB/s
+measure 4 current: 35.78 MiB/s
+warm 4 v2: 5.06 MiB/s
+measure 4 v2: 42.22 MiB/s
+control-after 4 raw: 11.62 MiB/s
+single-active-server comparison finished
+stopped temporary processes on router
+stopped temporary processes on node-A

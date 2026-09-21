@@ -1,0 +1,153 @@
+PASS
+ok  	github.com/mazixs/S5Core/cmd/connlat	0.027s
+PASS
+ok  	github.com/mazixs/S5Core/cmd/fpcollect	0.030s
+PASS
+ok  	github.com/mazixs/S5Core/cmd/fpprobe	0.018s
+?   	github.com/mazixs/S5Core/cmd/idleprobe	[no test files]
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/cmd/s5client
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkUDPDatagramRoundTrip-16    	       1	    140929 ns/op	   76120 B/op	       5 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	0.024s
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5core	0.039s
+?   	github.com/mazixs/S5Core/cmd/stealthcheck	[no test files]
+?   	github.com/mazixs/S5Core/cmd/udpprobe	[no test files]
+PASS
+ok  	github.com/mazixs/S5Core/cmd/wirebench	0.017s
+PASS
+ok  	github.com/mazixs/S5Core/internal/arch	0.027s
+?   	github.com/mazixs/S5Core/internal/buildinfo	[no test files]
+PASS
+ok  	github.com/mazixs/S5Core/internal/identity	0.031s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/internal/logging
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkDebugDisabled_StructuredAttrs-16    	       1	     16720 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDebugEnabled_StructuredAttrs-16     	       1	    152901 ns/op	   16192 B/op	      37 allocs/op
+BenchmarkInfoBaseline-16                     	       1	     27150 ns/op	    3536 B/op	       6 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/internal/logging	0.106s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/internal/passwordhash
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkArgon2idVerify-16            	       1	 213809576 ns/op	67111680 B/op	      37 allocs/op
+BenchmarkArgon2idVerifyParallel-16    	       1	 206349862 ns/op	67132112 B/op	     101 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/internal/passwordhash	0.978s
+PASS
+ok  	github.com/mazixs/S5Core/internal/relay	0.012s
+PASS
+ok  	github.com/mazixs/S5Core/internal/s5core	0.015s
+PASS
+ok  	github.com/mazixs/S5Core/internal/session	0.015s
+PASS
+ok  	github.com/mazixs/S5Core/internal/signals	0.019s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/internal/socks5
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkUDPHeader/build-16         	       1	      8033 ns/op	    1280 B/op	       1 allocs/op
+BenchmarkUDPHeader/append-16        	       1	     52120 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	0.038s
+PASS
+ok  	github.com/mazixs/S5Core/internal/stealth	0.013s
+?   	github.com/mazixs/S5Core/internal/testcert	[no test files]
+2026/09/21 16:07:57 INFO User store loaded path=/tmp/BenchmarkValidCachedPassword2160699935/001/users.json user_count=1
+2026/09/21 16:07:57 WARN Accounts were given a tunnel key accounts=[alice] count=1 read_keys_from=/tmp/BenchmarkValidCachedPassword2160699935/001/users.json note="hand each key to its client as OBFS_MEMBER_KEY; the key is not logged"
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/internal/userstore
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkValidCachedPassword-16    	       1	      3643 ns/op	     544 B/op	       9 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/internal/userstore	0.360s
+PASS
+ok  	github.com/mazixs/S5Core/internal/utls	0.003s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/obfs
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkCipherOnly/AESGCM/1400B-16         	       1	      2319 ns/op	 603.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOnly/AESGCM/4KiB-16          	       1	      4322 ns/op	 947.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOnly/AESGCM/32KiB-16         	       1	     25151 ns/op	1302.85 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOnly/ChaCha20Poly1305/1400B-16         	       1	      3458 ns/op	 404.86 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOnly/ChaCha20Poly1305/4KiB-16          	       1	      5463 ns/op	 749.77 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOnly/ChaCha20Poly1305/32KiB-16         	       1	     35215 ns/op	 930.51 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/1400B-16               	       1	      9585 ns/op	 146.06 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/4KiB-16                	       1	      5398 ns/op	 758.80 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/32KiB-16               	       1	     15044 ns/op	2178.14 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/1400B-16              	       1	      7374 ns/op	 189.86 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/4KiB-16               	       1	     13689 ns/op	 299.22 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/32KiB-16              	       1	     21110 ns/op	1552.25 MB/s	       0 B/op	       0 allocs/op
+BenchmarkEndToEnd/AESGCM/1400B-16                     	       1	     93430 ns/op	  14.98 MB/s	     92929 p50-ns	     92929 p95-ns	     92929 p99-ns	   10280 B/op	      83 allocs/op
+BenchmarkEndToEnd/AESGCM/4KiB-16                      	       1	     81026 ns/op	  50.55 MB/s	     80594 p50-ns	     80594 p95-ns	     80594 p99-ns	    8872 B/op	      81 allocs/op
+BenchmarkEndToEnd/AESGCM/32KiB-16                     	       1	    116501 ns/op	 281.27 MB/s	    116004 p50-ns	    116004 p95-ns	    116004 p99-ns	   41640 B/op	      83 allocs/op
+BenchmarkRoundTrip/AESGCM/1400B-16                    	       1	     81202 ns/op	  17.24 MB/s	     80806 p50-ns	     80806 p95-ns	     80806 p99-ns	   10280 B/op	      83 allocs/op
+BenchmarkRoundTrip/AESGCM/4KiB-16                     	       1	     82321 ns/op	  49.76 MB/s	     81944 p50-ns	     81944 p95-ns	     81944 p99-ns	   12968 B/op	      83 allocs/op
+BenchmarkRoundTrip/AESGCM/32KiB-16                    	       1	    164907 ns/op	 198.71 MB/s	    164437 p50-ns	    164437 p95-ns	    164437 p99-ns	   41640 B/op	      83 allocs/op
+BenchmarkTunnelByCipher/aes/1400B-16                  	       1	      7644 ns/op	 183.15 MB/s	       0 B/op	       0 allocs/op
+BenchmarkTunnelByCipher/aes/4KiB-16                   	       1	      9391 ns/op	 436.16 MB/s	       0 B/op	       0 allocs/op
+BenchmarkTunnelByCipher/aes/32KiB-16                  	       1	     23098 ns/op	1418.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkTunnelByCipher/chacha/1400B-16               	       1	     12663 ns/op	 110.56 MB/s	     176 B/op	       1 allocs/op
+BenchmarkTunnelByCipher/chacha/4KiB-16                	       1	     16040 ns/op	 255.36 MB/s	     176 B/op	       1 allocs/op
+BenchmarkTunnelByCipher/chacha/32KiB-16               	       1	     31270 ns/op	1047.91 MB/s	     176 B/op	       1 allocs/op
+BenchmarkEncodeOpening-16                             	       1	     16439 ns/op	    1264 B/op	      17 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/obfs	0.013s
+PASS
+ok  	github.com/mazixs/S5Core/pkg/obfs/legacy	0.003s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/s5server
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkFrameObserver/bare-16         	       1	     38702 ns/op	 846.67 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only-16   	       1	     43562 ns/op	 752.22 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/noop-telemetry-16         	       1	     37024 ns/op	 885.05 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/sdk-telemetry-16          	       1	     42504 ns/op	 770.94 MB/s	       0 B/op	       0 allocs/op
+BenchmarkMeteredCopy/with_ReadFrom_and_WriteTo-16         	       1	     70714 ns/op	3707.10 MB/s	   35776 B/op	      12 allocs/op
+BenchmarkMeteredCopy/without_them-16                      	       1	     51972 ns/op	5043.95 MB/s	     672 B/op	       8 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	0.009s
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	0.004s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkThroughput_PlainWS-16       	       1	    627765 ns/op	1670.33 MB/s
+BenchmarkThroughput_ShapedWS-16      	       1	   1153680 ns/op	 908.90 MB/s
+BenchmarkWriteLatency_PlainWS-16     	       1	     20581 ns/op	  69.09 MB/s
+BenchmarkWriteLatency_ShapedWS-16    	       1	     25212 ns/op	  56.40 MB/s
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	0.015s
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/veil
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkCipherSeal/aes/64-16               	       1	       946.0 ns/op	  67.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherSeal/chacha/64-16            	       1	       978.0 ns/op	  65.44 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherSeal/aes/1400-16             	       1	      1959 ns/op	 714.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherSeal/chacha/1400-16          	       1	      4390 ns/op	 318.91 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOpen/aes/64-16               	       1	       710.0 ns/op	  90.14 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOpen/chacha/64-16            	       1	       940.0 ns/op	  68.09 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOpen/aes/1400-16             	       1	      2332 ns/op	 600.34 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherOpen/chacha/1400-16          	       1	      4933 ns/op	 283.80 MB/s	       0 B/op	       0 allocs/op
+BenchmarkCipherLengthMask/aes-16            	       1	       702.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCipherLengthMask/chacha-16         	       1	      1831 ns/op	     176 B/op	       1 allocs/op
+BenchmarkDirectoryLookupDuringRefresh-16    	       1	      1796 ns/op	      1404 lookup-max-ns	      1404 lookup-p50-ns	      1404 lookup-p95-ns	      1404 lookup-p99-ns
+BenchmarkRosterAccept/members=8-16          	       1	      7126 ns/op	    1184 B/op	      18 allocs/op
+BenchmarkRosterAccept/members=1024-16       	       1	      2969 ns/op	    1184 B/op	      18 allocs/op
+BenchmarkRosterAccept/members=32768-16      	       1	      3942 ns/op	    1184 B/op	      18 allocs/op
+BenchmarkRosterAccept/members=262144-16     	       1	      7237 ns/op	    1184 B/op	      18 allocs/op
+BenchmarkClockedAccept-16                   	       1	      2945 ns/op	     600 B/op	      10 allocs/op
+BenchmarkDirectoryRefresh/members=1024-16   	       1	   5796868 ns/op	 4703328 B/op	   57389 allocs/op
+BenchmarkDirectoryRefresh/members=32768-16  	       1	 168609818 ns/op	150489136 B/op	 1835920 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/veil	2.297s
