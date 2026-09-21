@@ -21,6 +21,17 @@ jobs:
       - name: scripts/pre-commit.sh
         run: ./scripts/pre-commit.sh
 
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-checks
+          path: |
+            coverage.txt
+            .ci-reports/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
   build-and-push-docker:
     needs: checks
     runs-on: ubuntu-24.04

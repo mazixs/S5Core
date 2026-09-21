@@ -82,6 +82,10 @@ func (e *FrameError) Error() string {
 
 func (e *FrameError) Unwrap() error { return e.Err }
 
+// ProtocolReason lets upper protocol layers retain the frame classification
+// without depending on the obfuscation implementation or parsing error text.
+func (e *FrameError) ProtocolReason() string { return string(e.Reason) }
+
 // ReasonOf extracts the failure classification from an error returned by Read.
 // It reports ok=false for errors that did not originate in the frame layer.
 func ReasonOf(err error) (FailureReason, bool) {

@@ -1,6 +1,7 @@
 package socks5
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -64,37 +65,37 @@ func (a UserPassAuthenticator) GetCode() uint8 {
 func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer, source string) (*AuthContext, error) {
 	// Tell the client to use user/pass auth
 	if _, err := writer.Write([]byte{Socks5Version, UserPassAuth}); err != nil {
-		return nil, err
+		return nil, connFailure("auth", "method_write", err)
 	}
 
 	// Get the version and username length
 	var header [2]byte
 	if _, err := io.ReadFull(reader, header[:]); err != nil {
-		return nil, err
+		return nil, connFailure("auth", "header_read", err)
 	}
 
 	// Ensure we are compatible
 	if header[0] != userAuthVersion {
-		return nil, fmt.Errorf("unsupported auth version: %v", header[0])
+		return nil, protocolFailure("auth", "header_read", fmt.Errorf("unsupported auth version: %v", header[0]))
 	}
 
 	// Get the user name
 	userLen := int(header[1])
 	var userBuf [256]byte
 	if _, err := io.ReadFull(reader, userBuf[:userLen]); err != nil {
-		return nil, err
+		return nil, connFailure("auth", "username_read", err)
 	}
 
 	// Get the password length
 	if _, err := io.ReadFull(reader, header[:1]); err != nil {
-		return nil, err
+		return nil, connFailure("auth", "password_length_read", err)
 	}
 
 	// Get the password
 	passLen := int(header[0])
 	var passBuf [256]byte
 	if _, err := io.ReadFull(reader, passBuf[:passLen]); err != nil {
-		return nil, err
+		return nil, connFailure("auth", "password_read", err)
 	}
 
 	// Verify the password
@@ -102,13 +103,14 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer, 
 	passStr := string(passBuf[:passLen])
 	if validFrom(a.Credentials, userStr, passStr, source) {
 		if _, err := writer.Write([]byte{userAuthVersion, authSuccess}); err != nil {
-			return nil, err
+			return nil, connFailure("auth", "result_write", err)
 		}
 	} else {
+		failure := connFailure("auth", "verify", ErrUserAuthFailed)
 		if _, err := writer.Write([]byte{userAuthVersion, authFailure}); err != nil {
-			return nil, err
+			return nil, errors.Join(failure, connFailure("auth", "result_write", err))
 		}
-		return nil, ErrUserAuthFailed
+		return nil, failure
 	}
 
 	// Done
@@ -148,7 +150,7 @@ func (s *Server) authenticate(conn io.Writer, bufConn io.Reader, source, identit
 	methods, err := readMethods(bufConn)
 	if err != nil {
 		handshake.end(false)
-		return nil, fmt.Errorf("failed to get auth methods: %w", err)
+		return nil, connFailure("greeting", "methods_read", err)
 	}
 
 	// The tunnel says who this is, but not whether that account may still
@@ -201,20 +203,23 @@ func (s *Server) authenticate(conn io.Writer, bufConn io.Reader, source, identit
 			auth := s.startPhase(PhaseAuth)
 			authCtx, err := cator.Authenticate(bufConn, conn, source)
 			auth.end(err == nil)
-			return authCtx, err
+			return authCtx, connFailure("auth", "exchange", err)
 		}
 	}
 
 	// No usable method found
 	handshake.end(false)
-	return nil, noAcceptableAuth(conn)
+	return nil, connFailure("greeting", "method_select", noAcceptableAuth(conn))
 }
 
 // noAcceptableAuth is used to handle when we have no eligible
 // authentication mechanism
 func noAcceptableAuth(conn io.Writer) error {
-	_, _ = conn.Write([]byte{Socks5Version, noAcceptable})
-	return ErrNoSupportedAuth
+	failure := connFailure("greeting", "method_select", ErrNoSupportedAuth)
+	if _, err := conn.Write([]byte{Socks5Version, noAcceptable}); err != nil {
+		return errors.Join(failure, connFailure("greeting", "method_write", err))
+	}
+	return failure
 }
 
 // readMethods is used to read the number of methods

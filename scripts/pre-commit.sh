@@ -25,9 +25,19 @@ GOLANGCI_LINT_VERSION="v2.13.2"
 GOVULNCHECK_VERSION="v1.8.0"
 
 failed=0
-step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
+step() { current_step="$1"; printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()   { printf '   \033[32mok\033[0m %s\n' "$1"; }
-bad()  { printf '   \033[31mFAIL\033[0m %s\n' "$1"; failed=1; }
+bad() {
+	printf '   \033[31mFAIL\033[0m %s\n' "$1"
+	failed=1
+	if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+		local message="check=$current_step: $1"
+		message="${message//'%'/'%25'}"
+		message="${message//$'\r'/'%0D'}"
+		message="${message//$'\n'/'%0A'}"
+		printf '::error title=Quality check failed::%s\n' "$message"
+	fi
+}
 
 GOBIN_DIR="$(go env GOPATH)/bin"
 export PATH="$PATH:$GOBIN_DIR"
@@ -45,7 +55,9 @@ ensure_tool() {
 	local bin="$1" pkg="$2"
 	if command -v "$bin" >/dev/null 2>&1; then return 0; fi
 	printf '   ставлю %s (%s)\n' "$bin" "$pkg"
-	if ! go install "$pkg" >/dev/null 2>&1; then
+	local install_output
+	if ! install_output="$(go install "$pkg" 2>&1)"; then
+		printf '%s\n' "$install_output"
 		return 1
 	fi
 	command -v "$bin" >/dev/null 2>&1
@@ -107,7 +119,7 @@ if [ "${SKIP_LINT:-0}" = "1" ]; then
 elif ensure_tool golangci-lint "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"; then
 	if golangci-lint run ./...; then ok "0 замечаний"; else bad "golangci-lint"; fi
 else
-	bad "golangci-lint недоступен и не установился (нет сети?) - SKIP_LINT=1 чтобы пропустить"
+	bad "golangci-lint недоступен и не установился (причина выше) - SKIP_LINT=1 чтобы пропустить"
 fi
 
 step "Уязвимости зависимостей (govulncheck)"
@@ -116,17 +128,27 @@ if [ "${SKIP_VULN:-0}" = "1" ]; then
 elif ensure_tool govulncheck "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"; then
 	if govulncheck ./...; then ok "вызываемых уязвимостей нет"; else bad "govulncheck"; fi
 else
-	bad "govulncheck недоступен и не установился (нет сети?) - SKIP_VULN=1 чтобы пропустить"
+	bad "govulncheck недоступен и не установился (причина выше) - SKIP_VULN=1 чтобы пропустить"
 fi
 
 if [ "${SKIP_SLOW:-0}" = "1" ]; then
 	printf '\n   тесты и сборка пропущены (SKIP_SLOW=1)\n'
 else
 	step "Тесты с детектором гонок"
-	if go test -race -coverprofile=coverage.txt -covermode=atomic ./...; then
-		ok "тесты зеленые"
+	report_dir="${CI_REPORT_DIR:-.ci-reports}"
+	if mkdir -p "$report_dir" && go build -o "$report_dir/testreport" ./scripts/testreport; then
+		# pipefail preserves test, disk-write and reporter failures separately
+		# from the success of the last command. JSON remains available as an artifact.
+		if go test -json -race -coverprofile=coverage.txt -covermode=atomic ./... 2> "$report_dir/tests.stderr.log" |
+			tee "$report_dir/tests.jsonl" | "$report_dir/testreport"; then
+			ok "тесты зеленые"
+		else
+			bad "go test -race: см. CI_FAILURE и .ci-reports/tests.jsonl"
+		fi
+		cat "$report_dir/tests.stderr.log"
+		rm -f "$report_dir/testreport"
 	else
-		bad "go test -race"
+		bad "не удалось подготовить отчет go test"
 	fi
 
 	# Один проход по каждому бенчмарку: они не измеряют здесь ничего, но
@@ -134,9 +156,10 @@ else
 	# (pkg/obfs/alloc_test.go) - они детерминированы и не зависят от того,
 	# насколько занят раннер.
 	step "Бенчмарки запускаются"
-	if go test -run XXX -bench=. -benchtime=1x ./pkg/obfs/ ./pkg/transport/ws/ >/dev/null; then
+	if benchmark_output="$(go test -run XXX -bench=. -benchtime=1x ./pkg/obfs/ ./pkg/transport/ws/ 2>&1)"; then
 		ok "бенчмарки живы"
 	else
+		printf '%s\n' "$benchmark_output"
 		bad "бенчмарки"
 	fi
 
