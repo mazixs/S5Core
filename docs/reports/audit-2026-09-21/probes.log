@@ -1,0 +1,19 @@
+=== RUN   TestAuditRosterUnknownCost
+    audit_probe_test.go:25: members=4096 epochs_before=5 epochs_after=73 invalid_accept=162.728628ms total_alloc=174.4MiB heap_growth=49.0MiB
+--- PASS: TestAuditRosterUnknownCost (0.18s)
+=== RUN   TestAuditRosterRefreshBlocksAccept
+    audit_probe_test.go:48: members=32768 valid_accept_during_refresh=19.397276ms
+--- PASS: TestAuditRosterRefreshBlocksAccept (0.14s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/veil	0.324s
+=== RUN   TestAuditDeadlineCannotInterruptWrite
+    audit_probe_test.go:21: SetWriteDeadline(now) still blocked after 200.989491ms
+--- PASS: TestAuditDeadlineCannotInterruptWrite (0.30s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	0.305s
+=== RUN   TestAuditWirebenchAcceptsFailedTransfers
+    audit_probe_test.go:21: dir=up HTTP=503 requested=67108864 reported=67108864 err=<nil>
+    audit_probe_test.go:21: dir=down HTTP=503 requested=67108864 reported=11 err=<nil>
+--- PASS: TestAuditWirebenchAcceptsFailedTransfers (0.50s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/wirebench	0.504s

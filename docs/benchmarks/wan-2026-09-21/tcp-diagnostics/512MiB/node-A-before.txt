@@ -1,0 +1,14 @@
+1790001494
+ 17:38:14 up 8 days,  2:58,  3 users,  load average: 0.12, 0.04, 0.09
+               total        used        free      shared  buff/cache   available
+Mem:             967         649         171           0         291         317
+Swap:           1023         271         752
+cubic
+4096	131072	6291456
+4096	16384	4194304
+sockets: used 280
+TCP: inuse 29 orphan 0 tw 36 alloc 124 mem 0
+UDP: inuse 9 mem 256
+UDPLITE: inuse 0
+RAW: inuse 0
+FRAG: inuse 0 memory 0

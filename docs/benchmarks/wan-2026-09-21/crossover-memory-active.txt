@@ -1,0 +1,12 @@
+2026-09-21T17:11:08+03:00
+server-current.pid pid=1115224 majflt=302 utime=156 stime=253
+VmRSS:	   89772 kB
+VmSwap:	   53788 kB
+server-v2.pid pid=1115165 majflt=5722 utime=162 stime=271
+VmRSS:	  139408 kB
+VmSwap:	    4420 kB
+target.pid pid=1115284 majflt=65 utime=126 stime=279
+VmRSS:	    5444 kB
+VmSwap:	     108 kB
+pswpin 345882
+pswpout 445935

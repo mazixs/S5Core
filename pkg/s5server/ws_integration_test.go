@@ -1,7 +1,9 @@
 package s5server
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
@@ -77,6 +79,7 @@ func TestWSStealth_EndToEnd(t *testing.T) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	defer tr.CloseIdleConnections()
 	httpClient := &http.Client{Transport: tr, Timeout: 5 * time.Second}
 	resp, err := httpClient.Get("https://" + wsAddr + "/")
 	if err != nil {
@@ -106,8 +109,10 @@ func TestWSStealth_EndToEnd(t *testing.T) {
 		t.Fatalf("ws dial: %v", err)
 	}
 	defer wsConn.Close()
+	_ = wsConn.SetDeadline(time.Now().Add(10 * time.Second))
 
-	obfsConn, err := obfs.NewClientConn(wsConn, obfs.Config{
+	shaped := ws.NewShapedConn(wsConn, ws.DefaultMinFrame, ws.DefaultMaxFrame, 0)
+	obfsConn, err := obfs.NewClientConn(shaped, obfs.Config{
 		PSK:        []byte(testPSK),
 		MaxPadding: 32,
 		MTU:        1400,
@@ -153,16 +158,25 @@ func TestWSStealth_EndToEnd(t *testing.T) {
 		t.Fatalf("connect failed: %d", respBuf[1])
 	}
 
-	// Echo test
-	msg := []byte("hello through ws stealth")
-	if _, err := obfsConn.Write(msg); err != nil {
-		t.Fatalf("echo write: %v", err)
+	// Verify actual delivery through shaping + TLS + obfs + SOCKS5 in both
+	// directions. No induced network delay and no send-only success count.
+	const chunk = 16 * 1024
+	want := make([]byte, 1024*1024)
+	if _, err := rand.Read(want); err != nil {
+		t.Fatal(err)
 	}
-	back := make([]byte, len(msg))
-	if _, err := io.ReadFull(obfsConn, back); err != nil {
-		t.Fatalf("echo read: %v", err)
+	back := make([]byte, chunk)
+	for offset := 0; offset < len(want); offset += chunk {
+		msg := want[offset : offset+chunk]
+		if n, err := obfsConn.Write(msg); err != nil || n != len(msg) {
+			t.Fatalf("echo write at %d: n=%d err=%v", offset, n, err)
+		}
+		if _, err := io.ReadFull(obfsConn, back); err != nil {
+			t.Fatalf("echo read at %d: %v", offset, err)
+		}
+		if !bytes.Equal(back, msg) {
+			t.Fatalf("echo mismatch at %d", offset)
+		}
 	}
-	if string(back) != string(msg) {
-		t.Fatalf("echo mismatch: %s", string(back))
-	}
+	t.Logf("verified %d bytes each direction over shaped WSS + obfs + SOCKS5", len(want))
 }

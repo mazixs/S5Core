@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -129,10 +130,14 @@ type result struct {
 }
 
 func runClient(ctx context.Context, o clientOpts) error {
+	if o.conns <= 0 || o.bytes <= 0 || (o.dir != "up" && o.dir != "down") {
+		return fmt.Errorf("conns and bytes must be positive; dir must be up or down")
+	}
 	transport, err := transportFor(o)
 	if err != nil {
 		return err
 	}
+	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Minute}
 
 	results := make([]result, o.conns)
@@ -171,13 +176,12 @@ func runClient(ctx context.Context, o clientOpts) error {
 	}
 	sort.Float64s(rates)
 	aggregate := float64(total) / wall.Seconds() / (1 << 20)
-	fmt.Printf("%-28s %8.2f MB/s aggregate (%7.1f Mbit/s)  per-conn median %6.2f MB/s  min %6.2f  max %6.2f  conns %d  failed %d  wall %v\n",
-		name, aggregate, aggregate*8, rates[len(rates)/2], rates[0], rates[len(rates)-1], o.conns, failed, wall.Round(time.Millisecond))
+	fmt.Printf("%-28s %8.2f MiB/s aggregate (%7.1f Mbit/s)  per-conn median %6.2f MiB/s  min %6.2f  max %6.2f  conns %d  failed %d  wall %v\n",
+		name, aggregate, float64(total)*8/wall.Seconds()/1e6, rates[len(rates)/2], rates[0], rates[len(rates)-1], o.conns, failed, wall.Round(time.Millisecond))
 	if failed > 0 {
 		for _, r := range results {
 			if r.err != nil {
-				fmt.Printf("  first failure: %v\n", r.err)
-				break
+				return fmt.Errorf("%s: %d of %d connections failed: %w", name, failed, o.conns, r.err)
 			}
 		}
 	}
@@ -188,19 +192,32 @@ func oneTransfer(ctx context.Context, client *http.Client, o clientOpts) result 
 	base := strings.TrimRight(o.url, "/")
 	start := time.Now()
 	if o.dir == "up" {
-		body := io.LimitReader(&randomReader{chunk: randomChunk()}, o.bytes)
+		source := &randomReader{chunk: randomChunk()}
+		body := io.LimitReader(source, o.bytes)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/up", body)
 		if err != nil {
 			return result{err: err}
 		}
 		req.Header.Set("Content-Type", "application/octet-stream")
+		req.ContentLength = o.bytes
 		resp, err := client.Do(req)
 		if err != nil {
 			return result{err: err}
 		}
 		defer resp.Body.Close()
-		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		if resp.StatusCode != http.StatusOK {
+			return result{err: fmt.Errorf("upload HTTP status: %s", resp.Status)}
+		}
+		ack, err := io.ReadAll(io.LimitReader(resp.Body, 65))
+		if err != nil {
 			return result{err: err}
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(string(ack)), 10, 64)
+		if err != nil || len(ack) > 64 || n != o.bytes {
+			return result{err: fmt.Errorf("upload acknowledgment %q, want %d bytes", ack, o.bytes)}
+		}
+		if read := source.read.Load(); read != o.bytes {
+			return result{err: fmt.Errorf("upload source consumed %d bytes, want %d", read, o.bytes)}
 		}
 		return result{bytes: o.bytes, elapsed: time.Since(start)}
 	}
@@ -213,9 +230,15 @@ func oneTransfer(ctx context.Context, client *http.Client, o clientOpts) result 
 		return result{err: err}
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return result{err: fmt.Errorf("download HTTP status: %s", resp.Status)}
+	}
 	n, err := io.Copy(io.Discard, resp.Body)
 	if err != nil {
 		return result{err: err}
+	}
+	if n != o.bytes {
+		return result{err: fmt.Errorf("download received %d bytes, want %d", n, o.bytes)}
 	}
 	return result{bytes: n, elapsed: time.Since(start)}
 }
@@ -259,10 +282,19 @@ func randomChunk() []byte {
 	return buf
 }
 
-type randomReader struct{ chunk []byte }
+type randomReader struct {
+	chunk  []byte
+	offset int
+	read   atomic.Int64
+}
 
 func (r *randomReader) Read(p []byte) (int, error) {
-	n := copy(p, r.chunk)
+	n := copy(p, r.chunk[r.offset:])
+	r.offset += n
+	if r.offset == len(r.chunk) {
+		r.offset = 0
+	}
+	r.read.Add(int64(n))
 	return n, nil
 }
 

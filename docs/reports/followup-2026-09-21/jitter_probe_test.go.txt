@@ -1,0 +1,55 @@
+package ws
+
+import (
+	"math/rand"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+func TestAuditCloseDoesNotInterruptShapingJitter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base, _ := blockedPeer(t)
+		const jitter = 10 * time.Second
+		var chosen int64
+		var pause time.Duration
+		for candidate := int64(0); candidate < 10000; candidate++ {
+			r := rand.New(rand.NewSource(candidate))
+			if r.Float32() < 0.1 {
+				if d := time.Duration(r.Int63n(int64(jitter))); d > time.Second {
+					chosen, pause = candidate, d
+					break
+				}
+			}
+		}
+		if pause == 0 {
+			t.Fatal("no deterministic seed")
+		}
+		c := NewShapedConn(base, 256, 4096, jitter)
+		c.rng = rand.New(rand.NewSource(chosen))
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() { _, err := c.Write([]byte("payload")); done <- err }()
+		synctest.Wait()
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		select {
+		case err := <-done:
+			t.Fatalf("write unexpectedly interrupted: %v", err)
+		default:
+		}
+		time.Sleep(pause)
+		synctest.Wait()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("write on closed connection succeeded")
+			}
+			t.Logf("Write returned %s after immediate Close, jitter=%s, seed=%d", time.Since(start), jitter, chosen)
+		default:
+			t.Fatal("write did not finish after jitter")
+		}
+	})
+}

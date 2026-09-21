@@ -1,0 +1,94 @@
+package ws
+
+import (
+	"bufio"
+	"crypto/sha1"
+	"encoding/base64"
+	"fmt"
+	"github.com/gorilla/websocket"
+	"net"
+	"net/http"
+	"net/url"
+	"testing"
+	"time"
+)
+
+func TestAuditDeadlineCannotInterruptWrite(t *testing.T) {
+	client, server := wsPair(t)
+	raw := server.ws.UnderlyingConn()
+	if c, ok := raw.(*net.TCPConn); ok {
+		if err := c.SetWriteBuffer(4096); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrote := make(chan error, 1)
+	go func() { _, err := server.Write(make([]byte, 8<<20)); wrote <- err }()
+	select {
+	case err := <-wrote:
+		t.Fatalf("write did not block: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	deadline := make(chan error, 1)
+	start := time.Now()
+	go func() { deadline <- server.SetWriteDeadline(time.Now()) }()
+	select {
+	case err := <-deadline:
+		t.Fatalf("deadline unexpectedly returned: %v", err)
+	case <-time.After(200 * time.Millisecond):
+		t.Logf("SetWriteDeadline(now) still blocked after %s", time.Since(start))
+	}
+	// Raw close is the escape hatch, not the wrapper's deadline.
+	_ = raw.Close()
+	_ = client.ws.UnderlyingConn().Close()
+	select {
+	case <-wrote:
+	case <-time.After(time.Second):
+		t.Fatal("raw close did not unblock write")
+	}
+	select {
+	case <-deadline:
+	case <-time.After(time.Second):
+		t.Fatal("deadline did not return after raw close")
+	}
+}
+
+func TestAuditCloseCanBlockBeforeClosingSocket(t *testing.T) {
+	near, far := net.Pipe()
+	defer near.Close()
+	defer far.Close()
+	handshake := make(chan error, 1)
+	go func() {
+		req, err := http.ReadRequest(bufio.NewReader(far))
+		if err != nil {
+			handshake <- err
+			return
+		}
+		sum := sha1.Sum([]byte(req.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+		_, err = fmt.Fprintf(far, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", base64.StdEncoding.EncodeToString(sum[:]))
+		handshake <- err
+	}()
+	u, _ := url.Parse("ws://local/ws")
+	underlying, _, err := websocket.NewClient(near, u, nil, 1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = <-handshake; err != nil {
+		t.Fatal(err)
+	}
+	c := Wrap(underlying)
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { done <- c.Close() }()
+	select {
+	case err := <-done:
+		t.Fatalf("close unexpectedly completed: %v", err)
+	case <-time.After(200 * time.Millisecond):
+		t.Logf("Close still blocked sending courtesy frame after %s", time.Since(start))
+	}
+	_ = near.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("raw close did not release Close")
+	}
+}

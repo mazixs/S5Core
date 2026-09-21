@@ -63,11 +63,13 @@ func main() {
 		count:   *count,
 		timeout: *timeout,
 	})
+	if len(res.samples) > 0 {
+		res.print(*label, *rtt)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-	res.print(*label, *rtt)
 }
 
 // runTarget answers every connection with one byte and closes it. It never
@@ -121,9 +123,14 @@ type results struct {
 
 func run(s settings) (results, error) {
 	var res results
+	if s.count <= 0 || s.timeout <= 0 {
+		return res, fmt.Errorf("count and timeout must be positive")
+	}
+	var lastErr error
 	for i := 0; i < s.count; i++ {
 		one, err := measure(s)
 		if err != nil {
+			lastErr = err
 			res.failed++
 			if res.failed > s.count/2 {
 				return res, fmt.Errorf("more than half the connections failed, last: %w", err)
@@ -135,6 +142,9 @@ func run(s settings) (results, error) {
 	}
 	if len(res.samples) == 0 {
 		return res, fmt.Errorf("no connection completed")
+	}
+	if res.failed > 0 {
+		return res, fmt.Errorf("%d of %d connections failed, last: %w", res.failed, s.count, lastErr)
 	}
 	return res, nil
 }

@@ -1,0 +1,36 @@
+2026-09-21T17:12:07+03:00
+server-current.pid pid=1115224 majflt=309 utime=351 stime=688
+VmRSS:	   90180 kB
+VmSwap:	   53416 kB
+server-v2.pid pid=1115165 majflt=5758 utime=441 stime=832
+VmRSS:	   17348 kB
+VmSwap:	     176 kB
+target.pid pid=1115284 majflt=65 utime=434 stime=920
+VmRSS:	    5480 kB
+VmSwap:	     104 kB
+pswpin 346495
+pswpout 445935
+2026-09-21T17:12:12+03:00
+server-current.pid pid=1115224 majflt=312 utime=387 stime=769
+VmRSS:	   90260 kB
+VmSwap:	   53340 kB
+server-v2.pid pid=1115165 majflt=5758 utime=441 stime=832
+VmRSS:	   17348 kB
+VmSwap:	     176 kB
+target.pid pid=1115284 majflt=65 utime=454 stime=962
+VmRSS:	    5480 kB
+VmSwap:	     104 kB
+pswpin 346577
+pswpout 445935
+2026-09-21T17:12:17+03:00
+pswpin 346613
+pswpout 445935
+2026-09-21T17:12:22+03:00
+pswpin 351876
+pswpout 445935
+2026-09-21T17:12:27+03:00
+pswpin 353067
+pswpout 445935
+2026-09-21T17:12:32+03:00
+pswpin 353105
+pswpout 445935

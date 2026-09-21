@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,18 @@ type Conn struct {
 	readMu  sync.Mutex
 	writeMu sync.Mutex
 	closed  atomic.Bool
+
+	// Gorilla stores its deadline in an unsynchronized field. Keep our own
+	// deadline and interrupt an expired active write by closing the socket:
+	// after a write timeout Gorilla cannot be used for further writes anyway.
+	deadlineMu    sync.Mutex
+	writeDeadline time.Time
+	writeTimer    *time.Timer
+	writing       bool
+	writeTimedOut bool
+	// Allocated only by a shaping pause. Closing this channel broadcasts
+	// Close/deadline changes without adding work to ordinary frame writes.
+	writeWake chan struct{}
 }
 
 // Wrap wraps an existing websocket.Conn, with the default message limit.
@@ -62,6 +75,7 @@ func WrapWithLimit(ws *websocket.Conn, limit int64) *Conn {
 	case limit > 0:
 		ws.SetReadLimit(limit)
 	}
+	_ = ws.SetWriteDeadline(time.Time{})
 	return &Conn{ws: ws}
 }
 
@@ -122,7 +136,21 @@ func (c *Conn) Write(b []byte) (int, error) {
 		return 0, fmt.Errorf("ws: write on closed connection")
 	}
 
+	c.deadlineMu.Lock()
+	if !c.writeDeadline.IsZero() && !time.Now().Before(c.writeDeadline) {
+		c.deadlineMu.Unlock()
+		return 0, c.writeTimeout()
+	}
+	c.writing = true
+	c.deadlineMu.Unlock()
 	err := c.ws.WriteMessage(websocket.BinaryMessage, b)
+	c.deadlineMu.Lock()
+	c.writing = false
+	timedOut := c.writeTimedOut
+	c.deadlineMu.Unlock()
+	if timedOut {
+		return 0, c.writeTimeout()
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -136,20 +164,13 @@ func (c *Conn) Close() error {
 		return nil
 	}
 
-	// The close frame is a courtesy: it tells the peer the connection ended
-	// in an orderly way. It is sent only if no write is in flight. A gorilla
-	// Conn takes one writer at a time and keeps its write deadline in a plain
-	// field, so writing the frame from here while another goroutine is in
-	// Write is a data race - one that stayed hidden while Close was only ever
-	// called by the goroutine that owned the connection.
-	if c.writeMu.TryLock() {
-		_ = c.ws.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		c.writeMu.Unlock()
+	c.deadlineMu.Lock()
+	if c.writeTimer != nil {
+		c.writeTimer.Stop()
 	}
-
-	// Closing the socket is what actually ends the connection, and it is what
-	// releases a writer that is blocked in the middle of a frame.
+	c.wakeWriteWaitersLocked()
+	c.deadlineMu.Unlock()
+	// net.Conn.Close must interrupt I/O even when the peer stops reading.
 	return c.ws.Close()
 }
 
@@ -184,17 +205,97 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 	return c.ws.SetReadDeadline(t)
 }
 
-// SetWriteDeadline implements net.Conn.SetWriteDeadline, under the same lock
-// as a write.
-//
-// A gorilla Conn keeps its write deadline in a plain field and reads it while
-// flushing a frame, so setting it from another goroutine is a data race - the
-// same race Close already avoids by taking this lock. The deadline is set once
-// per write by the layer above, so the extra lock costs one uncontended
-// acquire per write and removes the last unsynchronised access to a gorilla
-// write.
+// SetWriteDeadline also applies to a write already in progress, without
+// waiting for the writer lock. Clearing or extending it cancels the watchdog.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	return c.ws.SetWriteDeadline(t)
+	c.deadlineMu.Lock()
+	defer c.deadlineMu.Unlock()
+	if c.closed.Load() {
+		return net.ErrClosed
+	}
+	if !c.writeDeadline.Equal(t) {
+		c.writeDeadline = t
+		c.wakeWriteWaitersLocked()
+	}
+	c.armWriteTimerLocked()
+	return nil
+}
+
+func (c *Conn) wakeWriteWaitersLocked() {
+	if c.writeWake != nil {
+		close(c.writeWake)
+		c.writeWake = nil
+	}
+}
+
+// waitWriteDelay keeps an intentional shaping pause inside net.Conn's
+// lifecycle: Close and updated deadlines must also interrupt a sleeping
+// writer. Deadline changes do not restart or shorten the selected pause.
+func (c *Conn) waitWriteDelay(delay time.Duration) error {
+	end := time.Now().Add(delay)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	for {
+		c.deadlineMu.Lock()
+		now := time.Now()
+		deadline := c.writeDeadline
+		switch {
+		case c.closed.Load():
+			c.deadlineMu.Unlock()
+			return net.ErrClosed
+		case c.writeTimedOut || (!deadline.IsZero() && !now.Before(deadline)):
+			c.deadlineMu.Unlock()
+			return c.writeTimeout()
+		case !now.Before(end):
+			c.deadlineMu.Unlock()
+			return nil
+		}
+		if c.writeWake == nil {
+			c.writeWake = make(chan struct{})
+		}
+		wake := c.writeWake
+		c.deadlineMu.Unlock()
+		until := end
+		if !deadline.IsZero() && deadline.Before(until) {
+			until = deadline
+		}
+		timer.Reset(time.Until(until))
+		select {
+		case <-wake:
+		case <-timer.C:
+		}
+	}
+}
+
+// Leave the timer armed between writes. Repeated writes under the same
+// deadline need no timer reset; the callback checks whether a write is active.
+func (c *Conn) armWriteTimerLocked() {
+	if c.writeTimer != nil {
+		c.writeTimer.Stop()
+	}
+	if c.writeDeadline.IsZero() {
+		return
+	}
+	delay := time.Until(c.writeDeadline)
+	if c.writeTimer == nil {
+		c.writeTimer = time.AfterFunc(delay, c.expireWrite)
+	} else {
+		c.writeTimer.Reset(delay)
+	}
+}
+
+func (c *Conn) expireWrite() {
+	c.deadlineMu.Lock()
+	defer c.deadlineMu.Unlock()
+	// A callback already scheduled before Stop may run after a deadline was
+	// moved or cleared. Check the current deadline under the same lock.
+	if !c.writing || c.writeDeadline.IsZero() || time.Now().Before(c.writeDeadline) {
+		return
+	}
+	c.writeTimedOut = true
+	_ = c.ws.Close()
+}
+
+func (c *Conn) writeTimeout() error {
+	return &net.OpError{Op: "write", Net: "websocket", Source: c.LocalAddr(), Addr: c.RemoteAddr(), Err: os.ErrDeadlineExceeded}
 }

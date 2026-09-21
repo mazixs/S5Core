@@ -1,0 +1,37 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                         │ before.txt │ after.txt │
+                         │                     sec/op                      │          sec/op           vs base              │
+Throughput_PlainWS-16                                          192.2µ ± 9%               196.5µ ± 13%       ~ (p=1.000 n=6)
+Throughput_ShapedWS-16                                         849.3µ ± 6%               860.3µ ±  9%       ~ (p=0.093 n=6)
+WriteLatency_PlainWS-16                                        3.354µ ± 4%               3.339µ ±  5%       ~ (p=0.937 n=6)
+WriteLatency_ShapedWS-16                                       9.084µ ± 5%               9.009µ ±  4%       ~ (p=0.310 n=6)
+geomean                                                        47.22µ                    47.49µ        +0.56%
+
+                         │ before.txt │ after.txt │
+                         │                       B/s                       │           B/s             vs base              │
+Throughput_PlainWS-16                                         5.095Gi ± 8%              4.969Gi ± 14%       ~ (p=1.000 n=6)
+Throughput_ShapedWS-16                                        1.150Gi ± 5%              1.135Gi ±  8%       ~ (p=0.093 n=6)
+WriteLatency_PlainWS-16                                       404.4Mi ± 5%              406.3Mi ±  5%       ~ (p=0.937 n=6)
+WriteLatency_ShapedWS-16                                      149.3Mi ± 5%              150.5Mi ±  4%       ~ (p=0.310 n=6)
+geomean                                                       780.4Mi                   775.6Mi        -0.62%
+
+                         │ before.txt │ after.txt │
+                         │                      B/op                       │          B/op           vs base                │
+Throughput_PlainWS-16                                           80.00 ± 0%               80.00 ± 0%       ~ (p=1.000 n=6) ¹
+Throughput_ShapedWS-16                                        19.15Ki ± 0%             19.15Ki ± 0%       ~ (p=0.729 n=6)
+WriteLatency_PlainWS-16                                         56.00 ± 2%               56.00 ± 2%       ~ (p=1.000 n=6)
+WriteLatency_ShapedWS-16                                        164.0 ± 1%               164.0 ± 1%       ~ (p=1.000 n=6)
+geomean                                                         346.5                    346.4       -0.00%
+¹ all samples are equal
+
+                         │ before.txt │ after.txt │
+                         │                    allocs/op                    │       allocs/op         vs base                │
+Throughput_PlainWS-16                                          3.000 ±  0%              3.000 ±  0%       ~ (p=1.000 n=6) ¹
+Throughput_ShapedWS-16                                         742.5 ±  0%              742.5 ±  0%       ~ (p=0.797 n=6)
+WriteLatency_PlainWS-16                                        2.000 ± 50%              2.000 ± 50%       ~ (p=1.000 n=6)
+WriteLatency_ShapedWS-16                                       5.000 ±  0%              5.000 ±  0%       ~ (p=1.000 n=6) ¹
+geomean                                                        12.22                    12.22        +0.00%
+¹ all samples are equal

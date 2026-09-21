@@ -38,13 +38,14 @@ const (
 )
 
 type clientParams struct {
-	ListenAddr string `env:"CLIENT_LISTEN_ADDR" envDefault:"127.0.0.1:1080"`
-	ServerAddr string `env:"SERVER_ADDR" envDefault:""`
-	ProxyUser  string `env:"PROXY_USER" envDefault:""`
-	ProxyPass  string `env:"PROXY_PASS" envDefault:""`
-	PSK        string `env:"OBFS_PSK" envDefault:""`
-	MaxPadding int    `env:"OBFS_MAX_PADDING" envDefault:"256"`
-	MTU        int    `env:"OBFS_MTU" envDefault:"1400"`
+	MaxConnections int    `env:"CLIENT_MAX_CONNECTIONS" envDefault:"1024"`
+	ListenAddr     string `env:"CLIENT_LISTEN_ADDR" envDefault:"127.0.0.1:1080"`
+	ServerAddr     string `env:"SERVER_ADDR" envDefault:""`
+	ProxyUser      string `env:"PROXY_USER" envDefault:""`
+	ProxyPass      string `env:"PROXY_PASS" envDefault:""`
+	PSK            string `env:"OBFS_PSK" envDefault:""`
+	MaxPadding     int    `env:"OBFS_MAX_PADDING" envDefault:"256"`
+	MTU            int    `env:"OBFS_MTU" envDefault:"1400"`
 	// NodeID must match the server's OBFS_NODE_ID. It is not sent anywhere;
 	// it goes into the key derivation, so a wrong one fails like a wrong
 	// PSK (plan task Ф5-4).
@@ -314,10 +315,13 @@ func main() {
 	usrWanted := signals.Notify(usrCh, signals.ToggleDebug...)
 
 	var wg sync.WaitGroup
+	acceptCtx, stopAccept := context.WithCancel(context.Background())
+	defer stopAccept()
 
 	go func() {
 		<-sigCh
 		slog.Info("Shutting down s5client...")
+		stopAccept()
 		listener.Close()
 	}()
 
@@ -362,19 +366,29 @@ func main() {
 		}()
 	}
 
+	limit := cfg.MaxConnections
+	if limit <= 0 {
+		limit = 1024
+	}
+	slots := make(chan struct{}, limit)
 	for {
-		clientConn, err := listener.Accept()
+		clientConn, err := acceptWithBackoff(acceptCtx, listener)
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				break
+			if !errors.Is(err, net.ErrClosed) && !errors.Is(err, context.Canceled) {
+				slog.Error("Accept stopped", "error", err)
 			}
-			slog.Error("Accept error", "error", err)
+			break
+		}
+		select {
+		case slots <- struct{}{}:
+		default:
+			_ = clientConn.Close()
 			continue
 		}
-
 		wg.Add(1)
 		go func(c net.Conn) {
 			defer wg.Done()
+			defer func() { <-slots }()
 			handleClient(c, cfg, routePatterns)
 		}(clientConn)
 	}
@@ -383,10 +397,22 @@ func main() {
 func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string) {
 	defer clientConn.Close()
 
+	// Silent local clients must not hold descriptors forever.
+	budget := cfg.HandshakeTimeout
+	if budget <= 0 {
+		budget = 15 * time.Second
+	}
+	if err := clientConn.SetDeadline(time.Now().Add(budget)); err != nil {
+		return
+	}
 	// Step 1-2: SOCKS5 handshake (read request)
 	connectReq, cmd, destFQDN, err := socks5Handshake(clientConn)
 	if err != nil {
 		slog.Error("SOCKS5 handshake failed", "error", err)
+		return
+	}
+
+	if err := clientConn.SetDeadline(time.Time{}); err != nil {
 		return
 	}
 

@@ -1,0 +1,9 @@
+               total        used        free      shared  buff/cache   available
+Mem:             967         814          85           0         212         152
+Swap:           1023         384         639
+pswpin 307101
+pswpout 402528
+procs -----------memory---------- ---swap-- -----io---- -system-- -------cpu-------
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st gu
+ 0  0 393516  87080    360 217268    1    2    16    48  548    7  1  1 98  0  0  0
+ 0  0 393516  94160    360 217452    0    0   172     0 2737 1219  2  3 95  0  0  0

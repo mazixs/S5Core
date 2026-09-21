@@ -1,0 +1,12 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/veil
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkDirectoryLookupDuringRefresh-16    	 3224726	        74.19 ns/op	     96812 lookup-max-ns	        43.00 lookup-p50-ns	        50.00 lookup-p95-ns	        57.00 lookup-p99-ns
+BenchmarkDirectoryLookupDuringRefresh-16    	 3183884	        77.00 ns/op	    195050 lookup-max-ns	        45.00 lookup-p50-ns	        55.00 lookup-p95-ns	        75.00 lookup-p99-ns
+BenchmarkDirectoryLookupDuringRefresh-16    	 3163808	        75.80 ns/op	    124215 lookup-max-ns	        44.00 lookup-p50-ns	        50.00 lookup-p95-ns	        59.00 lookup-p99-ns
+BenchmarkDirectoryLookupDuringRefresh-16    	 3182535	        75.42 ns/op	    394014 lookup-max-ns	        44.00 lookup-p50-ns	        52.00 lookup-p95-ns	        59.00 lookup-p99-ns
+BenchmarkDirectoryLookupDuringRefresh-16    	 3130149	        75.68 ns/op	    119647 lookup-max-ns	        44.00 lookup-p50-ns	        53.00 lookup-p95-ns	        59.00 lookup-p99-ns
+BenchmarkDirectoryLookupDuringRefresh-16    	 3056103	        76.57 ns/op	    284899 lookup-max-ns	        44.00 lookup-p50-ns	        56.00 lookup-p95-ns	        61.00 lookup-p99-ns
+PASS
+ok  	github.com/mazixs/S5Core/pkg/veil	2.496s

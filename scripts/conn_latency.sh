@@ -104,9 +104,14 @@ probe() { # probe <label> <доп. аргументы>
 }
 
 bold "Установка соединения при RTT $RTT между любой парой узлов"
-probe "direct" || true
-probe "socks " -socks lat-server:1080 || true
-probe "obfs  " -socks 127.0.0.1:1080 || true
-probe "wss   " -socks 127.0.0.1:1081 || true
+status=0
+probe "direct" || status=1
+probe "socks " -socks lat-server:1080 || status=1
+probe "obfs  " -socks 127.0.0.1:1080 || status=1
+probe "wss   " -socks 127.0.0.1:1081 || status=1
 
+if (( status != 0 )); then
+  echo "Измерение не прошло: один или несколько путей завершились с ошибкой" >&2
+  exit "$status"
+fi
 bold "Готово"

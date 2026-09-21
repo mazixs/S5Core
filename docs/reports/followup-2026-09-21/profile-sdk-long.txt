@@ -1,0 +1,12 @@
+=== RUN   TestObfsRelayProfile
+2026/09/21 16:24:04 WARN Running the proxy server without authentication is NOT recommended
+2026/09/21 16:24:04 INFO Connection limit set max_connections=10000
+2026/09/21 16:24:04 INFO Start listening proxy service (plain SOCKS5) address=127.0.0.1:39967
+2026/09/21 16:24:04 INFO Obfuscation ENABLED on separate port obfs_port=44523 max_padding=32 mtu=1400 psk_length=32
+2026/09/21 16:24:04 INFO Active transports summary="plain:39967, obfs:44523, ws:off" version=devel go_version=go1.26.6
+    profile_load_test.go:192: relayed 8192 MiB over 4 connections in 1.748s (4686.9 MiB/s in-process)
+    profile_load_test.go:194: profiles: /tmp/s5core-followup-20260921/profile-sdk/obfs-relay.cpu /tmp/s5core-followup-20260921/profile-sdk/obfs-relay.alloc
+2026/09/21 16:24:06 INFO Server context canceled, shutting down...
+--- PASS: TestObfsRelayProfile (1.76s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	1.768s

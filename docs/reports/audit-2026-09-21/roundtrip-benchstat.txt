@@ -1,0 +1,37 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/obfs
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                                     │ /tmp/s5core-audit-20260921/before-roundtrip.txt │ /tmp/s5core-audit-20260921/current-roundtrip.txt │
+                                     │                     sec/op                      │          sec/op            vs base               │
+AuditMatchedRoundTrip/bytes=64-16                                          8.708µ ± 2%                 7.462µ ± 4%  -14.31% (p=0.002 n=6)
+AuditMatchedRoundTrip/bytes=1400-16                                       10.077µ ± 2%                 9.730µ ± 2%   -3.45% (p=0.002 n=6)
+AuditMatchedRoundTrip/bytes=32768-16                                       48.05µ ± 4%                 62.60µ ± 1%  +30.29% (p=0.002 n=6)
+geomean                                                                    16.15µ                      16.56µ        +2.53%
+
+                                     │ /tmp/s5core-audit-20260921/before-roundtrip.txt │ /tmp/s5core-audit-20260921/current-roundtrip.txt │
+                                     │                       B/s                       │            B/s             vs base               │
+AuditMatchedRoundTrip/bytes=64-16                                         7.010Mi ± 2%                8.178Mi ± 4%  +16.67% (p=0.002 n=6)
+AuditMatchedRoundTrip/bytes=1400-16                                       132.5Mi ± 2%                137.2Mi ± 2%   +3.59% (p=0.002 n=6)
+AuditMatchedRoundTrip/bytes=32768-16                                      650.4Mi ± 4%                499.2Mi ± 1%  -23.25% (p=0.002 n=6)
+geomean                                                                   84.53Mi                     82.44Mi        -2.48%
+
+                                     │ /tmp/s5core-audit-20260921/before-roundtrip.txt │ /tmp/s5core-audit-20260921/current-roundtrip.txt │
+                                     │                      B/op                       │         B/op          vs base                    │
+AuditMatchedRoundTrip/bytes=64-16                                         0.000 ± 0%               0.000 ± 0%         ~ (p=1.000 n=6) ¹
+AuditMatchedRoundTrip/bytes=1400-16                                       0.000 ± 0%               0.000 ± 0%         ~ (p=1.000 n=6) ¹
+AuditMatchedRoundTrip/bytes=32768-16                                    80.00Ki ± 0%              0.00Ki ± 0%  -100.00% (p=0.002 n=6)
+geomean                                                                              ²                         ?                      ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                                     │ /tmp/s5core-audit-20260921/before-roundtrip.txt │ /tmp/s5core-audit-20260921/current-roundtrip.txt │
+                                     │                    allocs/op                    │      allocs/op        vs base                    │
+AuditMatchedRoundTrip/bytes=64-16                                         0.000 ± 0%               0.000 ± 0%         ~ (p=1.000 n=6) ¹
+AuditMatchedRoundTrip/bytes=1400-16                                       0.000 ± 0%               0.000 ± 0%         ~ (p=1.000 n=6) ¹
+AuditMatchedRoundTrip/bytes=32768-16                                      2.000 ± 0%               0.000 ± 0%  -100.00% (p=0.002 n=6)
+geomean                                                                              ²                         ?                      ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean

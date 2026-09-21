@@ -1,0 +1,24 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/obfs
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditMatchedRoundTrip/bytes=64-16         	   32187	      7458 ns/op	   8.58 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=64-16         	   31210	      7740 ns/op	   8.27 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=64-16         	   32300	      7566 ns/op	   8.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=64-16         	   32592	      7348 ns/op	   8.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=64-16         	   31734	      7465 ns/op	   8.57 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=64-16         	   33705	      7315 ns/op	   8.75 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=1400-16       	   24400	      9842 ns/op	 142.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=1400-16       	   25356	      9578 ns/op	 146.16 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=1400-16       	   24688	      9823 ns/op	 142.52 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=1400-16       	   24553	      9870 ns/op	 141.84 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=1400-16       	   25011	      9636 ns/op	 145.30 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=1400-16       	   24889	      9595 ns/op	 145.92 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=32768-16      	    3879	     62672 ns/op	 522.85 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=32768-16      	    3232	     62535 ns/op	 524.00 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=32768-16      	    4465	     62082 ns/op	 527.81 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=32768-16      	    3856	     61846 ns/op	 529.83 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=32768-16      	    3878	     63223 ns/op	 518.30 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditMatchedRoundTrip/bytes=32768-16      	    3524	     62921 ns/op	 520.78 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/obfs	4.338s

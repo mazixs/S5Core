@@ -1,0 +1,3 @@
+client_NOFILE=64 open_client_sockets=73 observed_wall=0.200s child_CPU=0.000s utilization_one_core=0%
+accept_errors=1 log_bytes=7653
+{"time":"2026-09-21T13:05:06.957468591Z","level":"WARN","msg":"Accept failed, retrying","error":"accept tcp 127.0.0.1:43237: accept4: too many open files","retry_in":5000000}

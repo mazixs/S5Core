@@ -1,0 +1,1036 @@
+[
+  {
+    "mode": "raw",
+    "round": 1,
+    "stage": "control-before",
+    "mib_s": 53.48,
+    "ok": true,
+    "start": 1790001235.9702675,
+    "finish": 1790001238.4613662,
+    "sender_samples": 12,
+    "receiver_samples": 11,
+    "sender_ports": [
+      59070
+    ],
+    "cwnd_range": [
+      10,
+      2654
+    ],
+    "max_tx_queue": 4039936,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      59070
+    ],
+    "max_rx_queue": 34176,
+    "rcv_wnd_range": [
+      408448,
+      4101376
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 124225062,
+    "max_last_data_recv_ms": 24,
+    "rtt_us": 43078,
+    "data_rcv_wnd_range": [
+      4079360,
+      4101376
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6736 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6432 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 15,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7496 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 8,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6344 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 4,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9780 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 33,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7296 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    }
+  },
+  {
+    "mode": "v2",
+    "round": 1,
+    "stage": "measure",
+    "mib_s": 50.32,
+    "ok": true,
+    "start": 1790001242.8394244,
+    "finish": 1790001245.48484,
+    "sender_samples": 12,
+    "receiver_samples": 13,
+    "sender_ports": [
+      52730
+    ],
+    "cwnd_range": [
+      10,
+      3020
+    ],
+    "max_tx_queue": 4147832,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      52730
+    ],
+    "max_rx_queue": 891398,
+    "rcv_wnd_range": [
+      64512,
+      5254784
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 150806600,
+    "max_last_data_recv_ms": 40,
+    "rtt_us": 42585,
+    "data_rcv_wnd_range": [
+      4182912,
+      5254784
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6736 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 48,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7592 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 15,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7688 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 9,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6140 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 5,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9556 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "server-v2.pid": {
+        "ticks": 115,
+        "major_faults": 9,
+        "memory_last": [
+          "VmRSS:\t  145656 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 73,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3872 kB",
+          "VmSwap:\t     352 kB"
+        ]
+      }
+    },
+    "server_full_transfer_ticks": 115,
+    "server_full_transfer_major_faults": 12
+  },
+  {
+    "mode": "current",
+    "round": 1,
+    "stage": "measure",
+    "mib_s": 48.02,
+    "ok": true,
+    "start": 1790001252.4019997,
+    "finish": 1790001255.16882,
+    "sender_samples": 13,
+    "receiver_samples": 13,
+    "sender_ports": [
+      52748
+    ],
+    "cwnd_range": [
+      20,
+      2856
+    ],
+    "max_tx_queue": 4155295,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      52748
+    ],
+    "max_rx_queue": 1107779,
+    "rcv_wnd_range": [
+      75904,
+      3798912
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 147209085,
+    "max_last_data_recv_ms": 32,
+    "rtt_us": 43214,
+    "data_rcv_wnd_range": [
+      3029760,
+      3798912
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 49,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7700 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7596 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 18,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7556 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 9,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6048 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 4,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9652 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "server-current.pid": {
+        "ticks": 112,
+        "major_faults": 6,
+        "memory_last": [
+          "VmRSS:\t  148164 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 73,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3876 kB",
+          "VmSwap:\t     348 kB"
+        ]
+      }
+    },
+    "server_full_transfer_ticks": 116,
+    "server_full_transfer_major_faults": 6
+  },
+  {
+    "mode": "raw",
+    "round": 1,
+    "stage": "control-after",
+    "mib_s": 52.35,
+    "ok": true,
+    "start": 1790001257.8357382,
+    "finish": 1790001260.3828127,
+    "sender_samples": 12,
+    "receiver_samples": 12,
+    "sender_ports": [
+      59084
+    ],
+    "cwnd_range": [
+      80,
+      2331
+    ],
+    "max_tx_queue": 4135440,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      59084
+    ],
+    "max_rx_queue": 86864,
+    "rcv_wnd_range": [
+      164608,
+      3168128
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 130679686,
+    "max_last_data_recv_ms": 20,
+    "rtt_us": 44147.0,
+    "data_rcv_wnd_range": [
+      2785408,
+      3168128
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7700 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7596 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 19,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    8192 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 4,
+        "major_faults": 2,
+        "memory_last": [
+          "VmRSS:\t   10268 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 27,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3888 kB",
+          "VmSwap:\t     336 kB"
+        ]
+      }
+    }
+  },
+  {
+    "mode": "raw",
+    "round": 2,
+    "stage": "control-before",
+    "mib_s": 51.05,
+    "ok": true,
+    "start": 1790001260.3828475,
+    "finish": 1790001262.9911911,
+    "sender_samples": 12,
+    "receiver_samples": 12,
+    "sender_ports": [
+      59096
+    ],
+    "cwnd_range": [
+      154,
+      2082
+    ],
+    "max_tx_queue": 3654880,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      59096
+    ],
+    "max_rx_queue": 73664,
+    "rcv_wnd_range": [
+      289024,
+      2824320
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 129647430,
+    "max_last_data_recv_ms": 20,
+    "rtt_us": 43912.0,
+    "data_rcv_wnd_range": [
+      2800000,
+      2824320
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7700 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7596 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 15,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7876 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 8,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6064 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 3,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9744 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 32,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3888 kB",
+          "VmSwap:\t     336 kB"
+        ]
+      }
+    }
+  },
+  {
+    "mode": "current",
+    "round": 2,
+    "stage": "measure",
+    "mib_s": 33.54,
+    "ok": true,
+    "start": 1790001266.8646927,
+    "finish": 1790001270.7803028,
+    "sender_samples": 19,
+    "receiver_samples": 19,
+    "sender_ports": [
+      52756
+    ],
+    "cwnd_range": [
+      10,
+      1812
+    ],
+    "max_tx_queue": 4165200,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      52756
+    ],
+    "max_rx_queue": 254766,
+    "rcv_wnd_range": [
+      64640,
+      2038400
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 147997360,
+    "max_last_data_recv_ms": 36,
+    "rtt_us": 43533,
+    "data_rcv_wnd_range": [
+      1843456,
+      2038400
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 49,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7896 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7596 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 29,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7444 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 8,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6040 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 6,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9024 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "server-current.pid": {
+        "ticks": 120,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t  149996 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 69,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3888 kB",
+          "VmSwap:\t     336 kB"
+        ]
+      }
+    },
+    "server_full_transfer_ticks": 123,
+    "server_full_transfer_major_faults": 0
+  },
+  {
+    "mode": "v2",
+    "round": 2,
+    "stage": "measure",
+    "mib_s": 32.04,
+    "ok": true,
+    "start": 1790001277.569955,
+    "finish": 1790001281.6688778,
+    "sender_samples": 20,
+    "receiver_samples": 19,
+    "sender_ports": [
+      52760
+    ],
+    "cwnd_range": [
+      10,
+      1810
+    ],
+    "max_tx_queue": 4165200,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      52760
+    ],
+    "max_rx_queue": 770151,
+    "rcv_wnd_range": [
+      70016,
+      2038400
+    ],
+    "rcv_ooopack": 402,
+    "received_last": 145153378,
+    "max_last_data_recv_ms": 16,
+    "rtt_us": 43506,
+    "data_rcv_wnd_range": [
+      1225728,
+      2038400
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7896 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 49,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7772 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 27,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7664 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 9,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6176 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 6,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9776 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "server-v2.pid": {
+        "ticks": 119,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t  148376 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 69,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3888 kB",
+          "VmSwap:\t     336 kB"
+        ]
+      }
+    },
+    "server_full_transfer_ticks": 124,
+    "server_full_transfer_major_faults": 0
+  },
+  {
+    "mode": "raw",
+    "round": 2,
+    "stage": "control-after",
+    "mib_s": 49.64,
+    "ok": true,
+    "start": 1790001283.907825,
+    "finish": 1790001286.5900364,
+    "sender_samples": 13,
+    "receiver_samples": 13,
+    "sender_ports": [
+      59112
+    ],
+    "cwnd_range": [
+      20,
+      2268
+    ],
+    "max_tx_queue": 4041344,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      59112
+    ],
+    "max_rx_queue": 64080,
+    "rcv_wnd_range": [
+      58496,
+      3168128
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 130122886,
+    "max_last_data_recv_ms": 40,
+    "rtt_us": 43119,
+    "data_rcv_wnd_range": [
+      3149056,
+      3168128
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7896 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7772 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 17,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    8168 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 3,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9844 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 32,
+        "major_faults": 4,
+        "memory_last": [
+          "VmRSS:\t    3920 kB",
+          "VmSwap:\t     320 kB"
+        ]
+      }
+    }
+  },
+  {
+    "mode": "raw",
+    "round": 3,
+    "stage": "control-before",
+    "mib_s": 48.71,
+    "ok": true,
+    "start": 1790001286.5900617,
+    "finish": 1790001289.3213134,
+    "sender_samples": 12,
+    "receiver_samples": 13,
+    "sender_ports": [
+      59126
+    ],
+    "cwnd_range": [
+      157,
+      2078
+    ],
+    "max_tx_queue": 4101120,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      59126
+    ],
+    "max_rx_queue": 66928,
+    "rcv_wnd_range": [
+      166656,
+      2824320
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 133604134,
+    "max_last_data_recv_ms": 40,
+    "rtt_us": 43877,
+    "data_rcv_wnd_range": [
+      2807296,
+      2824320
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7896 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7772 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 16,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7708 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 7,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6016 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 4,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9856 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 32,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3920 kB",
+          "VmSwap:\t     320 kB"
+        ]
+      }
+    }
+  },
+  {
+    "mode": "v2",
+    "round": 3,
+    "stage": "measure",
+    "mib_s": 33.62,
+    "ok": true,
+    "start": 1790001293.3632944,
+    "finish": 1790001297.2709868,
+    "sender_samples": 19,
+    "receiver_samples": 18,
+    "sender_ports": [
+      52778
+    ],
+    "cwnd_range": [
+      10,
+      1502
+    ],
+    "max_tx_queue": 4118208,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      52778
+    ],
+    "max_rx_queue": 173432,
+    "rcv_wnd_range": [
+      42496,
+      2038400
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 143915981,
+    "max_last_data_recv_ms": 32,
+    "rtt_us": 43245.0,
+    "data_rcv_wnd_range": [
+      1783424,
+      2038400
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7896 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 48,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7988 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 26,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    8132 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 9,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6028 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 5,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9880 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "server-v2.pid": {
+        "ticks": 117,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t  148132 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 67,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3936 kB",
+          "VmSwap:\t     316 kB"
+        ]
+      }
+    },
+    "server_full_transfer_ticks": 123,
+    "server_full_transfer_major_faults": 0
+  },
+  {
+    "mode": "current",
+    "round": 3,
+    "stage": "measure",
+    "mib_s": 47.6,
+    "ok": true,
+    "start": 1790001303.973157,
+    "finish": 1790001306.760629,
+    "sender_samples": 13,
+    "receiver_samples": 13,
+    "sender_ports": [
+      52802
+    ],
+    "cwnd_range": [
+      40,
+      2931
+    ],
+    "max_tx_queue": 4112881,
+    "max_unrecovered_rto": 0,
+    "zero_window_timer_samples": 0,
+    "receiver_ports": [
+      52802
+    ],
+    "max_rx_queue": 672240,
+    "rcv_wnd_range": [
+      74752,
+      4047360
+    ],
+    "rcv_ooopack": 0,
+    "received_last": 147775956,
+    "max_last_data_recv_ms": 36,
+    "rtt_us": 44108,
+    "data_rcv_wnd_range": [
+      3413248,
+      4047360
+    ],
+    "flat_intervals": [],
+    "router_process_deltas": {
+      "client-current.pid": {
+        "ticks": 49,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    8084 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "client-v2.pid": {
+        "ticks": 0,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7992 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "monitor.pid": {
+        "ticks": 18,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    7072 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "wirebench.pid": {
+        "ticks": 10,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    6044 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      }
+    },
+    "node-A_process_deltas": {
+      "monitor.pid": {
+        "ticks": 3,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    9512 kB",
+          "VmSwap:\t      32 kB"
+        ]
+      },
+      "server-current.pid": {
+        "ticks": 105,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t  150292 kB",
+          "VmSwap:\t       0 kB"
+        ]
+      },
+      "target.pid": {
+        "ticks": 63,
+        "major_faults": 0,
+        "memory_last": [
+          "VmRSS:\t    3936 kB",
+          "VmSwap:\t     316 kB"
+        ]
+      }
+    },
+    "server_full_transfer_ticks": 108,
+    "server_full_transfer_major_faults": 0
+  }
+]

@@ -1,0 +1,63 @@
+package veil
+
+import (
+	"fmt"
+	"runtime"
+	"testing"
+	"time"
+)
+
+func TestAuditRosterUnknownCost(t *testing.T) {
+	const n = 4096
+	members := make([]Member, n)
+	for i := range members {
+		members[i] = testMember(t, fmt.Sprint(i))
+	}
+	dir := testDirectory(t, members...)
+	srv := &Roster{Members: dir, Clocked: Clocked{OnClockSkew: func(int64) {}}}
+	before := len(dir.epochs)
+	runtime.GC()
+	var a, b runtime.MemStats
+	runtime.ReadMemStats(&a)
+	start := time.Now()
+	_, err := srv.Accept(testPSK(), make([]byte, SaltSize))
+	took := time.Since(start)
+	runtime.ReadMemStats(&b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("members=%d epochs_before=%d epochs_after=%d invalid_accept=%s total_alloc=%.1fMiB heap_growth=%.1fMiB", n, before, len(dir.epochs), took, float64(b.TotalAlloc-a.TotalAlloc)/(1<<20), float64(int64(b.HeapAlloc)-int64(a.HeapAlloc))/(1<<20))
+	if len(dir.epochs) != 2*DefaultDiagnosticWindow+1 {
+		t.Fatalf("unexpected table count %d", len(dir.epochs))
+	}
+}
+
+func TestAuditRosterRefreshBlocksAccept(t *testing.T) {
+	srv, psk, wire := rosterStand(t, 32768)
+	dir := srv.Members
+	base := time.Now()
+	dir.Now = func() time.Time { return base.Add(time.Hour) }
+	done := make(chan struct{})
+	go func() { dir.Refresh(); close(done) }()
+	limit := time.Now().Add(5 * time.Second)
+	for dir.mu.TryRLock() {
+		dir.mu.RUnlock()
+		select {
+		case <-done:
+			t.Fatal("refresh completed before overlap")
+		default:
+		}
+		if time.Now().After(limit) {
+			t.Fatal("refresh lock not acquired")
+		}
+		runtime.Gosched()
+	}
+	start := time.Now()
+	got, err := srv.Accept(psk, wire)
+	took := time.Since(start)
+	<-done
+	if err != nil || got.Identity == "" {
+		t.Fatalf("accept %v %v", got.Identity, err)
+	}
+	t.Logf("members=32768 valid_accept_during_refresh=%s", took)
+}

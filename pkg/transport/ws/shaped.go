@@ -115,7 +115,9 @@ func (c *ShapedConn) Write(b []byte) (int, error) {
 	total := 0
 	for _, size := range c.plan(len(b)) {
 		if c.maxJitter > 0 && c.rng.Float32() < 0.1 {
-			time.Sleep(time.Duration(c.rng.Int63n(int64(c.maxJitter))))
+			if err := c.waitWriteDelay(time.Duration(c.rng.Int63n(int64(c.maxJitter)))); err != nil {
+				return total, err
+			}
 		}
 		n, err := c.Conn.Write(b[total : total+size])
 		total += n

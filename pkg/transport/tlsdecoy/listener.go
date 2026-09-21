@@ -33,7 +33,15 @@ type Listener struct {
 	closeOnce sync.Once
 	closeErr  error
 	done      chan struct{}
+
+	// HTTP shutdown does not wait for hijacked upgrade handlers. Register
+	// handlers under the same lock as closing done so Wait cannot race Add.
+	handlersMu sync.Mutex
+	handlers   sync.WaitGroup
+	cancelHTTP context.CancelFunc
 }
+
+type listenerConnKey struct{}
 
 // Config holds parameters for the TLS decoy listener.
 type Config struct {
@@ -182,8 +190,14 @@ func NewListener(cfg Config) (*Listener, error) {
 	})
 	mux.Handle("/", decoy)
 
+	httpCtx, cancelHTTP := context.WithCancel(context.Background())
+	l.cancelHTTP = cancelHTTP
 	l.server = &http.Server{
-		Handler:           mux,
+		Handler:     l.trackHandlers(mux),
+		BaseContext: func(net.Listener) context.Context { return httpCtx },
+		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
+			return context.WithValue(ctx, listenerConnKey{}, conn)
+		},
 		ReadHeaderTimeout: decoyReadHeaderTimeout,
 		ReadTimeout:       decoyReadTimeout,
 		WriteTimeout:      decoyWriteTimeout,
@@ -220,11 +234,23 @@ func (l *Listener) Accept() (net.Conn, error) {
 // closes the handover channel.
 func (l *Listener) Close() error {
 	l.closeOnce.Do(func() {
+		l.handlersMu.Lock()
 		close(l.done)
-		_ = l.server.Shutdown(context.Background())
-		if err := l.tlsListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		l.handlersMu.Unlock()
+		// A streaming decoy may never finish its body. Listener.Close stops
+		// work immediately, like the enclosing server's Stop; it must not
+		// wait for that upstream to become idle. Cancel its request context
+		// and close active HTTP sockets, including blocked response writes.
+		l.cancelHTTP()
+		if err := l.server.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			l.closeErr = err
 		}
+		if err := l.tlsListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			l.closeErr = errors.Join(l.closeErr, err)
+		}
+		// In-flight upgrades must finish before the final drain: otherwise
+		// a handler could enqueue a hijacked socket after we drained it.
+		l.handlers.Wait()
 		// Connections that were handed over but never accepted belong to
 		// nobody now, so this is the last chance to close them.
 		for {
@@ -239,12 +265,36 @@ func (l *Listener) Close() error {
 	return l.closeErr
 }
 
+func (l *Listener) trackHandlers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l.handlersMu.Lock()
+		select {
+		case <-l.done:
+			l.handlersMu.Unlock()
+			return
+		default:
+			l.handlers.Add(1)
+		}
+		l.handlersMu.Unlock()
+		defer l.handlers.Done()
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Addr returns the listener's network address.
 func (l *Listener) Addr() net.Addr {
 	return l.tlsListener.Addr()
 }
 
 func (l *Listener) handleWS(w http.ResponseWriter, r *http.Request) {
+	// Upgrade hijacks the socket before writing its HTTP response. From
+	// that instant Server.Close no longer owns it, even if Upgrade is still
+	// blocked writing to the peer. Keep cancellation attached until the
+	// handler hands the connection off or closes it itself.
+	if raw, ok := r.Context().Value(listenerConnKey{}).(net.Conn); ok {
+		stop := context.AfterFunc(r.Context(), func() { _ = raw.Close() })
+		defer stop()
+	}
 	c, err := l.upgrader.Upgrade(w, r)
 	if err != nil {
 		// Upgrader already wrote an HTTP error response.

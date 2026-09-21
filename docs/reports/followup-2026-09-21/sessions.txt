@@ -1,0 +1,7 @@
+=== RUN   TestAuditScrapeLockCost
+    followup_audit_test.go:7: sessions=10000 Snapshot holding registry lock median=659.487µs max=832.467µs
+    followup_audit_test.go:7: sessions=32768 Snapshot holding registry lock median=2.790933ms max=3.990797ms
+    followup_audit_test.go:7: sessions=262144 Snapshot holding registry lock median=36.201614ms max=37.522302ms
+--- PASS: TestAuditScrapeLockCost (0.85s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/session	0.855s

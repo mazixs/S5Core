@@ -1,0 +1,41 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/s5server
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                                │ telemetry-before.txt │        telemetry-after.txt         │
+                                │        sec/op        │   sec/op     vs base               │
+FrameObserver/bare-16                      21.10µ ± 4%   19.97µ ± 1%   -5.35% (p=0.002 n=6)
+FrameObserver/state-only-16                20.45µ ± 2%   20.60µ ± 2%        ~ (p=0.310 n=6)
+FrameObserver/noop-telemetry-16            25.54µ ± 2%   20.61µ ± 3%  -19.30% (p=0.002 n=6)
+FrameObserver/sdk-telemetry-16             26.73µ ± 2%   21.78µ ± 3%  -18.53% (p=0.002 n=6)
+geomean                                    23.30µ        20.73µ       -11.02%
+
+                                │ telemetry-before.txt │         telemetry-after.txt         │
+                                │         B/s          │     B/s       vs base               │
+FrameObserver/bare-16                     1.447Gi ± 4%   1.528Gi ± 1%   +5.66% (p=0.002 n=6)
+FrameObserver/state-only-16               1.492Gi ± 2%   1.481Gi ± 2%        ~ (p=0.310 n=6)
+FrameObserver/noop-telemetry-16           1.195Gi ± 2%   1.481Gi ± 3%  +23.92% (p=0.002 n=6)
+FrameObserver/sdk-telemetry-16            1.142Gi ± 2%   1.401Gi ± 4%  +22.75% (p=0.002 n=6)
+geomean                                   1.310Gi        1.472Gi       +12.39%
+
+                                │ telemetry-before.txt │           telemetry-after.txt            │
+                                │         B/op         │     B/op      vs base                    │
+FrameObserver/bare-16                     0.000 ± 0%       0.000 ± 0%         ~ (p=1.000 n=6) ¹
+FrameObserver/state-only-16               0.000 ± 0%       0.000 ± 0%         ~ (p=1.000 n=6) ¹
+FrameObserver/noop-telemetry-16         5.312Ki ± 0%     0.000Ki ± 0%  -100.00% (p=0.002 n=6)
+FrameObserver/sdk-telemetry-16          5.312Ki ± 0%     0.000Ki ± 0%  -100.00% (p=0.002 n=6)
+geomean                                              ²                 ?                      ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                                │ telemetry-before.txt │          telemetry-after.txt           │
+                                │      allocs/op       │ allocs/op   vs base                    │
+FrameObserver/bare-16                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+FrameObserver/state-only-16               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=6) ¹
+FrameObserver/noop-telemetry-16           32.00 ± 0%      0.00 ± 0%  -100.00% (p=0.002 n=6)
+FrameObserver/sdk-telemetry-16            32.00 ± 0%      0.00 ± 0%  -100.00% (p=0.002 n=6)
+geomean                                              ²               ?                      ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean

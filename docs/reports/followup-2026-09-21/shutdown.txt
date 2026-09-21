@@ -1,0 +1,6 @@
+=== RUN   TestAuditShutdownWaitsBeyondWriteTimeout
+    followup_audit_test.go:14: Close still blocked at 31.000770383s; configured WriteTimeout=30s
+2026/09/21 16:20:17 httputil: ReverseProxy read error during body copy: unexpected EOF
+--- PASS: TestAuditShutdownWaitsBeyondWriteTimeout (31.23s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	31.228s

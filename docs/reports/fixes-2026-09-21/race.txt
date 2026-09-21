@@ -1,0 +1,29 @@
+ok  	github.com/mazixs/S5Core/cmd/connlat	1.071s	coverage: 20.9% of statements
+ok  	github.com/mazixs/S5Core/cmd/fpcollect	1.079s	coverage: 59.7% of statements
+ok  	github.com/mazixs/S5Core/cmd/fpprobe	1.043s	coverage: 25.1% of statements
+	github.com/mazixs/S5Core/cmd/idleprobe		coverage: 0.0% of statements
+ok  	github.com/mazixs/S5Core/cmd/s5client	1.366s	coverage: 62.7% of statements
+ok  	github.com/mazixs/S5Core/cmd/s5core	3.523s	coverage: 50.7% of statements
+	github.com/mazixs/S5Core/cmd/stealthcheck		coverage: 0.0% of statements
+	github.com/mazixs/S5Core/cmd/udpprobe		coverage: 0.0% of statements
+ok  	github.com/mazixs/S5Core/cmd/wirebench	1.041s	coverage: 49.4% of statements
+ok  	github.com/mazixs/S5Core/internal/arch	3.514s	coverage: [no statements]
+	github.com/mazixs/S5Core/internal/buildinfo		coverage: 0.0% of statements
+ok  	github.com/mazixs/S5Core/internal/identity	1.273s	coverage: 81.6% of statements
+ok  	github.com/mazixs/S5Core/internal/logging	1.051s	coverage: 100.0% of statements
+ok  	github.com/mazixs/S5Core/internal/passwordhash	14.560s	coverage: 97.5% of statements
+ok  	github.com/mazixs/S5Core/internal/relay	1.049s	coverage: 94.4% of statements
+ok  	github.com/mazixs/S5Core/internal/s5core	1.026s	coverage: 91.7% of statements
+ok  	github.com/mazixs/S5Core/internal/session	1.055s	coverage: 95.1% of statements
+ok  	github.com/mazixs/S5Core/internal/signals	1.225s	coverage: 100.0% of statements
+ok  	github.com/mazixs/S5Core/internal/socks5	5.081s	coverage: 85.7% of statements
+ok  	github.com/mazixs/S5Core/internal/stealth	2.122s	coverage: 74.0% of statements
+	github.com/mazixs/S5Core/internal/testcert		coverage: 0.0% of statements
+ok  	github.com/mazixs/S5Core/internal/userstore	12.370s	coverage: 85.7% of statements
+ok  	github.com/mazixs/S5Core/internal/utls	1.556s	coverage: 79.7% of statements
+ok  	github.com/mazixs/S5Core/pkg/obfs	17.366s	coverage: 85.3% of statements
+ok  	github.com/mazixs/S5Core/pkg/obfs/legacy	1.068s	coverage: 83.3% of statements
+ok  	github.com/mazixs/S5Core/pkg/s5server	35.150s	coverage: 86.7% of statements
+ok  	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	2.386s	coverage: 91.1% of statements
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	4.805s	coverage: 88.7% of statements
+ok  	github.com/mazixs/S5Core/pkg/veil	5.237s	coverage: 87.2% of statements

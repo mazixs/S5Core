@@ -1,0 +1,5 @@
+=== RUN   TestAuditCloseCanBlockBeforeClosingSocket
+    audit_probe_test.go:57: Close still blocked sending courtesy frame after 200.227321ms
+--- PASS: TestAuditCloseCanBlockBeforeClosingSocket (0.20s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	0.203s

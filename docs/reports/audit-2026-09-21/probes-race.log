@@ -1,0 +1,27 @@
+=== RUN   TestAuditRosterUnknownCost
+    audit_probe_test.go:25: members=4096 epochs_before=5 epochs_after=73 invalid_accept=1.176930518s total_alloc=176.5MiB heap_growth=51.1MiB
+--- PASS: TestAuditRosterUnknownCost (1.28s)
+=== RUN   TestAuditRosterRefreshBlocksAccept
+    audit_probe_test.go:48: members=32768 valid_accept_during_refresh=133.638703ms
+--- PASS: TestAuditRosterRefreshBlocksAccept (0.88s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/veil	3.180s
+=== RUN   TestAuditDeadlineCannotInterruptWrite
+    audit_probe_test.go:28: SetWriteDeadline(now) still blocked after 200.966926ms
+--- PASS: TestAuditDeadlineCannotInterruptWrite (0.30s)
+=== RUN   TestAuditCloseCanBlockBeforeClosingSocket
+    audit_probe_test.go:57: Close still blocked sending courtesy frame after 200.326154ms
+--- PASS: TestAuditCloseCanBlockBeforeClosingSocket (0.20s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	1.512s
+=== RUN   TestAuditWirebenchAcceptsFailedTransfers
+    audit_probe_test.go:21: dir=up HTTP=503 requested=67108864 reported=67108864 err=<nil>
+    audit_probe_test.go:21: dir=down HTTP=503 requested=67108864 reported=11 err=<nil>
+--- PASS: TestAuditWirebenchAcceptsFailedTransfers (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/wirebench	1.010s
+=== RUN   TestAuditUDPSerialDNS
+    audit_probe_test.go:41: 10 datagrams, same FQDN, 20ms DNS: resolver_calls=10 following_IP_datagram_elapsed=202.705445ms
+--- PASS: TestAuditUDPSerialDNS (0.20s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.210s

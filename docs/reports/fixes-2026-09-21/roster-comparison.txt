@@ -1,0 +1,23 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/veil
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                                │ roster-before.txt │          roster-after.txt          │
+                                │      sec/op       │   sec/op     vs base               │
+DirectoryLookupDuringRefresh-16       1425.50n ± 5%   75.74n ± 2%  -94.69% (p=0.002 n=6)
+
+                                │ roster-before.txt │           roster-after.txt            │
+                                │  lookup-max-sec   │ lookup-max-sec  vs base               │
+DirectoryLookupDuringRefresh-16      23493.0µ ± 27%    159.6µ ± 147%  -99.32% (p=0.002 n=6)
+
+                                │ roster-before.txt │        roster-after.txt         │
+                                │  lookup-p50-sec   │ lookup-p50-sec  vs base         │
+DirectoryLookupDuringRefresh-16         45.00n ± 2%      44.00n ± 2%  ~ (p=0.145 n=6)
+
+                                │ roster-before.txt │        roster-after.txt         │
+                                │  lookup-p95-sec   │ lookup-p95-sec  vs base         │
+DirectoryLookupDuringRefresh-16        49.50n ± 13%      52.50n ± 7%  ~ (p=0.188 n=6)
+
+                                │ roster-before.txt │        roster-after.txt         │
+                                │  lookup-p99-sec   │ lookup-p99-sec  vs base         │
+DirectoryLookupDuringRefresh-16         60.00n ± 3%     59.00n ± 27%  ~ (p=0.662 n=6)

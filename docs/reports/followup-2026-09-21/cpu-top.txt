@@ -1,0 +1,66 @@
+File: s5server.test
+Build ID: c1103a28ca5970d45f78cf2eecf39088a766a303
+Type: cpu
+Time: 2026-09-21 16:24:04 +03
+Duration: 1.75s, Total samples = 13.58s (776.88%)
+Showing nodes accounting for 12.59s, 92.71% of 13.58s total
+Dropped 100 nodes (cum <= 0.07s)
+      flat  flat%   sum%        cum   cum%
+     6.07s 44.70% 44.70%      6.07s 44.70%  internal/runtime/syscall/linux.Syscall6
+     2.42s 17.82% 62.52%      2.42s 17.82%  crypto/internal/fips140/aes/gcm.gcmAesDec
+     2.41s 17.75% 80.27%      2.41s 17.75%  crypto/internal/fips140/aes/gcm.gcmAesEnc
+     0.32s  2.36% 82.62%      0.32s  2.36%  crypto/internal/fips140/aes.encryptBlockAsm
+     0.31s  2.28% 84.90%      0.31s  2.28%  runtime.memmove
+     0.11s  0.81% 85.71%      2.74s 20.18%  crypto/internal/fips140/aes/gcm.open
+     0.09s  0.66% 86.38%      3.11s 22.90%  github.com/mazixs/S5Core/pkg/obfs.(*conn).encodeFrame
+     0.09s  0.66% 87.04%      1.90s 13.99%  github.com/mazixs/S5Core/pkg/obfs.(*conn).ensure
+     0.09s  0.66% 87.70%      5.15s 37.92%  github.com/mazixs/S5Core/pkg/obfs.(*conn).readFrame
+     0.06s  0.44% 88.14%      0.27s  1.99%  crypto/internal/fips140/aes.(*Block).Encrypt
+     0.06s  0.44% 88.59%      2.55s 18.78%  crypto/internal/fips140/aes/gcm.seal
+     0.06s  0.44% 89.03%      5.55s 40.87%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Write
+     0.05s  0.37% 89.40%      0.32s  2.36%  runtime.netpoll
+     0.04s  0.29% 89.69%      0.36s  2.65%  crypto/internal/fips140/aes.encryptBlock
+     0.04s  0.29% 89.99%      2.81s 20.69%  crypto/internal/fips140/aes/gcm.(*GCM).Open
+     0.04s  0.29% 90.28%      5.30s 39.03%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Read
+     0.04s  0.29% 90.57%      0.11s  0.81%  runtime.stealWork
+     0.03s  0.22% 90.80%      2.61s 19.22%  crypto/internal/fips140/aes/gcm.(*GCM).sealAfterIndicator
+     0.03s  0.22% 91.02%      5.94s 43.74%  syscall.Syscall
+     0.02s  0.15% 91.16%      0.18s  1.33%  crypto/internal/fips140/aes.EncryptBlockInternal (inline)
+     0.02s  0.15% 91.31%      2.63s 19.37%  crypto/internal/fips140/aes/gcm.(*GCM).Seal
+     0.02s  0.15% 91.46%      3.13s 23.05%  internal/poll.(*FD).Read
+     0.02s  0.15% 91.61%      2.95s 21.72%  net.(*conn).Write
+     0.02s  0.15% 91.75%      3.15s 23.20%  net.(*netFD).Read
+     0.02s  0.15% 91.90%      0.56s  4.12%  runtime.findRunnable
+     0.01s 0.074% 91.97%      0.18s  1.33%  github.com/mazixs/S5Core/pkg/obfs.(*conn).recvMask (inline)
+     0.01s 0.074% 92.05%      0.13s  0.96%  github.com/mazixs/S5Core/pkg/obfs.(*conn).sendMask (inline)
+     0.01s 0.074% 92.12%      5.61s 41.31%  github.com/mazixs/S5Core/pkg/s5server.(*metricsConn).Write
+     0.01s 0.074% 92.19%      2.35s 17.30%  github.com/mazixs/S5Core/pkg/s5server.(*timeoutConn).Write
+     0.01s 0.074% 92.27%      0.29s  2.14%  github.com/mazixs/S5Core/pkg/veil.(*aesMask).Mask
+     0.01s 0.074% 92.34%      5.31s 39.10%  io.discard.ReadFrom
+     0.01s 0.074% 92.42%      3.16s 23.27%  net.(*conn).Read
+     0.01s 0.074% 92.49%      2.93s 21.58%  net.(*netFD).Write
+     0.01s 0.074% 92.56%      5.82s 42.86%  syscall.RawSyscall6
+     0.01s 0.074% 92.64%      2.91s 21.43%  syscall.Write (inline)
+     0.01s 0.074% 92.71%      3.06s 22.53%  syscall.read
+         0     0% 92.71%      6.96s 51.25%  github.com/mazixs/S5Core/internal/relay.(*Half).Run
+         0     0% 92.71%      6.96s 51.25%  github.com/mazixs/S5Core/internal/socks5.(*Server).handleConnect.func8
+         0     0% 92.71%      1.35s  9.94%  github.com/mazixs/S5Core/internal/socks5.(*firstByteReader).Read
+         0     0% 92.71%      0.09s  0.66%  github.com/mazixs/S5Core/pkg/obfs.(*conn).randUint16 (inline)
+         0     0% 92.71%      6.96s 51.25%  github.com/mazixs/S5Core/pkg/s5server.(*metricsConn).ReadFrom
+         0     0% 92.71%      5.31s 39.10%  github.com/mazixs/S5Core/pkg/s5server.TestObfsRelayProfile.func4
+         0     0% 92.71%      0.70s  5.15%  github.com/mazixs/S5Core/pkg/s5server.startSinkServer.func2.1
+         0     0% 92.71%      0.07s  0.52%  internal/poll.(*FD).SetWriteDeadline (inline)
+         0     0% 92.71%      2.92s 21.50%  internal/poll.(*FD).Write
+         0     0% 92.71%      5.97s 43.96%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 92.71%      0.07s  0.52%  internal/poll.setDeadlineImpl
+         0     0% 92.71%      0.26s  1.91%  internal/runtime/syscall/linux.EpollWait
+         0     0% 92.71%      5.31s 39.10%  io.Copy (inline)
+         0     0% 92.71%      6.96s 51.25%  io.CopyBuffer
+         0     0% 92.71%     12.27s 90.35%  io.copyBuffer
+         0     0% 92.71%      0.07s  0.52%  net.(*conn).SetWriteDeadline
+         0     0% 92.71%      0.07s  0.52%  net.(*netFD).SetWriteDeadline (inline)
+         0     0% 92.71%      0.60s  4.42%  runtime.mcall
+         0     0% 92.71%      0.60s  4.42%  runtime.park_m
+         0     0% 92.71%      0.60s  4.42%  runtime.schedule
+         0     0% 92.71%      3.06s 22.53%  syscall.Read (inline)
+         0     0% 92.71%      2.90s 21.35%  syscall.write

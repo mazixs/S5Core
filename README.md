@@ -898,6 +898,14 @@ UDP: App → s5core:1080 (UDP Associate) → s5core (UDP relay) → Internet
 > client, and a client asking for a service on its own address got the replies
 > parsed as commands.
 
+Both UDP modes resolve domain destinations outside the packet reader. Each
+association coalesces pending requests for the same name, keeps at most four
+lookups and 64 queued domain packets, and reuses up to 256 successful results
+for 30 seconds. The resolver interface supplies no DNS TTL; this is a local
+reuse interval. A full DNS queue drops domain packets. IP packets keep their
+direct send path and do not compete for that queue. Closing the association
+cancels its lookups; destination rules are checked before resolution.
+
 > **A fragmented datagram is dropped, on both UDP paths.** `FRAG` other than
 > zero says the datagram is one piece of a larger one, and nothing here puts
 > the pieces back together, so RFC 1928 section 7 says to drop it. This used
@@ -1162,6 +1170,7 @@ logs or in the traffic of whoever is watching the server.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `CLIENT_LISTEN_ADDR` | String | `127.0.0.1:1080` | Local address to accept plain SOCKS5 connections. |
+| `CLIENT_MAX_CONNECTIONS` | Integer | `1024` | Maximum active local connections, including incomplete handshakes. Excess connections are closed. Non-positive values use the default. |
 | `SERVER_ADDR` | String | *Required* | Remote S5Core server obfs address (e.g., `1.2.3.4:27015`) - the host and port the server's `OBFS_PORT` listens on. |
 | `PROXY_USER` | String | *Empty* | Username for authenticating with the S5Core server. |
 | `PROXY_PASS` | String | *Empty* | Password for authenticating with the S5Core server. The server calls the same setting `PROXY_PASSWORD`; it also accepts `PROXY_PASS` and says so in its log. |
@@ -1177,7 +1186,7 @@ logs or in the traffic of whoever is watching the server.
 | `ROUTE_DOMAINS` | String | *Empty* | Comma-separated domain patterns for split tunneling. Empty = tunnel all traffic. |
 | `TIMEZONE_CHECK` | Boolean | `false` | Ask ipapi.co which timezone the server's address is in and warn when the system timezone differs. Off by default: the lookup tells a third party that this client is about to use this proxy, and puts a recognisable request on the wire right before every connection to it. Run `s5client timezone` to do the check once, by hand. |
 | `DIAL_TIMEOUT` | Duration | `10s` | How long the client waits for the connection to the server to be established. |
-| `HANDSHAKE_TIMEOUT` | Duration | `15s` | Deadline covering the whole tunnel setup: greeting, authentication and the CONNECT reply. It is cleared once the tunnel is up, so an idle but established connection is never killed by it. |
+| `HANDSHAKE_TIMEOUT` | Duration | `15s` | Separate budgets of this duration cover the local SOCKS5 handshake and remote tunnel setup (greeting, authentication and CONNECT reply). Each deadline is cleared when its phase finishes. A non-positive value still gives the local handshake a 15s limit; established idle tunnels are unaffected. |
 | `SHUTDOWN_TIMEOUT` | Duration | `10s` | How long a shutdown waits for connections that are still carrying traffic. Before this the wait had no end, so a client asked to stop kept running for as long as one tunnel stayed open. |
 | `KEEPALIVE_MIN` | Duration | `10s` | Lower bound of the idle interval after which the client sends a frame carrying nothing, so that nothing on the path drops the connection for being silent. `0` disables it. See [Keepalive](#keepalive) for the measurements the range comes from. |
 | `KEEPALIVE_MAX` | Duration | `20s` | Upper bound of the same interval. A fresh draw is made for every frame: a fixed period would identify the protocol without anyone having to decrypt it. Must be at least `KEEPALIVE_MIN`. |
@@ -1508,6 +1517,12 @@ docker kill -s HUP s5core
 `SIGTERM` (or `SIGINT`) stops the server in this order: the listeners close, the live connections are closed, the connection handlers finish, and the traffic counters are written to `USERS_FILE`. Only then does the process exit, so the traffic accumulated since the last periodic flush - up to `TRAFFIC_FLUSH_INTERVAL` of it - survives a restart.
 
 Sessions are closed rather than waited for. A tunnelled session can last hours; waiting for one is not a shutdown, and an orchestrator that gave the process ten seconds would kill it anyway.
+
+The WSS listener also cancels active decoy requests, closes their HTTP sockets,
+and joins in-flight upgrade handlers before draining unaccepted WebSockets.
+A decoy upstream that stops sending its response body cannot hold shutdown open.
+If WS shaping jitter is enabled, closing the connection or expiring its write
+deadline interrupts that pause too.
 
 The client stops on its own terms. `SIGTERM` closes the local listener and then waits up to `SHUTDOWN_TIMEOUT` (10 s by default) for the sessions still carrying traffic. It used to wait without a bound, and one stuck relay was enough to keep a client running long after it was asked to stop: the relay copied in both directions and ended only when both copies ended, while the far end had no way to learn that the application had closed its half. Each direction now ends its own copy - when the application closes, the client half-closes the tunnel, the server sees the end of the stream and closes the destination, and the reply still comes back the other way. Both transports now signal the end of one direction the same way: the end of the stream is a frame kind inside the obfuscation format (`kindFIN`), not a property of the transport under it, so the WebSocket path - which has no half-close of its own - no longer has to close the whole connection and cut off a reply the server had not finished sending. That was task Ф4-9; the cost in benchstat and the write deadline race found along the way are in [docs/design/half-close.md](docs/design/half-close.md).
 

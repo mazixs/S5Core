@@ -1,0 +1,17 @@
+=== RUN   TestCloseInterruptsHijackedUpgradeResponse
+    shutdown_test.go:86: upgrade handler survived Close
+--- FAIL: TestCloseInterruptsHijackedUpgradeResponse (2.00s)
+=== RUN   TestCloseCancelsStreamingDecoy
+    shutdown_test.go:148: Close waits for the streaming decoy instead of canceling it
+--- FAIL: TestCloseCancelsStreamingDecoy (2.10s)
+FAIL
+FAIL	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	4.107s
+=== RUN   TestShapedCloseInterruptsJitter
+    shaped_interrupt_test.go:41: Close left a writer waiting for jitter
+--- FAIL: TestShapedCloseInterruptsJitter (0.00s)
+=== RUN   TestShapedWriteDeadlineInterruptsJitter
+    shaped_interrupt_test.go:102: deadline left Write waiting for jitter
+--- FAIL: TestShapedWriteDeadlineInterruptsJitter (0.00s)
+FAIL
+FAIL	github.com/mazixs/S5Core/pkg/transport/ws	0.002s
+FAIL
