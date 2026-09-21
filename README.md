@@ -1295,8 +1295,8 @@ docker run -d \
 ### Using Docker Compose
 
 Copy `.env.example` to `.env` and replace the example credentials. The base
-Compose file pins image `2.0.0`; set `S5CORE_IMAGE` to use another tag or digest.
-It publishes plain SOCKS5 and metrics on host loopback. Inside the container,
+Compose file uses the `latest` image and publishes plain SOCKS5 and metrics
+on host loopback. Inside the container,
 Compose binds these listeners to `0.0.0.0` and keeps their ports synchronized
 with the published ports, including shell overrides.
 
@@ -1306,6 +1306,9 @@ cp .env.example .env
 docker compose config --quiet
 docker compose up -d
 ```
+
+To update, run `docker compose pull` followed by `docker compose up -d`.
+Use the same `-f` arguments for both commands when using the overrides below.
 
 For the public obfs listener, set `OBFS_ENABLED=true`, `OBFS_PORT=27015` and
 `OBFS_PSK` to a 32-character random key (`openssl rand -base64 24`). Without

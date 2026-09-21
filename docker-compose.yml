@@ -1,6 +1,6 @@
 services:
   s5core:
-    image: ${S5CORE_IMAGE:-ghcr.io/mazixs/s5core:2.0.0}
+    image: ghcr.io/mazixs/s5core:latest
     restart: always
     env_file: .env
     environment:
