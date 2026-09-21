@@ -10,7 +10,26 @@ permissions:
   packages: write
 
 jobs:
+  # Ничего не публикуется до того, как проверки пройдены. CI (ci.yml) висит на
+  # push в main и на pull request, а тег - ни то, ни другое: до этого тег
+  # публиковал образ, а на Windows-сборке падал уже после публикации (F09,
+  # docs/reports/code-quality-audit-2026-09-20.md). Проверки те же самые -
+  # один скрипт, тот же образ, - чтобы вердикт не зависел от того, кто его
+  # спрашивает. Кросс-сборка всей заявленной матрицы входит в тесты
+  # (internal/arch/platforms_test.go читает список платформ из этого файла).
+  checks:
+    runs-on: ubuntu-latest
+    container: golang:1.26.6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: scripts/pre-commit.sh
+        run: ./scripts/pre-commit.sh
+
   build-and-push-docker:
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -46,6 +65,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -53,7 +74,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   create-github-release:
-    needs: build-and-push-docker
+    needs: [checks, build-and-push-docker]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -62,22 +83,26 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26.6'
           cache: true
 
       - name: Build binaries
+        env:
+          # Ends up in the s5core_build_info metric, so a running server can be
+          # matched to a release without guessing.
+          LDFLAGS: -s -w -X github.com/mazixs/S5Core/internal/buildinfo.version=${{ github.ref_name }}
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5core-linux-amd64 ./cmd/s5core
-          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5core-linux-arm64 ./cmd/s5core
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5core-darwin-amd64 ./cmd/s5core
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5core-darwin-arm64 ./cmd/s5core
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5core-windows-amd64.exe ./cmd/s5core
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5client-linux-amd64 ./cmd/s5client
-          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5client-linux-arm64 ./cmd/s5client
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5client-darwin-amd64 ./cmd/s5client
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/s5client-darwin-arm64 ./cmd/s5client
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/s5client-windows-amd64.exe ./cmd/s5client
+          GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5core-linux-amd64 ./cmd/s5core
+          GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/s5core-linux-arm64 ./cmd/s5core
+          GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5core-darwin-amd64 ./cmd/s5core
+          GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/s5core-darwin-arm64 ./cmd/s5core
+          GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5core-windows-amd64.exe ./cmd/s5core
+          GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5client-linux-amd64 ./cmd/s5client
+          GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/s5client-linux-arm64 ./cmd/s5client
+          GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5client-darwin-amd64 ./cmd/s5client
+          GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/s5client-darwin-arm64 ./cmd/s5client
+          GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5client-windows-amd64.exe ./cmd/s5client
 
       - name: Release
         uses: softprops/action-gh-release@v2

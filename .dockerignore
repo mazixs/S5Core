@@ -1,0 +1,47 @@
+# The Dockerfile copies the whole tree (COPY . .), so everything not listed
+# here is sent to the daemon and takes part in the layer cache. Without this
+# file a build carries the git history, the locally built binaries and the
+# measurement output, and any of them changing rebuilds the image.
+
+# History, CI and the agent's own instructions
+.git
+.gitignore
+.github
+CLAUDE.md
+
+# Locally built binaries and test binaries (the list in .gitignore)
+/s5core
+/s5client
+/idleprobe
+/udpprobe
+/connlat
+/stealthcheck
+/fpprobe
+/fpcollect
+/wirebench
+dist/
+build/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Measurements, coverage and profiles
+bench/
+coverage.txt
+*.out
+
+# A deployment's own configuration: it belongs to the host, never to an image
+.env
+
+# Documentation, editor and OS state. The image builds ./cmd/s5core and
+# nothing reads these; the tests that do read docs/ are not run from here.
+docs/
+*.md
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
