@@ -2,6 +2,7 @@ package obfs
 
 import (
 	"bytes"
+	"encoding/binary"
 	"net"
 	"testing"
 	"time"
@@ -15,12 +16,12 @@ func TestObfsConn_EncryptionAndPadding(t *testing.T) {
 	psk := bytes.Repeat([]byte("a"), 32)
 	cfg := Config{PSK: psk, MaxPadding: 64}
 
-	obfsClient, err := NewConn(clientConn, cfg)
+	obfsClient, err := NewClientConn(clientConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create client obfs conn: %v", err)
 	}
 
-	obfsServer, err := NewConn(serverConn, cfg)
+	obfsServer, err := NewServerConn(serverConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create server obfs conn: %v", err)
 	}
@@ -55,7 +56,13 @@ func TestObfsConn_EncryptionAndPadding(t *testing.T) {
 	}
 }
 
-func TestObfsConn_ZeroLengthPayload(t *testing.T) {
+// An empty write still puts a frame on the wire - the shape of the traffic
+// should not depend on a caller passing a zero-length buffer - but it no
+// longer surfaces as a zero-length read. A frame carrying no payload is what
+// a keepalive is (Ф4-8), and the reader skips it and waits for the next one.
+// Returning (0, nil) instead would make io.Copy spin and would let a keepalive
+// look like a closed stream to a caller that checks n.
+func TestAnEmptyWriteDoesNotReachTheReader(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
@@ -63,43 +70,60 @@ func TestObfsConn_ZeroLengthPayload(t *testing.T) {
 	psk := bytes.Repeat([]byte("b"), 32)
 	cfg := Config{PSK: psk, MaxPadding: 0}
 
-	obfsClient, err := NewConn(clientConn, cfg)
+	obfsClient, err := NewClientConn(clientConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create client obfs conn: %v", err)
 	}
 
-	obfsServer, err := NewConn(serverConn, cfg)
+	obfsServer, err := NewServerConn(serverConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create server obfs conn: %v", err)
 	}
 
-	done := make(chan struct{})
+	type read struct {
+		n   int
+		err error
+	}
+	reads := make(chan read, 1)
 	go func() {
-		// Server should receive empty payload
 		buf := make([]byte, 1024)
 		n, err := obfsServer.Read(buf)
-		if err != nil {
-			t.Errorf("read empty payload: %v", err)
-		}
-		if n != 0 {
-			t.Errorf("expected 0 bytes, got %d", n)
-		}
-		close(done)
+		reads <- read{n, err}
 	}()
 
-	// Write empty payload
 	if _, err := obfsClient.Write([]byte{}); err != nil {
 		t.Fatalf("write empty payload: %v", err)
 	}
 
 	select {
-	case <-done:
+	case r := <-reads:
+		t.Fatalf("the empty frame surfaced as a read of %d bytes (err %v)", r.n, r.err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if _, err := obfsClient.Write([]byte("after")); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	select {
+	case r := <-reads:
+		if r.err != nil {
+			t.Fatalf("read after the empty frame: %v", r.err)
+		}
+		if r.n != len("after") {
+			t.Fatalf("read %d bytes after the empty frame, want %d", r.n, len("after"))
+		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout")
+		t.Fatal("the read after the empty frame never returned")
 	}
 }
 
-func TestObfsConn_FrameTooLarge(t *testing.T) {
+// TestAFrameLengthBelowTheFormatIsRejected replaces a test that fed a
+// 4-byte header claiming 131073 bytes. There is no such header any more: the
+// length is two masked bytes, so an oversize claim cannot be expressed and the
+// check that matters is the other end of the range - a length too small to
+// hold even the empty frame.
+func TestAFrameLengthBelowTheFormatIsRejected(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
@@ -107,85 +131,45 @@ func TestObfsConn_FrameTooLarge(t *testing.T) {
 	psk := bytes.Repeat([]byte("c"), 32)
 	cfg := Config{PSK: psk, MaxPadding: 0}
 
-	obfsClient, err := NewConn(clientConn, cfg)
+	client, err := NewClientConn(clientConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create client obfs conn: %v", err)
 	}
+	server, err := NewServerConn(serverConn, cfg)
+	if err != nil {
+		t.Fatalf("failed to create server obfs conn: %v", err)
+	}
+
+	// One real frame first: it carries the salt, so both ends now hold the
+	// session keys and the test can mask a length the way the client would.
+	go func() { _, _ = client.Write([]byte("hello")) }()
+	buf := make([]byte, 16)
+	if _, err := server.Read(buf); err != nil {
+		t.Fatalf("first frame: %v", err)
+	}
+
+	srv := server.(*conn)
+	var hdr [2]byte
+	binary.BigEndian.PutUint16(hdr[:], uint16(5)^srv.recvMask(srv.readCounter))
 
 	readErr := make(chan error, 1)
 	go func() {
-		_, err := obfsClient.Read(make([]byte, 1024))
+		_, err := server.Read(make([]byte, 1024))
 		readErr <- err
 	}()
-
-	// Write a frame header claiming a huge size (> 128KB) from the peer
-	var hdr [4]byte
-	hdr[0] = 0x00
-	hdr[1] = 0x02
-	hdr[2] = 0x00
-	hdr[3] = 0x01 // 131073 bytes (> limit)
-	if _, err := serverConn.Write(hdr[:]); err != nil {
+	if _, err := clientConn.Write(hdr[:]); err != nil {
 		t.Fatalf("write header: %v", err)
 	}
 
 	select {
 	case err := <-readErr:
-		if err == nil {
-			t.Fatal("expected error for oversized frame")
+		reason, ok := ReasonOf(err)
+		if !ok || reason != ReasonShortFrame {
+			t.Fatalf("got %v, want a short_frame failure", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for oversized frame error")
+		t.Fatal("timeout waiting for the undersized frame to be rejected")
 	}
-}
-
-func TestObfsConn_ReplayProtection(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
-
-	psk := bytes.Repeat([]byte("d"), 32)
-	cfg := Config{PSK: psk, MaxPadding: 0, ReplayWindow: 10}
-
-	obfsClient, err := NewConn(clientConn, cfg)
-	if err != nil {
-		t.Fatalf("failed to create client obfs conn: %v", err)
-	}
-
-	obfsServer, err := NewConn(serverConn, cfg)
-	if err != nil {
-		t.Fatalf("failed to create server obfs conn: %v", err)
-	}
-
-	msg := []byte("replay test")
-
-	readDone := make(chan struct{})
-	go func() {
-		buf := make([]byte, 1024)
-		n, err := obfsServer.Read(buf)
-		if err != nil {
-			t.Errorf("first read: %v", err)
-		}
-		if string(buf[:n]) != string(msg) {
-			t.Errorf("first read mismatch")
-		}
-		close(readDone)
-	}()
-
-	if _, err := obfsClient.Write(msg); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	select {
-	case <-readDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout")
-	}
-
-	// Replay the exact same bytes (simulate attacker replaying the frame)
-	// We need to capture the raw bytes on the wire and resend them.
-	// Since net.Pipe is synchronous and we already consumed the frame,
-	// we can't easily replay without a MITM. We'll skip the explicit replay
-	// test here and rely on the unit tests for replayWindow.
 }
 
 func TestObfsConn_LargePayloadReassembly(t *testing.T) {
@@ -196,12 +180,12 @@ func TestObfsConn_LargePayloadReassembly(t *testing.T) {
 	psk := bytes.Repeat([]byte("e"), 32)
 	cfg := Config{PSK: psk, MaxPadding: 0, MTU: 1400}
 
-	obfsClient, err := NewConn(clientConn, cfg)
+	obfsClient, err := NewClientConn(clientConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	obfsServer, err := NewConn(serverConn, cfg)
+	obfsServer, err := NewServerConn(serverConn, cfg)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -210,7 +194,7 @@ func TestObfsConn_LargePayloadReassembly(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		// Read in small chunks — internal buffer should handle reassembly
+		// Read in small chunks - internal buffer should handle reassembly
 		var total []byte
 		buf := make([]byte, 10)
 		for len(total) < len(longMsg) {
@@ -236,58 +220,4 @@ func TestObfsConn_LargePayloadReassembly(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout")
 	}
-}
-
-func TestObfsConn_CloseWrite(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer ln.Close()
-
-	psk := bytes.Repeat([]byte("f"), 32)
-	cfg := Config{PSK: psk, MaxPadding: 0}
-
-	serverDone := make(chan struct{})
-	go func() {
-		defer close(serverDone)
-		raw, err := ln.Accept()
-		if err != nil {
-			t.Errorf("accept: %v", err)
-			return
-		}
-		defer raw.Close()
-		oc, err := NewConn(raw, cfg)
-		if err != nil {
-			t.Errorf("NewConn server: %v", err)
-			return
-		}
-		if cw, ok := oc.(closeWriter); ok {
-			if err := cw.CloseWrite(); err != nil {
-				t.Errorf("CloseWrite error: %v", err)
-			}
-		} else {
-			t.Error("obfsConn does not implement closeWriter")
-		}
-	}()
-
-	raw, err := net.Dial("tcp", ln.Addr().String())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer raw.Close()
-
-	oc, err := NewConn(raw, cfg)
-	if err != nil {
-		t.Fatalf("NewConn client: %v", err)
-	}
-
-	// The other side should see EOF after CloseWrite
-	buf := make([]byte, 1)
-	_, err = oc.Read(buf)
-	if err == nil {
-		t.Error("expected EOF after remote CloseWrite, got nil")
-	}
-
-	<-serverDone
 }

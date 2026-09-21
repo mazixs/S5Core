@@ -43,9 +43,9 @@ func TestMatchDomain_IDN(t *testing.T) {
 		matched bool
 	}{
 		{"münchen.de", true},
-		{"MÜNCHEN.DE", true},          // case insensitive
-		{"www.münchen.de", true},      // wildcard match
-		{"xn--mnchen-3ya.de", true},   // already punycode
+		{"MÜNCHEN.DE", true},        // case insensitive
+		{"www.münchen.de", true},    // wildcard match
+		{"xn--mnchen-3ya.de", true}, // already punycode
 		{"other.de", false},
 	}
 
@@ -261,7 +261,7 @@ func startTestObfsServer(t *testing.T, psk string, handler func(t *testing.T, co
 		}
 		defer rawConn.Close()
 
-		conn, err := obfs.NewConn(rawConn, obfs.Config{
+		conn, err := obfs.NewServerConn(rawConn, obfs.Config{
 			PSK: []byte(psk),
 			MTU: 1400,
 		})
@@ -276,5 +276,109 @@ func startTestObfsServer(t *testing.T, psk string, handler func(t *testing.T, co
 	return ln.Addr().String(), func() {
 		_ = ln.Close()
 		<-doneCh
+	}
+}
+
+// Приложения экономят RTT, отправляя приветствие SOCKS5 и CONNECT одним
+// пакетом. Тест на фрагментацию выше проверяет обратный случай - что разбор
+// переживает разрезанный поток; этот проверяет склейку, то есть ровно ту
+// механику, с которой начинался баг из боевого отчета.
+//
+// Оба случая - это одно свойство: разбор не имеет права зависеть от того, как
+// поток лег в пакеты.
+
+// clientRequest is the CONNECT a browser sends for example.com:443.
+func clientRequest() []byte {
+	return []byte{
+		0x05, 0x01, 0x00, 0x03, 0x0b,
+		'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+		0x01, 0xbb,
+	}
+}
+
+// runClientHandshake feeds the given chunks to socks5Handshake and returns
+// what it parsed.
+func runClientHandshake(t *testing.T, chunks [][]byte) (req []byte, cmd byte, fqdn string, err error) {
+	t.Helper()
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	type result struct {
+		req  []byte
+		cmd  byte
+		fqdn string
+		err  error
+	}
+	resCh := make(chan result, 1)
+	go func() {
+		r, c, f, e := socks5Handshake(serverConn)
+		resCh <- result{append([]byte(nil), r...), c, f, e}
+	}()
+
+	// Писать и читать одновременно: net.Pipe не буферизует, а ответ на
+	// приветствие приходит раньше, чем дочитан CONNECT.
+	writeDone := make(chan error, 1)
+	go func() {
+		for _, chunk := range chunks {
+			if _, err := clientConn.Write(chunk); err != nil {
+				writeDone <- err
+				return
+			}
+		}
+		writeDone <- nil
+	}()
+
+	_ = clientConn.SetDeadline(time.Now().Add(2 * time.Second))
+	var greetingResp [2]byte
+	if _, err := io.ReadFull(clientConn, greetingResp[:]); err != nil {
+		t.Fatalf("read greeting response: %v", err)
+	}
+	if !bytes.Equal(greetingResp[:], []byte{0x05, 0x00}) {
+		t.Fatalf("unexpected greeting response: %v", greetingResp)
+	}
+
+	select {
+	case res := <-resCh:
+		if werr := <-writeDone; werr != nil && res.err == nil {
+			t.Fatalf("write: %v", werr)
+		}
+		return res.req, res.cmd, res.fqdn, res.err
+	case <-time.After(3 * time.Second):
+		t.Fatal("socks5Handshake went quiet")
+		return nil, 0, "", nil
+	}
+}
+
+func TestSocks5Handshake_ReadsCoalescedGreetingAndRequest(t *testing.T) {
+	stream := append([]byte{0x05, 0x01, 0x00}, clientRequest()...)
+
+	req, cmd, fqdn, err := runClientHandshake(t, [][]byte{stream})
+	if err != nil {
+		t.Fatalf("socks5Handshake: %v", err)
+	}
+	if cmd != 0x01 {
+		t.Fatalf("unexpected command: %d", cmd)
+	}
+	if fqdn != "example.com" {
+		t.Fatalf("unexpected fqdn: %q", fqdn)
+	}
+	if !bytes.Equal(req, clientRequest()) {
+		t.Fatalf("unexpected raw request: got %v want %v", req, clientRequest())
+	}
+}
+
+func TestSocks5Handshake_EveryFragmentation(t *testing.T) {
+	stream := append([]byte{0x05, 0x01, 0x00}, clientRequest()...)
+
+	for at := 1; at < len(stream); at++ {
+		req, cmd, fqdn, err := runClientHandshake(t, [][]byte{stream[:at], stream[at:]})
+		if err != nil {
+			t.Fatalf("split after byte %d of %d: %v", at, len(stream), err)
+		}
+		if cmd != 0x01 || fqdn != "example.com" || !bytes.Equal(req, clientRequest()) {
+			t.Fatalf("split after byte %d: parsed cmd=%d fqdn=%q req=%v",
+				at, cmd, fqdn, req)
+		}
 	}
 }

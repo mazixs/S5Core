@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
@@ -11,7 +12,7 @@ func TestNoAuth(t *testing.T) {
 	var resp bytes.Buffer
 
 	s, _ := New(&Config{})
-	ctx, err := s.authenticate(&resp, req)
+	ctx, err := s.authenticate(&resp, req, "198.51.100.9", "", nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestPasswordAuth_Valid(t *testing.T) {
 
 	s, _ := New(&Config{AuthMethods: []Authenticator{cator}})
 
-	ctx, err := s.authenticate(&resp, req)
+	ctx, err := s.authenticate(&resp, req, "198.51.100.9", "", nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -76,8 +77,8 @@ func TestPasswordAuth_Invalid(t *testing.T) {
 	cator := UserPassAuthenticator{Credentials: cred}
 	s, _ := New(&Config{AuthMethods: []Authenticator{cator}})
 
-	ctx, err := s.authenticate(&resp, req)
-	if err != ErrUserAuthFailed {
+	ctx, err := s.authenticate(&resp, req, "198.51.100.9", "", nil)
+	if !errors.Is(err, ErrUserAuthFailed) {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -103,8 +104,8 @@ func TestNoSupportedAuth(t *testing.T) {
 
 	s, _ := New(&Config{AuthMethods: []Authenticator{cator}})
 
-	ctx, err := s.authenticate(&resp, req)
-	if err != ErrNoSupportedAuth {
+	ctx, err := s.authenticate(&resp, req, "198.51.100.9", "", nil)
+	if !errors.Is(err, ErrNoSupportedAuth) {
 		t.Fatalf("err: %v", err)
 	}
 

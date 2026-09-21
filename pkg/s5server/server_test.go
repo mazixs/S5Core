@@ -1,12 +1,11 @@
 package s5server
 
 import (
-	"fmt"
 	"net"
 	"testing"
 	"time"
 
-	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/session"
 )
 
 // mockConn implements net.Conn for testing
@@ -26,52 +25,19 @@ func (m *mockConn) SetDeadline(t time.Time) error      { return nil }
 func (m *mockConn) SetReadDeadline(t time.Time) error  { m.readDeadline = t; return nil }
 func (m *mockConn) SetWriteDeadline(t time.Time) error { m.writeDeadline = t; return nil }
 
-func TestFail2BanStore(t *testing.T) {
-	mockStore := socks5.StaticCredentials{
-		"admin": "secret",
-	}
-
-	maxRetries := 3
-	banTime := 50 * time.Millisecond
-	f2b := newFail2banStore(mockStore, maxRetries, banTime, nil)
-
-	// 1. Success login
-	if !f2b.Valid("admin", "secret") {
-		t.Error("Expected valid login for admin:secret")
-	}
-
-	// 2. Failed logins triggering ban
-	for i := 0; i < maxRetries; i++ {
-		if f2b.Valid("admin", "wrong") {
-			t.Errorf("Expected invalid login on attempt %d", i+1)
-		}
-	}
-
-	// 3. User should now be banned, even with correct password
-	if f2b.Valid("admin", "secret") {
-		t.Error("Expected user to be banned")
-	}
-
-	// 4. Wait for ban to expire
-	time.Sleep(banTime + 10*time.Millisecond)
-
-	// 5. User should be able to login again
-	if !f2b.Valid("admin", "secret") {
-		t.Error("Expected user to be unbanned and login successfully")
-	}
-}
-
 func TestTimeoutConn(t *testing.T) {
 	mc := &mockConn{}
 
 	readTimeout := 10 * time.Millisecond
 	writeTimeout := 20 * time.Millisecond
 
-	tc := &timeoutConn{
-		Conn:         mc,
-		readTimeout:  readTimeout,
-		writeTimeout: writeTimeout,
-	}
+	// The deadlines are the session's now, not the wrapper's: timeoutConn
+	// asks the session for the deadline of each operation (plan task Ф6-1).
+	sess := session.NewRegistry(nil).Open(TransportPlain, false, session.SLA{
+		ReadIdle:  readTimeout,
+		WriteIdle: writeTimeout,
+	})
+	tc := &timeoutConn{Conn: mc, sess: sess}
 
 	// Test Read Deadline
 	beforeRead := time.Now()
@@ -109,49 +75,12 @@ func (l *mockListener) Accept() (net.Conn, error) {
 func (l *mockListener) Close() error   { close(l.conns); return nil }
 func (l *mockListener) Addr() net.Addr { return nil }
 
-func TestFail2BanStoreConcurrent(t *testing.T) {
-	mockStore := socks5.StaticCredentials{
-		"admin": "secret",
-	}
-
-	maxRetries := 3
-	banTime := 100 * time.Millisecond
-	f2b := newFail2banStore(mockStore, maxRetries, banTime, nil)
-
-	// Concurrent failed attempts from multiple goroutines
-	done := make(chan struct{})
-	for i := 0; i < 10; i++ {
-		go func() {
-			for j := 0; j < maxRetries; j++ {
-				f2b.Valid("admin", "wrong")
-			}
-			done <- struct{}{}
-		}()
-	}
-
-	for i := 0; i < 10; i++ {
-		<-done
-	}
-
-	// User should be banned
-	if f2b.Valid("admin", "secret") {
-		t.Error("Expected user to be banned after concurrent failures")
-	}
-
-	// Wait for ban to expire
-	time.Sleep(banTime + 20*time.Millisecond)
-
-	if !f2b.Valid("admin", "secret") {
-		t.Error("Expected user to be unbanned and login successfully")
-	}
-}
-
 func TestCustomListenerWhitelist(t *testing.T) {
 	ml := &mockListener{conns: make(chan net.Conn, 2)}
 
 	whitelist := []net.IP{net.ParseIP("192.168.1.1")}
 
-	cl := &serverListener{
+	cl := &listenerPipeline{
 		Listener:  ml,
 		whitelist: whitelist,
 	}
@@ -203,47 +132,4 @@ func TestMetricsConnCloseIdempotent(t *testing.T) {
 		t.Fatalf("second close: %v", err)
 	}
 	// No panic and no double-decrement is the success criteria.
-}
-
-func TestFail2BanStoreSharding(t *testing.T) {
-	mockStore := socks5.StaticCredentials{}
-	f2b := newFail2banStore(mockStore, 3, time.Minute, nil)
-
-	shards := make(map[uint32]struct{})
-	for i := 0; i < 1000; i++ {
-		user := fmt.Sprintf("user%d", i)
-		shard := f2b.shardFor(user)
-		// find shard index
-		for idx := range f2b.shards {
-			if &f2b.shards[idx] == shard {
-				shards[uint32(idx)] = struct{}{}
-				break
-			}
-		}
-	}
-
-	if len(shards) < 2 {
-		t.Errorf("expected users distributed across multiple shards, got %d", len(shards))
-	}
-}
-
-func TestFail2BanStoreCleanup(t *testing.T) {
-	mockStore := socks5.StaticCredentials{"alice": "secret"}
-	f2b := newFail2banStore(mockStore, 2, 50*time.Millisecond, nil)
-
-	// Trigger ban
-	f2b.Valid("alice", "wrong")
-	f2b.Valid("alice", "wrong")
-
-	if f2b.Valid("alice", "secret") {
-		t.Error("expected alice to be banned")
-	}
-
-	// Wait for expiry + cleanup interval
-	time.Sleep(60 * time.Millisecond)
-
-	// This call should trigger cleanup and then succeed because ban expired
-	if !f2b.Valid("alice", "secret") {
-		t.Error("expected ban to be expired and valid login to succeed")
-	}
 }

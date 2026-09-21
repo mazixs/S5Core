@@ -373,7 +373,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		}
 		defer rawConn.Close()
 
-		obfsConn, err := obfs.NewConn(rawConn, obfs.Config{
+		obfsConn, err := obfs.NewClientConn(rawConn, obfs.Config{
 			PSK:        []byte(testPSK),
 			MaxPadding: 256,
 			MTU:        1400,
@@ -410,7 +410,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		defer rawConn.Close()
 
 		wrongPSK := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" // 32 bytes, wrong key
-		obfsConn, err := obfs.NewConn(rawConn, obfs.Config{
+		obfsConn, err := obfs.NewClientConn(rawConn, obfs.Config{
 			PSK:        []byte(wrongPSK),
 			MaxPadding: 256,
 			MTU:        1400,
@@ -420,7 +420,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		}
 		obfsConn.SetDeadline(time.Now().Add(2 * time.Second))
 
-		// Try greeting — server won't be able to decrypt, should error
+		// Try greeting - server won't be able to decrypt, should error
 		_, _ = obfsConn.Write([]byte{0x05, 0x01, 0x02})
 
 		// We expect read to fail because server decryption fails
@@ -461,7 +461,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		}
 		defer rawConn.Close()
 
-		obfsConn, err := obfs.NewConn(rawConn, obfs.Config{
+		obfsConn, err := obfs.NewClientConn(rawConn, obfs.Config{
 			PSK:        []byte(testPSK),
 			MaxPadding: 256,
 			MTU:        1400,
@@ -532,7 +532,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		}
 		defer rawConn.Close()
 
-		obfsConn, err := obfs.NewConn(rawConn, obfs.Config{
+		obfsConn, err := obfs.NewClientConn(rawConn, obfs.Config{
 			PSK:        []byte(testPSK),
 			MaxPadding: 256,
 			MTU:        1400,
@@ -616,7 +616,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 				t.Fatalf("dial: %v", err)
 			}
 
-			obfsConn, err := obfs.NewConn(rawConn, obfs.Config{
+			obfsConn, err := obfs.NewClientConn(rawConn, obfs.Config{
 				PSK:        []byte(testPSK),
 				MaxPadding: 256,
 				MTU:        1400,
@@ -674,7 +674,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		}
 
 		// Wrap client side with obfs
-		obfsClient, err := obfs.NewConn(clientConn, obfsCfg)
+		obfsClient, err := obfs.NewClientConn(clientConn, obfsCfg)
 		if err != nil {
 			t.Fatalf("obfs client: %v", err)
 		}
@@ -717,13 +717,13 @@ func TestIntegration_FullSuite(t *testing.T) {
 				float64(n-len(payload))/float64(len(payload))*100)
 		}
 
-		// Entropy check (simplified — count unique byte values)
+		// Entropy check (simplified - count unique byte values)
 		seen := make(map[byte]bool)
 		for _, b := range rawWire {
 			seen[b] = true
 		}
 		uniqueRatio := float64(len(seen)) / float64(n) * 100
-		t.Logf("  Unique bytes: %d/%d (%.0f%%) — high ratio = good randomness", len(seen), n, uniqueRatio)
+		t.Logf("  Unique bytes: %d/%d (%.0f%%) - high ratio = good randomness", len(seen), n, uniqueRatio)
 	})
 }
 

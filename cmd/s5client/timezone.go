@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,13 +11,31 @@ import (
 	"time"
 )
 
+// dialOutbound is the single place this binary opens an outbound connection
+// through. Everything that reaches the network - the tunnel itself and the
+// optional timezone lookup - goes through it, which is what makes the promise
+// "starting the client contacts nothing but the server" testable instead of
+// merely stated.
+var dialOutbound = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return (&net.Dialer{}).DialContext(ctx, network, addr)
+}
+
 // ipapiTimezoneURL returns the URL for fetching the timezone of a given IP.
 func ipapiTimezoneURL(ip string) string {
 	return fmt.Sprintf("https://ipapi.co/%s/timezone/", ip)
 }
 
 // detectServerTimezone performs a best-effort GeoIP lookup for the server's
-// timezone using ipapi.co. This leaks the client's IP to the API during bootstrap.
+// timezone using ipapi.co.
+//
+// It is off by default and never runs as part of starting the client. The
+// request tells a third party "this client is about to use this proxy", which
+// is a stronger statement than it looks: ipapi.co learns the pairing of client
+// address and server address, and an observer on the wire gets a reliable
+// tell that fires just before every connection to the proxy. A convenience
+// that announces the thing the product exists to hide has to be asked for
+// explicitly.
+//
 // Returns empty string on failure (private IPs, timeouts, etc.).
 func detectServerTimezone(serverAddr string) string {
 	host, _, err := net.SplitHostPort(serverAddr)
@@ -31,8 +50,17 @@ func detectServerTimezone(serverAddr string) string {
 		return ""
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(ipapiTimezoneURL(ip.String()))
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{DialContext: dialOutbound},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ipapiTimezoneURL(ip.String()), nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return ""
 	}

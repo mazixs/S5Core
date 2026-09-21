@@ -28,19 +28,19 @@ func TestWSStealth_EndToEnd(t *testing.T) {
 
 	// Start s5server with WS stealth transport (OS-assigned port)
 	cfg := Config{
-		Port:             "0",
-		RequireAuth:      false,
-		ReadTimeout:      30 * time.Second,
-		WriteTimeout:     30 * time.Second,
-		ObfsEnabled:      true,
-		ObfsPSK:          testPSK,
-		ObfsMaxPadding:   32,
-		ObfsMTU:          1400,
-		WSEnabled:        true,
-		WSAddr:           "127.0.0.1:0",
-		WSCertFile:       certFile,
-		WSKeyFile:        keyFile,
-		WSPath:           "/ws",
+		Port:           "0",
+		RequireAuth:    false,
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		ObfsEnabled:    true,
+		ObfsPSK:        testPSK,
+		ObfsMaxPadding: 32,
+		ObfsMTU:        1400,
+		WSEnabled:      true,
+		WSAddr:         "127.0.0.1:0",
+		WSCertFile:     certFile,
+		WSKeyFile:      keyFile,
+		WSPath:         "/ws",
 	}
 
 	srv, err := NewServer(cfg)
@@ -107,7 +107,7 @@ func TestWSStealth_EndToEnd(t *testing.T) {
 	}
 	defer wsConn.Close()
 
-	obfsConn, err := obfs.NewConn(wsConn, obfs.Config{
+	obfsConn, err := obfs.NewClientConn(wsConn, obfs.Config{
 		PSK:        []byte(testPSK),
 		MaxPadding: 32,
 		MTU:        1400,

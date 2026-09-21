@@ -3,6 +3,7 @@ package socks5
 import (
 	"fmt"
 	"io"
+	"net"
 )
 
 const (
@@ -31,7 +32,10 @@ type AuthContext struct {
 }
 
 type Authenticator interface {
-	Authenticate(reader io.Reader, writer io.Writer) (*AuthContext, error)
+	// Authenticate reads the method's exchange off reader and answers on
+	// writer. source identifies where the connection came from; only rate
+	// limiting uses it, and it is never logged.
+	Authenticate(reader io.Reader, writer io.Writer, source string) (*AuthContext, error)
 	GetCode() uint8
 }
 
@@ -42,7 +46,7 @@ func (a NoAuthAuthenticator) GetCode() uint8 {
 	return NoAuth
 }
 
-func (a NoAuthAuthenticator) Authenticate(reader io.Reader, writer io.Writer) (*AuthContext, error) {
+func (a NoAuthAuthenticator) Authenticate(reader io.Reader, writer io.Writer, _ string) (*AuthContext, error) {
 	_, err := writer.Write([]byte{Socks5Version, NoAuth})
 	return &AuthContext{NoAuth, nil}, err
 }
@@ -57,7 +61,7 @@ func (a UserPassAuthenticator) GetCode() uint8 {
 	return UserPassAuth
 }
 
-func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) (*AuthContext, error) {
+func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer, source string) (*AuthContext, error) {
 	// Tell the client to use user/pass auth
 	if _, err := writer.Write([]byte{Socks5Version, UserPassAuth}); err != nil {
 		return nil, err
@@ -96,7 +100,7 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) 
 	// Verify the password
 	userStr := string(userBuf[:userLen])
 	passStr := string(passBuf[:passLen])
-	if a.Credentials.Valid(userStr, passStr) {
+	if validFrom(a.Credentials, userStr, passStr, source) {
 		if _, err := writer.Write([]byte{userAuthVersion, authSuccess}); err != nil {
 			return nil, err
 		}
@@ -111,23 +115,98 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer) 
 	return &AuthContext{UserPassAuth, map[string]string{"Username": userStr}}, nil
 }
 
-// authenticate is used to handle connection authentication
-func (s *Server) authenticate(conn io.Writer, bufConn io.Reader) (*AuthContext, error) {
+// tunnelIdentity is who the transport says this connection belongs to, or
+// the empty string when it does not know.
+func (s *Server) tunnelIdentity(conn net.Conn) string {
+	if s.config.TunnelIdentity == nil {
+		return ""
+	}
+	return s.config.TunnelIdentity(conn)
+}
+
+// tunnelIdentityAllowed asks the account behind a tunnel identity whether it
+// may still connect. A server that configures no SessionStatus has no opinion
+// and every identity stands.
+func (s *Server) tunnelIdentityAllowed(identity string) bool {
+	if s.config.SessionStatus == nil {
+		return true
+	}
+	return s.config.SessionStatus(identity) == SessionAllowed
+}
+
+// authenticate is used to handle connection authentication.
+//
+// identity, when not empty, is the member the transport underneath already
+// authenticated: the password step is then skipped entirely and that name is
+// what the session is accounted to. See Config.TunnelIdentity.
+//
+// handshake, when not nil, is the phase timer covering method negotiation: it
+// is closed as soon as a method is picked, so the cost of verifying the
+// credentials lands in its own phase and not in the handshake.
+func (s *Server) authenticate(conn io.Writer, bufConn io.Reader, source, identity string, handshake *phaseTimer) (*AuthContext, error) {
 	// Get the methods
 	methods, err := readMethods(bufConn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get auth methods: %v", err)
+		handshake.end(false)
+		return nil, fmt.Errorf("failed to get auth methods: %w", err)
+	}
+
+	// The tunnel says who this is, but not whether that account may still
+	// connect. The two questions are answered at different times: the member
+	// directory is a snapshot rebuilt when accounts change, while a quota
+	// runs out, a validity window ends and an account is disabled between
+	// rebuilds. Without this the stale snapshot was the whole check, and an
+	// account that the password path would have turned away walked in under
+	// NoAuth (F01 in docs/reports/code-quality-audit-2026-09-20.md).
+	//
+	// An identity that may not connect is dropped rather than refused
+	// outright: it is an offer, and withdrawing it leaves the connection
+	// exactly where a client with no tunnel key stands. A client that offers
+	// only NoAuth then gets "no acceptable methods", and one that offers a
+	// password gets it checked - by a credential store that turns the same
+	// account away for the same reason.
+	if identity != "" && !s.tunnelIdentityAllowed(identity) {
+		s.config.Logger.Debug("socks: the tunnel identity may no longer connect",
+			"identity", identity)
+		identity = ""
+	}
+
+	// The tunnel has already said who this is, and said it with a MAC under
+	// that member's own key. Asking for a password on top would verify a
+	// weaker secret at a higher price.
+	if identity != "" {
+		for _, method := range methods {
+			if method != NoAuth {
+				continue
+			}
+			handshake.end(true)
+			auth := s.startPhase(PhaseAuth)
+			_, err := conn.Write([]byte{Socks5Version, NoAuth})
+			auth.end(err == nil)
+			if err != nil {
+				return nil, err
+			}
+			return &AuthContext{NoAuth, map[string]string{"Username": identity}}, nil
+		}
+		// A member whose client insists on a password still gets one
+		// checked below: the identity is an offer, not a requirement, and
+		// a client from before this existed must keep working.
 	}
 
 	// Select a usable method
 	for _, method := range methods {
 		cator, found := s.authMethods[method]
 		if found {
-			return cator.Authenticate(bufConn, conn)
+			handshake.end(true)
+			auth := s.startPhase(PhaseAuth)
+			authCtx, err := cator.Authenticate(bufConn, conn, source)
+			auth.end(err == nil)
+			return authCtx, err
 		}
 	}
 
 	// No usable method found
+	handshake.end(false)
 	return nil, noAcceptableAuth(conn)
 }
 
