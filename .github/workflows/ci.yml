@@ -9,8 +9,6 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    # Тот же образ, что и в локальной команде из scripts/pre-commit.sh:
-    #   docker run --rm -v "$PWD":/src -w /src golang:1.26.6 ./scripts/pre-commit.sh
     container: golang:1.26.6
 
     steps:
@@ -18,8 +16,6 @@ jobs:
       with:
         fetch-depth: 0
 
-    # Единственный шаг с содержанием: все проверки описаны в скрипте,
-    # чтобы локальный прогон и CI не могли разойтись.
     - name: scripts/pre-commit.sh
       run: ./scripts/pre-commit.sh
 

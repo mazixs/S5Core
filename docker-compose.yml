@@ -1,30 +1,16 @@
 services:
-
   s5core:
-    # build: .
+    image: ${S5CORE_IMAGE:-ghcr.io/mazixs/s5core:2.0.0}
     restart: always
-    image: ghcr.io/mazixs/s5core:latest
     env_file: .env
+    environment:
+      PROXY_LISTEN_IP: 0.0.0.0
+      PROXY_PORT: ${PROXY_PORT:-1080}
+      OBFS_PORT: ${OBFS_PORT:-1443}
+      METRICS_BIND_ADDR: 0.0.0.0
+      METRICS_PORT: ${METRICS_PORT:-8080}
     ports:
-      # The obfuscated port is the one meant to face the internet. Both sides
-      # of the mapping follow OBFS_PORT, so changing it in .env is enough -
-      # a fixed 1443:1443 here quietly kept publishing the old port while the
-      # server listened on the new one.
-      #
-      # Pick a port outside the 443 family. There, middleboxes expect a TLS
-      # ClientHello and this transport sends high-entropy bytes from the first
-      # one; the WebSocket transport (WS_ENABLED) is what belongs on 443.
       - "${OBFS_PORT:-1443}:${OBFS_PORT:-1443}"
-
-      # Plain SOCKS5 answers every connection with a SOCKS5 handshake, which
-      # is how a scanner labels the host in one packet. It stays on localhost;
-      # reach it through SSH or a private network, or delete this line.
+      # Plain SOCKS5 and metrics stay private on the host.
       - "127.0.0.1:${PROXY_PORT:-1080}:${PROXY_PORT:-1080}"
-
-      # Metrics exposed on localhost only by default.
-      # Change METRICS_BIND_ADDR in .env to 0.0.0.0 for external scraping.
       - "127.0.0.1:${METRICS_PORT:-8080}:${METRICS_PORT:-8080}"
-
-      # The WebSocket/TLS transport, when WS_ENABLED=true. Uncomment and set
-      # WS_ADDR to the same port.
-      # - "443:443"

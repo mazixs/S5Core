@@ -1293,10 +1293,51 @@ docker run -d \
 ```
 
 ### Using Docker Compose
-Create a `.env` file based on `.env.example` and run:
+
+Copy `.env.example` to `.env` and replace the example credentials. The base
+Compose file pins image `2.0.0`; set `S5CORE_IMAGE` to use another tag or digest.
+It publishes plain SOCKS5 and metrics on host loopback. Inside the container,
+Compose binds these listeners to `0.0.0.0` and keeps their ports synchronized
+with the published ports, including shell overrides.
+
 ```bash
+cp .env.example .env
+# Edit .env before starting.
+docker compose config --quiet
 docker compose up -d
 ```
+
+For the public obfs listener, set `OBFS_ENABLED=true`, `OBFS_PORT=27015` and
+`OBFS_PSK` to a 32-character random key (`openssl rand -base64 24`). Without
+this opt-in, the base configuration serves only local plain SOCKS5 and metrics.
+
+**WSS:** prepare a certificate directory containing `fullchain.pem` and
+`privkey.pem`, readable by container UID/GID `65532:65532`. Include any symlink
+targets inside that directory. Set `S5CORE_CERTS_DIR` to its path and set the
+32-byte `OBFS_PSK` in `.env`. The override mounts certificates read-only,
+enables WSS on container port 8443 and publishes `${WS_PORT:-443}` on the host.
+It manages `WS_ADDR`, `WS_CERT_FILE` and `WS_KEY_FILE` itself.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.wss.yml up -d
+```
+
+**Multiple accounts:** prepare a `users.json` using the account format above.
+Mount its whole directory, since updates replace the file atomically. For a
+local `./data` directory and the default image user:
+
+```bash
+sudo install -d -o 65532 -g 65532 -m 750 ./data
+sudo install -o 65532 -g 65532 -m 600 users.json ./data/users.json
+# Set S5CORE_DATA_DIR=./data in .env.
+docker compose -f docker-compose.yml -f docker-compose.users.yml up -d
+```
+
+Run the `install` commands only for initial setup; replacing `users.json` later
+can overwrite accumulated traffic. The override sets `USERS_FILE` to
+`/var/lib/s5core/users.json`. The host directory persists across container
+recreation. Both overrides can be combined by passing all three `-f` arguments.
+Missing mount directories are rejected rather than created automatically.
 
 #### Routing Another Service Through S5Core
 You can easily route traffic of another Docker container through S5Core without exposing it to the host network. This is useful when you want to anonymize or proxy a specific application.

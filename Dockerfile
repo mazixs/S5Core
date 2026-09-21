@@ -1,9 +1,7 @@
 ARG GOLANG_VERSION="1.26.6"
 
 FROM golang:${GOLANG_VERSION}-alpine AS builder
-# VERSION ends up in the s5core_build_info metric and in the startup line.
-# Without it a container reports only its commit hash, which is still usable
-# but says nothing about which release it is.
+# Release version for startup logs and s5core_build_info.
 ARG VERSION=""
 RUN apk --no-cache add tzdata
 WORKDIR /go/src/github.com/mazixs/S5Core

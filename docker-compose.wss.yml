@@ -1,0 +1,17 @@
+services:
+  s5core:
+    environment:
+      WS_ENABLED: "true"
+      WS_ADDR: 0.0.0.0:8443
+      WS_CERT_FILE: /etc/s5core/tls/fullchain.pem
+      WS_KEY_FILE: /etc/s5core/tls/privkey.pem
+      OBFS_PSK: ${OBFS_PSK:?Set OBFS_PSK to a 32-byte key}
+    ports:
+      - "${WS_PORT:-443}:8443"
+    volumes:
+      - type: bind
+        source: ${S5CORE_CERTS_DIR:?Set S5CORE_CERTS_DIR to the TLS certificate directory}
+        target: /etc/s5core/tls
+        read_only: true
+        bind:
+          create_host_path: false
