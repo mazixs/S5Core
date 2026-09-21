@@ -6,13 +6,23 @@
 *.dylib
 /s5core
 /s5client
+/idleprobe
+/udpprobe
+/connlat
+/stealthcheck
+/fpprobe
+/fpcollect
+/wirebench
 dist/
 build/
+# Where the docs tell you to build the measurement tools (docs/gates/README.md).
+bin/
 
 # Test binary, built with `go test -c`
 *.test
 
 # Output of the go coverage tool, specifically when used with LiteIDE
+coverage.txt
 *.out
 
 # Dependency directories (remove the comment below to include it)
@@ -33,3 +43,4 @@ go.work.sum
 *~
 .DS_Store
 scripts/transparent_proxy.sh
+bench/
