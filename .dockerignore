@@ -29,7 +29,10 @@ coverage.txt
 *.out
 
 # Local configuration
-.env
+.env*
+.s5core-init.*/
+.ci-reports/
+/httpsprobe
 
 # Documentation and editor files
 docs/

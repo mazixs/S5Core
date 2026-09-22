@@ -1,16 +1,27 @@
 services:
   s5core:
     image: ghcr.io/mazixs/s5core:latest
-    restart: always
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file: .env
     environment:
       PROXY_LISTEN_IP: 0.0.0.0
-      PROXY_PORT: ${PROXY_PORT:-1080}
-      OBFS_PORT: ${OBFS_PORT:-1443}
+      PROXY_PORT: ${PROXY_PORT:-28173}
+      OBFS_PORT: ${OBFS_PORT:-28479}
       METRICS_BIND_ADDR: 0.0.0.0
-      METRICS_PORT: ${METRICS_PORT:-8080}
+      METRICS_PORT: ${METRICS_PORT:-8789}
     ports:
-      - "${OBFS_PORT:-1443}:${OBFS_PORT:-1443}"
+      - "${OBFS_PORT:-28479}:${OBFS_PORT:-28479}"
       # Plain SOCKS5 and metrics stay private on the host.
-      - "127.0.0.1:${PROXY_PORT:-1080}:${PROXY_PORT:-1080}"
-      - "127.0.0.1:${METRICS_PORT:-8080}:${METRICS_PORT:-8080}"
+      - "127.0.0.1:${PROXY_PORT:-28173}:${PROXY_PORT:-28173}"
+      - "127.0.0.1:${METRICS_PORT:-8789}:${METRICS_PORT:-8789}"
