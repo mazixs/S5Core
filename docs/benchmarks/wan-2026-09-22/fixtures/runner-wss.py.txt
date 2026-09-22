@@ -2,8 +2,8 @@ import hashlib,itertools,json,os,re,secrets,shlex,shutil,subprocess,time,signal
 from pathlib import Path
 D=Path(__file__).resolve().parent
 addresses=json.loads((D/'addresses.json').read_text());VPS=addresses['vps'];SOURCE=addresses['source']
-HOSTS=('router','amsterdam');token=secrets.token_hex(5)
-REMOTE={'router':'/opt/tmp/s5core-wss-wan-'+token,'amsterdam':'/var/tmp/s5core-wss-wan-'+token}
+HOSTS=('router','node-a');token=secrets.token_hex(5)
+REMOTE={'router':'/opt/tmp/s5core-wss-wan-'+token,'node-a':'/var/tmp/s5core-wss-wan-'+token}
 PORT=47941;TARGET=47943;LOCAL=11891
 rows=(D/'samples.jsonl').open('w',buffering=1)
 state={'remote':REMOTE,'started':time.time(),'completed':False,'transport':'wss','commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()}
@@ -96,7 +96,7 @@ try:
   # Install a task-scoped watchdog before uploading/launching test processes.
   upload(h,'watchdog.sh',('#!/bin/sh\nsleep 1200\n'+stop_script(h)+'\n').encode(),True)
   ssh(h,f'nohup {r}/watchdog.sh >/dev/null 2>&1 < /dev/null & echo $! > {r}/watchdog-id')
- names={'router':['client-v2','client-current','wirebench-client','httpprobe'],'amsterdam':['server-v2','server-current','wirebench-server']}
+ names={'router':['client-v2','client-current','wirebench-client','httpprobe'],'node-a':['server-v2','server-current','wirebench-server']}
  manifest={}
  for h,ns in names.items():
   arch='arm64' if h=='router' else 'amd64'
@@ -108,26 +108,26 @@ try:
   env(h,'monitor.env',{'TCPDIAG_PROC_ONLY':1 if h=='router' else 0})
   start(h,'monitor','monitor-'+arch,'monitor.env','-duration 19m -interval 200ms')
  (D/'manifest.json').write_text(json.dumps(manifest,indent=2))
- upload('amsterdam','cert.pem',(D/'cert.pem').read_bytes())
- upload('amsterdam','key.pem',(D/'key.pem').read_bytes())
+ upload('node-a','cert.pem',(D/'cert.pem').read_bytes())
+ upload('node-a','key.pem',(D/'key.pem').read_bytes())
  upload('router','cert.pem',(D/'cert.pem').read_bytes())
  key,password=secrets.token_hex(16),secrets.token_urlsafe(18)
  for mode in ('v2','current'):
-  server=dict(PROXY_USER='wan-bench',PROXY_PASSWORD=password,REQUIRE_AUTH='true',PROXY_LISTEN_IP='0.0.0.0',PROXY_PORT=0,ALLOWED_IPS=SOURCE+',127.0.0.1',OBFS_ENABLED='false',WS_ENABLED='true',WS_ADDR=f'0.0.0.0:{PORT}',WS_CERT_FILE=REMOTE['amsterdam']+'/cert.pem',WS_KEY_FILE=REMOTE['amsterdam']+'/key.pem',WS_MIN_FRAME=256,WS_MAX_FRAME=4096,OBFS_PORT=PORT,OBFS_PSK=key,OBFS_NODE_ID='wan-bench',OBFS_MTU=1400,OBFS_MAX_PADDING=256,OBFS_REPLAY_WINDOW=10000,MAX_CONNECTIONS=5000,METRICS_PORT=0,METRICS_BIND_ADDR='127.0.0.1',LOG_LEVEL='info',SHUTDOWN_TIMEOUT='3s')
+  server=dict(PROXY_USER='wan-bench',PROXY_PASSWORD=password,REQUIRE_AUTH='true',PROXY_LISTEN_IP='0.0.0.0',PROXY_PORT=0,ALLOWED_IPS=SOURCE+',127.0.0.1',OBFS_ENABLED='false',WS_ENABLED='true',WS_ADDR=f'0.0.0.0:{PORT}',WS_CERT_FILE=REMOTE['node-a']+'/cert.pem',WS_KEY_FILE=REMOTE['node-a']+'/key.pem',WS_MIN_FRAME=256,WS_MAX_FRAME=4096,OBFS_PORT=PORT,OBFS_PSK=key,OBFS_NODE_ID='wan-bench',OBFS_MTU=1400,OBFS_MAX_PADDING=256,OBFS_REPLAY_WINDOW=10000,MAX_CONNECTIONS=5000,METRICS_PORT=0,METRICS_BIND_ADDR='127.0.0.1',LOG_LEVEL='info',SHUTDOWN_TIMEOUT='3s')
   client=dict(CLIENT_LISTEN_ADDR=f'127.0.0.1:{LOCAL}',SERVER_ADDR=f'{VPS}:{PORT}',PROXY_USER='wan-bench',PROXY_PASS=password,OBFS_PSK=key,OBFS_NODE_ID='wan-bench',OBFS_MTU=1400,OBFS_MAX_PADDING=256,OBFS_FORMAT='v1',OBFS_PROLOGUE='printable',TRANSPORT='ws',WS_URL=f'wss://{VPS}:{PORT}/ws',WS_CA_FILE=REMOTE['router']+'/cert.pem',SERVER_NAME='localhost',WS_MIN_FRAME=256,WS_MAX_FRAME=4096,TIMEZONE_CHECK='false',LOG_LEVEL='error',SHUTDOWN_TIMEOUT='3s')
-  env('amsterdam',mode+'.env',server);env('router',mode+'.env',client)
- env('amsterdam','target.env',{'BENCH_ALLOW_IP':SOURCE})
- start('amsterdam','target','wirebench-server','target.env',f'-serve :{TARGET}')
+  env('node-a',mode+'.env',server);env('router',mode+'.env',client)
+ env('node-a','target.env',{'BENCH_ALLOW_IP':SOURCE})
+ start('node-a','target','wirebench-server','target.env',f'-serve :{TARGET}')
  time.sleep(.5)
  for i,order in enumerate(itertools.permutations(('raw','v2','current')),1):
   for mode in order:
    if mode!='raw':
-    start('amsterdam','server','server-'+mode,mode+'.env');start('router','client','client-'+mode,mode+'.env');time.sleep(.5)
+    start('node-a','server','server-'+mode,mode+'.env');start('router','client','client-'+mode,mode+'.env');time.sleep(.5)
    for direction in ('down','up') if i%2 else ('up','down'):
     transfer(mode,direction,'4MB','warm',i)
     transfer(mode,direction,'256MB','measure',i)
    latency(mode,i)
-   if mode!='raw':stop('router','client');stop('amsterdam','server')
+   if mode!='raw':stop('router','client');stop('node-a','server')
  state['completed']=True
  print('All six permutations completed.',flush=True)
 finally:

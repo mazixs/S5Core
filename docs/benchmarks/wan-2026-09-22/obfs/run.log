@@ -90,4 +90,4 @@ measure round=6 raw down: 42.38 MiB/s
 latency round=6 raw: 50 verified requests
 All six permutations completed.
 router: temporary processes/files removed; production process inventory unchanged
-amsterdam: temporary processes/files removed; production process inventory unchanged
+node-a: temporary processes/files removed; production process inventory unchanged

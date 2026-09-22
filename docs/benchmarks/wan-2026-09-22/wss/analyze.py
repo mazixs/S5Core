@@ -23,7 +23,7 @@ for r in rows:
  if not r['ok']:output['failures'].append(r)
  if r['stage']!='measure':continue
  rec={k:r[k] for k in ('mode','direction','round','mib_s')};rec['hosts']={}
- for host in ('router','amsterdam'):
+ for host in ('router','node-a'):
   b,a=[snap(r[key][host]) for key in ('resources_before','resources_after')]
   delta=[y-x for x,y in zip(b['system'],a['system'])];total=sum(delta[:8]);cpus=3 if host=='router' else 1
   v={'system_busy_percent':100*(total-delta[3]-delta[4])/total,'system_busy_cores':cpus*(total-delta[3]-delta[4])/total,'softirq_cores':cpus*delta[6]/total,'processes':{},'swap_delta':{k:a['swap'][k]-b['swap'][k] for k in b['swap']}}
@@ -39,7 +39,7 @@ for mode in ('raw','v2','current'):
   assert len(v)==6
   output['throughput'][mode+'_'+direction]={'n':len(v),'median_mib_s':st.median(v),'median_mbit_s':st.median(v)*2**20*8/1e6,'min_mib_s':min(v),'max_mib_s':max(v),'values':v}
   if mode!='raw':
-   cpu=[r['hosts']['router']['processes']['client.pid']['cpu_seconds_per_gib']+r['hosts']['amsterdam']['processes']['server.pid']['cpu_seconds_per_gib'] for r in records]
+   cpu=[r['hosts']['router']['processes']['client.pid']['cpu_seconds_per_gib']+r['hosts']['node-a']['processes']['server.pid']['cpu_seconds_per_gib'] for r in records]
    output['throughput'][mode+'_'+direction]['median_proxy_cpu_seconds_per_gib']=st.median(cpu)
  samples=[r['measurement'] for r in rows if r['kind']=='latency' and r['mode']==mode]
  assert len(samples)==300

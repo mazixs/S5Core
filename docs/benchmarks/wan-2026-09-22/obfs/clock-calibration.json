@@ -47,7 +47,7 @@
       "remote_minus_local_seconds": -2.63470458984375
     }
   },
-  "amsterdam": {
+  "node-a": {
     "samples": [
       {
         "roundtrip_seconds": 0.043393611907958984,
