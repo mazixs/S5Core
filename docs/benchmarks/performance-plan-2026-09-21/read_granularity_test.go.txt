@@ -1,0 +1,104 @@
+package obfs
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
+	"testing"
+)
+
+type perfCountWriter struct {
+	calls, bytes int
+	io.Writer
+}
+
+func (w *perfCountWriter) Write(p []byte) (int, error) {
+	w.calls++
+	w.bytes += len(p)
+	return w.Writer.Write(p)
+}
+func TestPerfRelayReadGranularity(t *testing.T) {
+	raw := &observerPerfConn{}
+	payload := benchPayload(1 << 20)
+	cfg := Config{PSK: []byte(benchPSK), MTU: 1400, MaxPadding: 256}
+	sender, e := NewClientConn(raw, cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer sender.Close()
+	for i := 0; i < len(payload); i += 32768 {
+		if _, e = sender.Write(payload[i : i+32768]); e != nil {
+			t.Fatal(e)
+		}
+	}
+	sender.(interface{ CloseWrite() error }).CloseWrite()
+	receiver, e := NewServerConn(raw, cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer receiver.Close()
+	hash := sha256.New()
+	out := &perfCountWriter{Writer: hash}
+	n, e := io.CopyBuffer(out, receiver, make([]byte, 32768))
+	expected := sha256.Sum256(payload)
+	if e != nil || n != int64(len(payload)) || !bytes.Equal(hash.Sum(nil), expected[:]) {
+		t.Fatal(n, e)
+	}
+	t.Logf("payload=%d destination_writes=%d mean_payload_per_write=%.1f", n, out.calls, float64(n)/float64(out.calls))
+}
+
+type observerPerfConn struct {
+	bytes.Buffer
+	discardConn
+}
+
+func (c *observerPerfConn) Write(p []byte) (int, error) { return c.Buffer.Write(p) }
+func (c *observerPerfConn) Read(p []byte) (int, error)  { return c.Buffer.Read(p) }
+
+type perfGuardConn struct {
+	discardConn
+	input      *bytes.Reader
+	emptyReads int
+}
+
+func (c *perfGuardConn) Read(p []byte) (int, error) {
+	if c.input.Len() == 0 {
+		c.emptyReads++
+		return 0, errors.New("unexpected network read after buffered payload")
+	}
+	return c.input.Read(p)
+}
+func TestPerfBufferedDataDoesNotWaitForNextFrame(t *testing.T) {
+	for _, prefix := range []int{0, 1, 2, 9} {
+		t.Run(fmt.Sprint(prefix), func(t *testing.T) {
+			raw := &observerPerfConn{}
+			cfg := Config{PSK: []byte(benchPSK), MTU: 1400, MaxPadding: 256}
+			sender, e := NewClientConn(raw, cfg)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer sender.Close()
+			first := []byte("deliver this immediately")
+			if _, e = sender.Write(first); e != nil {
+				t.Fatal(e)
+			}
+			boundary := raw.Len()
+			if _, e = sender.Write([]byte("the next frame is deliberately incomplete")); e != nil {
+				t.Fatal(e)
+			}
+			guarded := &perfGuardConn{input: bytes.NewReader(raw.Bytes()[:boundary+prefix])}
+			receiver, e := NewServerConn(guarded, cfg)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer receiver.Close()
+			out := make([]byte, 32768)
+			n, e := receiver.Read(out)
+			if e != nil || !bytes.Equal(out[:n], first) || guarded.emptyReads != 0 {
+				t.Fatalf("n=%d err=%v extra_reads=%d payload=%q", n, e, guarded.emptyReads, out[:n])
+			}
+		})
+	}
+}

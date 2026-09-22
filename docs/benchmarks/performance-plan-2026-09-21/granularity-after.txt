@@ -1,0 +1,5 @@
+=== RUN   TestPerfRelayReadGranularity
+    perf_read_test.go:47: payload=1048576 destination_writes=108 mean_payload_per_write=9709.0
+--- PASS: TestPerfRelayReadGranularity (0.01s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/obfs	0.007s

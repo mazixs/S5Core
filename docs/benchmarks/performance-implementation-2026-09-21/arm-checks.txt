@@ -1,0 +1,38 @@
+after-00.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+=== RUN   TestPerformanceProcesses/wss
+--- PASS: TestPerformanceProcesses (93.80s)
+    --- PASS: TestPerformanceProcesses/obfs (51.24s)
+    --- PASS: TestPerformanceProcesses/wss (42.52s)
+PASS
+
+after-01.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+=== RUN   TestPerformanceProcesses/wss
+--- PASS: TestPerformanceProcesses (84.68s)
+    --- PASS: TestPerformanceProcesses/obfs (41.79s)
+    --- PASS: TestPerformanceProcesses/wss (42.84s)
+PASS
+
+before-00.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+=== RUN   TestPerformanceProcesses/wss
+--- PASS: TestPerformanceProcesses (97.33s)
+    --- PASS: TestPerformanceProcesses/obfs (40.11s)
+    --- PASS: TestPerformanceProcesses/wss (57.18s)
+PASS
+
+before-01.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+=== RUN   TestPerformanceProcesses/wss
+--- PASS: TestPerformanceProcesses (108.39s)
+    --- PASS: TestPerformanceProcesses/obfs (50.45s)
+    --- PASS: TestPerformanceProcesses/wss (57.90s)
+PASS
+
+clock-ticks.log
+100

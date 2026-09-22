@@ -1,0 +1,10 @@
+=== RUN   TestAuditActiveHTTPSReadDeadline
+    socks_https_audit_test.go:230: STREAM mode=direct bytes=61440 expected=61440 elapsed=2.968797985s err=<nil>
+    socks_https_audit_test.go:230: STREAM mode=plain bytes=20480 expected=61440 elapsed=1.00596073s err=unexpected EOF
+    socks_https_audit_test.go:230: STREAM mode=obfs bytes=20480 expected=61440 elapsed=1.006548098s err=unexpected EOF
+    socks_https_audit_test.go:230: STREAM mode=obfs-keepalive bytes=61440 expected=61440 elapsed=2.976055258s err=<nil>
+    socks_https_audit_test.go:230: STREAM mode=obfs-keepalive-risk bytes=20480 expected=61440 elapsed=1.005771007s err=unexpected EOF
+    socks_https_audit_test.go:230: STREAM mode=wss bytes=20480 expected=61440 elapsed=1.010461812s err=unexpected EOF
+--- PASS: TestAuditActiveHTTPSReadDeadline (9.99s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	10.999s

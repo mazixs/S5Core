@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -308,12 +309,14 @@ type conn struct {
 	// Pre-allocated read buffers. readBuf is a socket buffer, not a frame
 	// buffer: readLo..readHi is what has been read from the socket and not
 	// yet consumed, which is usually several whole frames plus part of one.
-	readBuf   []byte // buffered socket bytes
-	readLo    int    // first unconsumed byte
-	readHi    int    // one past the last buffered byte
-	readRest  []byte // payload of the last frame that did not fit the caller
-	restLo    int    // how much of readRest has been handed out
-	nonceRecv [12]byte
+	readBuf     []byte // buffered socket bytes
+	readLo      int    // first unconsumed byte
+	readHi      int    // one past the last buffered byte
+	readRest    []byte // payload of the last frame that did not fit the caller
+	restLo      int    // how much of readRest has been handed out
+	nonceRecv   [12]byte
+	readErr     error // terminal read failure, protected by readMu
+	wireReadErr error // deferred error accompanying buffered socket bytes
 
 	// bytesRead counts bytes taken from the underlying connection, to report
 	// how much a peer sent before a failure. Read path only, under readMu.
@@ -728,7 +731,16 @@ func batchBytes(frames, frameLen, limit int) int {
 // Zero-alloc hot path: all buffers are pre-allocated and reused.
 func (c *conn) Write(b []byte) (int, error) {
 	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
+	largeWrite := len(b) > c.maxFrame
+	// A busy relay can keep the socket writable continuously. Yield between
+	// completed batches so another tunnel can run; never pause within a frame
+	// or while holding writeMu. No timer or wire-format change is involved.
+	defer func() {
+		c.writeMu.Unlock()
+		if largeWrite {
+			runtime.Gosched()
+		}
+	}()
 
 	// Cut the write into equal parts instead of filling frames to the MTU and
 	// leaving a short remainder. The remainder is a shape of its own on the
@@ -903,39 +915,82 @@ func (c *conn) ensure(n int, want FrameState) error {
 	}
 
 	for c.buffered() < n {
-		m, err := c.Conn.Read(c.readBuf[c.readHi:])
-		c.readHi += m
-		c.bytesRead += int64(m)
-		if err != nil {
-			// A stream that ends between frames ended cleanly; one that ends
-			// inside a frame did not, which is what io.ReadFull used to say
-			// when it read the frame itself.
+		if c.wireReadErr != nil {
+			err := c.wireReadErr
+			c.wireReadErr = nil
 			if errors.Is(err, io.EOF) && c.buffered() > 0 {
 				return io.ErrUnexpectedEOF
 			}
 			return err
+		}
+		m, err := c.Conn.Read(c.readBuf[c.readHi:])
+		c.readHi += m
+		c.bytesRead += int64(m)
+		if err != nil {
+			// A Reader may return data and an error together. Consume every
+			// complete buffered frame before surfacing that error.
+			c.wireReadErr = err
 		}
 	}
 	return nil
 }
 
 // Read implements net.Conn.Read with de-obfuscation.
-// It takes a full frame from the buffer, decrypts it, and extracts the payload.
-// Supports internal buffering for payloads larger than the caller's buffer.
+// After the first payload it drains only complete frames already in memory.
+// It never waits on the network to fill the caller's buffer.
 func (c *conn) Read(b []byte) (int, error) {
 	c.readMu.Lock()
-	defer c.readMu.Unlock()
-
-	// The loop exists for keepalive frames: they carry no payload and must
-	// not surface as a zero-length read, which io.Copy would spin on and a
-	// caller reading into a fixed buffer could mistake for a closed stream.
+	total := 0
+	// Match the writer's scheduling point only after returning a batch larger
+	// than one frame. Small interactive reads retain the direct return path.
+	defer func() {
+		c.readMu.Unlock()
+		if total > c.maxFrame {
+			runtime.Gosched()
+		}
+	}()
+	if len(b) == 0 {
+		return 0, nil
+	}
+	if c.readErr != nil {
+		return 0, c.readErr
+	}
 	for {
-		n, err := c.readFrame(b)
+		if total > 0 && c.restLo >= len(c.readRest) && !c.bufferedFrameReady() {
+			return total, nil
+		}
+		n, err := c.readFrame(b[total:])
+		total += n
 		if errors.Is(err, errEmptyFrame) {
 			continue
 		}
-		return n, err
+		if err != nil {
+			// Deadlines can be extended and retried. Protocol failures and
+			// EOF are terminal: never return later bytes after a bad frame.
+			var timeout net.Error
+			if !errors.As(err, &timeout) || !timeout.Timeout() {
+				c.readErr = err
+			}
+			return total, err
+		}
+		if total == len(b) {
+			return total, nil
+		}
 	}
+}
+
+// bufferedFrameReady includes FIN and invalid lengths, which readFrame can
+// resolve without I/O. Length masks use the next counter without advancing it.
+func (c *conn) bufferedFrameReady() bool {
+	if c.readClosed {
+		return true
+	}
+	if !c.recvReady || c.buffered() < 2 {
+		return false
+	}
+	masked := binary.BigEndian.Uint16(c.readBuf[c.readLo : c.readLo+2])
+	size := int(masked ^ c.recvMask(c.readCounter))
+	return size < minCiphertext || c.buffered() >= 2+size
 }
 
 // errEmptyFrame says the frame just read carried no payload - a keepalive.

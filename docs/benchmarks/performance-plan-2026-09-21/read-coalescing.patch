@@ -1,0 +1,44 @@
+--- a/pkg/obfs/conn.go
++++ b/pkg/obfs/conn.go
+@@ -925,16 +925,35 @@
+ func (c *conn) Read(b []byte) (int, error) {
+ 	c.readMu.Lock()
+ 	defer c.readMu.Unlock()
+-
+-	// The loop exists for keepalive frames: they carry no payload and must
+-	// not surface as a zero-length read, which io.Copy would spin on and a
+-	// caller reading into a fixed buffer could mistake for a closed stream.
++	if len(b) == 0 {
++		return 0, nil
++	}
++	total := 0
+ 	for {
+-		n, err := c.readFrame(b)
++		if total > 0 && c.restLo >= len(c.readRest) {
++			if c.readClosed {
++				return total, io.EOF
++			}
++			if !c.recvReady || c.buffered() < 2 {
++				return total, nil
++			}
++			masked := binary.BigEndian.Uint16(c.readBuf[c.readLo : c.readLo+2])
++			size := int(masked ^ c.recvMask(c.readCounter))
++			if size >= minCiphertext && c.buffered() < 2+size {
++				return total, nil
++			}
++		}
++		n, err := c.readFrame(b[total:])
++		total += n
+ 		if errors.Is(err, errEmptyFrame) {
+ 			continue
+ 		}
+-		return n, err
++		if err != nil || total == len(b) {
++			return total, err
++		}
++		if n == 0 {
++			return total, nil
++		}
+ 	}
+ }
+ 

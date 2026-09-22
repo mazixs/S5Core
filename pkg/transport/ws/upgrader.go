@@ -39,6 +39,9 @@ func NewUpgrader(opts UpgraderOpts) *Upgrader {
 		up: websocket.Upgrader{
 			Subprotocols: namedSubprotocols(opts.Subprotocols),
 			CheckOrigin:  checkOrigin,
+			// Payload capacity; Gorilla reserves its frame header separately.
+			// Keep this bounded even when shaping allows larger messages.
+			WriteBufferSize: DefaultMaxFrame,
 		},
 	}
 }

@@ -1,0 +1,7 @@
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+=== RUN   TestPerformanceProcesses/wss
+--- PASS: TestPerformanceProcesses (22.12s)
+    --- PASS: TestPerformanceProcesses/obfs (6.86s)
+    --- PASS: TestPerformanceProcesses/wss (15.24s)
+PASS

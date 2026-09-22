@@ -13,18 +13,33 @@ type NameResolver interface {
 	Resolve(ctx context.Context, name string) (context.Context, net.IP, error)
 }
 
+// MultiNameResolver optionally supplies all addresses for CONNECT. Legacy
+// NameResolver implementations retain their single-address contract.
+type MultiNameResolver interface {
+	NameResolver
+	ResolveAll(context.Context, string) (context.Context, []net.IP, error)
+}
+
 // DNSResolver uses the system DNS to resolve host names
 type DNSResolver struct{}
 
 func (d DNSResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
+	ctx, ips, err := d.ResolveAll(ctx, name)
+	if err != nil {
+		return ctx, nil, err
+	}
+	return ctx, ips[0], nil
+}
+
+func (d DNSResolver) ResolveAll(ctx context.Context, name string) (context.Context, []net.IP, error) {
 	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", name)
 	if err != nil {
 		return ctx, nil, err
 	}
 	if len(ips) == 0 {
-		return ctx, nil, fmt.Errorf("no IP addressed found for %s", name)
+		return ctx, nil, fmt.Errorf("no IP addresses found for %s", name)
 	}
-	return ctx, ips[0], nil
+	return ctx, ips, nil
 }
 
 // resolveWithin looks a name up under a budget of its own, and is how the UDP

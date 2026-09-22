@@ -1,0 +1,226 @@
+[
+  {
+    "scenario": [
+      "obfs",
+      "mixed",
+      "h1",
+      "new"
+    ],
+    "variants": {
+      "before": {
+        "p50_ms": 1.195675,
+        "p95_ms": 2.421968,
+        "p99_ms": 15.477993,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          15.433181,
+          15.565171,
+          15.40306,
+          15.460296,
+          15.493583,
+          15.543916
+        ],
+        "setup_p50_ms": 0.339102,
+        "ttfb_p99_ms": 15.459959,
+        "server_cpu_seconds_per_gib": 39782.83637124183,
+        "server_rss_bytes": 24981504,
+        "client_cpu_seconds_per_gib": 87197.66119738562,
+        "client_rss_bytes": 16838656
+      },
+      "after": {
+        "p50_ms": 1.159922,
+        "p95_ms": 8.93784,
+        "p99_ms": 10.603764,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          10.583763,
+          10.39583,
+          10.679292,
+          10.658454,
+          10.671244,
+          10.313864
+        ],
+        "setup_p50_ms": 0.343854,
+        "ttfb_p99_ms": 10.572703,
+        "server_cpu_seconds_per_gib": 83030.7709490196,
+        "server_rss_bytes": 25911296,
+        "client_cpu_seconds_per_gib": 83908.01100130718,
+        "client_rss_bytes": 16912384
+      }
+    },
+    "median_run_p99_change_ci_percent": [
+      -33.119620564084364,
+      -30.889894151497977
+    ]
+  },
+  {
+    "scenario": [
+      "obfs",
+      "mixed",
+      "h1",
+      "reuse"
+    ],
+    "variants": {
+      "before": {
+        "p50_ms": 0.091912,
+        "p95_ms": 0.140349,
+        "p99_ms": 0.470605,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          0.44521,
+          0.640898,
+          0.4669,
+          0.612922,
+          0.337479,
+          0.373749
+        ],
+        "setup_p50_ms": 0,
+        "ttfb_p99_ms": 0.459775,
+        "server_cpu_seconds_per_gib": 3158.064188235294,
+        "server_rss_bytes": 25665536,
+        "client_cpu_seconds_per_gib": 8246.056491503268,
+        "client_rss_bytes": 16875520
+      },
+      "after": {
+        "p50_ms": 0.087254,
+        "p95_ms": 0.147669,
+        "p99_ms": 6.972283,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          6.953911,
+          6.914757,
+          7.20818,
+          6.972283,
+          6.950194,
+          6.906064
+        ],
+        "setup_p50_ms": 0,
+        "ttfb_p99_ms": 6.941906,
+        "server_cpu_seconds_per_gib": 6447.7143843137255,
+        "server_rss_bytes": 26300416,
+        "client_cpu_seconds_per_gib": 6974.058415686275,
+        "client_rss_bytes": 16912384
+      }
+    },
+    "median_run_p99_change_ci_percent": [
+      1008.9394809462284,
+      1854.9434218000417
+    ]
+  },
+  {
+    "scenario": [
+      "wss",
+      "mixed",
+      "h1",
+      "new"
+    ],
+    "variants": {
+      "before": {
+        "p50_ms": 2.050545,
+        "p95_ms": 16.000518,
+        "p99_ms": 19.86389,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          18.572508,
+          19.234343,
+          20.152685,
+          19.461833,
+          20.461469,
+          19.619267
+        ],
+        "setup_p50_ms": 1.125556,
+        "ttfb_p99_ms": 19.846335,
+        "server_cpu_seconds_per_gib": 114260.51681045751,
+        "server_rss_bytes": 26656768,
+        "client_cpu_seconds_per_gib": 174877.8044235294,
+        "client_rss_bytes": 18395136
+      },
+      "after": {
+        "p50_ms": 2.041404,
+        "p95_ms": 19.312092,
+        "p99_ms": 23.385474,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          22.982808,
+          24.247113,
+          23.193216,
+          23.675182,
+          23.057529,
+          23.08951
+        ],
+        "setup_p50_ms": 1.054055,
+        "ttfb_p99_ms": 23.360817,
+        "server_cpu_seconds_per_gib": 182597.51688366014,
+        "server_rss_bytes": 26509312,
+        "client_cpu_seconds_per_gib": 216678.29291503268,
+        "client_rss_bytes": 18870272
+      }
+    },
+    "median_run_p99_change_ci_percent": [
+      14.228791349638993,
+      23.84245668099092
+    ]
+  },
+  {
+    "scenario": [
+      "wss",
+      "mixed",
+      "h1",
+      "reuse"
+    ],
+    "variants": {
+      "before": {
+        "p50_ms": 0.111337,
+        "p95_ms": 0.159827,
+        "p99_ms": 0.701608,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          0.996287,
+          0.418678,
+          0.786632,
+          0.492449,
+          1.197898,
+          0.474073
+        ],
+        "setup_p50_ms": 0,
+        "ttfb_p99_ms": 0.681049,
+        "server_cpu_seconds_per_gib": 4824.8202875817,
+        "server_rss_bytes": 27144192,
+        "client_cpu_seconds_per_gib": 9605.77857254902,
+        "client_rss_bytes": 18395136
+      },
+      "after": {
+        "p50_ms": 0.10721,
+        "p95_ms": 0.168267,
+        "p99_ms": 9.203537,
+        "n": 10200,
+        "runs": 6,
+        "run_p99_ms": [
+          14.310648,
+          12.505793,
+          14.21584,
+          12.10138,
+          0.211518,
+          11.210365
+        ],
+        "setup_p50_ms": 0,
+        "ttfb_p99_ms": 9.179992,
+        "server_cpu_seconds_per_gib": 8553.090509803922,
+        "server_rss_bytes": 27402240,
+        "client_cpu_seconds_per_gib": 11360.258677124182,
+        "client_rss_bytes": 18513920
+      }
+    },
+    "median_run_p99_change_ci_percent": [
+      667.2201787288008,
+      2843.216587808286
+    ]
+  }
+]

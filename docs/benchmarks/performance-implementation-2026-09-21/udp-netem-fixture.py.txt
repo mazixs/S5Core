@@ -1,0 +1,40 @@
+# Invoke via scripts/performance-netem.sh; this fixture never changes networking.
+import os,signal,socket,subprocess,sys,time
+from pathlib import Path
+base=Path('/tmp/s5core-implementation-20260921')
+variant,mode,case=sys.argv[1:]
+out=base/('udp-'+case+'-'+variant+'-'+mode)
+out.mkdir(exist_ok=False)
+client=base/('baseline-client' if variant=='before' else 'final-client')
+server=base/('baseline-server' if variant=='before' else 'candidate-server')
+env={'PATH':os.environ['PATH'],'HOME':os.environ['HOME'],'GOMAXPROCS':'16','LOG_LEVEL':'error'}
+children=[]
+logs=[]
+def run(binary,values,name,args=()):
+    log=(out/(name+'.log')).open('w');logs.append(log)
+    p=subprocess.Popen([str(binary),*args],env=dict(env,**values),stdout=log,stderr=subprocess.STDOUT)
+    children.append(p)
+    return p
+def ready(port,p):
+    for _ in range(300):
+        if p.poll()!=None:raise RuntimeError('process exited: '+str(p.returncode))
+        try:
+            with socket.create_connection(('127.0.0.1',port),.1):return
+        except OSError:time.sleep(.02)
+    raise TimeoutError(port)
+try:
+    run(base/'udpprobe',{},'echo',('-echo','127.0.0.1:19999'))
+    s=run(server,{'PROXY_LISTEN_IP':'127.0.0.1','PROXY_PORT':'18108','REQUIRE_AUTH':'false','OBFS_ENABLED':'true','OBFS_PORT':'41443','OBFS_PSK':'0123456789abcdef0123456789abcdef','OBFS_MTU':'1400','OBFS_MAX_PADDING':'256','WS_ENABLED':'true','WS_ADDR':'127.0.0.1:41444','WS_CERT_FILE':str(base/'udp-cert.pem'),'WS_KEY_FILE':str(base/'udp-key.pem'),'WS_MIN_FRAME':'256','WS_MAX_FRAME':'4096','METRICS_BIND_ADDR':'127.0.0.1','METRICS_PORT':'19099'},'server')
+    ready(18108,s)
+    c=run(client,{'CLIENT_LISTEN_ADDR':'127.0.0.1:18109','SERVER_ADDR':'127.0.0.1:41443','OBFS_PSK':'0123456789abcdef0123456789abcdef','OBFS_MTU':'1400','OBFS_MAX_PADDING':'256','OBFS_FORMAT':'v1','TRANSPORT':('ws' if mode=='wss' else 'obfs'),'WS_URL':'wss://127.0.0.1:41444/ws','WS_CA_FILE':str(base/'udp-cert.pem'),'WS_MIN_FRAME':'256','WS_MAX_FRAME':'4096'},'client')
+    ready(18109,c)
+    result=subprocess.run([str(base/'udpprobe'),'-target','127.0.0.1:19999','-socks','127.0.0.1:18109','-n','400','-interval','20ms','-timeout','5s','-label',variant+'-'+mode+'-'+case],capture_output=True,text=True,timeout=60,check=True)
+    (out/'result.txt').write_text(result.stdout)
+    print(result.stdout,end='',flush=True)
+finally:
+    for p in reversed(children):
+        if p.poll() is None:p.send_signal(signal.SIGTERM)
+    for p in children:
+        try:p.wait(timeout=15)
+        except subprocess.TimeoutExpired:p.kill();p.wait()
+    for log in logs:log.close()

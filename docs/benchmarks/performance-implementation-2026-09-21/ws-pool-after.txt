@@ -1,0 +1,54 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   35629	     10215 ns/op	 139.21 MB/s	      93 B/op	       5 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13249	     27144 ns/op	 838.21 MB/s	     221 B/op	      13 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     350	   1027036 ns/op	1020.97 MB/s	    8302 B/op	     513 allocs/op
+BenchmarkPerfUpgrade-16                  	    3493	     98295 ns/op	   31285 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   35810	     10144 ns/op	 140.19 MB/s	      94 B/op	       5 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   12807	     26756 ns/op	 850.35 MB/s	     221 B/op	      13 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     352	   1035008 ns/op	1013.11 MB/s	    8267 B/op	     514 allocs/op
+BenchmarkPerfUpgrade-16                  	    3068	    104315 ns/op	   31286 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   35110	     10254 ns/op	 138.67 MB/s	      93 B/op	       5 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13460	     26919 ns/op	 845.22 MB/s	     222 B/op	      13 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     412	   1020892 ns/op	1027.12 MB/s	    8273 B/op	     513 allocs/op
+BenchmarkPerfUpgrade-16                  	    3620	     97374 ns/op	   31292 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   36577	     10318 ns/op	 137.81 MB/s	      93 B/op	       5 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13095	     28160 ns/op	 807.96 MB/s	     221 B/op	      13 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     346	   1020299 ns/op	1027.71 MB/s	    8266 B/op	     513 allocs/op
+BenchmarkPerfUpgrade-16                  	    3624	     96514 ns/op	   31296 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   37720	     10472 ns/op	 135.79 MB/s	      93 B/op	       5 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13412	     28226 ns/op	 806.06 MB/s	     221 B/op	      13 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     348	    960134 ns/op	1092.11 MB/s	    8266 B/op	     513 allocs/op
+BenchmarkPerfUpgrade-16                  	    3474	     97171 ns/op	   31279 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   40732	      9956 ns/op	 142.83 MB/s	      94 B/op	       5 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13153	     27237 ns/op	 835.34 MB/s	     222 B/op	      13 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     327	   1033232 ns/op	1014.85 MB/s	    8266 B/op	     513 allocs/op
+BenchmarkPerfUpgrade-16                  	    3499	     95035 ns/op	   31278 B/op	     135 allocs/op
+PASS

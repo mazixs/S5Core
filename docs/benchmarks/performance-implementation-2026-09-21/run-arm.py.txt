@@ -1,0 +1,50 @@
+import hashlib,json,os,re,shlex,subprocess,tarfile
+from pathlib import Path
+base=Path('/tmp/s5core-implementation-20260921')
+out=base/'arm-abba';out.mkdir(exist_ok=False)
+ssh=['ssh','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ServerAliveInterval=10','-o','ServerAliveCountMax=3','router']
+def remote(command):return subprocess.check_output(ssh+[command],text=True)
+dir=remote('mktemp -d /opt/tmp/s5core-perf-20260922.XXXXXX').strip()
+if not re.fullmatch(r'/opt/tmp/s5core-perf-20260922\.[A-Za-z0-9]+',dir):raise ValueError('unexpected task directory')
+q=shlex.quote(dir)
+files={'before-client':base/'arm-before-client','before-server':base/'arm-before-server','after-client':base/'crossbuild/linux/arm64/s5client','after-server':base/'crossbuild/linux/arm64/s5core','probe':base/'arm-probe','runner':base/'arm-runner'}
+metadata={'platform':remote('uname -smr').strip(),'/proc/cpuinfo':remote('cat /proc/cpuinfo'),'memory_before':remote('head -8 /proc/meminfo'),'load_before':remote('cat /proc/loadavg'),'rounds':2,'clock_ticks_per_second':100,'completed':False,'environment':{'S5_PERF_PROCS':'1','S5_PERF_AUTH':'member','S5_PERF_PROTOCOLS':'h1,h2','S5_PERF_MODES':'obfs,wss','S5_PERF_SMALL':'100','S5_PERF_LARGE':'3','S5_PERF_CASES':'small,large,upload,mixed'},'binaries':{k:{'path':dir+'/'+k,'sha256':hashlib.sha256(v.read_bytes()).hexdigest()} for k,v in files.items()}}
+(out/'environment.json').write_text(json.dumps(metadata,indent=2)+'\n')
+(base/'arm-remote-path.txt').write_text(dir+'\n')
+print('Uploading task binaries to ARM',flush=True)
+p=subprocess.Popen(ssh+['tar -xf - -C '+q],stdin=subprocess.PIPE)
+with tarfile.open(fileobj=p.stdin,mode='w|') as archive:
+ for name,path in files.items():archive.add(path,arcname=name)
+p.stdin.close()
+if p.wait()!=0:raise RuntimeError('upload failed; task directory retained')
+actual={line.split()[1].rsplit('/',1)[-1]:line.split()[0] for line in remote('sha256sum '+ ' '.join(shlex.quote(dir+'/'+name) for name in files)).splitlines()}
+if any(actual[k]!=metadata['binaries'][k]['sha256'] for k in files):raise RuntimeError('upload checksum mismatch')
+print('Verified uploaded hashes; running ARM ABBA',flush=True)
+status=subprocess.call(ssh+['chmod 700 '+q+'/*\nexec '+q+'/runner '+q])
+print('ARM runner exit',status,flush=True)
+# Some router BusyBox builds can extract tar but cannot create it.
+# Retrieve only known result files, excluding synthetic credentials.
+result_files=['clock-ticks.log']
+for run in ('before-00','after-00','after-01','before-01'):
+ result_files.append(run+'.log')
+ for mode in ('obfs','wss'):
+  for name in ('requests.jsonl','resources.jsonl','client/process.log','server/process.log'):
+   result_files.append('runs/'+run+'/'+mode+'/'+name)
+for name in result_files:
+ data=subprocess.check_output(ssh+['cat '+shlex.quote(dir+'/'+name)])
+ target=out/(name[5:] if name.startswith('runs/') else name)
+ target.parent.mkdir(parents=True,exist_ok=True)
+ target.write_bytes(data)
+metadata['clock_ticks_per_second']=int((out/'clock-ticks.log').read_text())
+metadata['completed']=status==0
+metadata['load_after']=remote('cat /proc/loadavg')
+metadata['memory_after']=remote('head -8 /proc/meminfo')
+(out/'environment.json').write_text(json.dumps(metadata,indent=2)+'\n')
+# Exact executable-prefix check; unrelated processes and services are ignored.
+check='for p in /proc/[0-9]*/exe; do v=$(readlink "$p" 2>/dev/null) || continue; case "$v" in '+q+'/*) echo "$p";; esac; done'
+left=remote(check).strip()
+if left:raise RuntimeError('task processes still alive; directory retained: '+left)
+remote('rm -rf '+q)
+(base/'arm-cleanup.txt').write_text('Uploaded binary SHA-256 verified. No task executable remained running. Temporary ARM directory removed.\n')
+if status:raise SystemExit(status)
+print('ARM results downloaded and temporary files removed',flush=True)

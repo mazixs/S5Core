@@ -1,0 +1,23 @@
+File: s5client.test
+Build ID: b50a9cd481398f47a4fad18101331fd1fc576110
+Type: alloc_space
+Time: 2026-09-21 23:23:26 +03
+Showing nodes accounting for 17.47GB, 97.32% of 17.96GB total
+Dropped 477 nodes (cum <= 0.09GB)
+Showing top 15 nodes out of 24
+      flat  flat%   sum%        cum   cum%
+   17.23GB 95.98% 95.98%    17.34GB 96.55%  io.ReadAll
+    0.12GB  0.68% 96.66%     0.12GB  0.68%  bytes.growSlice
+    0.06GB  0.33% 96.99%     0.10GB  0.56%  io.copyBuffer
+    0.05GB  0.27% 97.26%    17.40GB 96.89%  github.com/mazixs/S5Core/cmd/s5client.TestAuditHTTPSMeasurements
+    0.01GB 0.065% 97.32%     0.13GB  0.71%  crypto/tls.(*Conn).readFromUntil
+         0     0% 97.32%     0.11GB   0.6%  bufio.(*Reader).Read
+         0     0% 97.32%     0.11GB  0.64%  bytes.(*Buffer).Grow (inline)
+         0     0% 97.32%     0.12GB  0.68%  bytes.(*Buffer).grow
+         0     0% 97.32%     0.23GB  1.29%  crypto/tls.(*Conn).HandshakeContext
+         0     0% 97.32%     0.11GB  0.62%  crypto/tls.(*Conn).Read
+         0     0% 97.32%     0.13GB  0.73%  crypto/tls.(*Conn).clientHandshake
+         0     0% 97.32%     0.23GB  1.29%  crypto/tls.(*Conn).handshakeContext
+         0     0% 97.32%     0.13GB  0.75%  crypto/tls.(*Conn).readRecord (inline)
+         0     0% 97.32%     0.13GB  0.75%  crypto/tls.(*Conn).readRecordOrCCS
+         0     0% 97.32%     0.10GB  0.56%  crypto/tls.(*Conn).serverHandshake

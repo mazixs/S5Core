@@ -28,42 +28,38 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
-// A connection is not one thing for its whole life, and one idle timeout
-// cannot serve all of it: the setup has an absolute budget, a stream relay an
-// idle timeout, a silent tunnel none, and an obfuscation frame a deadline of
-// its own once its header has arrived. All of that used to live here as a
-// regime switched by a string sent down the transport stack. It now lives in
-// the session (internal/session), which the drivers already move through its
-// states; timeoutConn does nothing but ask the session for the deadline of
-// the read or write it is about to do (plan task Ф6-1).
-//
-// A nil session - a connection that reached this wrapper without the listener
-// pipeline, in a test or SDK use - asks for no deadline, which is the old
-// behaviour of a connection with every timeout set to zero.
+// timeoutConn arms session budgets at the transport boundary. Successful
+// outbound stream traffic extends an already pending client read; write
+// deadlines still bound a blocked writer independently.
 type timeoutConn struct {
 	net.Conn
-	sess *session.Session
-	// readArmed and writeArmed remember whether a deadline is currently set,
-	// so that a tunnel - which wants none - clears it once rather than on
-	// every read. Read touches only readArmed and Write only writeArmed, each
-	// from its own relay goroutine, so neither needs a lock.
+	sess       *session.Session
+	deadlineMu sync.Mutex
 	readArmed  bool
 	writeArmed bool
 }
 
-// NetConn hands back the connection underneath, so that session.Of and
-// obfs.IdentityOf can walk past this wrapper to the layers they look for.
 func (c *timeoutConn) NetConn() net.Conn { return c.Conn }
 
-func (c *timeoutConn) Read(b []byte) (int, error) {
-	if deadline, ok := c.sess.ReadDeadline(time.Now()); ok {
+// armReadLocked serializes read-side arming with outbound activity, so an
+// older deadline cannot overwrite the extension made by the other goroutine.
+func (c *timeoutConn) armReadLocked() error {
+	deadline, ok := c.sess.ReadDeadline(time.Now())
+	if ok || c.readArmed {
 		if err := c.SetReadDeadline(deadline); err != nil {
-			return 0, err
+			return err
 		}
-		c.readArmed = true
-	} else if c.readArmed {
-		_ = c.SetReadDeadline(time.Time{})
-		c.readArmed = false
+		c.readArmed = ok
+	}
+	return nil
+}
+
+func (c *timeoutConn) Read(b []byte) (int, error) {
+	c.deadlineMu.Lock()
+	err := c.armReadLocked()
+	c.deadlineMu.Unlock()
+	if err != nil {
+		return 0, err
 	}
 	return c.Conn.Read(b)
 }
@@ -78,7 +74,17 @@ func (c *timeoutConn) Write(b []byte) (int, error) {
 		_ = c.SetWriteDeadline(time.Time{})
 		c.writeArmed = false
 	}
-	return c.Conn.Write(b)
+	n, err := c.Conn.Write(b)
+	p := c.sess.Protocol()
+	if n > 0 && c.sess.Kind() == session.Stream && (p == session.Relay || p == session.HalfClosed) {
+		c.deadlineMu.Lock()
+		deadlineErr := c.armReadLocked()
+		c.deadlineMu.Unlock()
+		if err == nil {
+			err = deadlineErr
+		}
+	}
+	return n, err
 }
 
 func (c *timeoutConn) CloseWrite() error {

@@ -42,7 +42,7 @@ type Telemetry struct {
 
 	// PhaseDuration records how long each stage of a connection took, labelled
 	// by phase and outcome. Five phases, so five distributions from one
-	// instrument: handshake, auth, dial, first_byte, session.
+	// instrument: handshake, auth, dns, dial, first_byte, session.
 	PhaseDuration metric.Float64Histogram
 	// ConnectionsInPhase is how many connections sit in each phase right now.
 	// A backlog in one phase is the signal; the total is not interesting.

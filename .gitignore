@@ -7,6 +7,7 @@
 /s5core
 /s5client
 /idleprobe
+/httpsprobe
 /udpprobe
 /connlat
 /stealthcheck

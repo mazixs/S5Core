@@ -1,0 +1,33 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                           │ /tmp/s5core-implementation-20260921/ws-buffer-before.txt │ /tmp/s5core-implementation-20260921/ws-buffer-after.txt │
+                           │                          sec/op                          │              sec/op                vs base              │
+PerfServerWrite/1422-16                                                   10.18µ ± 3%                         10.11µ ± 3%       ~ (p=0.589 n=6)
+PerfServerWrite/22752-16                                                  26.78µ ± 6%                         26.49µ ± 7%       ~ (p=0.310 n=6)
+PerfServerWrite/1048576-16                                                1.072m ± 6%                         1.002m ± 4%  -6.48% (p=0.002 n=6)
+geomean                                                                   66.36µ                              64.52µ       -2.78%
+
+                           │ /tmp/s5core-implementation-20260921/ws-buffer-before.txt │ /tmp/s5core-implementation-20260921/ws-buffer-after.txt │
+                           │                           B/s                            │                B/s                 vs base              │
+PerfServerWrite/1422-16                                                  133.2Mi ± 3%                        134.1Mi ± 3%       ~ (p=0.589 n=6)
+PerfServerWrite/22752-16                                                 810.1Mi ± 6%                        819.0Mi ± 6%       ~ (p=0.310 n=6)
+PerfServerWrite/1048576-16                                               933.2Mi ± 6%                        998.0Mi ± 5%  +6.94% (p=0.002 n=6)
+geomean                                                                  465.2Mi                             478.5Mi       +2.86%
+
+                           │ /tmp/s5core-implementation-20260921/ws-buffer-before.txt │ /tmp/s5core-implementation-20260921/ws-buffer-after.txt │
+                           │                           B/op                           │              B/op               vs base                 │
+PerfServerWrite/1422-16                                                    23.00 ± 0%                       23.00 ± 0%        ~ (p=1.000 n=6) ¹
+PerfServerWrite/22752-16                                                  107.00 ± 1%                       55.00 ± 0%  -48.60% (p=0.002 n=6)
+PerfServerWrite/1048576-16                                              19.128Ki ± 0%                     2.030Ki ± 2%  -89.39% (p=0.002 n=6)
+geomean                                                                    363.9                            138.0       -62.08%
+¹ all samples are equal
+
+                           │ /tmp/s5core-implementation-20260921/ws-buffer-before.txt │ /tmp/s5core-implementation-20260921/ws-buffer-after.txt │
+                           │                        allocs/op                         │           allocs/op             vs base                 │
+PerfServerWrite/1422-16                                                    2.000 ± 0%                       2.000 ± 0%        ~ (p=1.000 n=6) ¹
+PerfServerWrite/22752-16                                                   8.000 ± 0%                       6.000 ± 0%  -25.00% (p=0.002 n=6)
+PerfServerWrite/1048576-16                                                 742.5 ± 0%                       256.0 ± 0%  -65.52% (p=0.002 n=6)
+geomean                                                                    22.82                            14.54       -36.29%
+¹ all samples are equal

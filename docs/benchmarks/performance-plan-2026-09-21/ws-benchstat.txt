@@ -1,0 +1,33 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                           │ /tmp/s5core-performance-plan-20260921/ws-before.txt │ /tmp/s5core-performance-plan-20260921/ws-after.txt │
+                           │                       sec/op                        │            sec/op             vs base              │
+PerfServerWrite/1422-16                                              10.46µ ± 5%                    10.13µ ± 2%       ~ (p=0.093 n=6)
+PerfServerWrite/22752-16                                             27.80µ ± 2%                    27.11µ ± 1%  -2.47% (p=0.004 n=6)
+PerfServerWrite/1048576-16                                           1.080m ± 3%                    1.033m ± 8%  -4.37% (p=0.026 n=6)
+geomean                                                              67.97µ                         65.71µ       -3.33%
+
+                           │ /tmp/s5core-performance-plan-20260921/ws-before.txt │ /tmp/s5core-performance-plan-20260921/ws-after.txt │
+                           │                         B/s                         │             B/s               vs base              │
+PerfServerWrite/1422-16                                             129.6Mi ± 6%                   133.8Mi ± 2%       ~ (p=0.093 n=6)
+PerfServerWrite/22752-16                                            780.5Mi ± 2%                   800.2Mi ± 2%  +2.53% (p=0.004 n=6)
+PerfServerWrite/1048576-16                                          926.4Mi ± 4%                   968.6Mi ± 9%  +4.56% (p=0.026 n=6)
+geomean                                                             454.3Mi                        469.9Mi       +3.44%
+
+                           │ /tmp/s5core-performance-plan-20260921/ws-before.txt │ /tmp/s5core-performance-plan-20260921/ws-after.txt │
+                           │                        B/op                         │           B/op             vs base                 │
+PerfServerWrite/1422-16                                               23.00 ± 0%                  23.00 ± 0%        ~ (p=1.000 n=6) ¹
+PerfServerWrite/22752-16                                             106.00 ± 1%                  55.00 ± 0%  -48.11% (p=0.002 n=6)
+PerfServerWrite/1048576-16                                         19.192Ki ± 0%                2.028Ki ± 2%  -89.43% (p=0.002 n=6)
+geomean                                                               363.2                       138.0       -62.01%
+¹ all samples are equal
+
+                           │ /tmp/s5core-performance-plan-20260921/ws-before.txt │ /tmp/s5core-performance-plan-20260921/ws-after.txt │
+                           │                      allocs/op                      │         allocs/op          vs base                 │
+PerfServerWrite/1422-16                                               2.000 ± 0%                  2.000 ± 0%        ~ (p=1.000 n=6) ¹
+PerfServerWrite/22752-16                                              8.000 ± 0%                  6.000 ± 0%  -25.00% (p=0.002 n=6)
+PerfServerWrite/1048576-16                                            744.0 ± 0%                  256.0 ± 0%  -65.59% (p=0.002 n=6)
+geomean                                                               22.83                       14.54       -36.33%
+¹ all samples are equal

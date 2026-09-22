@@ -360,6 +360,10 @@ func TestDeadlinesComeFromTheStateTable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := tc.setup()
+			// This table uses a fixed clock for every absolute state start.
+			if s.Frames() == AwaitBody {
+				s.frameBodyAt.Store(tc.now.UnixNano())
+			}
 			check := func(what string, got time.Time, ok bool, want time.Duration) {
 				if want < 0 {
 					if ok {

@@ -1,0 +1,191 @@
+package socks5
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"fmt"
+	"golang.org/x/net/dns/dnsmessage"
+	"golang.org/x/net/proxy"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func auditDNS(t *testing.T, ips []net.IP, delay time.Duration) *atomic.Int32 {
+	t.Helper()
+	u, e := net.ListenPacket("udp", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	old := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "udp", u.LocalAddr().String())
+	}}
+	t.Cleanup(func() { net.DefaultResolver = old; u.Close() })
+	calls := new(atomic.Int32)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, a, e := u.ReadFrom(buf)
+			if e != nil {
+				return
+			}
+			var q dnsmessage.Message
+			if q.Unpack(buf[:n]) != nil {
+				continue
+			}
+			calls.Add(1)
+			go func(q dnsmessage.Message, a net.Addr) {
+				time.Sleep(delay)
+				resp := dnsmessage.Message{Header: dnsmessage.Header{ID: q.Header.ID, Response: true, RecursionDesired: true, RecursionAvailable: true}, Questions: q.Questions}
+				for _, v := range q.Questions {
+					if v.Type == dnsmessage.TypeA {
+						for _, ip := range ips {
+							resp.Answers = append(resp.Answers, dnsmessage.Resource{Header: dnsmessage.ResourceHeader{Name: v.Name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 60}, Body: &dnsmessage.AResource{A: [4]byte(ip.To4())}})
+						}
+					}
+				}
+				b, _ := resp.Pack()
+				u.WriteTo(b, a)
+			}(q, a)
+		}
+	}()
+	return calls
+}
+func auditTarget(t *testing.T) string {
+	t.Helper()
+	l, e := net.Listen("tcp", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, e := l.Accept()
+			if e != nil {
+				return
+			}
+			c.Write([]byte("ok"))
+			c.Close()
+		}
+	}()
+	return l.Addr().String()
+}
+func TestAuditDNSFallback(t *testing.T) {
+	addr := auditTarget(t)
+	_, port, _ := net.SplitHostPort(addr)
+	auditDNS(t, []net.IP{net.ParseIP("127.0.0.2"), net.ParseIP("127.0.0.1")}, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ips, e := net.DefaultResolver.LookupIP(ctx, "ip", "fallback.audit.")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Logf("DNS addresses=%v", ips)
+	c, e := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort("fallback.audit.", port))
+	if e != nil {
+		t.Fatal("direct fallback", e)
+	}
+	c.Close()
+	p, _ := net.LookupPort("tcp", port)
+	s, e := New(&Config{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	req := &Request{Command: ConnectCommand, DestAddr: &AddrSpec{FQDN: "fallback.audit.", Port: p}, bufConn: bytes.NewReader(nil)}
+	out := new(MockConn)
+	start := time.Now()
+	e = s.handleRequest(ctx, req, out)
+	t.Logf("SOCKS err=%v elapsed=%s reply=%x selected=%s", e, time.Since(start), out.buf.Bytes(), req.DestAddr.IP)
+	if e == nil {
+		t.Fatal("expected no fallback defect")
+	}
+	if !req.DestAddr.IP.Equal(net.ParseIP("127.0.0.2")) {
+		t.Fatal("unexpected DNS order")
+	}
+}
+func TestAuditDNSPhaseAndRepeatedLookup(t *testing.T) {
+	addr := auditTarget(t)
+	_, port, _ := net.SplitHostPort(addr)
+	calls := auditDNS(t, []net.IP{net.ParseIP("127.0.0.1")}, 200*time.Millisecond)
+	p, _ := net.LookupPort("tcp", port)
+	for i := 0; i < 3; i++ {
+		observed := make(map[Phase]time.Duration)
+		s, e := New(&Config{ObservePhase: func(p Phase, d time.Duration, _ bool) { observed[p] = d }})
+		if e != nil {
+			t.Fatal(e)
+		}
+		req := &Request{Command: ConnectCommand, DestAddr: &AddrSpec{FQDN: "slow.audit.", Port: p}, bufConn: bytes.NewReader(nil)}
+		out := new(MockConn)
+		start := time.Now()
+		e = s.handleRequest(context.Background(), req, out)
+		if e != nil {
+			t.Fatal(e)
+		}
+		total := time.Since(start)
+		t.Logf("DNSMETRIC request=%d total=%s phases=%s dns_packets=%d", i, total, fmt.Sprint(observed), calls.Load())
+		if observed[PhaseDial] > 100*time.Millisecond || total < 190*time.Millisecond {
+			t.Fatal("unexpected measurement")
+		}
+	}
+}
+
+func TestAuditHTTPSFirstByteMetric(t *testing.T) {
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		io.WriteString(w, "verified")
+	}))
+	defer origin.Close()
+	measured := make(chan time.Duration, 1)
+	s, e := New(&Config{ObservePhase: func(p Phase, d time.Duration, ok bool) {
+		if p == PhaseFirstByte && ok {
+			measured <- d
+		}
+	}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	l, e := net.Listen("tcp", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer l.Close()
+	done := make(chan error, 1)
+	go func() {
+		c, e := l.Accept()
+		if e != nil {
+			done <- e
+			return
+		}
+		done <- s.ServeConnContext(context.Background(), c)
+	}()
+	d, e := proxy.SOCKS5("tcp", l.Addr().String(), nil, &net.Dialer{Timeout: time.Second})
+	if e != nil {
+		t.Fatal(e)
+	}
+	tr := &http.Transport{DialContext: d.(proxy.ContextDialer).DialContext, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, DisableKeepAlives: true}
+	defer tr.CloseIdleConnections()
+	client := &http.Client{Transport: tr, Timeout: 3 * time.Second}
+	start := time.Now()
+	resp, e := client.Get(origin.URL)
+	if e != nil {
+		t.Fatal(e)
+	}
+	headers := time.Since(start)
+	b, e := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if e != nil || string(b) != "verified" {
+		t.Fatal(e, string(b))
+	}
+	phase := <-measured
+	t.Logf("HTTPS phase_first_byte=%s actual_response_headers=%s", phase, headers)
+	if phase >= 150*time.Millisecond || headers < 250*time.Millisecond {
+		t.Fatal("unexpected phase")
+	}
+	<-done
+}

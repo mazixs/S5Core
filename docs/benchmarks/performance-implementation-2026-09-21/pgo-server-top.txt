@@ -1,0 +1,190 @@
+File: candidate-server
+Build ID: b7943a47f1a16b277d8a41d3a5764ea28bea2123
+Type: cpu
+Time: 2026-09-22 00:32:04 +03
+Duration: 22.08s, Total samples = 21.26s (96.30%)
+Showing nodes accounting for 17.97s, 84.52% of 21.26s total
+Dropped 554 nodes (cum <= 0.11s)
+      flat  flat%   sum%        cum   cum%
+     9.64s 45.34% 45.34%      9.64s 45.34%  internal/runtime/syscall/linux.Syscall6
+     2.05s  9.64% 54.99%      2.05s  9.64%  crypto/internal/fips140/aes/gcm.gcmAesEnc
+     1.22s  5.74% 60.72%      1.22s  5.74%  crypto/internal/fips140/aes/gcm.gcmAesDec
+     1.22s  5.74% 66.46%      1.22s  5.74%  runtime.futex
+     0.38s  1.79% 68.25%      0.38s  1.79%  runtime.memmove
+     0.37s  1.74% 69.99%      0.70s  3.29%  runtime.stealWork
+     0.24s  1.13% 71.12%      0.24s  1.13%  crypto/internal/fips140/aes.encryptBlockAsm
+     0.16s  0.75% 71.87%      0.16s  0.75%  time.runtimeNow
+     0.15s  0.71% 72.58%      0.17s   0.8%  runtime.unlock2
+     0.14s  0.66% 73.24%      2.72s 12.79%  runtime.findRunnable
+     0.12s  0.56% 73.80%      0.12s  0.56%  crypto/internal/fips140/edwards25519/field.feMul
+     0.12s  0.56% 74.37%      0.12s  0.56%  runtime.(*randomEnum).next (inline)
+     0.10s  0.47% 74.84%      0.13s  0.61%  runtime.lock2
+     0.09s  0.42% 75.26%      0.13s  0.61%  go.opentelemetry.io/otel/metric.NewAddConfig
+     0.08s  0.38% 75.63%      2.21s 10.40%  crypto/internal/fips140/aes/gcm.seal
+     0.08s  0.38% 76.01%      2.03s  9.55%  github.com/mazixs/S5Core/pkg/obfs.(*conn).encodeFrame
+     0.08s  0.38% 76.39%      0.14s  0.66%  internal/sync.(*HashTrieMap[go.shape.interface {},go.shape.interface {}]).Load
+     0.07s  0.33% 76.72%      4.65s 21.87%  github.com/mazixs/S5Core/pkg/s5server.(*timeoutConn).Write
+     0.06s  0.28% 77.00%      3.26s 15.33%  github.com/gorilla/websocket.(*messageWriter).flushFrame
+     0.06s  0.28% 77.28%      2.78s 13.08%  github.com/mazixs/S5Core/pkg/obfs.(*conn).ensure
+     0.06s  0.28% 77.56%      0.67s  3.15%  runtime.netpoll
+     0.05s  0.24% 77.80%     15.74s 74.04%  github.com/mazixs/S5Core/internal/relay.(*Half).Run
+     0.05s  0.24% 78.03%      0.17s   0.8%  runtime.pidleget
+     0.04s  0.19% 78.22%      0.29s  1.36%  crypto/internal/fips140/aes.encryptBlock
+     0.04s  0.19% 78.41%      1.56s  7.34%  github.com/gorilla/websocket.(*Conn).advanceFrame
+     0.04s  0.19% 78.60%      4.16s 19.57%  github.com/mazixs/S5Core/pkg/obfs.(*conn).readFrame
+     0.04s  0.19% 78.79%      6.91s 32.50%  net.(*netFD).Write
+     0.04s  0.19% 78.97%      0.16s  0.75%  runtime.adjustframe
+     0.04s  0.19% 79.16%      0.54s  2.54%  runtime.notewakeup
+     0.04s  0.19% 79.35%      9.17s 43.13%  syscall.Syscall
+     0.03s  0.14% 79.49%      0.60s  2.82%  crypto/tls.(*Conn).handshakeContext
+     0.03s  0.14% 79.63%      0.82s  3.86%  crypto/tls.(*atLeastReader).Read
+     0.03s  0.14% 79.77%      1.19s  5.60%  github.com/mazixs/S5Core/internal/socks5.(*firstByteReader).Read
+     0.03s  0.14% 79.92%      4.29s 20.18%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Read
+     0.03s  0.14% 80.06%      4.41s 20.74%  github.com/mazixs/S5Core/pkg/s5server.(*metricsConn).Read
+     0.03s  0.14% 80.20%      0.35s  1.65%  github.com/mazixs/S5Core/pkg/s5server.(*timeoutConn).armReadLocked
+     0.03s  0.14% 80.34%      3.35s 15.76%  github.com/mazixs/S5Core/pkg/transport/ws.(*Conn).Write
+     0.03s  0.14% 80.48%      3.40s 15.99%  github.com/mazixs/S5Core/pkg/transport/ws.(*ShapedConn).Write
+     0.03s  0.14% 80.62%      6.94s 32.64%  net.(*conn).Write
+     0.03s  0.14% 80.76%      0.75s  3.53%  runtime.futexsleep
+     0.03s  0.14% 80.90%      0.21s  0.99%  runtime.mallocgc
+     0.03s  0.14% 81.04%      3.57s 16.79%  runtime.mcall
+     0.03s  0.14% 81.19%      0.77s  3.62%  runtime.notesleep
+     0.03s  0.14% 81.33%      0.87s  4.09%  runtime.stopm
+     0.02s 0.094% 81.42%      4.43s 20.84%  bufio.(*Reader).Read
+     0.02s 0.094% 81.51%      0.22s  1.03%  crypto/internal/fips140/aes.(*Block).Encrypt
+     0.02s 0.094% 81.61%      1.35s  6.35%  crypto/internal/fips140/aes/gcm.(*GCM).Open
+     0.02s 0.094% 81.70%      1.33s  6.26%  crypto/internal/fips140/aes/gcm.open
+     0.02s 0.094% 81.80%      2.36s 11.10%  crypto/tls.(*Conn).write
+     0.02s 0.094% 81.89%      3.02s 14.21%  crypto/tls.(*Conn).writeRecordLocked
+     0.02s 0.094% 81.98%      0.43s  2.02%  crypto/tls.(*xorNonceAEAD).Open
+     0.02s 0.094% 82.08%      3.30s 15.52%  github.com/gorilla/websocket.(*Conn).WriteMessage
+     0.02s 0.094% 82.17%      0.27s  1.27%  go.opentelemetry.io/otel/sdk/metric/internal/aggregate.(*sumValueMap[go.shape.int64]).measure
+     0.02s 0.094% 82.27%      0.28s  1.32%  internal/poll.setDeadlineImpl
+     0.02s 0.094% 82.36%      0.61s  2.87%  internal/runtime/syscall/linux.EpollWait
+     0.02s 0.094% 82.46%      2.33s 10.96%  net.(*conn).Read
+     0.02s 0.094% 82.55%      0.79s  3.72%  runtime.mPark (inline)
+     0.02s 0.094% 82.64%      0.14s  0.66%  runtime.mapaccess2
+     0.02s 0.094% 82.74%      0.16s  0.75%  runtime.newobject
+     0.02s 0.094% 82.83%      0.12s  0.56%  runtime.pcvalue
+     0.02s 0.094% 82.93%      2.79s 13.12%  runtime.schedule
+     0.02s 0.094% 83.02%      9.03s 42.47%  syscall.RawSyscall6
+     0.02s 0.094% 83.11%      6.80s 31.98%  syscall.Write (inline)
+     0.01s 0.047% 83.16%      1.51s  7.10%  bufio.(*Reader).Peek
+     0.01s 0.047% 83.21%      1.50s  7.06%  bufio.(*Reader).fill
+     0.01s 0.047% 83.25%      0.20s  0.94%  crypto/ecdh.x25519ScalarMult
+     0.01s 0.047% 83.30%      0.41s  1.93%  crypto/internal/fips140/aes/gcm.(*GCMWithXORCounterNonce).Open
+     0.01s 0.047% 83.35%      0.13s  0.61%  crypto/internal/fips140/edwards25519/field.(*Element).Multiply (inline)
+     0.01s 0.047% 83.40%      0.20s  0.94%  crypto/tls.(*Conn).SetReadDeadline
+     0.01s 0.047% 83.44%      3.05s 14.35%  crypto/tls.(*Conn).Write
+     0.01s 0.047% 83.49%      1.37s  6.44%  crypto/tls.(*Conn).readRecordOrCCS
+     0.01s 0.047% 83.54%      1.61s  7.57%  github.com/gorilla/websocket.(*Conn).NextReader
+     0.01s 0.047% 83.58%      0.11s  0.52%  github.com/gorilla/websocket.(*messageReader).Read
+     0.01s 0.047% 83.63%      0.44s  2.07%  github.com/mazixs/S5Core/internal/session.(*Session).observe
+     0.01s 0.047% 83.68%      0.52s  2.45%  github.com/mazixs/S5Core/internal/socks5.(*Server).ServeConnContext
+     0.01s 0.047% 83.73%      0.12s  0.56%  github.com/mazixs/S5Core/pkg/obfs.(*conn).sendMask (inline)
+     0.01s 0.047% 83.77%      2.48s 11.67%  github.com/mazixs/S5Core/pkg/s5server.(*timeoutConn).Read
+     0.01s 0.047% 83.82%      0.43s  2.02%  github.com/mazixs/S5Core/pkg/s5server.NewServer.sessionTransitionObserver.func9
+     0.01s 0.047% 83.87%      1.76s  8.28%  github.com/mazixs/S5Core/pkg/transport/ws.(*Conn).Read
+     0.01s 0.047% 83.91%      0.42s  1.98%  go.opentelemetry.io/otel/sdk/metric.(*int64Inst).Add
+     0.01s 0.047% 83.96%      0.28s  1.32%  go.opentelemetry.io/otel/sdk/metric/internal/aggregate.Builder[go.shape.int64].Sum.Builder[go.shape.int64].filter.func10
+     0.01s 0.047% 84.01%      2.31s 10.87%  internal/poll.(*FD).Read
+     0.01s 0.047% 84.05%      6.87s 32.31%  internal/poll.(*FD).Write
+     0.01s 0.047% 84.10%      0.16s  0.75%  internal/poll.runtime_pollSetDeadline
+     0.01s 0.047% 84.15%      0.13s  0.61%  runtime.(*stkframe).getStackMap
+     0.01s 0.047% 84.20%      0.17s   0.8%  runtime.gcDrain
+     0.01s 0.047% 84.24%      2.51s 11.81%  runtime.goschedImpl
+     0.01s 0.047% 84.29%      2.51s 11.81%  runtime.gosched_m
+     0.01s 0.047% 84.34%      0.96s  4.52%  runtime.park_m
+     0.01s 0.047% 84.38%      0.18s  0.85%  runtime.unlockWithRank (inline)
+     0.01s 0.047% 84.43%      0.74s  3.48%  runtime.wakep
+     0.01s 0.047% 84.48%      2.27s 10.68%  syscall.Read (inline)
+     0.01s 0.047% 84.52%      6.78s 31.89%  syscall.write
+         0     0% 84.52%      0.82s  3.86%  bytes.(*Buffer).ReadFrom
+         0     0% 84.52%      0.11s  0.52%  bytes.(*Reader).Read (inline)
+         0     0% 84.52%      0.12s  0.56%  crypto/ecdh.(*PrivateKey).ECDH
+         0     0% 84.52%      0.12s  0.56%  crypto/ecdh.(*x25519Curve).ecdh
+         0     0% 84.52%      0.20s  0.94%  crypto/fips140.WithoutEnforcement
+         0     0% 84.52%      1.68s  7.90%  crypto/internal/fips140/aes/gcm.(*GCM).Seal
+         0     0% 84.52%      2.22s 10.44%  crypto/internal/fips140/aes/gcm.(*GCM).sealAfterIndicator
+         0     0% 84.52%      0.54s  2.54%  crypto/internal/fips140/aes/gcm.(*GCMWithXORCounterNonce).Seal
+         0     0% 84.52%      0.14s  0.66%  crypto/internal/fips140/mlkem.(*EncapsulationKey768).Encapsulate (inline)
+         0     0% 84.52%      0.14s  0.66%  crypto/internal/fips140/mlkem.(*EncapsulationKey768).encapsulate
+         0     0% 84.52%      0.14s  0.66%  crypto/internal/fips140/mlkem.kemEncaps
+         0     0% 84.52%      0.14s  0.66%  crypto/internal/fips140/mlkem.pkeEncrypt
+         0     0% 84.52%      0.14s  0.66%  crypto/mlkem.(*EncapsulationKey768).Encapsulate
+         0     0% 84.52%      0.60s  2.82%  crypto/tls.(*Conn).HandshakeContext (inline)
+         0     0% 84.52%      1.51s  7.10%  crypto/tls.(*Conn).Read
+         0     0% 84.52%      0.90s  4.23%  crypto/tls.(*Conn).readFromUntil
+         0     0% 84.52%      1.37s  6.44%  crypto/tls.(*Conn).readRecord (inline)
+         0     0% 84.52%      0.56s  2.63%  crypto/tls.(*Conn).serverHandshake
+         0     0% 84.52%      0.20s  0.94%  crypto/tls.(*ecdhKeyExchange).serverSharedSecret
+         0     0% 84.52%      0.44s  2.07%  crypto/tls.(*halfConn).decrypt
+         0     0% 84.52%      0.60s  2.82%  crypto/tls.(*halfConn).encrypt
+         0     0% 84.52%      0.36s  1.69%  crypto/tls.(*hybridKeyExchange).serverSharedSecret
+         0     0% 84.52%      0.20s  0.94%  crypto/tls.(*hybridKeyExchange).serverSharedSecret.func1
+         0     0% 84.52%      0.52s  2.45%  crypto/tls.(*serverHandshakeStateTLS13).handshake
+         0     0% 84.52%      0.37s  1.74%  crypto/tls.(*serverHandshakeStateTLS13).processClientHello
+         0     0% 84.52%      0.54s  2.54%  crypto/tls.(*xorNonceAEAD).Seal
+         0     0% 84.52%      0.20s  0.94%  github.com/gorilla/websocket.(*Conn).SetReadDeadline (inline)
+         0     0% 84.52%      1.52s  7.15%  github.com/gorilla/websocket.(*Conn).read
+         0     0% 84.52%      3.19s 15.00%  github.com/gorilla/websocket.(*Conn).write
+         0     0% 84.52%      0.50s  2.35%  github.com/mazixs/S5Core/internal/session.(*Session).Frame
+         0     0% 84.52%      0.46s  2.16%  github.com/mazixs/S5Core/internal/session.(*Session).move
+         0     0% 84.52%      0.52s  2.45%  github.com/mazixs/S5Core/internal/socks5.(*Server).ServeContext.func2
+         0     0% 84.52%      0.23s  1.08%  github.com/mazixs/S5Core/internal/socks5.(*Server).handleConnect
+         0     0% 84.52%      0.26s  1.22%  github.com/mazixs/S5Core/internal/socks5.(*Server).handleConnect.func1
+         0     0% 84.52%      7.93s 37.30%  github.com/mazixs/S5Core/internal/socks5.(*Server).handleConnect.func7
+         0     0% 84.52%      7.81s 36.74%  github.com/mazixs/S5Core/internal/socks5.(*Server).handleConnect.func8
+         0     0% 84.52%      0.23s  1.08%  github.com/mazixs/S5Core/internal/socks5.(*Server).handleRequest
+         0     0% 84.52%      0.26s  1.22%  github.com/mazixs/S5Core/internal/socks5.dialResolved.func1.1
+         0     0% 84.52%      0.11s  0.52%  github.com/mazixs/S5Core/internal/socks5.sendReply
+         0     0% 84.52%      6.71s 31.56%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Write
+         0     0% 84.52%      0.12s  0.56%  github.com/mazixs/S5Core/pkg/obfs.(*conn).recvMask (inline)
+         0     0% 84.52%      0.50s  2.35%  github.com/mazixs/S5Core/pkg/obfs.(*conn).setFrameState (inline)
+         0     0% 84.52%      6.74s 31.70%  github.com/mazixs/S5Core/pkg/s5server.(*metricsConn).Write
+         0     0% 84.52%      0.50s  2.35%  github.com/mazixs/S5Core/pkg/s5server.frameHook.func1
+         0     0% 84.52%      0.20s  0.94%  github.com/mazixs/S5Core/pkg/transport/ws.(*Conn).SetReadDeadline
+         0     0% 84.52%      0.23s  1.08%  github.com/mazixs/S5Core/pkg/veil.(*aesMask).Mask
+         0     0% 84.52%      0.11s  0.52%  github.com/prometheus/client_golang/prometheus/promhttp.HandlerForTransactional.func1
+         0     0% 84.52%      0.11s  0.52%  github.com/prometheus/client_golang/prometheus/promhttp.InstrumentHandlerCounter.func1
+         0     0% 84.52%      0.11s  0.52%  github.com/prometheus/client_golang/prometheus/promhttp.InstrumentMetricHandler.InstrumentHandlerInFlight.func1
+         0     0% 84.52%      0.28s  1.32%  go.opentelemetry.io/otel/sdk/metric.(*int64Inst).aggregate (inline)
+         0     0% 84.52%      0.14s  0.66%  go.opentelemetry.io/otel/sdk/metric/internal/aggregate.(*limitedSyncMap).LoadOrStoreAttr
+         0     0% 84.52%      0.21s  0.99%  internal/poll.(*FD).SetReadDeadline (inline)
+         0     0% 84.52%      9.07s 42.66%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 84.52%      0.14s  0.66%  io.ReadAtLeast
+         0     0% 84.52%      0.14s  0.66%  io.ReadFull (inline)
+         0     0% 84.52%      0.26s  1.22%  net.(*Dialer).DialContext
+         0     0% 84.52%      0.21s  0.99%  net.(*conn).SetReadDeadline
+         0     0% 84.52%      2.31s 10.87%  net.(*netFD).Read
+         0     0% 84.52%      0.21s  0.99%  net.(*netFD).SetReadDeadline (inline)
+         0     0% 84.52%      0.19s  0.89%  net.(*netFD).connect
+         0     0% 84.52%      0.22s  1.03%  net.(*netFD).dial
+         0     0% 84.52%      0.25s  1.18%  net.(*sysDialer).dialParallel
+         0     0% 84.52%      0.25s  1.18%  net.(*sysDialer).dialSerial
+         0     0% 84.52%      0.25s  1.18%  net.(*sysDialer).dialSingle
+         0     0% 84.52%      0.25s  1.18%  net.(*sysDialer).dialTCP
+         0     0% 84.52%      0.25s  1.18%  net.(*sysDialer).doDialTCP (inline)
+         0     0% 84.52%      0.25s  1.18%  net.(*sysDialer).doDialTCPProto
+         0     0% 84.52%      0.24s  1.13%  net.internetSocket
+         0     0% 84.52%      0.24s  1.13%  net.socket
+         0     0% 84.52%      0.15s  0.71%  net/http.(*ServeMux).ServeHTTP
+         0     0% 84.52%      0.74s  3.48%  net/http.(*conn).serve
+         0     0% 84.52%      0.15s  0.71%  net/http.HandlerFunc.ServeHTTP
+         0     0% 84.52%      0.15s  0.71%  net/http.serverHandler.ServeHTTP
+         0     0% 84.52%      0.21s  0.99%  runtime.copystack
+         0     0% 84.52%      0.50s  2.35%  runtime.futexwakeup
+         0     0% 84.52%      0.20s  0.94%  runtime.gcBgMarkWorker
+         0     0% 84.52%      0.17s   0.8%  runtime.gcBgMarkWorker.func2
+         0     0% 84.52%      0.13s  0.61%  runtime.lock (inline)
+         0     0% 84.52%      0.13s  0.61%  runtime.lockWithRank (inline)
+         0     0% 84.52%      0.21s  0.99%  runtime.newstack
+         0     0% 84.52%      0.15s  0.71%  runtime.pidlegetSpinning
+         0     0% 84.52%      0.58s  2.73%  runtime.startm
+         0     0% 84.52%      0.29s  1.36%  runtime.systemstack
+         0     0% 84.52%      0.18s  0.85%  runtime.unlock (inline)
+         0     0% 84.52%      0.14s  0.66%  sync.(*Map).Load (inline)
+         0     0% 84.52%      0.11s  0.52%  syscall.Connect
+         0     0% 84.52%      0.11s  0.52%  syscall.connect
+         0     0% 84.52%      2.26s 10.63%  syscall.read
+         0     0% 84.52%      0.16s  0.75%  time.Now

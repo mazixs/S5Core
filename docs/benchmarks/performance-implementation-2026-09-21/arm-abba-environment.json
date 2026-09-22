@@ -1,0 +1,46 @@
+{
+  "platform": "Linux 4.9-ndm-5 aarch64",
+  "/proc/cpuinfo": "processor\t: 0\nmodel name\t: ARMv8 Processor rev 0 (v8l)\nBogoMIPS\t: 26.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x1\nCPU part\t: 0xd09\nCPU revision\t: 0\n\nprocessor\t: 1\nmodel name\t: ARMv8 Processor rev 0 (v8l)\nBogoMIPS\t: 26.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x1\nCPU part\t: 0xd09\nCPU revision\t: 0\n\nprocessor\t: 2\nmodel name\t: ARMv8 Processor rev 0 (v8l)\nBogoMIPS\t: 26.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x1\nCPU part\t: 0xd09\nCPU revision\t: 0\n\n",
+  "memory_before": "MemTotal:        1015072 kB\nMemFree:          201860 kB\nMemAvailable:     540876 kB\nBuffers:          183612 kB\nCached:           182480 kB\nSwapCached:            0 kB\nActive:           363944 kB\nInactive:         140828 kB\n",
+  "load_before": "0.05 0.11 0.09 1/265 24512\n",
+  "rounds": 2,
+  "clock_ticks_per_second": 100,
+  "completed": true,
+  "environment": {
+    "S5_PERF_PROCS": "1",
+    "S5_PERF_AUTH": "member",
+    "S5_PERF_PROTOCOLS": "h1,h2",
+    "S5_PERF_MODES": "obfs,wss",
+    "S5_PERF_SMALL": "100",
+    "S5_PERF_LARGE": "3",
+    "S5_PERF_CASES": "small,large,upload,mixed"
+  },
+  "binaries": {
+    "before-client": {
+      "path": "/opt/tmp/s5core-perf-20260922.4JCnhW/before-client",
+      "sha256": "2279c52ade836d6c3d30ce792749ba8c03c95eb658bcbe08ee95a0d05917b4fb"
+    },
+    "before-server": {
+      "path": "/opt/tmp/s5core-perf-20260922.4JCnhW/before-server",
+      "sha256": "58b6996ba9ca15e2d0bf0698569d7a9c53f9a2a1a439657cf9de6ec7d309c94a"
+    },
+    "after-client": {
+      "path": "/opt/tmp/s5core-perf-20260922.4JCnhW/after-client",
+      "sha256": "03c3ac00f47fbcd333cfaf75c8af8418e7944d53f5ecd2d03cda797f4a814a90"
+    },
+    "after-server": {
+      "path": "/opt/tmp/s5core-perf-20260922.4JCnhW/after-server",
+      "sha256": "4459fb06816c91fdaac6f1f3d9e8e0c7cd64eb01e9aad467aaab0d269cd3ec05"
+    },
+    "probe": {
+      "path": "/opt/tmp/s5core-perf-20260922.4JCnhW/probe",
+      "sha256": "90914cc9d50bf2e7ba0814c9b5f4c9387902a5e17e7538c176a10b540f73b002"
+    },
+    "runner": {
+      "path": "/opt/tmp/s5core-perf-20260922.4JCnhW/runner",
+      "sha256": "d2046688e386feb3aba5e5dc44741ebe213c27a8584e6f75998ed424e6694870"
+    }
+  },
+  "load_after": "0.57 1.50 0.94 1/265 25606\n",
+  "memory_after": "MemTotal:        1015072 kB\nMemFree:          215284 kB\nMemAvailable:     536544 kB\nBuffers:          131392 kB\nCached:           216572 kB\nSwapCached:            0 kB\nActive:           354608 kB\nInactive:         135220 kB\n"
+}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/mazixs/S5Core/internal/buildinfo"
+	"github.com/mazixs/S5Core/internal/diagnostics"
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/signals"
 	"github.com/mazixs/S5Core/internal/socks5"
@@ -23,7 +24,6 @@ import (
 	"github.com/mazixs/S5Core/pkg/obfs/legacy"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
 	"github.com/mazixs/S5Core/pkg/veil"
-	"golang.org/x/net/idna"
 )
 
 const (
@@ -43,6 +43,7 @@ type clientParams struct {
 	ServerAddr     string `env:"SERVER_ADDR" envDefault:""`
 	ProxyUser      string `env:"PROXY_USER" envDefault:""`
 	ProxyPass      string `env:"PROXY_PASS" envDefault:""`
+	AuthMode       string `env:"PROXY_AUTH_MODE" envDefault:"auto"`
 	PSK            string `env:"OBFS_PSK" envDefault:""`
 	MaxPadding     int    `env:"OBFS_MAX_PADDING" envDefault:"256"`
 	MTU            int    `env:"OBFS_MTU" envDefault:"1400"`
@@ -101,11 +102,12 @@ type clientParams struct {
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"10s"`
 
 	// WebSocket stealth transport
-	WSUrl          string `env:"WS_URL" envDefault:""`
-	WSHost         string `env:"WS_HOST" envDefault:""`
-	WSOrigin       string `env:"WS_ORIGIN" envDefault:""`
-	WSUserAgent    string `env:"WS_USER_AGENT" envDefault:""`
-	TLSFingerprint string `env:"TLS_FINGERPRINT" envDefault:""`
+	WSUrl             string `env:"WS_URL" envDefault:""`
+	WSHost            string `env:"WS_HOST" envDefault:""`
+	WSOrigin          string `env:"WS_ORIGIN" envDefault:""`
+	WSUserAgent       string `env:"WS_USER_AGENT" envDefault:""`
+	TLSFingerprint    string `env:"TLS_FINGERPRINT" envDefault:""`
+	WSTLSSessionCache bool   `env:"WS_TLS_SESSION_CACHE" envDefault:"true"`
 	// ServerName is the SNI presented to the server and the name its
 	// certificate is verified against. It was read from the environment and
 	// never used until plan task Ф6-4, so a deployment that set it believed
@@ -157,7 +159,8 @@ type clientParams struct {
 
 	// rootCAs is WSCAFile after it has been read; unexported, so env.Parse
 	// leaves it alone.
-	rootCAs *x509.CertPool
+	rootCAs  *x509.CertPool
+	wsDialer *ws.Dialer
 	// policy is the shared decision state built from Transport and Format;
 	// transport and format are what it chose for this attempt. All three
 	// are unexported for the same reason as rootCAs.
@@ -186,6 +189,7 @@ func loadRootCAs(path string) (*x509.CertPool, error) {
 }
 
 func main() {
+	defer diagnostics.Start()()
 	if _, err := logging.Setup(os.Stdout); err != nil {
 		slog.Warn("Invalid LOG_LEVEL, falling back to info", "error", err)
 	}
@@ -225,6 +229,10 @@ func main() {
 		slog.Error("OBFS_MEMBER_KEY is set without OBFS_MEMBER_ID: the server needs the name the key belongs to")
 		os.Exit(1)
 	}
+	if err := validateAuthMode(cfg); err != nil {
+		slog.Error("Invalid proxy authentication configuration", "error", err)
+		os.Exit(1)
+	}
 
 	if !obfs.PrologueEncoding(cfg.Prologue).Valid() {
 		slog.Error("OBFS_PROLOGUE is not a prologue encoding this build knows",
@@ -258,6 +266,9 @@ func main() {
 		os.Exit(1)
 	}
 	cfg.rootCAs = pool
+	if cfg.WSUrl != "" && cfg.WSTLSSessionCache {
+		cfg.wsDialer = ws.NewDialer(cfg.wsOptions())
+	}
 
 	policy, err := newClientPolicy(cfg)
 	if err != nil {
@@ -278,6 +289,7 @@ func main() {
 			}
 		}
 	}
+	routes := newDomainMatcher(routePatterns)
 
 	slog.Info("S5Client starting",
 		append([]any{
@@ -389,12 +401,12 @@ func main() {
 		go func(c net.Conn) {
 			defer wg.Done()
 			defer func() { <-slots }()
-			handleClient(c, cfg, routePatterns)
+			handleClient(c, cfg, routes)
 		}(clientConn)
 	}
 }
 
-func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string) {
+func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) {
 	defer clientConn.Close()
 
 	// Silent local clients must not hold descriptors forever.
@@ -417,7 +429,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routePatterns []string)
 	}
 
 	// Step 3: Check domain routing (only for CONNECT)
-	if cmd == socks5.ConnectCommand && !checkRouting(clientConn, destFQDN, routePatterns) {
+	if cmd == socks5.ConnectCommand && !checkRouting(clientConn, destFQDN, routes) {
 		return
 	}
 
@@ -547,12 +559,12 @@ func socks5Handshake(clientConn net.Conn) (req []byte, cmd byte, destFQDN string
 
 // checkRouting verifies if the destination domain should be routed through the tunnel.
 // Returns true if routing is allowed, false if rejected.
-func checkRouting(clientConn net.Conn, destFQDN string, routePatterns []string) bool {
-	if len(routePatterns) == 0 || destFQDN == "" {
+func checkRouting(clientConn net.Conn, destFQDN string, routes *domainMatcher) bool {
+	if routes == nil || len(routes.exact) == 0 || destFQDN == "" {
 		return true
 	}
 
-	if matchDomain(destFQDN, routePatterns) {
+	if routes.Match(destFQDN) {
 		return true
 	}
 
@@ -711,18 +723,24 @@ func startupChecks(cfg clientParams) {
 // can hand back an in-memory pipe - a real socket cannot run inside a
 // synctest bubble, because its deadlines belong to the kernel clock.
 var dialServer = func(cfg clientParams) (net.Conn, error) {
+	ctx := context.Background()
+	budget := cfg.DialTimeout
+	if cfg.HandshakeTimeout > 0 && (budget <= 0 || cfg.HandshakeTimeout < budget) {
+		budget = cfg.HandshakeTimeout
+	}
+	if budget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, budget)
+		defer cancel()
+	}
 	if cfg.usesWS() {
-		wsOpts := ws.DialOpts{
-			URL:            cfg.WSUrl,
-			Host:           cfg.WSHost,
-			ServerName:     cfg.ServerName,
-			Origin:         cfg.WSOrigin,
-			UserAgent:      cfg.WSUserAgent,
-			TLSFingerprint: cfg.TLSFingerprint,
-			RootCAs:        cfg.rootCAs,
-			PinSHA256:      cfg.WSPins,
+		var wsConn *ws.Conn
+		var err error
+		if cfg.wsDialer != nil {
+			wsConn, err = cfg.wsDialer.DialContext(ctx)
+		} else {
+			wsConn, err = ws.DialContext(ctx, cfg.wsOptions())
 		}
-		wsConn, err := ws.Dial(wsOpts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to dial WS: %w", err)
 		}
@@ -732,12 +750,6 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 		return wsConn, nil
 	}
 
-	ctx := context.Background()
-	if cfg.DialTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cfg.DialTimeout)
-		defer cancel()
-	}
 	conn, err := dialOutbound(ctx, "tcp", cfg.ServerAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
@@ -746,6 +758,11 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 }
 
 func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
+	if err := validateAuthMode(cfg); err != nil {
+		return nil, &tunnelError{phase: phaseAuthRejected, err: err}
+	}
+	// Setup includes the outer transport, obfs and SOCKS negotiation.
+	setupStart := time.Now()
 	serverConn, err := dialServer(cfg)
 	if err != nil {
 		return nil, &tunnelError{phase: phaseDial, err: err}
@@ -754,7 +771,7 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	// Every read below is covered by one deadline. It is cleared by the caller
 	// once the CONNECT reply has arrived, so it bounds setup and nothing else.
 	if cfg.HandshakeTimeout > 0 {
-		if err := serverConn.SetDeadline(time.Now().Add(cfg.HandshakeTimeout)); err != nil {
+		if err := serverConn.SetDeadline(setupStart.Add(cfg.HandshakeTimeout)); err != nil {
 			serverConn.Close()
 			return nil, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to set handshake deadline: %w", err)}
 		}
@@ -791,6 +808,10 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	if _, err := io.ReadFull(obfsConn, resp[:]); err != nil {
 		obfsConn.Close()
 		return nil, tunnelFail(phaseGreeting, "failed to read server greeting: %w", err)
+	}
+	if resp[0] != socks5Ver {
+		obfsConn.Close()
+		return nil, tunnelFail(phaseAuthRejected, "unsupported SOCKS version: 0x%02x", resp[0])
 	}
 
 	// Handle auth method selected by server
@@ -979,39 +1000,6 @@ func readSocks5Request(r io.Reader) ([]byte, byte, string, error) {
 	req = append(req, port[:]...)
 
 	return req, header[1], destFQDN, nil
-}
-
-// matchDomain checks if FQDN matches any of the routing patterns.
-// Supports exact match and wildcard subdomain matching (*.example.com).
-// IDN domains are normalized to ASCII (punycode) before comparison.
-func matchDomain(fqdn string, patterns []string) bool {
-	fqdn = strings.ToLower(fqdn)
-	if ascii, err := idna.ToASCII(fqdn); err == nil {
-		fqdn = ascii
-	}
-	for _, p := range patterns {
-		p = strings.ToLower(strings.TrimSpace(p))
-		if ascii, err := idna.ToASCII(p); err == nil {
-			p = ascii
-		}
-
-		if p == fqdn {
-			return true
-		}
-
-		// Wildcard match: *.example.com matches sub.example.com and deep.sub.example.com
-		if strings.HasPrefix(p, "*.") {
-			suffix := p[1:] // ".example.com"
-			if strings.HasSuffix(fqdn, suffix) {
-				return true
-			}
-			// Also match the base domain itself
-			if fqdn == p[2:] {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // clientCipher is which AEAD this client asks for. Unset means the one this

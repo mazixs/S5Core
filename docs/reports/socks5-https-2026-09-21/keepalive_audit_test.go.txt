@@ -1,0 +1,92 @@
+package obfs
+
+import (
+	"bytes"
+	"io"
+	"net"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+func TestAuditKeepaliveExceedsConfiguredMaximum(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, b := net.Pipe()
+		defer b.Close()
+		go io.Copy(io.Discard, b)
+		log := &writeLog{Conn: a}
+		c, e := NewClientConn(log, Config{PSK: bytes.Repeat([]byte("k"), 32), MTU: 1400, KeepaliveMin: 20 * time.Second, KeepaliveMax: 20 * time.Second})
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer c.Close()
+		start := time.Now()
+		if _, e := c.Write([]byte("initial")); e != nil {
+			t.Fatal(e)
+		}
+		synctest.Wait()
+		time.Sleep(time.Second)
+		if _, e := c.Write([]byte("last application data")); e != nil {
+			t.Fatal(e)
+		}
+		time.Sleep(30 * time.Second)
+		synctest.Wait()
+		_, times := log.snapshot()
+		t.Logf("at=%s wire_writes=%d last_write_at=%s silence=%s configured_max=20s", time.Since(start), len(times), times[len(times)-1].Sub(start), time.Since(times[len(times)-1]))
+		if time.Since(times[len(times)-1]) < 30*time.Second {
+			t.Fatal("unexpected early keepalive")
+		}
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		_, times = log.snapshot()
+		gap := times[len(times)-1].Sub(times[len(times)-2])
+		t.Logf("next keepalive_at=%s previous_gap=%s", times[len(times)-1].Sub(start), gap)
+		if gap <= 20*time.Second {
+			t.Fatal("expected suppression defect")
+		}
+	})
+}
+
+func TestAuditDefaultKeepaliveGap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var exceeded int
+		var maximum time.Duration
+		for i := 0; i < 64; i++ {
+			a, b := net.Pipe()
+			go io.Copy(io.Discard, b)
+			log := &writeLog{Conn: a}
+			c, e := NewClientConn(log, Config{PSK: bytes.Repeat([]byte("k"), 32), MTU: 1400, KeepaliveMin: DefaultKeepaliveMin, KeepaliveMax: DefaultKeepaliveMax})
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e := c.Write([]byte("initial")); e != nil {
+				t.Fatal(e)
+			}
+			synctest.Wait()
+			time.Sleep(time.Second)
+			if _, e := c.Write([]byte("last application data")); e != nil {
+				t.Fatal(e)
+			}
+			time.Sleep(40 * time.Second)
+			synctest.Wait()
+			_, times := log.snapshot()
+			if len(times) < 3 {
+				t.Fatal("no keepalive")
+			}
+			gap := times[2].Sub(times[1])
+			if gap > maximum {
+				maximum = gap
+			}
+			if gap > 30*time.Second {
+				exceeded++
+			}
+			c.Close()
+			b.Close()
+			synctest.Wait()
+		}
+		t.Logf("DEFAULT_KEEPALIVE min=10s max=20s trials=64 gaps_over_30s=%d maximum_gap=%s", exceeded, maximum)
+		if exceeded == 0 {
+			t.Fatal("random sample did not reproduce; use deterministic TestAuditKeepaliveExceedsConfiguredMaximum")
+		}
+	})
+}

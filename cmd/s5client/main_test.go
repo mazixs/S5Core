@@ -28,7 +28,7 @@ func TestMatchDomain(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := matchDomain(tt.fqdn, patterns)
+		result := newDomainMatcher(patterns).Match(tt.fqdn)
 		if result != tt.matched {
 			t.Errorf("matchDomain(%q, %v) = %v, want %v", tt.fqdn, patterns, result, tt.matched)
 		}
@@ -50,7 +50,7 @@ func TestMatchDomain_IDN(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := matchDomain(tt.fqdn, patterns)
+		result := newDomainMatcher(patterns).Match(tt.fqdn)
 		if result != tt.matched {
 			t.Errorf("matchDomain(%q, %v) = %v, want %v", tt.fqdn, patterns, result, tt.matched)
 		}
@@ -58,10 +58,10 @@ func TestMatchDomain_IDN(t *testing.T) {
 }
 
 func TestMatchDomain_EmptyPatterns(t *testing.T) {
-	if matchDomain("example.com", nil) {
+	if newDomainMatcher(nil).Match("example.com") {
 		t.Error("expected no match with empty patterns")
 	}
-	if matchDomain("example.com", []string{}) {
+	if newDomainMatcher([]string{}).Match("example.com") {
 		t.Error("expected no match with empty patterns")
 	}
 }

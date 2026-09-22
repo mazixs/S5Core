@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/mazixs/S5Core/internal/diagnostics"
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/signals"
 	"github.com/mazixs/S5Core/pkg/s5server"
@@ -125,6 +126,7 @@ func loadConfig() (params, error) {
 }
 
 func main() {
+	defer diagnostics.Start()()
 	logger, levelErr := logging.Setup(os.Stdout)
 	if levelErr != nil {
 		slog.Warn("Invalid LOG_LEVEL, falling back to info", "error", levelErr)

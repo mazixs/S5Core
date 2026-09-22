@@ -1,0 +1,955 @@
+diff --git a/cmd/httpsprobe/main.go b/cmd/httpsprobe/main.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/httpsprobe/main.go
+@@ -0,0 +1,206 @@
++// httpsprobe measures HTTP response timing at the client, outside the proxy.
++package main
++
++import (
++	"context"
++	"crypto/sha256"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"flag"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptrace"
++	"net/url"
++	"os"
++	"sync"
++	"time"
++
++	"golang.org/x/net/proxy"
++)
++
++type measurement struct {
++	Protocol        string  `json:"protocol,omitempty"`
++	Status          int     `json:"status,omitempty"`
++	Reused          bool    `json:"reused"`
++	DNSMS           float64 `json:"client_dns_ms"`
++	SetupMS         float64 `json:"connect_setup_ms"`
++	TLSMS           float64 `json:"tls_handshake_ms"`
++	FirstResponseMS float64 `json:"http_first_response_ms"`
++	TotalMS         float64 `json:"total_ms"`
++	Bytes           int64   `json:"bytes"`
++	SHA256          string  `json:"sha256,omitempty"`
++	Error           string  `json:"error,omitempty"`
++}
++
++// Setup measures DialContext in full: direct DNS/TCP, or TCP to the proxy
++// plus SOCKS greeting and CONNECT. Remote DNS cannot be separated at this
++// endpoint; the server's dns phase supplies that observation.
++type probeTransport struct{ *http.Transport }
++
++func newTransport(socks string, roots *x509.CertPool, reuse, http2 bool, budget time.Duration) (*probeTransport, error) {
++	dial := (&net.Dialer{}).DialContext
++	if socks != "" {
++		d, err := proxy.SOCKS5("tcp", socks, nil, &net.Dialer{})
++		if err != nil {
++			return nil, err
++		}
++		dial = d.(proxy.ContextDialer).DialContext
++	}
++	tr := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, ForceAttemptHTTP2: http2, DisableKeepAlives: !reuse, DisableCompression: true}
++	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
++		ctx, cancel := context.WithTimeout(ctx, budget)
++		defer cancel()
++		start := time.Now()
++		c, err := dial(ctx, network, addr)
++		if record, ok := ctx.Value(timingKey{}).(*timing); ok {
++			record.mu.Lock()
++			record.result.SetupMS = milliseconds(time.Since(start))
++			record.mu.Unlock()
++		}
++		return c, err
++	}
++	return &probeTransport{tr}, nil
++}
++
++type timingKey struct{}
++type timing struct {
++	mu     sync.Mutex
++	result measurement
++}
++
++func milliseconds(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
++
++func measure(ctx context.Context, client *http.Client, target string) measurement {
++	start := time.Now()
++	record := new(timing)
++	var tlsStart, dnsStart time.Time
++	trace := &httptrace.ClientTrace{
++		DNSStart: func(httptrace.DNSStartInfo) { record.mu.Lock(); dnsStart = time.Now(); record.mu.Unlock() },
++		DNSDone: func(httptrace.DNSDoneInfo) {
++			record.mu.Lock()
++			record.result.DNSMS += milliseconds(time.Since(dnsStart))
++			record.mu.Unlock()
++		},
++		TLSHandshakeStart: func() { record.mu.Lock(); tlsStart = time.Now(); record.mu.Unlock() },
++		TLSHandshakeDone: func(tls.ConnectionState, error) {
++			record.mu.Lock()
++			record.result.TLSMS += milliseconds(time.Since(tlsStart))
++			record.mu.Unlock()
++		},
++		GotConn: func(info httptrace.GotConnInfo) {
++			record.mu.Lock()
++			record.result.Reused = info.Reused
++			record.mu.Unlock()
++		},
++		GotFirstResponseByte: func() {
++			record.mu.Lock()
++			record.result.FirstResponseMS = milliseconds(time.Since(start))
++			record.mu.Unlock()
++		},
++	}
++	ctx = context.WithValue(ctx, timingKey{}, record)
++	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodGet, target, nil)
++	var resp *http.Response
++	if err == nil {
++		resp, err = client.Do(req)
++	}
++	var n int64
++	var checksum string
++	if resp != nil {
++		hash := sha256.New()
++		n, err = io.Copy(hash, resp.Body)
++		closeErr := resp.Body.Close()
++		if err == nil {
++			err = closeErr
++		}
++		if err == nil {
++			checksum = hex.EncodeToString(hash.Sum(nil))
++		}
++	}
++	record.mu.Lock()
++	defer record.mu.Unlock()
++	result := record.result
++	result.TotalMS = milliseconds(time.Since(start))
++	result.Bytes = n
++	result.SHA256 = checksum
++	if resp != nil {
++		result.Protocol = resp.Proto
++		result.Status = resp.StatusCode
++	}
++	if err != nil {
++		// url.Error includes the full URL, possibly with credentials or tokens.
++		var urlErr *url.Error
++		if errors.As(err, &urlErr) {
++			err = urlErr.Err
++		}
++		result.Error = err.Error()
++	}
++	return result
++}
++
++func run(args []string, output, stderr io.Writer) error {
++	flags := flag.NewFlagSet("httpsprobe", flag.ContinueOnError)
++	flags.SetOutput(stderr)
++	target := flags.String("url", "", "HTTPS URL to measure")
++	socks := flags.String("socks", "", "SOCKS5 host:port; empty uses a direct connection")
++	timeout := flags.Duration("timeout", 30*time.Second, "total budget per request, including body")
++	count := flags.Int("count", 1, "number of sequential requests")
++	reuse := flags.Bool("reuse", false, "reuse HTTP connections")
++	http2 := flags.Bool("http2", true, "allow HTTP/2; negotiated protocol is reported")
++	ca := flags.String("ca", "", "PEM CA file to add to system roots")
++	if err := flags.Parse(args); err != nil {
++		return err
++	}
++	u, err := url.Parse(*target)
++	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
++		return errors.New("provide an HTTPS -url without user info")
++	}
++	if *count < 1 || *timeout <= 0 {
++		return errors.New("count and timeout must be positive")
++	}
++	var roots *x509.CertPool
++	if *ca != "" {
++		pem, err := os.ReadFile(*ca)
++		if err != nil {
++			return err
++		}
++		roots, err = x509.SystemCertPool()
++		if err != nil {
++			roots = x509.NewCertPool()
++		}
++		if !roots.AppendCertsFromPEM(pem) {
++			return errors.New("CA file contains no certificates")
++		}
++	}
++	tr, err := newTransport(*socks, roots, *reuse, *http2, *timeout)
++	if err != nil {
++		return err
++	}
++	defer tr.CloseIdleConnections()
++	client := &http.Client{Transport: tr, Timeout: *timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	encoder := json.NewEncoder(output)
++	failed := false
++	for i := 0; i < *count; i++ {
++		result := measure(context.Background(), client, *target)
++		if err := encoder.Encode(result); err != nil {
++			return err
++		}
++		failed = failed || result.Error != "" || result.Status < 200 || result.Status >= 300
++	}
++	if failed {
++		return errors.New("one or more requests failed; see JSON measurements")
++	}
++	return nil
++}
++
++func main() {
++	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
++		fmt.Fprintln(os.Stderr, err)
++		os.Exit(1)
++	}
++}
+diff --git a/cmd/s5client/main.go b/cmd/s5client/main.go
+--- a/cmd/s5client/main.go
++++ b/cmd/s5client/main.go
+@@ -1,6 +1,7 @@
+ package main
+ 
+ import (
++ "github.com/mazixs/S5Core/internal/diagnostics"
+ 	"context"
+ 	"crypto/x509"
+ 	"encoding/base64"
+@@ -186,6 +187,7 @@
+ }
+ 
+ func main() {
++ defer diagnostics.Start()()
+ 	if _, err := logging.Setup(os.Stdout); err != nil {
+ 		slog.Warn("Invalid LOG_LEVEL, falling back to info", "error", err)
+ 	}
+@@ -711,6 +713,16 @@
+ // can hand back an in-memory pipe - a real socket cannot run inside a
+ // synctest bubble, because its deadlines belong to the kernel clock.
+ var dialServer = func(cfg clientParams) (net.Conn, error) {
++	ctx := context.Background()
++	budget := cfg.DialTimeout
++	if cfg.HandshakeTimeout > 0 && (budget <= 0 || cfg.HandshakeTimeout < budget) {
++		budget = cfg.HandshakeTimeout
++	}
++	if budget > 0 {
++		var cancel context.CancelFunc
++		ctx, cancel = context.WithTimeout(ctx, budget)
++		defer cancel()
++	}
+ 	if cfg.usesWS() {
+ 		wsOpts := ws.DialOpts{
+ 			URL:            cfg.WSUrl,
+@@ -722,7 +734,7 @@
+ 			RootCAs:        cfg.rootCAs,
+ 			PinSHA256:      cfg.WSPins,
+ 		}
+-		wsConn, err := ws.Dial(wsOpts)
++		wsConn, err := ws.DialContext(ctx, wsOpts)
+ 		if err != nil {
+ 			return nil, fmt.Errorf("failed to dial WS: %w", err)
+ 		}
+@@ -732,12 +744,6 @@
+ 		return wsConn, nil
+ 	}
+ 
+-	ctx := context.Background()
+-	if cfg.DialTimeout > 0 {
+-		var cancel context.CancelFunc
+-		ctx, cancel = context.WithTimeout(ctx, cfg.DialTimeout)
+-		defer cancel()
+-	}
+ 	conn, err := dialOutbound(ctx, "tcp", cfg.ServerAddr)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to connect to server: %w", err)
+@@ -746,6 +752,8 @@
+ }
+ 
+ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
++	// Setup includes the outer transport, obfs and SOCKS negotiation.
++	setupStart := time.Now()
+ 	serverConn, err := dialServer(cfg)
+ 	if err != nil {
+ 		return nil, &tunnelError{phase: phaseDial, err: err}
+@@ -754,7 +762,7 @@
+ 	// Every read below is covered by one deadline. It is cleared by the caller
+ 	// once the CONNECT reply has arrived, so it bounds setup and nothing else.
+ 	if cfg.HandshakeTimeout > 0 {
+-		if err := serverConn.SetDeadline(time.Now().Add(cfg.HandshakeTimeout)); err != nil {
++		if err := serverConn.SetDeadline(setupStart.Add(cfg.HandshakeTimeout)); err != nil {
+ 			serverConn.Close()
+ 			return nil, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to set handshake deadline: %w", err)}
+ 		}
+diff --git a/cmd/s5core/main.go b/cmd/s5core/main.go
+--- a/cmd/s5core/main.go
++++ b/cmd/s5core/main.go
+@@ -1,6 +1,7 @@
+ package main
+ 
+ import (
++ "github.com/mazixs/S5Core/internal/diagnostics"
+ 	"context"
+ 	"errors"
+ 	"fmt"
+@@ -125,6 +126,7 @@
+ }
+ 
+ func main() {
++ defer diagnostics.Start()()
+ 	logger, levelErr := logging.Setup(os.Stdout)
+ 	if levelErr != nil {
+ 		slog.Warn("Invalid LOG_LEVEL, falling back to info", "error", levelErr)
+diff --git a/internal/diagnostics/disabled.go b/internal/diagnostics/disabled.go
+new file mode 100644
+--- /dev/null
++++ b/internal/diagnostics/disabled.go
+@@ -0,0 +1,7 @@
++//go:build !profiling
++
++// Package diagnostics enables file-only profiling in explicit diagnostic builds.
++package diagnostics
++
++// Start is a no-op in release builds.
++func Start() func() { return func() {} }
+diff --git a/internal/diagnostics/profiling.go b/internal/diagnostics/profiling.go
+new file mode 100644
+--- /dev/null
++++ b/internal/diagnostics/profiling.go
+@@ -0,0 +1,52 @@
++//go:build profiling
++
++package diagnostics
++
++import (
++	"log/slog"
++	"os"
++	"path/filepath"
++	"runtime"
++	"runtime/pprof"
++)
++
++// Start writes profiles only with -tags=profiling and S5_PROFILE_DIR.
++// No HTTP handler is registered. Each process needs a fresh directory and
++// graceful termination. These builds are for measurement, not deployment.
++func Start() func() {
++	dir := os.Getenv("S5_PROFILE_DIR")
++	if dir == "" {
++		return func() {}
++	}
++	if err := os.MkdirAll(dir, 0o700); err != nil {
++		panic(err)
++	}
++	f, err := os.OpenFile(filepath.Join(dir, "cpu.pprof"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
++	if err != nil {
++		panic(err)
++	}
++	if err := pprof.StartCPUProfile(f); err != nil {
++		_ = f.Close()
++		panic(err)
++	}
++	oldMutex := runtime.SetMutexProfileFraction(10)
++	runtime.SetBlockProfileRate(1000000)
++	slog.Info("Diagnostic profiles enabled", "directory", dir)
++	return func() {
++		pprof.StopCPUProfile()
++		_ = f.Close()
++		runtime.SetMutexProfileFraction(oldMutex)
++		runtime.SetBlockProfileRate(0)
++		for _, name := range []string{"allocs", "heap", "mutex", "block", "goroutine"} {
++			out, err := os.OpenFile(filepath.Join(dir, name+".pprof"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
++			if err != nil {
++				slog.Error("Profile create failed", "error", err)
++				continue
++			}
++			if err := pprof.Lookup(name).WriteTo(out, 0); err != nil {
++				slog.Error("Profile write failed", "error", err)
++			}
++			_ = out.Close()
++		}
++	}
++}
+diff --git a/internal/session/session.go b/internal/session/session.go
+--- a/internal/session/session.go
++++ b/internal/session/session.go
+@@ -257,8 +257,9 @@
+ 
+ 	// graceAt is when Grace began, unix nanoseconds; exhausted is the
+ 	// terminal account state Grace resolves to when the session closes.
+-	graceAt   atomic.Int64
+-	exhausted atomic.Uint32
++	frameBodyAt atomic.Int64
++	graceAt     atomic.Int64
++	exhausted   atomic.Uint32
+ 
+ 	closeOnce sync.Once
+ }
+@@ -336,6 +337,11 @@
+ func (s *Session) Frame(f Frames) bool {
+ 	if s == nil {
+ 		return false
++	}
++	// Only the frame reader drives this region. Publish the absolute start
++	// before AwaitBody, so concurrent writes cannot extend an incomplete frame.
++	if f == AwaitBody && s.Frames() != AwaitBody && legalFrames(s.frames.Load(), uint32(f)) {
++		s.frameBodyAt.Store(time.Now().UnixNano())
+ 	}
+ 	return s.move(RegionFrames, &s.frames, uint32(f), legalFrames)
+ }
+@@ -419,7 +425,7 @@
+ 			d = after(now, idle)
+ 		}
+ 		if read && s.Frames() == AwaitBody {
+-			d = stricter(d, after(now, s.sla.FrameBody))
++			d = stricter(d, after(time.Unix(0, s.frameBodyAt.Load()), s.sla.FrameBody))
+ 		}
+ 		if end, ok := s.GraceDeadline(); ok {
+ 			d = stricter(d, end)
+diff --git a/internal/socks5/dial.go b/internal/socks5/dial.go
+new file mode 100644
+--- /dev/null
++++ b/internal/socks5/dial.go
+@@ -0,0 +1,150 @@
++package socks5
++
++import (
++	"context"
++	"errors"
++	"net"
++	"time"
++)
++
++type dialCandidate struct {
++	ctx  context.Context
++	addr string
++}
++
++// interleaveIPs preserves the resolver's preferred family and alternates
++// families for fallback. It also removes duplicate addresses.
++func interleaveIPs(ips []net.IP) []net.IP {
++	if len(ips) == 0 {
++		return nil
++	}
++	var first, other []net.IP
++	seen := make(map[string]bool)
++	prefer4 := ips[0].To4() != nil
++	for _, ip := range ips {
++		if ip.To16() == nil || seen[ip.String()] {
++			continue
++		}
++		seen[ip.String()] = true
++		if (ip.To4() != nil) == prefer4 {
++			first = append(first, ip)
++		} else {
++			other = append(other, ip)
++		}
++	}
++	out := make([]net.IP, 0, len(first)+len(other))
++	for len(first) > 0 || len(other) > 0 {
++		if len(first) > 0 {
++			out = append(out, first[0])
++			first = first[1:]
++		}
++		if len(other) > 0 {
++			out = append(out, other[0])
++			other = other[1:]
++		}
++	}
++	return out
++}
++
++// dialResolved races at most two checked numeric addresses. Fast failures
++// advance immediately; a stalled attempt gives its alternate a head start
++// after 250ms (or less for a short budget). Per-attempt shares leave room for
++// later addresses, with a 2s minimum like net.Dialer, capped by the parent
++// deadline. A large DNS answer must not shrink a usable attempt to milliseconds.
++// An unbuffered result channel transfers socket ownership exactly once.
++func dialResolved(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidates []dialCandidate) (net.Conn, error) {
++	ctx, cancel := context.WithCancel(ctx)
++	defer cancel()
++	type result struct {
++		conn net.Conn
++		err  error
++	}
++	results := make(chan result)
++	delay := 250 * time.Millisecond
++	if end, ok := ctx.Deadline(); ok && time.Until(end)/time.Duration(len(candidates)+1) < delay {
++		delay = max(time.Nanosecond, time.Until(end)/time.Duration(len(candidates)+1))
++	}
++	timer := time.NewTimer(delay)
++	defer timer.Stop()
++	next, active := 0, 0
++	launch := func() error {
++		if err := ctx.Err(); err != nil {
++			return err
++		}
++		// A child deadline can fire before the parent's cancellation callback.
++		// Do not start another address after the shared deadline in that gap.
++		if end, ok := ctx.Deadline(); ok && !time.Now().Before(end) {
++			return context.DeadlineExceeded
++		}
++		candidate := candidates[next]
++		remaining := len(candidates) - next
++		next++
++		active++
++		go func() {
++			attempt := keepValues(ctx, candidate.ctx)
++			if end, ok := ctx.Deadline(); ok && remaining > 1 {
++				var stop context.CancelFunc
++				left := time.Until(end)
++				// Match net.partialDeadline's lower bound. With less than 2s
++				// left, spend only the remaining parent budget.
++				share := min(left, max(2*time.Second, left/time.Duration(remaining)))
++				attempt, stop = context.WithTimeout(attempt, share)
++				defer stop()
++			}
++			c, err := dial(attempt, "tcp", candidate.addr)
++			if err == nil && c == nil {
++				err = errors.New("dial returned no connection")
++			}
++			if err != nil && c != nil {
++				_ = c.Close()
++				c = nil
++			}
++			select {
++			case results <- result{c, err}:
++			case <-ctx.Done():
++				if c != nil {
++					_ = c.Close()
++				}
++			}
++		}()
++		return nil
++	}
++	if err := launch(); err != nil {
++		return nil, err
++	}
++	var firstErr error
++	for active > 0 {
++		select {
++		case <-ctx.Done():
++			return nil, ctx.Err()
++		case r := <-results:
++			active--
++			if r.err == nil {
++				if ctx.Err() != nil {
++					_ = r.conn.Close()
++					return nil, ctx.Err()
++				}
++				return r.conn, nil
++			}
++			if firstErr == nil {
++				firstErr = r.err
++			}
++			if next < len(candidates) {
++				if err := launch(); err != nil {
++					return nil, err
++				}
++				timer.Reset(delay)
++			}
++		case <-timer.C:
++			if next < len(candidates) && active < 2 {
++				if err := launch(); err != nil {
++					return nil, err
++				}
++			}
++			if next < len(candidates) {
++				timer.Reset(delay)
++			}
++		}
++	}
++	return nil, firstErr
++}
+diff --git a/internal/socks5/phase.go b/internal/socks5/phase.go
+--- a/internal/socks5/phase.go
++++ b/internal/socks5/phase.go
+@@ -18,13 +18,16 @@
+ 	// PhaseAuth covers credential verification only. Password hashing lives
+ 	// here, so this is where Argon2id shows up if it is on the hot path.
+ 	PhaseAuth Phase = "auth"
+-	// PhaseDial covers resolving and connecting to the destination.
++	// PhaseDNS covers name resolution, including failed lookups.
++	PhaseDNS Phase = "dns"
++	// PhaseDial covers TCP attempts against the resolved destination addresses.
+ 	PhaseDial Phase = "dial"
+-	// PhaseFirstByte covers the wait between a successful dial and the first
+-	// byte the destination sends back.
++	// PhaseFirstByte covers the wait between the SOCKS success reply and the first
++	// byte the destination sends back. For HTTPS this is usually TLS data,
++	// not the HTTP response.
+ 	PhaseFirstByte Phase = "first_byte"
+-	// PhaseSession covers the whole connection, from the first byte read off
+-	// the client to the moment the handler returns.
++	// PhaseSession covers the whole connection, from entering the handler
++	// (before waiting for the version byte) to the moment it returns.
+ 	PhaseSession Phase = "session"
+ )
+ 
+diff --git a/internal/socks5/request.go b/internal/socks5/request.go
+--- a/internal/socks5/request.go
++++ b/internal/socks5/request.go
+@@ -101,6 +101,7 @@
+ 	// for the same reply throughout both, and it is zero when the session has
+ 	// no dial budget.
+ 	attemptDeadline time.Time
++	dialCandidates  []dialCandidate
+ 	// AddrSpec of the actual destination (might be affected by rewrite)
+ 	realDestAddr *AddrSpec
+ 	bufConn      io.Reader
+@@ -210,7 +211,26 @@
+ 	// Resolve the address if we have a FQDN
+ 	dest := req.DestAddr
+ 	if dest.FQDN != "" {
+-		ctx_, addr, err := s.config.Resolver.Resolve(resolveCtx, dest.FQDN)
++		dnsPhase := s.startPhase(PhaseDNS)
++		var ctx_ context.Context
++		var addr net.IP
++		var ips []net.IP
++		var err error
++		if multi, ok := s.config.Resolver.(MultiNameResolver); ok && req.Command == ConnectCommand {
++			ctx_, ips, err = multi.ResolveAll(resolveCtx, dest.FQDN)
++			if err == nil {
++				ips = interleaveIPs(ips)
++			}
++			if err == nil && len(ips) == 0 {
++				err = errors.New("resolver returned no addresses")
++			}
++			if err == nil {
++				addr = ips[0]
++			}
++		} else {
++			ctx_, addr, err = s.config.Resolver.Resolve(resolveCtx, dest.FQDN)
++		}
++		dnsPhase.end(err == nil)
+ 		if err != nil {
+ 			failure := connFailure("dial", "resolve", err)
+ 			if replyErr := sendReply(conn, hostUnreachable, nil); replyErr != nil {
+@@ -225,6 +245,28 @@
+ 		// does. keepValues takes the one and leaves the other.
+ 		ctx = keepValues(ctx, ctx_)
+ 		dest.IP = addr
++		// The rewriter retains sole control when configured: its single
++		// result must never fall back to a pre-rewrite destination.
++		if s.config.Rewriter == nil && len(ips) > 0 {
++			for _, ip := range ips {
++				candidateAddr := *dest
++				candidateAddr.IP = append(net.IP(nil), ip...)
++				numericAddr := candidateAddr.Address()
++				candidateReq := *req
++				candidateReq.DestAddr = &candidateAddr
++				candidateCtx, allowed := s.config.Rules.Allow(ctx, &candidateReq)
++				if allowed {
++					req.dialCandidates = append(req.dialCandidates, dialCandidate{ctx: keepValues(ctx, candidateCtx), addr: numericAddr})
++				}
++			}
++			if len(req.dialCandidates) == 0 {
++				failure := &ConnError{Stage: "request", Op: "rules", Kind: FailurePolicy, Err: errors.New("resolved addresses blocked by rules")}
++				if err := sendReply(conn, ruleFailure, nil); err != nil {
++					return errors.Join(failure, err)
++				}
++				return failure
++			}
++		}
+ 	}
+ 
+ 	// Apply any address rewrites
+@@ -286,7 +328,11 @@
+ 		defer cancelDial()
+ 	}
+ 	dialPhase := s.startPhase(PhaseDial)
+-	target, err := dial(dialCtx, "tcp", req.realDestAddr.Address())
++	candidates := req.dialCandidates
++	if len(candidates) == 0 {
++		candidates = []dialCandidate{{ctx: ctx, addr: req.realDestAddr.Address()}}
++	}
++	target, err := dialResolved(dialCtx, dial, candidates)
+ 	dialPhase.end(err == nil)
+ 	if err != nil {
+ 		msg := err.Error()
+diff --git a/internal/socks5/resolver.go b/internal/socks5/resolver.go
+--- a/internal/socks5/resolver.go
++++ b/internal/socks5/resolver.go
+@@ -13,18 +13,33 @@
+ 	Resolve(ctx context.Context, name string) (context.Context, net.IP, error)
+ }
+ 
++// MultiNameResolver optionally supplies all addresses for CONNECT. Legacy
++// NameResolver implementations retain their single-address contract.
++type MultiNameResolver interface {
++	NameResolver
++	ResolveAll(context.Context, string) (context.Context, []net.IP, error)
++}
++
+ // DNSResolver uses the system DNS to resolve host names
+ type DNSResolver struct{}
+ 
+ func (d DNSResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
++	ctx, ips, err := d.ResolveAll(ctx, name)
++	if err != nil {
++		return ctx, nil, err
++	}
++	return ctx, ips[0], nil
++}
++
++func (d DNSResolver) ResolveAll(ctx context.Context, name string) (context.Context, []net.IP, error) {
+ 	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", name)
+ 	if err != nil {
+ 		return ctx, nil, err
+ 	}
+ 	if len(ips) == 0 {
+-		return ctx, nil, fmt.Errorf("no IP addressed found for %s", name)
++		return ctx, nil, fmt.Errorf("no IP addresses found for %s", name)
+ 	}
+-	return ctx, ips[0], nil
++	return ctx, ips, nil
+ }
+ 
+ // resolveWithin looks a name up under a budget of its own, and is how the UDP
+diff --git a/internal/socks5/ruleset.go b/internal/socks5/ruleset.go
+--- a/internal/socks5/ruleset.go
++++ b/internal/socks5/ruleset.go
+@@ -6,6 +6,8 @@
+ 
+ // RuleSet is used to provide custom rules to allow or prohibit actions.
+ //
++// For multi-address CONNECT it is first asked before DNS, then once per
++// resolved candidate (with DestAddr.IP set). Only allowed candidates are dialed.
+ // It is asked twice on a UDP association: once for the ASSOCIATE request
+ // itself, and once for every datagram that association carries, with
+ // Request.Datagram set and DestAddr naming that datagram's destination. The
+diff --git a/pkg/obfs/keepalive.go b/pkg/obfs/keepalive.go
+--- a/pkg/obfs/keepalive.go
++++ b/pkg/obfs/keepalive.go
+@@ -50,8 +50,19 @@
+ }
+ 
+ func (c *conn) keepaliveLoop() {
++	interval := c.keepaliveDelay()
++	anchor := c.lastWriteAt()
+ 	for {
+-		wait := c.keepaliveDelay()
++		// Recheck against the same target idle interval after application
++		// traffic, rather than starting a new full wait at suppression time.
++		last := c.lastWriteAt()
++		if last.Before(anchor) {
++			last = anchor
++		}
++		wait := interval - time.Since(last)
++		if wait < 0 {
++			wait = 0
++		}
+ 		timer := time.NewTimer(wait)
+ 		select {
+ 		case <-c.done:
+@@ -59,20 +70,17 @@
+ 			return
+ 		case <-timer.C:
+ 		}
+-
+-		// Suppression. Data that went out during the wait has already told
+-		// every box on the path that the connection is alive, and the point
+-		// of the keepalive is the silence, not the period.
+-		if idle := time.Since(c.lastWriteAt()); idle < wait {
++		if time.Since(c.lastWriteAt()) < interval {
+ 			continue
+ 		}
+-
+ 		if err := c.writeKeepalive(); err != nil {
+-			// The connection is gone, or going. Whoever is reading or writing
+-			// it will see the same error with more context than this
+-			// goroutine has.
+ 			return
+ 		}
++		anchor = c.lastWriteAt()
++		if !anchor.After(last) {
++			anchor = time.Now()
++		} // no opening sent yet
++		interval = c.keepaliveDelay()
+ 	}
+ }
+ 
+diff --git a/pkg/s5server/conn.go b/pkg/s5server/conn.go
+--- a/pkg/s5server/conn.go
++++ b/pkg/s5server/conn.go
+@@ -28,42 +28,38 @@
+ 	CloseWrite() error
+ }
+ 
+-// A connection is not one thing for its whole life, and one idle timeout
+-// cannot serve all of it: the setup has an absolute budget, a stream relay an
+-// idle timeout, a silent tunnel none, and an obfuscation frame a deadline of
+-// its own once its header has arrived. All of that used to live here as a
+-// regime switched by a string sent down the transport stack. It now lives in
+-// the session (internal/session), which the drivers already move through its
+-// states; timeoutConn does nothing but ask the session for the deadline of
+-// the read or write it is about to do (plan task Ф6-1).
+-//
+-// A nil session - a connection that reached this wrapper without the listener
+-// pipeline, in a test or SDK use - asks for no deadline, which is the old
+-// behaviour of a connection with every timeout set to zero.
++// timeoutConn arms session budgets at the transport boundary. Successful
++// outbound stream traffic extends an already pending client read; write
++// deadlines still bound a blocked writer independently.
+ type timeoutConn struct {
+ 	net.Conn
+-	sess *session.Session
+-	// readArmed and writeArmed remember whether a deadline is currently set,
+-	// so that a tunnel - which wants none - clears it once rather than on
+-	// every read. Read touches only readArmed and Write only writeArmed, each
+-	// from its own relay goroutine, so neither needs a lock.
++	sess       *session.Session
++	deadlineMu sync.Mutex
+ 	readArmed  bool
+ 	writeArmed bool
+ }
+ 
+-// NetConn hands back the connection underneath, so that session.Of and
+-// obfs.IdentityOf can walk past this wrapper to the layers they look for.
+ func (c *timeoutConn) NetConn() net.Conn { return c.Conn }
+ 
++// armReadLocked serializes read-side arming with outbound activity, so an
++// older deadline cannot overwrite the extension made by the other goroutine.
++func (c *timeoutConn) armReadLocked() error {
++	deadline, ok := c.sess.ReadDeadline(time.Now())
++	if ok || c.readArmed {
++		if err := c.SetReadDeadline(deadline); err != nil {
++			return err
++		}
++		c.readArmed = ok
++	}
++	return nil
++}
++
+ func (c *timeoutConn) Read(b []byte) (int, error) {
+-	if deadline, ok := c.sess.ReadDeadline(time.Now()); ok {
+-		if err := c.SetReadDeadline(deadline); err != nil {
+-			return 0, err
+-		}
+-		c.readArmed = true
+-	} else if c.readArmed {
+-		_ = c.SetReadDeadline(time.Time{})
+-		c.readArmed = false
++	c.deadlineMu.Lock()
++	err := c.armReadLocked()
++	c.deadlineMu.Unlock()
++	if err != nil {
++		return 0, err
+ 	}
+ 	return c.Conn.Read(b)
+ }
+@@ -78,7 +74,17 @@
+ 		_ = c.SetWriteDeadline(time.Time{})
+ 		c.writeArmed = false
+ 	}
+-	return c.Conn.Write(b)
++	n, err := c.Conn.Write(b)
++	p := c.sess.Protocol()
++	if n > 0 && c.sess.Kind() == session.Stream && (p == session.Relay || p == session.HalfClosed) {
++		c.deadlineMu.Lock()
++		deadlineErr := c.armReadLocked()
++		c.deadlineMu.Unlock()
++		if err == nil {
++			err = deadlineErr
++		}
++	}
++	return n, err
+ }
+ 
+ func (c *timeoutConn) CloseWrite() error {
+diff --git a/pkg/s5server/telemetry.go b/pkg/s5server/telemetry.go
+--- a/pkg/s5server/telemetry.go
++++ b/pkg/s5server/telemetry.go
+@@ -42,7 +42,7 @@
+ 
+ 	// PhaseDuration records how long each stage of a connection took, labelled
+ 	// by phase and outcome. Five phases, so five distributions from one
+-	// instrument: handshake, auth, dial, first_byte, session.
++	// instrument: handshake, auth, dns, dial, first_byte, session.
+ 	PhaseDuration metric.Float64Histogram
+ 	// ConnectionsInPhase is how many connections sit in each phase right now.
+ 	// A backlog in one phase is the signal; the total is not interesting.
+diff --git a/pkg/transport/ws/dialer.go b/pkg/transport/ws/dialer.go
+--- a/pkg/transport/ws/dialer.go
++++ b/pkg/transport/ws/dialer.go
+@@ -36,7 +36,7 @@
+ 	// TLSConfig for the underlying TLS connection.
+ 	TLSConfig *tls.Config
+ 	// TLSFingerprint selects a browser TLS fingerprint (e.g. "chrome", "firefox").
+-	// If empty, standard crypto/tls is used.
++	// Requires a wss URL. If empty, standard crypto/tls is used.
+ 	TLSFingerprint string
+ 	// RootCAs trusts a private certificate authority in addition to nothing
+ 	// else: it replaces the system roots rather than adding to them, which is
+@@ -52,6 +52,12 @@
+ 
+ // Dial connects to a WebSocket endpoint and returns a net.Conn adapter.
+ func Dial(opts DialOpts) (*Conn, error) {
++	return DialContext(context.Background(), opts)
++}
++
++// DialContext bounds DNS, TCP, TLS and HTTP Upgrade with the caller's
++// context. The internal handshake limit can only shorten that budget.
++func DialContext(ctx context.Context, opts DialOpts) (*Conn, error) {
+ 	u, err := url.Parse(opts.URL)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("ws dial: invalid url: %w", err)
+@@ -87,11 +93,11 @@
+ 	}
+ 
+ 	if opts.TLSFingerprint != "" {
+-		// Use uTLS to mimic a browser TLS fingerprint.
+-		// We switch to ws:// so gorilla/websocket does not wrap the
+-		// connection in a second TLS layer.
+-		u.Scheme = "ws"
+-		dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
++		if u.Scheme != "wss" {
++			return nil, fmt.Errorf("ws dial: TLS fingerprint requires a wss URL")
++		}
++		// Gorilla skips its TLS layer when NetDialTLSContext supplies it.
++		dialer.NetDialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+ 			return utls.DialContext(ctx, network, addr, utls.Options{
+ 				ServerName:  serverName,
+ 				Fingerprint: opts.TLSFingerprint,
+@@ -133,7 +139,37 @@
+ 		dialer.TLSClientConfig = tlsCfg
+ 	}
+ 
+-	wsConn, resp, err := dialer.Dial(u.String(), headers)
++	// Gorilla applies deadlines but does not interrupt an HTTP Upgrade read
++	// on cancellation alone. Close the acquired socket until ownership is
++	// handed to the caller, and join any cancellation already in progress.
++	var stopCancel func() bool
++	var canceled chan struct{}
++	wrapDial := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
++		return func(dialCtx context.Context, network, addr string) (net.Conn, error) {
++			c, err := dial(dialCtx, network, addr)
++			if err != nil {
++				return nil, err
++			}
++			canceled = make(chan struct{})
++			stopCancel = context.AfterFunc(ctx, func() { _ = c.Close(); close(canceled) })
++			return c, nil
++		}
++	}
++	if dialer.NetDialTLSContext != nil {
++		dialer.NetDialTLSContext = wrapDial(dialer.NetDialTLSContext)
++	} else {
++		dialer.NetDialContext = wrapDial((&net.Dialer{}).DialContext)
++	}
++	wsConn, resp, err := dialer.DialContext(ctx, u.String(), headers)
++	if stopCancel != nil && !stopCancel() {
++		<-canceled
++	}
++	if ctx.Err() != nil {
++		if wsConn != nil {
++			_ = wsConn.Close()
++		}
++		err = ctx.Err()
++	}
+ 	if resp != nil && resp.Body != nil {
+ 		// Тело ответа на апгрейд не читается ни в одной ветке; без закрытия
+ 		// соединение с неудачным рукопожатием остается в пуле keep-alive.

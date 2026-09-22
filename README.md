@@ -325,6 +325,34 @@ go test -race -run TestTheFirstPacketOfAWSSClientIsExempt ./pkg/transport/ws/ -v
 
 ### Measured Results
 
+#### HTTPS implementation results, 22.09.2026
+
+The latest [implementation report](docs/reports/performance-implementation-2026-09-22.md)
+compares the final client/server changes with the working-tree baseline,
+including the [HTTPS correctness fixes](docs/reports/socks5-https-remediation-2026-09-21.md).
+Six independent ABBA runs on Linux amd64 measured complete, verified 8 MiB
+HTTPS responses: obfs throughput improved by **145-206%** across download/upload
+and new/reused connections; WSS improved by **26-28%**. Obfs download CPU/GiB
+fell by **37-40%**, while WSS download CPU/GiB rose by **3-13%**.
+
+The final desktop series used 10200 observations per small-response scenario
+and variant, including simultaneous bulk traffic, without exceeding the
+`max(5%, 1 ms)` p95/p99 regression threshold. Real ARM testing also covered
+HTTP/1.1/2 and bulk traffic; a separate six-run direct/obfs comparison with
+10200 small requests per case did not reproduce an initial new-connection
+tail regression. Shorter ARM mixed/WSS samples remain diagnostic.
+
+These gains come from draining already-buffered frames, fair scheduling between
+large operations, a correctly sized WS write buffer and compiled domain routes.
+Explicit member-only authentication can additionally save one greeting RTT on
+applicable new tunnels. Bounded TLS session reuse preserves trust checks.
+DNS caching and PGO were evaluated and left disabled without sufficient benefit.
+
+See the [changelog](CHANGELOG.md#unreleased), [evidence and limitations](docs/reports/performance-implementation-2026-09-22.md)
+and [reproduction guide](docs/performance-validation.md). These are lab and ARM
+loopback results, not production WAN acceptance or a completed canary. Older
+measurements below retain their original workloads and are not directly comparable.
+
 Every number below states the command that produced it and the machine it ran
 on. A performance figure without those two things is not admissible in this
 README (plan task Ф0-6): three mutually incompatible throughput numbers used to
@@ -378,7 +406,7 @@ it is the connection setup cost, and everything else together is under half a
 millisecond. Every later connection with the same password is answered from the
 verifier cache and lands in the 0.14 ms of the table above. The test
 fails if the phases stop adding up to what a client observes within 20 ms, so
-this decomposition cannot quietly go stale.
+this local TCP fixture detects large unmeasured setup gaps. It does not measure HTTPS response TTFB; the newer `dns` phase measures domain lookups separately.
 
 > **Loopback is not the internet.** These runs have no packet loss, ~0.05 ms
 > RTT and a 65536-byte MTU, so they measure allocation and scheduler cost, not
@@ -1084,7 +1112,7 @@ When running the standalone binary or Docker image, configuration is entirely dr
 | `PROXY_PASS` | String | *Empty* | Alias for `PROXY_PASSWORD`, which is what the client calls it. Accepted with a warning so that an `.env` copied from the client still starts the server; `PROXY_PASSWORD` wins if both are set. |
 | `ALLOWED_IPS` | String | *Empty* | Comma-separated list of client IP addresses allowed to connect, on every listener. Single addresses only, v4 or v6: a network in CIDR form is refused by name, as is any entry that is not an address, and the server does not start. Empty means no restriction - which is why a list that cannot be read is an error rather than an empty list. On the WebSocket transport it gates the tunnel, not the decoy site: the decoy keeps answering everyone, because a site that answers only a few addresses is itself a signature. |   
 | `ALLOWED_DEST_FQDN` | String | *Empty* | Regex allow-list for destinations. Empty allows everything. Anchored to the whole destination unless the pattern anchors itself; names are matched without regard to case - see [Destination allow-list](#destination-allow-list). |
-| `READ_TIMEOUT` | Duration | `30s` | Idle timeout for the relay phase: how long a connection may stay silent once traffic is flowing. Refreshed by every byte. |
+| `READ_TIMEOUT` | Duration | `30s` | Idle timeout for the relay phase: how long a connection may stay silent once traffic is flowing. Inbound data and successful outbound stream writes refresh the pending read deadline. A blocked write retains its separate `WRITE_TIMEOUT`; setup, incomplete-frame and quota-grace budgets remain absolute. |
 | `WRITE_TIMEOUT` | Duration | `30s` | Idle timeout for writes in the relay phase. |
 | `HANDSHAKE_TIMEOUT` | Duration | `15s` | Absolute budget for the setup phase: version byte, authentication and the reply to `CONNECT`. Unlike the idle timeouts it is not refreshed by traffic, so a client that dribbles one byte per second is dropped instead of being kept alive. |
 | `DIAL_TIMEOUT` | Duration | `10s` | Budget for reaching the destination: resolution plus connect, from the moment the request is parsed to the reply to `CONNECT`. It is cut out of `HANDSHAKE_TIMEOUT`, so a destination that never answers no longer holds a slot for the whole setup budget - see [Connection states](#connection-states). |
@@ -1173,6 +1201,7 @@ logs or in the traffic of whoever is watching the server.
 | `CLIENT_MAX_CONNECTIONS` | Integer | `1024` | Maximum active local connections, including incomplete handshakes. Excess connections are closed. Non-positive values use the default. |
 | `SERVER_ADDR` | String | *Required* | Remote S5Core server obfs address (e.g., `1.2.3.4:27015`) - the host and port the server's `OBFS_PORT` listens on. |
 | `PROXY_USER` | String | *Empty* | Username for authenticating with the S5Core server. |
+| `PROXY_AUTH_MODE` | String | `auto` | `auto` preserves existing negotiation; `member-only` requires a valid member ID/key, `OBFS_FORMAT=v1`, and no password fields, and pipelines CONNECT; `password-fallback` requires user/pass and waits for the selected method (one additional greeting RTT when member authentication wins). It cannot recover from an invalid tunnel key. |
 | `PROXY_PASS` | String | *Empty* | Password for authenticating with the S5Core server. The server calls the same setting `PROXY_PASSWORD`; it also accepts `PROXY_PASS` and says so in its log. |
 | `OBFS_PSK` | String | *Required* | Pre-shared key. **Must match the server's PSK exactly.** |
 | `OBFS_MAX_PADDING` | Integer | `256` | Padding this side adds to the frames it sends. Independent of the server's setting. |
@@ -1185,8 +1214,8 @@ logs or in the traffic of whoever is watching the server.
 | `OBFS_MEMBER_KEY` | String | *Empty* | This account's `tunnel_key` from the server's `users.json`, base64, 32 bytes. With it the server knows who is calling before the first frame and asks for no password. Without it the client uses the shared account, which works until the server sets `OBFS_REQUIRE_MEMBER_KEY`. A key that is not in the server's list fails the way a wrong PSK fails - silence, then a closed connection. |
 | `ROUTE_DOMAINS` | String | *Empty* | Comma-separated domain patterns for split tunneling. Empty = tunnel all traffic. |
 | `TIMEZONE_CHECK` | Boolean | `false` | Ask ipapi.co which timezone the server's address is in and warn when the system timezone differs. Off by default: the lookup tells a third party that this client is about to use this proxy, and puts a recognisable request on the wire right before every connection to it. Run `s5client timezone` to do the check once, by hand. |
-| `DIAL_TIMEOUT` | Duration | `10s` | How long the client waits for the connection to the server to be established. |
-| `HANDSHAKE_TIMEOUT` | Duration | `15s` | Separate budgets of this duration cover the local SOCKS5 handshake and remote tunnel setup (greeting, authentication and CONNECT reply). Each deadline is cleared when its phase finishes. A non-positive value still gives the local handshake a 15s limit; established idle tunnels are unaffected. |
+| `DIAL_TIMEOUT` | Duration | `10s` | Budget for connecting to the server, including DNS, TCP, TLS and HTTP Upgrade on WSS. The smaller positive value of this and `HANDSHAKE_TIMEOUT` bounds the transport dial. |
+| `HANDSHAKE_TIMEOUT` | Duration | `15s` | Separate budgets of this duration cover the local SOCKS5 handshake and remote tunnel setup (transport dial including WSS, greeting, authentication and CONNECT reply). Each deadline is cleared when its phase finishes. A non-positive value still gives the local handshake a 15s limit; established idle tunnels are unaffected. |
 | `SHUTDOWN_TIMEOUT` | Duration | `10s` | How long a shutdown waits for connections that are still carrying traffic. Before this the wait had no end, so a client asked to stop kept running for as long as one tunnel stayed open. |
 | `KEEPALIVE_MIN` | Duration | `10s` | Lower bound of the idle interval after which the client sends a frame carrying nothing, so that nothing on the path drops the connection for being silent. `0` disables it. See [Keepalive](#keepalive) for the measurements the range comes from. |
 | `KEEPALIVE_MAX` | Duration | `20s` | Upper bound of the same interval. A fresh draw is made for every frame: a fixed period would identify the protocol without anyone having to decrypt it. Must be at least `KEEPALIVE_MIN`. |
@@ -1195,6 +1224,7 @@ logs or in the traffic of whoever is watching the server.
 | `WS_ORIGIN` | String | *Empty* | `Origin` header sent with the upgrade request. |
 | `WS_USER_AGENT` | String | *Empty* | `User-Agent` header sent with the upgrade request. |
 | `TLS_FINGERPRINT` | String | *Empty* | Browser TLS fingerprint to imitate (`chrome`, `firefox`, ...). Empty uses Go's own Client Hello, which is itself a fingerprint. |
+| `WS_TLS_SESSION_CACHE` | Bool | `true` | Bounded TLS session caches scoped to this client configuration, separately for Go TLS and uTLS. Certificate and pin checks remain active. Browser presets without a resumption extension keep full handshakes. Set `false` for an A/B baseline. |
 | `SERVER_NAME` | String | *Empty* | SNI to present, and the name the certificate is verified against, when it must differ from the host in `WS_URL`. Falls back to `WS_HOST` and then to the host in `WS_URL`; setting it is how you move the SNI without moving the `Host` header. |
 | `WS_CA_FILE` | String | *Empty* | PEM file with the certificate authority (or the server certificate itself) to trust. It **replaces** the system roots, which is what a self-signed deployment wants. |
 | `WS_PIN_SHA256` | String | *Empty* | Comma-separated SHA-256 hashes of the server's public key (SPKI), hex, colons optional. The chain must still verify; a pin only narrows what is accepted. |
@@ -1396,17 +1426,31 @@ Available metrics:
 
 ### Where the time goes
 
-`s5core_connection_phase_seconds` splits a connection into five stages, modelled on HAProxy's timing fields:
+`s5core_connection_phase_seconds` records six phases, modelled on HAProxy's timing fields:
 
 | `phase` | Measured from | Measured to |
 | --- | --- | --- |
-| `handshake` | first byte read from the client | an authentication method is agreed |
+| `handshake` | handler starts waiting for the version byte | an authentication method is agreed |
 | `auth` | credentials are requested | credentials are accepted or rejected |
-| `dial` | destination is resolved | TCP connection to the destination is up |
+| `dns` | resolver is called for a domain | lookup succeeds or fails |
+| `dial` | checked destination addresses are ready | TCP connection succeeds or all attempts fail |
 | `first_byte` | success reply is sent to the client | destination sends its first byte |
-| `session` | connection is accepted | handler returns |
+| `session` | SOCKS handler is entered | handler returns |
 
-`session` overlaps the other four by construction; the first four are disjoint and sum to the latency a client sees, up to a small remainder. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average.
+`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average.
+
+Measure an actual HTTPS response from the client with the probe:
+
+```bash
+go run ./cmd/httpsprobe -url https://example.com/ -count 3
+go run ./cmd/httpsprobe -url https://example.com/ -socks 127.0.0.1:1080 -count 3 -reuse
+```
+
+Each JSON line contains `started_unix_ns` for trace correlation, `connect_setup_ms` (direct DNS/TCP or proxy TCP plus SOCKS negotiation/CONNECT), `tls_handshake_ms`, `http_first_response_ms` (request start to `httptrace.GotFirstResponseByte`), `total_ms` (through complete body reading and SHA-256), bytes, hash, status, negotiated protocol and connection reuse. `client_dns_ms` covers only local DNS and overlaps setup; remote DNS is part of SOCKS setup and is visible separately in the server metric. Reused requests have no new setup or TLS duration. Failures include partial byte counts and no completed-body hash. The probe verifies certificates, accepts an additional CA with `-ca`, follows no redirects, and limits every request including its body with `-timeout`. `-http2=false` forces HTTP/1.1; `-http2=true` permits HTTP/2 and reports the protocol actually negotiated. For obfs/WSS, point `-socks` at the local s5client listener.
+
+The [performance acceptance guide](docs/performance-validation.md) describes separate-process A/B runs, diagnostic builds, isolated netem, and release gates.
+
+CONNECT retains all addresses supplied by the built-in resolver, removes duplicates and alternates address families. It tries at most two addresses concurrently with staggered starts and one shared DNS/connect budget. Per-attempt shares have a 2-second minimum, capped by the remaining shared budget, as in Go net.Dialer. A short budget may expire before every unresponsive address is tried. Every candidate is checked against `Rules` before dialing a numeric IP; fallback does not resolve the domain again. A legacy custom `NameResolver` still supplies one address. Custom resolvers may additionally implement `MultiNameResolver.ResolveAll`. When an address `Rewriter` is configured, its single returned destination remains authoritative and pre-rewrite addresses are not used as fallback.
 
 `s5core_build_info` is always 1; its labels carry `version`, `go_version` and `transports` (e.g. `plain,obfs,ws`). Together with the startup line
 

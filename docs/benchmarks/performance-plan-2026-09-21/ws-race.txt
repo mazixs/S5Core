@@ -1,0 +1,1 @@
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	2.122s

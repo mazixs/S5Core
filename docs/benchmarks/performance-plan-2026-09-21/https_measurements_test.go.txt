@@ -1,0 +1,208 @@
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httptrace"
+	"os"
+	"sort"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/mazixs/S5Core/internal/testcert"
+	"github.com/mazixs/S5Core/pkg/s5server"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"golang.org/x/net/proxy"
+)
+
+func auditPort(t *testing.T) string {
+	t.Helper()
+	l, e := net.Listen("tcp", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer l.Close()
+	return fmt.Sprint(l.Addr().(*net.TCPAddr).Port)
+}
+func auditPaths(t *testing.T, idle time.Duration) map[string]string {
+	t.Helper()
+	cert, key, e := testcert.Generate(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	cfg := s5server.DefaultConfig()
+	cfg.ListenIP = "127.0.0.1"
+	cfg.Port = auditPort(t)
+	cfg.RequireAuth = false
+	cfg.ReadTimeout = idle
+	cfg.ObfsEnabled = true
+	cfg.ObfsPort = auditPort(t)
+	cfg.ObfsPSK = "0123456789abcdef0123456789abcdef"
+	cfg.ObfsMaxPadding = 256
+	cfg.ObfsMTU = 1400
+	cfg.WSEnabled = true
+	cfg.WSAddr = "127.0.0.1:" + auditPort(t)
+	cfg.WSCertFile = cert
+	cfg.WSKeyFile = key
+	cfg.WSPath = "/ws"
+	if os.Getenv("PERF_SDK") == "1" {
+		provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader()))
+		t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+		tel, err := s5server.InitTelemetry(provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.Telemetry = tel
+	}
+	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv, e := s5server.NewServer(cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Start(ctx) }()
+	t.Cleanup(func() { cancel(); srv.Stop(); <-done })
+	for _, port := range []string{cfg.Port, cfg.ObfsPort} {
+		for i := 0; i < 200; i++ {
+			c, e := net.DialTimeout("tcp", "127.0.0.1:"+port, 20*time.Millisecond)
+			if e == nil {
+				c.Close()
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+			if i == 199 {
+				t.Fatal(e)
+			}
+		}
+	}
+	out := map[string]string{"direct": "", "plain": "127.0.0.1:" + cfg.Port}
+	for _, mode := range []string{"obfs", "obfs-keepalive", "obfs-keepalive-risk", "wss"} {
+		cp := clientParams{ServerAddr: "127.0.0.1:" + cfg.ObfsPort, PSK: cfg.ObfsPSK, MTU: 1400, MaxPadding: 256, Prologue: "printable", Format: "v1", HandshakeTimeout: 5 * time.Second, DialTimeout: 5 * time.Second, Transport: "obfs"}
+		if mode == "wss" {
+			cp.Transport = "ws"
+			cp.WSUrl = "wss://" + cfg.WSAddr + "/ws"
+			cp.WSCAFile = cert
+			cp.rootCAs = x509.NewCertPool()
+			pemBytes, err := os.ReadFile(cert)
+			if err != nil || !cp.rootCAs.AppendCertsFromPEM(pemBytes) {
+				t.Fatal("test CA", err)
+			}
+			cp.WSMinFrame = 256
+			cp.WSMaxFrame = 4096
+		}
+		if mode == "obfs-keepalive-risk" {
+			cp.KeepaliveMin = idle * 2 / 3
+			cp.KeepaliveMax = idle * 2 / 3
+		}
+		if mode == "obfs-keepalive" {
+			cp.KeepaliveMin = idle / 4
+			cp.KeepaliveMax = idle / 3
+		}
+		l, e := net.Listen("tcp", "127.0.0.1:0")
+		if e != nil {
+			t.Fatal(e)
+		}
+		out[mode] = l.Addr().String()
+		var wg sync.WaitGroup
+		closed := make(chan struct{})
+		go func() {
+			defer close(closed)
+			for {
+				c, e := l.Accept()
+				if e != nil {
+					return
+				}
+				wg.Add(1)
+				go func() { defer wg.Done(); handleClient(c, cp, nil) }()
+			}
+		}()
+		t.Cleanup(func() { l.Close(); <-closed; wg.Wait() })
+	}
+	return out
+}
+func auditTransport(t *testing.T, addr string, reuse bool) *http.Transport {
+	t.Helper()
+	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, DisableKeepAlives: !reuse, DisableCompression: true, ForceAttemptHTTP2: false}
+	if addr != "" {
+		d, e := proxy.SOCKS5("tcp", addr, nil, &net.Dialer{Timeout: 5 * time.Second})
+		if e != nil {
+			t.Fatal(e)
+		}
+		tr.DialContext = d.(proxy.ContextDialer).DialContext
+	}
+	t.Cleanup(tr.CloseIdleConnections)
+	return tr
+}
+func auditQuantile(ds []time.Duration, p float64) time.Duration {
+	sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
+	return ds[int(float64(len(ds)-1)*p)]
+}
+func TestAuditHTTPSMeasurements(t *testing.T) {
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	paths := auditPaths(t, 30*time.Second)
+	large := make([]byte, 8<<20)
+	for i := range large {
+		large[i] = byte(i*31 + i/251)
+	}
+	small := []byte("verified HTTPS response")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := small
+		if r.URL.Path == "/large" {
+			b = large
+		}
+		w.Header().Set("Content-Length", fmt.Sprint(len(b)))
+		w.Write(b)
+	}))
+	defer server.Close()
+	for _, size := range []string{"small", "large"} {
+		for _, reuse := range []bool{false, true} {
+			for _, mode := range []string{"direct", "plain", "obfs", "wss"} {
+				tr := auditTransport(t, paths[mode], reuse)
+				client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
+				var totals, ttfbs, tlsTimes []time.Duration
+				count := 50
+				if size == "large" {
+					count = 15
+				}
+				expected := small
+				if size == "large" {
+					expected = large
+				}
+				expectedHash := sha256.Sum256(expected)
+				for i := -3; i < count; i++ {
+					start := time.Now()
+					var first, tlsStart, tlsDur time.Duration
+					trace := &httptrace.ClientTrace{GotFirstResponseByte: func() { first = time.Since(start) }, TLSHandshakeStart: func() { tlsStart = time.Since(start) }, TLSHandshakeDone: func(_ tls.ConnectionState, _ error) { tlsDur = time.Since(start) - tlsStart }}
+					req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), "GET", server.URL+"/"+size, nil)
+					r, e := client.Do(req)
+					if e != nil {
+						t.Fatal(mode, e)
+					}
+					b, e := io.ReadAll(r.Body)
+					r.Body.Close()
+					duration := time.Since(start)
+					if e != nil || r.StatusCode != 200 || sha256.Sum256(b) != expectedHash {
+						t.Fatalf("%s len=%d err=%v", mode, len(b), e)
+					}
+					if i >= 0 {
+						totals = append(totals, duration)
+						ttfbs = append(ttfbs, first)
+						tlsTimes = append(tlsTimes, tlsDur)
+					}
+				}
+				t.Logf("MEASURE mode=%s size=%s reuse=%v n=%d total_p50=%s total_p95=%s ttfb_p50=%s tls_p50=%s MiBps_p50=%.1f", mode, size, reuse, count, auditQuantile(totals, .5), auditQuantile(totals, .95), auditQuantile(ttfbs, .5), auditQuantile(tlsTimes, .5), float64(len(expected))/(1<<20)/auditQuantile(totals, .5).Seconds())
+				tr.CloseIdleConnections()
+			}
+		}
+	}
+}

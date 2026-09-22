@@ -1,7 +1,10 @@
 package s5server
 
 import (
+	"bytes"
 	"errors"
+	"github.com/mazixs/S5Core/pkg/obfs"
+	"io"
 	"net"
 	"os"
 	"sync"
@@ -430,5 +433,108 @@ func TestTunnelRegimeAlsoLiftsTheWriteTimeout(t *testing.T) {
 		if err := <-written; err != nil {
 			t.Fatalf("write after ten quiet minutes: %v", err)
 		}
+	})
+}
+
+func TestOutboundActivityExtendsPendingRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, peer := timeoutPair(t, 30*time.Second, 10*time.Second)
+		enterRelay(t, c, session.Stream)
+		done := make(chan error, 1)
+		go func() { _, err := c.Read(make([]byte, 1)); done <- err }()
+		go func() {
+			var b [1]byte
+			for {
+				if _, err := peer.Read(b[:]); err != nil {
+					return
+				}
+			}
+		}()
+		for i := 0; i < 10; i++ {
+			time.Sleep(20 * time.Second)
+			if _, err := c.Write([]byte{1}); err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			select {
+			case err := <-done:
+				t.Fatalf("active download interrupted: %v", err)
+			default:
+			}
+		}
+		last := time.Now()
+		requireDeadlineExceeded(t, <-done)
+		requireElapsed(t, last, 30*time.Second, "idle after download")
+		peer.Close()
+	})
+}
+
+func TestOutboundActivityCannotExtendIncompleteFrame(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		local, peer := net.Pipe()
+		defer local.Close()
+		defer peer.Close()
+		sess := session.NewRegistry(nil).Open(TransportObfs, true, session.SLA{ReadIdle: 30 * time.Second, FrameBody: 3 * time.Second})
+		c := &timeoutConn{Conn: local, sess: sess}
+		enterRelay(t, c, session.Stream)
+		sess.Frame(session.AwaitBody)
+		go func() {
+			var b [1]byte
+			for {
+				if _, err := peer.Read(b[:]); err != nil {
+					return
+				}
+			}
+		}()
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() { _, err := c.Read(make([]byte, 1)); done <- err }()
+		for i := 0; i < 2; i++ {
+			time.Sleep(time.Second)
+			if _, err := c.Write([]byte{1}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		requireDeadlineExceeded(t, <-done)
+		requireElapsed(t, start, 3*time.Second, "absolute frame budget")
+		peer.Close()
+	})
+}
+
+func TestDefaultKeepaliveWithServerReadIdle(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, b := net.Pipe()
+		sess := session.NewRegistry(nil).Open(TransportObfs, true, session.SLA{ReadIdle: 30 * time.Second, FrameBody: 5 * time.Second})
+		timed := &timeoutConn{Conn: a, sess: sess}
+		enterRelay(t, timed, session.Stream)
+		psk := bytes.Repeat([]byte("k"), 32)
+		server, err := obfs.NewServerConn(timed, obfs.Config{PSK: psk, MTU: 1400, OnFrameState: frameHook(sess)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer server.Close()
+		client, err := obfs.NewClientConn(b, obfs.Config{PSK: psk, MTU: 1400, KeepaliveMin: obfs.DefaultKeepaliveMin, KeepaliveMax: obfs.DefaultKeepaliveMax})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer client.Close()
+		done := make(chan error, 1)
+		go func() { _, err := io.Copy(io.Discard, server); done <- err }()
+		if _, err := client.Write([]byte("initial")); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if _, err := client.Write([]byte("last application data")); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Minute)
+		synctest.Wait()
+		select {
+		case err := <-done:
+			t.Fatalf("keepalive did not sustain idle session: %v", err)
+		default:
+		}
+		client.Close()
+		<-done
 	})
 }

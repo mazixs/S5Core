@@ -1,0 +1,141 @@
+File: final-client
+Build ID: c32d00e3b4b542a44962ebd9ac23f61b5dcd3e1d
+Type: cpu
+Time: 2026-09-22 00:32:04 +03
+Duration: 22.04s, Total samples = 22.01s (99.87%)
+Showing nodes accounting for 18.62s, 84.60% of 22.01s total
+Dropped 552 nodes (cum <= 0.11s)
+      flat  flat%   sum%        cum   cum%
+    10.35s 47.02% 47.02%     10.35s 47.02%  internal/runtime/syscall/linux.Syscall6
+     2.01s  9.13% 56.16%      2.01s  9.13%  crypto/internal/fips140/aes/gcm.gcmAesDec
+     1.58s  7.18% 63.33%      1.58s  7.18%  runtime.futex
+     1.24s  5.63% 68.97%      1.25s  5.68%  crypto/internal/fips140/aes/gcm.gcmAesEnc
+     0.46s  2.09% 71.06%      0.46s  2.09%  runtime.memmove
+     0.43s  1.95% 73.01%      0.91s  4.13%  runtime.stealWork
+     0.40s  1.82% 74.83%      0.40s  1.82%  crypto/internal/fips140/aes.encryptBlockAsm
+     0.14s  0.64% 75.47%      3.81s 17.31%  runtime.findRunnable
+     0.13s  0.59% 76.06%      0.13s  0.59%  github.com/gorilla/websocket.maskBytes
+     0.13s  0.59% 76.65%      0.13s  0.59%  runtime.(*randomEnum).next (inline)
+     0.11s   0.5% 77.15%      0.15s  0.68%  runtime.unlock2
+     0.09s  0.41% 77.56%      0.16s  0.73%  runtime.lock2
+     0.09s  0.41% 77.96%      1.10s  5.00%  runtime.notesleep
+     0.08s  0.36% 78.33%      0.48s  2.18%  crypto/internal/fips140/aes.encryptBlock
+     0.08s  0.36% 78.69%      5.10s 23.17%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Read
+     0.07s  0.32% 79.01%      9.49s 43.12%  syscall.Syscall
+     0.06s  0.27% 79.28%      2.25s 10.22%  crypto/internal/fips140/aes/gcm.open
+     0.06s  0.27% 79.55%      4.79s 21.76%  github.com/mazixs/S5Core/pkg/obfs.(*conn).readFrame
+     0.06s  0.27% 79.83%      0.38s  1.73%  github.com/mazixs/S5Core/pkg/veil.(*aesMask).Mask
+     0.05s  0.23% 80.05%      0.63s  2.86%  crypto/tls.(*halfConn).decrypt
+     0.05s  0.23% 80.28%      1.30s  5.91%  github.com/mazixs/S5Core/pkg/obfs.(*conn).encodeFrame
+     0.05s  0.23% 80.51%      1.02s  4.63%  runtime.futexsleep
+     0.05s  0.23% 80.74%      3.90s 17.72%  runtime.schedule
+     0.04s  0.18% 80.92%     15.39s 69.92%  io.copyBuffer
+     0.04s  0.18% 81.10%      0.28s  1.27%  runtime.mallocgc
+     0.04s  0.18% 81.28%      7.25s 32.94%  syscall.write
+     0.03s  0.14% 81.42%      0.31s  1.41%  crypto/internal/fips140/aes.(*Block).Encrypt
+     0.03s  0.14% 81.55%      1.43s  6.50%  crypto/internal/fips140/aes/gcm.seal
+     0.03s  0.14% 81.69%      7.41s 33.67%  net.(*conn).Write
+     0.03s  0.14% 81.83%      1.14s  5.18%  runtime.mPark (inline)
+     0.03s  0.14% 81.96%      0.23s  1.04%  runtime.newobject
+     0.03s  0.14% 82.10%      0.63s  2.86%  runtime.notewakeup
+     0.02s 0.091% 82.19%      1.88s  8.54%  bufio.(*Reader).Peek
+     0.02s 0.091% 82.28%      1.88s  8.54%  bufio.(*Reader).fill
+     0.02s 0.091% 82.37%         1s  4.54%  bytes.(*Buffer).ReadFrom
+     0.02s 0.091% 82.46%      1.81s  8.22%  crypto/tls.(*Conn).writeRecordLocked
+     0.02s 0.091% 82.55%      0.56s  2.54%  crypto/tls.(*xorNonceAEAD).Open
+     0.02s 0.091% 82.64%      2.20s 10.00%  github.com/gorilla/websocket.(*Conn).WriteMessage
+     0.02s 0.091% 82.74%      1.93s  8.77%  github.com/gorilla/websocket.(*Conn).advanceFrame
+     0.02s 0.091% 82.83%      2.06s  9.36%  github.com/gorilla/websocket.(*messageWriter).Close
+     0.02s 0.091% 82.92%      2.04s  9.27%  github.com/gorilla/websocket.(*messageWriter).flushFrame
+     0.02s 0.091% 83.01%      4.09s 18.58%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Write
+     0.02s 0.091% 83.10%      0.20s  0.91%  github.com/mazixs/S5Core/pkg/obfs.(*conn).bufferedFrameReady
+     0.02s 0.091% 83.19%      2.76s 12.54%  github.com/mazixs/S5Core/pkg/obfs.(*conn).ensure
+     0.02s 0.091% 83.28%      7.36s 33.44%  internal/poll.(*FD).Write
+     0.02s 0.091% 83.37%      4.72s 21.44%  runtime.mcall
+     0.02s 0.091% 83.46%      1.29s  5.86%  runtime.stopm
+     0.02s 0.091% 83.55%      9.35s 42.48%  syscall.RawSyscall6
+     0.02s 0.091% 83.64%      2.16s  9.81%  syscall.Read (inline)
+     0.01s 0.045% 83.69%      2.28s 10.36%  crypto/internal/fips140/aes/gcm.(*GCM).Open
+     0.01s 0.045% 83.73%      1.47s  6.68%  crypto/internal/fips140/aes/gcm.(*GCM).sealAfterIndicator
+     0.01s 0.045% 83.78%      0.42s  1.91%  crypto/internal/fips140/aes/gcm.(*GCMWithXORCounterNonce).Seal
+     0.01s 0.045% 83.83%      0.12s  0.55%  crypto/internal/fips140/mlkem.kemKeyGen
+     0.01s 0.045% 83.87%      1.87s  8.50%  crypto/tls.(*Conn).Read
+     0.01s 0.045% 83.92%      1.04s  4.73%  crypto/tls.(*Conn).readFromUntil
+     0.01s 0.045% 83.96%      0.98s  4.45%  crypto/tls.(*atLeastReader).Read
+     0.01s 0.045% 84.01%      0.29s  1.32%  crypto/tls.(*clientHandshakeStateTLS13).handshake
+     0.01s 0.045% 84.05%      0.43s  1.95%  crypto/tls.(*xorNonceAEAD).Seal
+     0.01s 0.045% 84.10%      1.99s  9.04%  github.com/gorilla/websocket.(*Conn).NextReader
+     0.01s 0.045% 84.14%      1.88s  8.54%  github.com/gorilla/websocket.(*Conn).write
+     0.01s 0.045% 84.19%      0.12s  0.55%  github.com/gorilla/websocket.(*messageReader).Read
+     0.01s 0.045% 84.23%      0.36s  1.64%  github.com/mazixs/S5Core/pkg/obfs.(*conn).recvMask (inline)
+     0.01s 0.045% 84.28%      2.17s  9.86%  github.com/mazixs/S5Core/pkg/transport/ws.(*Conn).Read
+     0.01s 0.045% 84.33%      2.25s 10.22%  github.com/mazixs/S5Core/pkg/transport/ws.(*Conn).Write
+     0.01s 0.045% 84.37%      2.28s 10.36%  github.com/mazixs/S5Core/pkg/transport/ws.(*ShapedConn).Write
+     0.01s 0.045% 84.42%      9.42s 42.80%  internal/poll.ignoringEINTRIO (inline)
+     0.01s 0.045% 84.46%      7.38s 33.53%  net.(*netFD).Write
+     0.01s 0.045% 84.51%      3.18s 14.45%  runtime.goschedImpl
+     0.01s 0.045% 84.55%      1.03s  4.68%  runtime.netpoll
+     0.01s 0.045% 84.60%      0.69s  3.13%  runtime.startm
+         0     0% 84.60%      0.12s  0.55%  bytes.(*Reader).Read (inline)
+         0     0% 84.60%      0.15s  0.68%  crypto/ecdh.x25519ScalarMult
+         0     0% 84.60%      0.15s  0.68%  crypto/fips140.WithoutEnforcement
+         0     0% 84.60%      0.21s  0.95%  crypto/internal/fips140/aes.EncryptBlockInternal (inline)
+         0     0% 84.60%      1.08s  4.91%  crypto/internal/fips140/aes/gcm.(*GCM).Seal
+         0     0% 84.60%      0.54s  2.45%  crypto/internal/fips140/aes/gcm.(*GCMWithXORCounterNonce).Open
+         0     0% 84.60%      0.12s  0.55%  crypto/internal/fips140/mlkem.NewDecapsulationKey768 (inline)
+         0     0% 84.60%      0.12s  0.55%  crypto/internal/fips140/mlkem.newKeyFromSeed
+         0     0% 84.60%      0.12s  0.55%  crypto/mlkem.NewDecapsulationKey768
+         0     0% 84.60%      0.67s  3.04%  crypto/tls.(*Conn).HandshakeContext (inline)
+         0     0% 84.60%      1.79s  8.13%  crypto/tls.(*Conn).Write
+         0     0% 84.60%      0.63s  2.86%  crypto/tls.(*Conn).clientHandshake
+         0     0% 84.60%      0.67s  3.04%  crypto/tls.(*Conn).handshakeContext
+         0     0% 84.60%      0.23s  1.04%  crypto/tls.(*Conn).makeClientHello
+         0     0% 84.60%      1.68s  7.63%  crypto/tls.(*Conn).readRecord (inline)
+         0     0% 84.60%      1.68s  7.63%  crypto/tls.(*Conn).readRecordOrCCS
+         0     0% 84.60%      1.24s  5.63%  crypto/tls.(*Conn).write
+         0     0% 84.60%      0.20s  0.91%  crypto/tls.(*clientHandshakeStateTLS13).establishHandshakeKeys
+         0     0% 84.60%      0.49s  2.23%  crypto/tls.(*halfConn).encrypt
+         0     0% 84.60%      0.14s  0.64%  crypto/tls.(*hybridKeyExchange).clientSharedSecret
+         0     0% 84.60%      0.23s  1.04%  crypto/tls.(*hybridKeyExchange).keyShares
+         0     0% 84.60%      0.12s  0.55%  crypto/tls.keyExchangeForCurveID.func1
+         0     0% 84.60%      1.90s  8.63%  github.com/gorilla/websocket.(*Conn).read
+         0     0% 84.60%      0.81s  3.68%  github.com/gorilla/websocket.(*Dialer).DialContext
+         0     0% 84.60%      0.63s  2.86%  github.com/gorilla/websocket.doHandshake
+         0     0% 84.60%      0.82s  3.73%  github.com/mazixs/S5Core/pkg/transport/ws.(*Dialer).DialContext (inline)
+         0     0% 84.60%      0.82s  3.73%  github.com/mazixs/S5Core/pkg/transport/ws.DialContext
+         0     0% 84.60%      2.23s 10.13%  internal/poll.(*FD).Read
+         0     0% 84.60%      0.99s  4.50%  internal/runtime/syscall/linux.EpollWait
+         0     0% 84.60%     15.39s 69.92%  io.Copy (inline)
+         0     0% 84.60%      1.14s  5.18%  main.dialObfsTunnel
+         0     0% 84.60%      1.14s  5.18%  main.dialTunnel
+         0     0% 84.60%      1.42s  6.45%  main.handleClient
+         0     0% 84.60%      4.79s 21.76%  main.handleClient.func1
+         0     0% 84.60%     10.66s 48.43%  main.handleClient.func2
+         0     0% 84.60%      0.91s  4.13%  main.init.func2
+         0     0% 84.60%      1.42s  6.45%  main.main.func5
+         0     0% 84.60%      0.12s  0.55%  net.(*Dialer).DialContext
+         0     0% 84.60%     10.64s 48.34%  net.(*TCPConn).ReadFrom
+         0     0% 84.60%      4.75s 21.58%  net.(*TCPConn).WriteTo
+         0     0% 84.60%     10.64s 48.34%  net.(*TCPConn).readFrom
+         0     0% 84.60%      4.75s 21.58%  net.(*TCPConn).writeTo
+         0     0% 84.60%      2.27s 10.31%  net.(*conn).Read
+         0     0% 84.60%      2.27s 10.31%  net.(*netFD).Read
+         0     0% 84.60%     10.64s 48.34%  net.genericReadFrom
+         0     0% 84.60%      4.75s 21.58%  net.genericWriteTo
+         0     0% 84.60%      0.12s  0.55%  runtime.(*mcache).prepareForSweep
+         0     0% 84.60%      0.61s  2.77%  runtime.futexwakeup
+         0     0% 84.60%      0.28s  1.27%  runtime.gcBgMarkWorker
+         0     0% 84.60%      0.20s  0.91%  runtime.gcBgMarkWorker.func2
+         0     0% 84.60%      0.20s  0.91%  runtime.gcDrain
+         0     0% 84.60%      0.14s  0.64%  runtime.gcDrainMarkWorkerDedicated (inline)
+         0     0% 84.60%      3.16s 14.36%  runtime.gosched_m
+         0     0% 84.60%      0.16s  0.73%  runtime.lock (partial-inline)
+         0     0% 84.60%      0.16s  0.73%  runtime.lockWithRank (inline)
+         0     0% 84.60%      0.12s  0.55%  runtime.mallocgcSmallScanNoHeader
+         0     0% 84.60%      1.42s  6.45%  runtime.park_m
+         0     0% 84.60%      0.36s  1.64%  runtime.systemstack
+         0     0% 84.60%      0.15s  0.68%  runtime.unlock (inline)
+         0     0% 84.60%      0.15s  0.68%  runtime.unlockWithRank (inline)
+         0     0% 84.60%      0.78s  3.54%  runtime.wakep
+         0     0% 84.60%      7.25s 32.94%  syscall.Write (inline)
+         0     0% 84.60%      2.14s  9.72%  syscall.read

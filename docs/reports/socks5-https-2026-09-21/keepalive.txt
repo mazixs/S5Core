@@ -1,0 +1,9 @@
+=== RUN   TestAuditKeepaliveExceedsConfiguredMaximum
+    keepalive_audit_test.go:35: at=31s wire_writes=2 last_write_at=1s silence=30s configured_max=20s
+    keepalive_audit_test.go:43: next keepalive_at=40s previous_gap=39s
+--- PASS: TestAuditKeepaliveExceedsConfiguredMaximum (0.00s)
+=== RUN   TestAuditDefaultKeepaliveGap
+    keepalive_audit_test.go:87: DEFAULT_KEEPALIVE min=10s max=20s trials=64 gaps_over_30s=25 maximum_gap=36.426590907s
+--- PASS: TestAuditDefaultKeepaliveGap (0.01s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/obfs	1.020s

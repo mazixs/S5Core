@@ -1,0 +1,34 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                           │ /tmp/s5core-implementation-20260921/ws-pool-before.txt │ /tmp/s5core-implementation-20260921/ws-pool-after.txt │
+                           │                         sec/op                         │             sec/op               vs base              │
+PerfServerWrite/1422-16                                                 10.19µ ± 3%                       10.23µ ± 3%       ~ (p=0.981 n=6)
+PerfServerWrite/22752-16                                                27.03µ ± 9%                       27.19µ ± 4%       ~ (p=0.394 n=6)
+PerfServerWrite/1048576-16                                              1.004m ± 8%                       1.024m ± 6%       ~ (p=0.699 n=6)
+PerfUpgrade-16                                                          97.92µ ± 2%                       97.27µ ± 7%       ~ (p=0.818 n=6)
+geomean                                                                 72.15µ                            72.56µ       +0.57%
+
+                           │ /tmp/s5core-implementation-20260921/ws-pool-before.txt │ /tmp/s5core-implementation-20260921/ws-pool-after.txt │
+                           │                          B/s                           │               B/s                vs base              │
+PerfServerWrite/1422-16                                                133.1Mi ± 3%                      132.5Mi ± 3%       ~ (p=0.981 n=6)
+PerfServerWrite/22752-16                                               802.9Mi ± 9%                      798.0Mi ± 4%       ~ (p=0.394 n=6)
+PerfServerWrite/1048576-16                                             995.6Mi ± 9%                      976.6Mi ± 7%       ~ (p=0.699 n=6)
+geomean                                                                473.8Mi                           469.2Mi       -0.98%
+
+                           │ /tmp/s5core-implementation-20260921/ws-pool-before.txt │ /tmp/s5core-implementation-20260921/ws-pool-after.txt │
+                           │                          B/op                          │             B/op               vs base                │
+PerfServerWrite/1422-16                                                  23.00 ± 0%                      93.00 ± 1%  +304.35% (p=0.002 n=6)
+PerfServerWrite/22752-16                                                 55.00 ± 0%                     221.00 ± 0%  +301.82% (p=0.002 n=6)
+PerfServerWrite/1048576-16                                             2.034Ki ± 1%                    8.073Ki ± 0%  +296.86% (p=0.002 n=6)
+PerfUpgrade-16                                                         35.34Ki ± 0%                    30.55Ki ± 0%   -13.55% (p=0.002 n=6)
+geomean                                                                  555.7                         1.483Ki       +173.24%
+
+                           │ /tmp/s5core-implementation-20260921/ws-pool-before.txt │ /tmp/s5core-implementation-20260921/ws-pool-after.txt │
+                           │                       allocs/op                        │           allocs/op            vs base                │
+PerfServerWrite/1422-16                                                  2.000 ± 0%                      5.000 ± 0%  +150.00% (p=0.002 n=6)
+PerfServerWrite/22752-16                                                 6.000 ± 0%                     13.000 ± 0%  +116.67% (p=0.002 n=6)
+PerfServerWrite/1048576-16                                               256.0 ± 0%                      513.0 ± 0%  +100.39% (p=0.002 n=6)
+PerfUpgrade-16                                                           136.0 ± 0%                      135.0 ± 0%    -0.74% (p=0.002 n=6)
+geomean                                                                  25.42                           46.06        +81.18%

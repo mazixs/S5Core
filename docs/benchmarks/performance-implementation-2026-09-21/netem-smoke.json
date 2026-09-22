@@ -1,0 +1,242 @@
+[
+  {
+    "rtt": 20,
+    "variant": "before",
+    "mode": "wss",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 20.354263500000002,
+    "max_ms": 20.527241,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "before",
+    "mode": "wss",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 131.781549,
+    "max_ms": 131.781549,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "before",
+    "mode": "obfs",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 20.3931545,
+    "max_ms": 20.505343,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "before",
+    "mode": "obfs",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 119.579648,
+    "max_ms": 119.579648,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "after",
+    "mode": "wss",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 20.4040395,
+    "max_ms": 20.501046,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "after",
+    "mode": "wss",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 131.5585,
+    "max_ms": 131.5585,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "after",
+    "mode": "obfs",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 20.3255895,
+    "max_ms": 20.484223,
+    "errors": 0
+  },
+  {
+    "rtt": 20,
+    "variant": "after",
+    "mode": "obfs",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 119.664258,
+    "max_ms": 119.664258,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "before",
+    "mode": "wss",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 50.46636049999999,
+    "max_ms": 50.626355,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "before",
+    "mode": "wss",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 1437.310271,
+    "max_ms": 1437.310271,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "before",
+    "mode": "obfs",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 50.465144,
+    "max_ms": 50.574266,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "before",
+    "mode": "obfs",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 1064.912693,
+    "max_ms": 1064.912693,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "after",
+    "mode": "wss",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 50.454825,
+    "max_ms": 50.561783,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "after",
+    "mode": "wss",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 3994.76975,
+    "max_ms": 3994.76975,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "after",
+    "mode": "obfs",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 50.4567105,
+    "max_ms": 50.547033,
+    "errors": 0
+  },
+  {
+    "rtt": 50,
+    "variant": "after",
+    "mode": "obfs",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 1090.572989,
+    "max_ms": 1090.572989,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "before",
+    "mode": "wss",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 101.12916150000001,
+    "max_ms": 675.776826,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "before",
+    "mode": "wss",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 44690.911022,
+    "max_ms": 44690.911022,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "before",
+    "mode": "obfs",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 100.994386,
+    "max_ms": 101.160474,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "before",
+    "mode": "obfs",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 46254.774893,
+    "max_ms": 46254.774893,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "after",
+    "mode": "wss",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 101.13863599999999,
+    "max_ms": 554.477533,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "after",
+    "mode": "wss",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 45652.275934,
+    "max_ms": 45652.275934,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "after",
+    "mode": "obfs",
+    "case": "small",
+    "n": 20,
+    "p50_ms": 101.0261395,
+    "max_ms": 404.917372,
+    "errors": 0
+  },
+  {
+    "rtt": 100,
+    "variant": "after",
+    "mode": "obfs",
+    "case": "large",
+    "n": 1,
+    "p50_ms": 42716.461578,
+    "max_ms": 42716.461578,
+    "errors": 0
+  }
+]

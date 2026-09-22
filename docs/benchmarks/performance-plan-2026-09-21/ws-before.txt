@@ -1,0 +1,24 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfServerWrite/1422-16         	   34912	     10539 ns/op	 134.93 MB/s	      23 B/op	       2 allocs/op
+BenchmarkPerfServerWrite/1422-16         	   35624	     10527 ns/op	 135.08 MB/s	      23 B/op	       2 allocs/op
+BenchmarkPerfServerWrite/1422-16         	   35095	     10415 ns/op	 136.53 MB/s	      23 B/op	       2 allocs/op
+BenchmarkPerfServerWrite/1422-16         	   35697	     10335 ns/op	 137.59 MB/s	      23 B/op	       2 allocs/op
+BenchmarkPerfServerWrite/1422-16         	   33076	     10506 ns/op	 135.36 MB/s	      23 B/op	       2 allocs/op
+BenchmarkPerfServerWrite/1422-16         	   34603	      9899 ns/op	 143.66 MB/s	      23 B/op	       2 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   12931	     27991 ns/op	 812.83 MB/s	     106 B/op	       8 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13464	     28076 ns/op	 810.38 MB/s	     106 B/op	       8 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13256	     27772 ns/op	 819.23 MB/s	     106 B/op	       8 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13086	     27617 ns/op	 823.85 MB/s	     106 B/op	       8 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13478	     27831 ns/op	 817.52 MB/s	     106 B/op	       8 allocs/op
+BenchmarkPerfServerWrite/22752-16        	   13909	     27213 ns/op	 836.06 MB/s	     107 B/op	       8 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     326	   1093745 ns/op	 958.70 MB/s	   19586 B/op	     742 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     334	   1092563 ns/op	 959.74 MB/s	   19616 B/op	     743 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     331	   1042758 ns/op	1005.58 MB/s	   19744 B/op	     746 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     319	   1103288 ns/op	 950.41 MB/s	   19586 B/op	     743 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     324	   1066728 ns/op	 982.98 MB/s	   19699 B/op	     745 allocs/op
+BenchmarkPerfServerWrite/1048576-16      	     314	   1062859 ns/op	 986.56 MB/s	   19690 B/op	     745 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	9.474s

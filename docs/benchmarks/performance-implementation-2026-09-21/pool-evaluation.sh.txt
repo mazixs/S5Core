@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+base=/tmp/s5core-implementation-20260921
+go test -c -overlay "$base/ws-bounded-pool.json" -o "$base/ws-pool.test" ./pkg/transport/ws
+for version in before after after before before after after before before after after before; do
+ if [[ $version == before ]]; then binary=$base/ws-create-after.test; else binary=$base/ws-pool.test; fi
+ "$binary" -test.run '^$' -test.bench '^BenchmarkPerf(Upgrade|ServerWrite)$' -test.benchtime=300ms -test.benchmem >> "$base/ws-pool-$version.txt"
+done
+S5_WS_IDLE=10000 "$base/ws-pool.test" -test.run '^TestPerformanceIdleConnections$' -test.v > "$base/ws-pool-idle.txt"

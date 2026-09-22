@@ -1,0 +1,19 @@
+                               │ /tmp/s5core-implementation-20260921/base.bench │ /tmp/s5core-implementation-20260921/one.bench │
+                               │                     sec/op                     │         sec/op          vs base               │
+HTTPS/direct/small/reuse=false                                     1.563m ±  3%             1.504m ±  3%   -3.78% (p=0.026 n=6)
+HTTPS/plain/small/reuse=false                                      1.696m ±  2%             1.672m ±  2%        ~ (p=0.180 n=6)
+HTTPS/obfs/small/reuse=false                                       1.884m ±  4%             1.847m ±  4%   -1.97% (p=0.026 n=6)
+HTTPS/wss/small/reuse=false                                        2.597m ±  2%             2.557m ±  1%   -1.55% (p=0.004 n=6)
+HTTPS/direct/small/reuse=true                                      41.78µ ± 16%             44.11µ ±  9%        ~ (p=0.589 n=6)
+HTTPS/plain/small/reuse=true                                       57.29µ ±  5%             54.38µ ±  7%        ~ (p=0.132 n=6)
+HTTPS/obfs/small/reuse=true                                        67.27µ ±  8%             66.47µ ± 11%        ~ (p=0.589 n=6)
+HTTPS/wss/small/reuse=true                                         83.05µ ±  7%             87.02µ ± 27%        ~ (p=0.180 n=6)
+HTTPS/direct/large/reuse=false                                     6.987m ±  8%             7.020m ± 15%        ~ (p=0.589 n=6)
+HTTPS/plain/large/reuse=false                                      8.088m ± 11%             7.942m ± 11%        ~ (p=1.000 n=6)
+HTTPS/obfs/large/reuse=false                                       23.69m ±  9%             11.24m ± 11%  -52.56% (p=0.002 n=6)
+HTTPS/wss/large/reuse=false                                        29.55m ±  8%             23.11m ±  3%  -21.78% (p=0.002 n=6)
+HTTPS/direct/large/reuse=true                                      5.541m ±  5%             5.444m ±  7%        ~ (p=0.699 n=6)
+HTTPS/plain/large/reuse=true                                       6.121m ±  4%             5.914m ±  4%        ~ (p=0.093 n=6)
+HTTPS/obfs/large/reuse=true                                       24.675m ± 17%             9.333m ±  5%  -62.18% (p=0.002 n=6)
+HTTPS/wss/large/reuse=true                                         29.41m ±  5%             23.08m ±  3%  -21.52% (p=0.002 n=6)
+geomean                                                            2.122m                   1.835m        -13.52%

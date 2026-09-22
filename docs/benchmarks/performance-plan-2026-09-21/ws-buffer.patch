@@ -1,0 +1,14 @@
+--- a/pkg/transport/ws/upgrader.go
++++ b/pkg/transport/ws/upgrader.go
+@@ -37,8 +37,9 @@
+ 	return &Upgrader{
+ 		opts: opts,
+ 		up: websocket.Upgrader{
+-			Subprotocols: namedSubprotocols(opts.Subprotocols),
+-			CheckOrigin:  checkOrigin,
++			Subprotocols:    namedSubprotocols(opts.Subprotocols),
++			WriteBufferSize: DefaultMaxFrame,
++			CheckOrigin:     checkOrigin,
+ 		},
+ 	}
+ }

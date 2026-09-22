@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/mazixs/S5Core/internal/utls"
+	utlslib "github.com/refraction-networking/utls"
 )
 
 // DialOpts configures the WebSocket dialer.
@@ -36,7 +37,7 @@ type DialOpts struct {
 	// TLSConfig for the underlying TLS connection.
 	TLSConfig *tls.Config
 	// TLSFingerprint selects a browser TLS fingerprint (e.g. "chrome", "firefox").
-	// If empty, standard crypto/tls is used.
+	// Requires a wss URL. If empty, standard crypto/tls is used.
 	TLSFingerprint string
 	// RootCAs trusts a private certificate authority in addition to nothing
 	// else: it replaces the system roots rather than adding to them, which is
@@ -47,11 +48,18 @@ type DialOpts struct {
 	PinSHA256 []string
 	// ReadLimit bounds one message from the server. Zero means
 	// DefaultReadLimit; a negative value removes the limit.
-	ReadLimit int64
+	ReadLimit        int64
+	utlsSessionCache utlslib.ClientSessionCache
 }
 
 // Dial connects to a WebSocket endpoint and returns a net.Conn adapter.
 func Dial(opts DialOpts) (*Conn, error) {
+	return DialContext(context.Background(), opts)
+}
+
+// DialContext bounds DNS, TCP, TLS and HTTP Upgrade with the caller's
+// context. The internal handshake limit can only shorten that budget.
+func DialContext(ctx context.Context, opts DialOpts) (*Conn, error) {
 	u, err := url.Parse(opts.URL)
 	if err != nil {
 		return nil, fmt.Errorf("ws dial: invalid url: %w", err)
@@ -87,16 +95,17 @@ func Dial(opts DialOpts) (*Conn, error) {
 	}
 
 	if opts.TLSFingerprint != "" {
-		// Use uTLS to mimic a browser TLS fingerprint.
-		// We switch to ws:// so gorilla/websocket does not wrap the
-		// connection in a second TLS layer.
-		u.Scheme = "ws"
-		dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if u.Scheme != "wss" {
+			return nil, fmt.Errorf("ws dial: TLS fingerprint requires a wss URL")
+		}
+		// Gorilla skips its TLS layer when NetDialTLSContext supplies it.
+		dialer.NetDialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return utls.DialContext(ctx, network, addr, utls.Options{
-				ServerName:  serverName,
-				Fingerprint: opts.TLSFingerprint,
-				RootCAs:     opts.RootCAs,
-				PinSHA256:   opts.PinSHA256,
+				ServerName:   serverName,
+				Fingerprint:  opts.TLSFingerprint,
+				RootCAs:      opts.RootCAs,
+				PinSHA256:    opts.PinSHA256,
+				SessionCache: opts.utlsSessionCache,
 			})
 		}
 	} else {
@@ -133,7 +142,37 @@ func Dial(opts DialOpts) (*Conn, error) {
 		dialer.TLSClientConfig = tlsCfg
 	}
 
-	wsConn, resp, err := dialer.Dial(u.String(), headers)
+	// Gorilla applies deadlines but does not interrupt an HTTP Upgrade read
+	// on cancellation alone. Close the acquired socket until ownership is
+	// handed to the caller, and join any cancellation already in progress.
+	var stopCancel func() bool
+	var canceled chan struct{}
+	wrapDial := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+		return func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+			c, err := dial(dialCtx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			canceled = make(chan struct{})
+			stopCancel = context.AfterFunc(ctx, func() { _ = c.Close(); close(canceled) })
+			return c, nil
+		}
+	}
+	if dialer.NetDialTLSContext != nil {
+		dialer.NetDialTLSContext = wrapDial(dialer.NetDialTLSContext)
+	} else {
+		dialer.NetDialContext = wrapDial((&net.Dialer{}).DialContext)
+	}
+	wsConn, resp, err := dialer.DialContext(ctx, u.String(), headers)
+	if stopCancel != nil && !stopCancel() {
+		<-canceled
+	}
+	if ctx.Err() != nil {
+		if wsConn != nil {
+			_ = wsConn.Close()
+		}
+		err = ctx.Err()
+	}
 	if resp != nil && resp.Body != nil {
 		// Тело ответа на апгрейд не читается ни в одной ветке; без закрытия
 		// соединение с неудачным рукопожатием остается в пуле keep-alive.

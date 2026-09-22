@@ -1,0 +1,9 @@
+=== RUN   TestAuditDefaultReadTimeout
+    socks_https_audit_test.go:268: DEFAULT_STREAM bytes=612352 expected=675840 elapsed=30.003101381s err=unexpected EOF
+--- PASS: TestAuditDefaultReadTimeout (30.01s)
+=== RUN   TestAuditWSDialBudget
+    socks_https_audit_test.go:302: WSS budget=50ms remains blocked elapsed=250.433428ms
+    socks_https_audit_test.go:307: after peer close: failed to dial WS: ws dial: read tcp 127.0.0.1:37962->127.0.0.1:35099: read: connection reset by peer
+--- PASS: TestAuditWSDialBudget (0.25s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	30.268s

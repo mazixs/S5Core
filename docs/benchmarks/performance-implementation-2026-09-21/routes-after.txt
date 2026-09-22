@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/cmd/s5client
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkRouteDomains/0-16  	156669716	         1.535 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/0-16  	152007652	         1.586 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/0-16  	146773246	         1.624 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/0-16  	150894723	         1.582 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/0-16  	155620574	         1.532 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/0-16  	155703723	         1.547 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10-16 	 3205962	        74.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10-16 	 3355512	        71.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10-16 	 3399105	        71.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10-16 	 3379675	        71.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10-16 	 3406705	        71.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10-16 	 3188538	        74.59 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/1000-16         	 3051580	        79.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/1000-16         	 2935818	        77.81 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/1000-16         	 3189216	        75.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/1000-16         	 3199879	        74.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/1000-16         	 3091812	        76.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/1000-16         	 3196424	        74.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10000-16        	 3169615	        76.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10000-16        	 3173860	        75.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10000-16        	 3064486	        78.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10000-16        	 3104636	        76.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10000-16        	 3162909	        77.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRouteDomains/10000-16        	 3114907	        75.45 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	5.775s
