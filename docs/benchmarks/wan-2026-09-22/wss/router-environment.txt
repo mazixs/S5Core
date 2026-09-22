@@ -1,0 +1,39 @@
+Linux 4.9-ndm-5 aarch64
+processor	: 0
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 26.00
+Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x1
+CPU part	: 0xd09
+CPU revision	: 0
+
+processor	: 1
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 26.00
+Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x1
+CPU part	: 0xd09
+CPU revision	: 0
+
+processor	: 2
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 26.00
+Features	: fp asimd evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x1
+CPU part	: 0xd09
+CPU revision	: 0
+
+MemTotal:        1015072 kB
+MemFree:          317048 kB
+MemAvailable:     544224 kB
+Buffers:          117988 kB
+Cached:           136516 kB
+cubic
+4096	87380	6291456
+4096	16384	4194304

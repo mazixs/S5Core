@@ -1,0 +1,758 @@
+[
+  {
+    "mode": "raw",
+    "direction": "down",
+    "round": 1,
+    "mib_s": 48.14,
+    "peer_port": 59690,
+    "samples": 26,
+    "sampled_bytes_max": 257158998,
+    "rtt_ms_median": 42.4025,
+    "cwnd_range": [
+      20,
+      2066
+    ],
+    "rcv_wnd_range": [
+      65152,
+      65152
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 185,
+    "sampled_sender_bytes_retrans_max": 267880,
+    "sampled_sender_rwnd_limited_us_max": 212000
+  },
+  {
+    "mode": "raw",
+    "direction": "up",
+    "round": 1,
+    "mib_s": 57.66,
+    "peer_port": 59718,
+    "samples": 22,
+    "sampled_bytes_max": 264989046,
+    "rtt_ms_median": 41.686,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      216960,
+      5374080
+    ],
+    "max_receiver_queue": 132432,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "v2",
+    "direction": "down",
+    "round": 1,
+    "mib_s": 41.76,
+    "peer_port": 52918,
+    "samples": 31,
+    "sampled_bytes_max": 301535703,
+    "rtt_ms_median": 44.031,
+    "cwnd_range": [
+      10,
+      4351
+    ],
+    "rcv_wnd_range": [
+      64768,
+      64896
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 0,
+    "sampled_sender_bytes_retrans_max": 0,
+    "sampled_sender_rwnd_limited_us_max": 5404000
+  },
+  {
+    "mode": "v2",
+    "direction": "up",
+    "round": 1,
+    "mib_s": 35.82,
+    "peer_port": 52934,
+    "samples": 35,
+    "sampled_bytes_max": 297039687,
+    "rtt_ms_median": 43.575,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      55168,
+      2038528
+    ],
+    "max_receiver_queue": 372911,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "current",
+    "direction": "down",
+    "round": 1,
+    "mib_s": 51.55,
+    "peer_port": 53422,
+    "samples": 24,
+    "sampled_bytes_max": 292821434,
+    "rtt_ms_median": 45.017,
+    "cwnd_range": [
+      40,
+      4450
+    ],
+    "rcv_wnd_range": [
+      64896,
+      64896
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 0,
+    "sampled_sender_bytes_retrans_max": 0,
+    "sampled_sender_rwnd_limited_us_max": 3384000
+  },
+  {
+    "mode": "current",
+    "direction": "up",
+    "round": 1,
+    "mib_s": 49.44,
+    "peer_port": 53434,
+    "samples": 26,
+    "sampled_bytes_max": 299171477,
+    "rtt_ms_median": 43.067,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      64640,
+      3020800
+    ],
+    "max_receiver_queue": 250702,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "raw",
+    "direction": "up",
+    "round": 2,
+    "mib_s": 56.64,
+    "peer_port": 60210,
+    "samples": 22,
+    "sampled_bytes_max": 256070470,
+    "rtt_ms_median": 43.066,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      89856,
+      4715392
+    ],
+    "max_receiver_queue": 173728,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "raw",
+    "direction": "down",
+    "round": 2,
+    "mib_s": 33.91,
+    "peer_port": 60234,
+    "samples": 37,
+    "sampled_bytes_max": 259781280,
+    "rtt_ms_median": 43.265,
+    "cwnd_range": [
+      20,
+      1957
+    ],
+    "rcv_wnd_range": [
+      65152,
+      65152
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 586,
+    "sampled_sender_bytes_retrans_max": 848528,
+    "sampled_sender_rwnd_limited_us_max": 172000
+  },
+  {
+    "mode": "current",
+    "direction": "up",
+    "round": 2,
+    "mib_s": 54.81,
+    "peer_port": 53948,
+    "samples": 23,
+    "sampled_bytes_max": 298877951,
+    "rtt_ms_median": 43.331,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      72064,
+      4101376
+    ],
+    "max_receiver_queue": 251681,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "current",
+    "direction": "down",
+    "round": 2,
+    "mib_s": 49.02,
+    "peer_port": 53978,
+    "samples": 26,
+    "sampled_bytes_max": 297256066,
+    "rtt_ms_median": 42.5475,
+    "cwnd_range": [
+      10,
+      2260
+    ],
+    "rcv_wnd_range": [
+      64640,
+      64640
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 262,
+    "sampled_sender_bytes_retrans_max": 379376,
+    "sampled_sender_rwnd_limited_us_max": 1540000
+  },
+  {
+    "mode": "v2",
+    "direction": "up",
+    "round": 2,
+    "mib_s": 17.51,
+    "peer_port": 54470,
+    "samples": 73,
+    "sampled_bytes_max": 301525649,
+    "rtt_ms_median": 42.991,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      80768,
+      4101504
+    ],
+    "max_receiver_queue": 153792,
+    "receiver_out_of_order_packets_max": 494
+  },
+  {
+    "mode": "v2",
+    "direction": "down",
+    "round": 2,
+    "mib_s": 41.06,
+    "peer_port": 54494,
+    "samples": 31,
+    "sampled_bytes_max": 299168528,
+    "rtt_ms_median": 44.953,
+    "cwnd_range": [
+      20,
+      4416
+    ],
+    "rcv_wnd_range": [
+      64640,
+      64640
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 0,
+    "sampled_sender_bytes_retrans_max": 0,
+    "sampled_sender_rwnd_limited_us_max": 5500000
+  },
+  {
+    "mode": "v2",
+    "direction": "down",
+    "round": 3,
+    "mib_s": 48.75,
+    "peer_port": 54914,
+    "samples": 26,
+    "sampled_bytes_max": 296390427,
+    "rtt_ms_median": 42.221,
+    "cwnd_range": [
+      10,
+      2221
+    ],
+    "rcv_wnd_range": [
+      64768,
+      64768
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 156,
+    "sampled_sender_bytes_retrans_max": 225888,
+    "sampled_sender_rwnd_limited_us_max": 4156000
+  },
+  {
+    "mode": "v2",
+    "direction": "up",
+    "round": 3,
+    "mib_s": 35.56,
+    "peer_port": 54934,
+    "samples": 36,
+    "sampled_bytes_max": 295907057,
+    "rtt_ms_median": 42.23,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      64896,
+      2824320
+    ],
+    "max_receiver_queue": 858235,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "raw",
+    "direction": "down",
+    "round": 3,
+    "mib_s": 34.6,
+    "peer_port": 60708,
+    "samples": 36,
+    "sampled_bytes_max": 261039592,
+    "rtt_ms_median": 42.7265,
+    "cwnd_range": [
+      159,
+      2544
+    ],
+    "rcv_wnd_range": [
+      65152,
+      65152
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 684,
+    "sampled_sender_bytes_retrans_max": 989864,
+    "sampled_sender_rwnd_limited_us_max": 128000
+  },
+  {
+    "mode": "raw",
+    "direction": "up",
+    "round": 3,
+    "mib_s": 54.58,
+    "peer_port": 60716,
+    "samples": 23,
+    "sampled_bytes_max": 264138486,
+    "rtt_ms_median": 43.532,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      358656,
+      2824448
+    ],
+    "max_receiver_queue": 165184,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "current",
+    "direction": "down",
+    "round": 3,
+    "mib_s": 49.52,
+    "peer_port": 55320,
+    "samples": 25,
+    "sampled_bytes_max": 293273100,
+    "rtt_ms_median": 45.281,
+    "cwnd_range": [
+      20,
+      4195
+    ],
+    "rcv_wnd_range": [
+      64384,
+      64384
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 3,
+    "sampled_sender_bytes_retrans_max": 4344,
+    "sampled_sender_rwnd_limited_us_max": 2704000
+  },
+  {
+    "mode": "current",
+    "direction": "up",
+    "round": 3,
+    "mib_s": 33.75,
+    "peer_port": 55328,
+    "samples": 37,
+    "sampled_bytes_max": 297069970,
+    "rtt_ms_median": 43.169,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      156928,
+      2038528
+    ],
+    "max_receiver_queue": 249684,
+    "receiver_out_of_order_packets_max": 277
+  },
+  {
+    "mode": "v2",
+    "direction": "up",
+    "round": 4,
+    "mib_s": 34.96,
+    "peer_port": 55748,
+    "samples": 37,
+    "sampled_bytes_max": 300573717,
+    "rtt_ms_median": 42.975,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      64640,
+      3757568
+    ],
+    "max_receiver_queue": 2261504,
+    "receiver_out_of_order_packets_max": 838
+  },
+  {
+    "mode": "v2",
+    "direction": "down",
+    "round": 4,
+    "mib_s": 47.91,
+    "peer_port": 55774,
+    "samples": 26,
+    "sampled_bytes_max": 291743032,
+    "rtt_ms_median": 42.1815,
+    "cwnd_range": [
+      20,
+      2427
+    ],
+    "rcv_wnd_range": [
+      64384,
+      64384
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 101,
+    "sampled_sender_bytes_retrans_max": 146248,
+    "sampled_sender_rwnd_limited_us_max": 4540000
+  },
+  {
+    "mode": "current",
+    "direction": "up",
+    "round": 4,
+    "mib_s": 35.7,
+    "peer_port": 56230,
+    "samples": 36,
+    "sampled_bytes_max": 300768219,
+    "rtt_ms_median": 43.038,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      64640,
+      2136832
+    ],
+    "max_receiver_queue": 168151,
+    "receiver_out_of_order_packets_max": 320
+  },
+  {
+    "mode": "current",
+    "direction": "down",
+    "round": 4,
+    "mib_s": 53.05,
+    "peer_port": 56250,
+    "samples": 24,
+    "sampled_bytes_max": 299857039,
+    "rtt_ms_median": 42.967,
+    "cwnd_range": [
+      20,
+      2246
+    ],
+    "rcv_wnd_range": [
+      64512,
+      64512
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 210,
+    "sampled_sender_bytes_retrans_max": 304080,
+    "sampled_sender_rwnd_limited_us_max": 2744000
+  },
+  {
+    "mode": "raw",
+    "direction": "up",
+    "round": 4,
+    "mib_s": 56.95,
+    "peer_port": 49096,
+    "samples": 22,
+    "sampled_bytes_max": 256836486,
+    "rtt_ms_median": 41.618,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      67840,
+      3757568
+    ],
+    "max_receiver_queue": 187968,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "raw",
+    "direction": "down",
+    "round": 4,
+    "mib_s": 34.66,
+    "peer_port": 49120,
+    "samples": 36,
+    "sampled_bytes_max": 260520184,
+    "rtt_ms_median": 43.538,
+    "cwnd_range": [
+      80,
+      1424
+    ],
+    "rcv_wnd_range": [
+      65152,
+      65152
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 655,
+    "sampled_sender_bytes_retrans_max": 947344,
+    "sampled_sender_rwnd_limited_us_max": 164000
+  },
+  {
+    "mode": "current",
+    "direction": "down",
+    "round": 5,
+    "mib_s": 51.91,
+    "peer_port": 56732,
+    "samples": 25,
+    "sampled_bytes_max": 299303416,
+    "rtt_ms_median": 44.706,
+    "cwnd_range": [
+      10,
+      2464
+    ],
+    "rcv_wnd_range": [
+      64768,
+      64896
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 191,
+    "sampled_sender_bytes_retrans_max": 276568,
+    "sampled_sender_rwnd_limited_us_max": 3496000
+  },
+  {
+    "mode": "current",
+    "direction": "up",
+    "round": 5,
+    "mib_s": 36.43,
+    "peer_port": 56750,
+    "samples": 35,
+    "sampled_bytes_max": 301533431,
+    "rtt_ms_median": 43.384,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      60672,
+      2038400
+    ],
+    "max_receiver_queue": 189392,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "raw",
+    "direction": "down",
+    "round": 5,
+    "mib_s": 45.65,
+    "peer_port": 49568,
+    "samples": 27,
+    "sampled_bytes_max": 254672224,
+    "rtt_ms_median": 43.206,
+    "cwnd_range": [
+      40,
+      1650
+    ],
+    "rcv_wnd_range": [
+      65152,
+      65152
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 631,
+    "sampled_sender_bytes_retrans_max": 913688,
+    "sampled_sender_rwnd_limited_us_max": 156000
+  },
+  {
+    "mode": "raw",
+    "direction": "up",
+    "round": 5,
+    "mib_s": 40.05,
+    "peer_port": 49596,
+    "samples": 32,
+    "sampled_bytes_max": 262013830,
+    "rtt_ms_median": 43.118,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      65024,
+      4101376
+    ],
+    "max_receiver_queue": 125312,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "v2",
+    "direction": "down",
+    "round": 5,
+    "mib_s": 47.94,
+    "peer_port": 57190,
+    "samples": 27,
+    "sampled_bytes_max": 297825491,
+    "rtt_ms_median": 42.348,
+    "cwnd_range": [
+      10,
+      4347
+    ],
+    "rcv_wnd_range": [
+      64512,
+      64896
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 0,
+    "sampled_sender_bytes_retrans_max": 0,
+    "sampled_sender_rwnd_limited_us_max": 4560000
+  },
+  {
+    "mode": "v2",
+    "direction": "up",
+    "round": 5,
+    "mib_s": 48.27,
+    "peer_port": 57202,
+    "samples": 26,
+    "sampled_bytes_max": 296956754,
+    "rtt_ms_median": 42.391,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      96768,
+      2895616
+    ],
+    "max_receiver_queue": 389138,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "current",
+    "direction": "up",
+    "round": 6,
+    "mib_s": 30.05,
+    "peer_port": 57672,
+    "samples": 43,
+    "sampled_bytes_max": 301617347,
+    "rtt_ms_median": 42.886,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      64640,
+      2038528
+    ],
+    "max_receiver_queue": 258929,
+    "receiver_out_of_order_packets_max": 0
+  },
+  {
+    "mode": "current",
+    "direction": "down",
+    "round": 6,
+    "mib_s": 51.53,
+    "peer_port": 57692,
+    "samples": 24,
+    "sampled_bytes_max": 291660281,
+    "rtt_ms_median": 46.012,
+    "cwnd_range": [
+      28,
+      4450
+    ],
+    "rcv_wnd_range": [
+      64512,
+      64512
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 0,
+    "sampled_sender_bytes_retrans_max": 0,
+    "sampled_sender_rwnd_limited_us_max": 3408000
+  },
+  {
+    "mode": "v2",
+    "direction": "up",
+    "round": 6,
+    "mib_s": 25.7,
+    "peer_port": 58202,
+    "samples": 49,
+    "sampled_bytes_max": 297724491,
+    "rtt_ms_median": 42.837,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      72704,
+      3757568
+    ],
+    "max_receiver_queue": 1024108,
+    "receiver_out_of_order_packets_max": 200
+  },
+  {
+    "mode": "v2",
+    "direction": "down",
+    "round": 6,
+    "mib_s": 41.17,
+    "peer_port": 58224,
+    "samples": 31,
+    "sampled_bytes_max": 292014726,
+    "rtt_ms_median": 45.97,
+    "cwnd_range": [
+      10,
+      4380
+    ],
+    "rcv_wnd_range": [
+      64384,
+      64768
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 0,
+    "sampled_sender_bytes_retrans_max": 0,
+    "sampled_sender_rwnd_limited_us_max": 5312000
+  },
+  {
+    "mode": "raw",
+    "direction": "up",
+    "round": 6,
+    "mib_s": 56.54,
+    "peer_port": 50042,
+    "samples": 22,
+    "sampled_bytes_max": 262566726,
+    "rtt_ms_median": 42.932,
+    "cwnd_range": [
+      10,
+      10
+    ],
+    "rcv_wnd_range": [
+      391808,
+      4101376
+    ],
+    "max_receiver_queue": 163760,
+    "receiver_out_of_order_packets_max": 332
+  },
+  {
+    "mode": "raw",
+    "direction": "down",
+    "round": 6,
+    "mib_s": 42.38,
+    "peer_port": 50062,
+    "samples": 29,
+    "sampled_bytes_max": 257076920,
+    "rtt_ms_median": 43.344,
+    "cwnd_range": [
+      80,
+      2560
+    ],
+    "rcv_wnd_range": [
+      65152,
+      65152
+    ],
+    "max_receiver_queue": 0,
+    "sampled_sender_total_retrans_max": 413,
+    "sampled_sender_bytes_retrans_max": 598024,
+    "sampled_sender_rwnd_limited_us_max": 48000
+  }
+]

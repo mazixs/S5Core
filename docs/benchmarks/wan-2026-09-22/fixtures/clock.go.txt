@@ -1,0 +1,3 @@
+package main
+import("bufio";"fmt";"os";"time")
+func main(){fmt.Println("ready");s:=bufio.NewScanner(os.Stdin);for s.Scan(){fmt.Println(time.Now().UnixNano())}}

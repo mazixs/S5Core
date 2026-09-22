@@ -1,0 +1,98 @@
+{
+  "router": {
+    "samples": [
+      {
+        "roundtrip_seconds": 0.0003800392150878906,
+        "remote_minus_local_seconds": -2.637179374694824
+      },
+      {
+        "roundtrip_seconds": 0.00028061866760253906,
+        "remote_minus_local_seconds": -2.6372294425964355
+      },
+      {
+        "roundtrip_seconds": 0.00026798248291015625,
+        "remote_minus_local_seconds": -2.6371984481811523
+      },
+      {
+        "roundtrip_seconds": 0.00019741058349609375,
+        "remote_minus_local_seconds": -2.637225866317749
+      },
+      {
+        "roundtrip_seconds": 0.00024771690368652344,
+        "remote_minus_local_seconds": -2.6372246742248535
+      },
+      {
+        "roundtrip_seconds": 0.0001804828643798828,
+        "remote_minus_local_seconds": -2.6372270584106445
+      },
+      {
+        "roundtrip_seconds": 0.00018715858459472656,
+        "remote_minus_local_seconds": -2.6372313499450684
+      },
+      {
+        "roundtrip_seconds": 0.00020599365234375,
+        "remote_minus_local_seconds": -2.637214183807373
+      },
+      {
+        "roundtrip_seconds": 0.00019884109497070312,
+        "remote_minus_local_seconds": -2.637239933013916
+      },
+      {
+        "roundtrip_seconds": 0.0002067089080810547,
+        "remote_minus_local_seconds": -2.637216806411743
+      }
+    ],
+    "best": {
+      "roundtrip_seconds": 0.0001804828643798828,
+      "remote_minus_local_seconds": -2.6372270584106445
+    }
+  },
+  "amsterdam": {
+    "samples": [
+      {
+        "roundtrip_seconds": 0.04326891899108887,
+        "remote_minus_local_seconds": 0.11022520065307617
+      },
+      {
+        "roundtrip_seconds": 0.043103933334350586,
+        "remote_minus_local_seconds": 0.11015677452087402
+      },
+      {
+        "roundtrip_seconds": 0.04328107833862305,
+        "remote_minus_local_seconds": 0.11018610000610352
+      },
+      {
+        "roundtrip_seconds": 0.0432586669921875,
+        "remote_minus_local_seconds": 0.11021828651428223
+      },
+      {
+        "roundtrip_seconds": 0.043334245681762695,
+        "remote_minus_local_seconds": 0.11019778251647949
+      },
+      {
+        "roundtrip_seconds": 0.04319286346435547,
+        "remote_minus_local_seconds": 0.11017966270446777
+      },
+      {
+        "roundtrip_seconds": 0.045012474060058594,
+        "remote_minus_local_seconds": 0.1100006103515625
+      },
+      {
+        "roundtrip_seconds": 0.04308152198791504,
+        "remote_minus_local_seconds": 0.11016321182250977
+      },
+      {
+        "roundtrip_seconds": 0.04371929168701172,
+        "remote_minus_local_seconds": 0.11031866073608398
+      },
+      {
+        "roundtrip_seconds": 0.04364204406738281,
+        "remote_minus_local_seconds": 0.11035656929016113
+      }
+    ],
+    "best": {
+      "roundtrip_seconds": 0.04308152198791504,
+      "remote_minus_local_seconds": 0.11016321182250977
+    }
+  }
+}

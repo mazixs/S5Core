@@ -1,0 +1,231 @@
+// External read-only Linux socket monitor; layouts: linux/{inet_diag,tcp}.h.
+package main
+
+import (
+	"encoding/binary"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+)
+
+var le = binary.LittleEndian
+var ports = map[uint16]bool{47941: true, 47943: true, 11891: true, 11892: true}
+
+func u32(b []byte, o int) uint32 { return le.Uint32(b[o : o+4]) }
+func dump(fd int, family byte, seq uint32) ([]map[string]any, error) {
+	req := make([]byte, 72)
+	le.PutUint32(req, 72)
+	le.PutUint16(req[4:], 20)
+	le.PutUint16(req[6:], 0x301)
+	le.PutUint32(req[8:], seq)
+	req[16] = family
+	req[17] = 6
+	req[18] = 1 | 2 | 8 | 64
+	le.PutUint32(req[20:], 0xfff & ^uint32(1<<10))
+	for i := 64; i < 72; i++ {
+		req[i] = 255
+	}
+	if err := syscall.Sendto(fd, req, 0, &syscall.SockaddrNetlink{Family: syscall.AF_NETLINK}); err != nil {
+		return nil, err
+	}
+	var out []map[string]any
+	buf := make([]byte, 1<<20)
+	for {
+		n, _, err := syscall.Recvfrom(fd, buf, 0)
+		if err != nil {
+			return out, err
+		}
+		msgs, err := syscall.ParseNetlinkMessage(buf[:n])
+		if err != nil {
+			return out, err
+		}
+		for _, msg := range msgs {
+			if msg.Header.Seq != seq {
+				continue
+			}
+			if msg.Header.Flags&0x10 != 0 {
+				return out, fmt.Errorf("dump interrupted")
+			}
+			if msg.Header.Type == 3 {
+				return out, nil
+			}
+			if msg.Header.Type == 2 {
+				if len(msg.Data) >= 4 {
+					return out, fmt.Errorf("netlink errno %d", int32(u32(msg.Data, 0)))
+				}
+				return out, fmt.Errorf("netlink error")
+			}
+			b := msg.Data
+			if len(b) < 72 {
+				continue
+			}
+			sp, dp := binary.BigEndian.Uint16(b[4:6]), binary.BigEndian.Uint16(b[6:8])
+			if !ports[sp] && !ports[dp] {
+				continue
+			}
+			src, dst := net.IP(b[8:24]), net.IP(b[24:40])
+			if family == 2 {
+				src, dst = src[:4], dst[:4]
+			}
+			row := map[string]any{"src": src.String(), "dst": dst.String(), "sport": sp, "dport": dp, "state": b[1], "timer": b[2], "timer_retrans": b[3], "rqueue": u32(b, 56), "wqueue": u32(b, 60), "inode": u32(b, 68)}
+			for a := b[72:]; len(a) >= 4; {
+				l := int(le.Uint16(a))
+				typ := le.Uint16(a[2:])
+				if l < 4 || l > len(a) {
+					return out, fmt.Errorf("bad attr")
+				}
+				v := a[4:l]
+				if typ == 7 {
+					mem := map[string]uint32{}
+					for i, key := range []string{"rmem_alloc", "rcv_buf", "wmem_alloc", "snd_buf", "fwd_alloc", "wmem_queued", "opt_mem", "backlog", "drops"} {
+						if (i+1)*4 <= len(v) {
+							mem[key] = u32(v, i*4)
+						}
+					}
+					row["skmem"] = mem
+				}
+				if typ == 4 {
+					row["cong"] = strings.TrimRight(string(v), "\x00")
+				}
+				if typ == 2 {
+					row["info_len"] = len(v)
+					info := map[string]any{}
+					for i, k := range []string{"state", "ca_state", "retransmits", "probes", "backoff", "options", "wscale", "app_limited"} {
+						if i < len(v) {
+							info[k] = v[i]
+						}
+					}
+					for off, key := range map[int]string{8: "rto_us", 12: "ato_us", 16: "snd_mss", 20: "rcv_mss", 24: "unacked", 28: "sacked", 32: "lost", 36: "retrans", 44: "last_data_sent_ms", 52: "last_data_recv_ms", 56: "last_ack_recv_ms", 64: "rcv_ssthresh", 68: "rtt_us", 72: "rttvar_us", 76: "snd_ssthresh", 80: "cwnd", 88: "reordering", 92: "rcv_rtt_us", 96: "rcv_space", 100: "total_retrans", 136: "segs_out", 140: "segs_in", 144: "notsent_bytes", 148: "min_rtt_us", 152: "data_segs_in", 156: "data_segs_out", 192: "delivered", 224: "rcv_ooopack", 228: "snd_wnd", 232: "rcv_wnd"} {
+						if off+4 <= len(v) {
+							info[key] = u32(v, off)
+						}
+					}
+					for off, key := range map[int]string{104: "pacing_rate", 112: "max_pacing_rate", 120: "bytes_acked", 128: "bytes_received", 160: "delivery_rate", 168: "busy_us", 176: "rwnd_limited_us", 184: "sndbuf_limited_us", 200: "bytes_sent", 208: "bytes_retrans"} {
+						if off+8 <= len(v) {
+							info[key] = le.Uint64(v[off:])
+						}
+					}
+					row["tcp"] = info
+				}
+				step := (l + 3) &^ 3
+				if step > len(a) {
+					break
+				}
+				a = a[step:]
+			}
+			out = append(out, row)
+		}
+	}
+}
+func main() {
+	duration := flag.Duration("duration", 15*time.Minute, "monitor duration")
+	interval := flag.Duration("interval", 200*time.Millisecond, "sample interval")
+	dir := flag.String("pids", ".", "directory of pid files")
+	flag.Parse()
+	procOnly := os.Getenv("TCPDIAG_PROC_ONLY") == "1"
+	fd, err := syscall.Socket(syscall.AF_NETLINK, syscall.SOCK_DGRAM, 4)
+	if err != nil && !procOnly {
+		panic(err)
+	}
+	defer syscall.Close(fd)
+	if err = syscall.Bind(fd, &syscall.SockaddrNetlink{Family: syscall.AF_NETLINK}); err != nil && !procOnly {
+		panic(err)
+	}
+	syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &syscall.Timeval{Sec: 2})
+	enc := json.NewEncoder(os.Stdout)
+	deadline := time.Now().Add(*duration)
+	ticker := time.NewTicker(*interval)
+	defer ticker.Stop()
+	var seq uint32
+	for time.Now().Before(deadline) {
+		now := time.Now()
+		row := map[string]any{"time": float64(now.UnixNano()) / 1e9}
+		var sockets []map[string]any
+		families := []byte{2, 10}
+		if procOnly {
+			families = nil
+		}
+		for _, family := range families {
+			seq++
+			s, e := dump(fd, family, seq)
+			if e != nil {
+				fmt.Fprintln(os.Stderr, e)
+				os.Exit(1)
+			}
+			sockets = append(sockets, s...)
+		}
+		row["sockets"] = sockets
+		var procRows []map[string]any
+		for _, file := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+			data, e := os.ReadFile(file)
+			if e != nil {
+				continue
+			}
+			for _, line := range strings.Split(string(data), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) < 10 {
+					continue
+				}
+				local, remote := strings.Split(fields[1], ":"), strings.Split(fields[2], ":")
+				if len(local) != 2 || len(remote) != 2 {
+					continue
+				}
+				sp, _ := strconv.ParseUint(local[1], 16, 16)
+				dp, _ := strconv.ParseUint(remote[1], 16, 16)
+				if (!ports[uint16(sp)] && !ports[uint16(dp)]) || fields[3] == "0A" {
+					continue
+				}
+				r := map[string]any{"family": file, "src": fields[1], "dst": fields[2], "sport": sp, "dport": dp, "state": fields[3], "queues": fields[4], "timer": fields[5], "unrecovered_rto": fields[6], "zero_probes": fields[8], "inode": fields[9]}
+				if len(fields) >= 17 {
+					r["rto"] = fields[12]
+					r["cwnd"] = fields[15]
+					r["ssthresh"] = fields[16]
+				}
+				procRows = append(procRows, r)
+			}
+		}
+		row["proc_sockets"] = procRows
+		stats := map[string]any{}
+		files, _ := filepath.Glob(filepath.Join(*dir, "*.pid"))
+		for _, f := range files {
+			b, e := os.ReadFile(f)
+			if e != nil {
+				continue
+			}
+			pid, e := strconv.Atoi(strings.TrimSpace(string(b)))
+			if e != nil {
+				continue
+			}
+			stat, e := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+			if e != nil {
+				continue
+			}
+			status, _ := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+			var mem []string
+			for _, line := range strings.Split(string(status), "\n") {
+				if strings.HasPrefix(line, "VmRSS:") || strings.HasPrefix(line, "VmSwap:") {
+					mem = append(mem, line)
+				}
+			}
+			stats[filepath.Base(f)] = map[string]any{"stat": strings.TrimSpace(string(stat)), "memory": mem}
+		}
+		row["processes"] = stats
+		vm, _ := os.ReadFile("/proc/vmstat")
+		var paging []string
+		for _, line := range strings.Split(string(vm), "\n") {
+			if strings.HasPrefix(line, "pswp") {
+				paging = append(paging, line)
+			}
+		}
+		row["paging"] = paging
+		enc.Encode(row)
+		<-ticker.C
+	}
+}

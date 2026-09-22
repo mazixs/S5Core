@@ -1,0 +1,2215 @@
+{
+  "commit": "9e0eb3937b45c7637d1536b252f5b9f852df7455",
+  "throughput": {
+    "raw_down": {
+      "n": 6,
+      "median_mib_s": 34.5,
+      "median_mbit_s": 289.406976,
+      "min_mib_s": 16.51,
+      "max_mib_s": 47.02,
+      "values": [
+        47.02,
+        38.52,
+        16.51,
+        34.1,
+        32.72,
+        34.9
+      ]
+    },
+    "raw_up": {
+      "n": 6,
+      "median_mib_s": 48.620000000000005,
+      "median_mbit_s": 407.85412096000005,
+      "min_mib_s": 40.84,
+      "max_mib_s": 57.15,
+      "values": [
+        57.15,
+        42.28,
+        57.06,
+        54.96,
+        41.09,
+        40.84
+      ]
+    },
+    "v2_down": {
+      "n": 6,
+      "median_mib_s": 39.525,
+      "median_mbit_s": 331.5597312,
+      "min_mib_s": 38.83,
+      "max_mib_s": 40.98,
+      "values": [
+        39.13,
+        40.92,
+        39.33,
+        40.98,
+        38.83,
+        39.72
+      ],
+      "median_proxy_cpu_seconds_per_gib": 19.28
+    },
+    "v2_up": {
+      "n": 6,
+      "median_mib_s": 36.105000000000004,
+      "median_mbit_s": 302.87069184,
+      "min_mib_s": 30.2,
+      "max_mib_s": 44.98,
+      "values": [
+        44.98,
+        37.42,
+        30.2,
+        34.71,
+        44.89,
+        34.79
+      ],
+      "median_proxy_cpu_seconds_per_gib": 20.38
+    },
+    "current_down": {
+      "n": 6,
+      "median_mib_s": 47.755,
+      "median_mbit_s": 400.59797504,
+      "min_mib_s": 33.48,
+      "max_mib_s": 48.85,
+      "values": [
+        47.88,
+        48.62,
+        48.85,
+        36.73,
+        33.48,
+        47.63
+      ],
+      "median_proxy_cpu_seconds_per_gib": 18.18
+    },
+    "current_up": {
+      "n": 6,
+      "median_mib_s": 41.265,
+      "median_mbit_s": 346.15590912,
+      "min_mib_s": 28.77,
+      "max_mib_s": 51.22,
+      "values": [
+        41.91,
+        40.62,
+        28.77,
+        32.51,
+        51.22,
+        49.9
+      ],
+      "median_proxy_cpu_seconds_per_gib": 17.439999999999998
+    }
+  },
+  "latency": {
+    "raw": {
+      "n": 300,
+      "connect_setup_ms": {
+        "p50": 43.303231,
+        "p95": 44.164077,
+        "p99": 45.554923,
+        "max": 48.537307
+      },
+      "http_first_response_ms": {
+        "p50": 87.3141535,
+        "p95": 88.608846,
+        "p99": 89.787,
+        "max": 93.328385
+      },
+      "total_ms": {
+        "p50": 87.495654,
+        "p95": 88.790154,
+        "p99": 89.925154,
+        "max": 93.545154
+      }
+    },
+    "v2": {
+      "n": 300,
+      "connect_setup_ms": {
+        "p50": 222.5535385,
+        "p95": 225.288615,
+        "p99": 227.091769,
+        "max": 229.253307
+      },
+      "http_first_response_ms": {
+        "p50": 267.1988085,
+        "p95": 270.148154,
+        "p99": 272.299923,
+        "max": 274.648
+      },
+      "total_ms": {
+        "p50": 267.413385,
+        "p95": 270.326461,
+        "p99": 272.502462,
+        "max": 274.822231
+      }
+    },
+    "current": {
+      "n": 300,
+      "connect_setup_ms": {
+        "p50": 222.025192,
+        "p95": 224.743462,
+        "p99": 225.761385,
+        "max": 231.682692
+      },
+      "http_first_response_ms": {
+        "p50": 266.6787695,
+        "p95": 269.803154,
+        "p99": 271.476692,
+        "max": 276.149693
+      },
+      "total_ms": {
+        "p50": 266.8956925,
+        "p95": 270.07577,
+        "p99": 271.706462,
+        "max": 276.30077
+      }
+    }
+  },
+  "paired": {
+    "down": {
+      "current_vs_v2_percent": [
+        22.361359570661897,
+        18.81720430107525,
+        24.205441139079586,
+        -10.370912640312346,
+        -13.778006695853728,
+        19.914400805639488
+      ],
+      "median_percent": 19.36580255335737,
+      "paired_median_bootstrap_95ci": [
+        -12.074459668083037,
+        23.283400354870743
+      ]
+    },
+    "up": {
+      "current_vs_v2_percent": [
+        -6.825255669186303,
+        8.5515766969535,
+        -4.735099337748339,
+        -6.338231057332189,
+        14.101136110492307,
+        43.43202069560219
+      ],
+      "median_percent": 1.9082386796025808,
+      "paired_median_bootstrap_95ci": [
+        -6.581743363259246,
+        28.766578403047248
+      ]
+    }
+  },
+  "failures": [],
+  "transfers": [
+    {
+      "mode": "raw",
+      "direction": "down",
+      "round": 1,
+      "mib_s": 47.02,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 15.504291845493562,
+          "system_busy_cores": 0.46512875536480686,
+          "softirq_cores": 0.15933476394849785,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.6,
+              "rss_mib": 7.6875,
+              "peak_rss_mib": 7.8984375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 8.520900321543408,
+          "system_busy_cores": 0.08520900321543408,
+          "softirq_cores": 0.024115755627009645,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.28,
+              "rss_mib": 9.91796875,
+              "peak_rss_mib": 10.16796875,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 7.30859375,
+              "peak_rss_mib": 7.30859375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 3,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "up",
+      "round": 1,
+      "mib_s": 57.15,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 10.094637223974763,
+          "system_busy_cores": 0.3028391167192429,
+          "softirq_cores": 0.08138801261829653,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.36,
+              "rss_mib": 7.5,
+              "peak_rss_mib": 7.8984375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 20.825515947467167,
+          "system_busy_cores": 0.20825515947467166,
+          "softirq_cores": 0.07129455909943715,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.24,
+              "rss_mib": 8.89453125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 2.64,
+              "rss_mib": 7.30859375,
+              "peak_rss_mib": 7.30859375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 11,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "down",
+      "round": 1,
+      "mib_s": 39.13,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 53.41530054644809,
+          "system_busy_cores": 1.6024590163934427,
+          "softirq_cores": 0.4822404371584699,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 15.84,
+              "rss_mib": 10.07421875,
+              "peak_rss_mib": 10.07421875,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.92,
+              "rss_mib": 7.6796875,
+              "peak_rss_mib": 8.296875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 18.818681318681318,
+          "system_busy_cores": 0.18818681318681318,
+          "softirq_cores": 0.016483516483516484,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 8.078125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.48,
+              "rss_mib": 144.59765625,
+              "peak_rss_mib": 144.59765625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 9.37109375,
+              "peak_rss_mib": 9.37109375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 3,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "up",
+      "round": 1,
+      "mib_s": 44.98,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 19.133574007220215,
+          "system_busy_cores": 0.5740072202166066,
+          "softirq_cores": 0.07890665291387312,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 7.92,
+              "rss_mib": 12.72265625,
+              "peak_rss_mib": 12.72265625,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.64,
+              "rss_mib": 7.25,
+              "peak_rss_mib": 8.30078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 78.27426810477658,
+          "system_busy_cores": 0.7827426810477658,
+          "softirq_cores": 0.14791987673343607,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 8.08203125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 12.16,
+              "rss_mib": 22.15234375,
+              "peak_rss_mib": 146.609375,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 7.04,
+              "rss_mib": 9.375,
+              "peak_rss_mib": 9.375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 2,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "down",
+      "round": 1,
+      "mib_s": 47.88,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 50.942380183091004,
+          "system_busy_cores": 1.5282714054927302,
+          "softirq_cores": 0.40549273021001614,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 14.48,
+              "rss_mib": 10.12109375,
+              "peak_rss_mib": 10.12109375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.84,
+              "rss_mib": 7.51953125,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 23.567921440261866,
+          "system_busy_cores": 0.23567921440261866,
+          "softirq_cores": 0.03927986906710311,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 8.95703125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.88,
+              "rss_mib": 146.00390625,
+              "peak_rss_mib": 146.00390625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.32,
+              "rss_mib": 9.3984375,
+              "peak_rss_mib": 9.3984375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 4,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "up",
+      "round": 1,
+      "mib_s": 41.91,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 19.180722891566266,
+          "system_busy_cores": 0.5754216867469879,
+          "softirq_cores": 0.07518072289156627,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 8.56,
+              "rss_mib": 13.30078125,
+              "peak_rss_mib": 13.30078125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.92,
+              "rss_mib": 7.703125,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 55.349500713266764,
+          "system_busy_cores": 0.5534950071326676,
+          "softirq_cores": 0.11554921540656206,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 8.95703125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 9.04,
+              "rss_mib": 146.28515625,
+              "peak_rss_mib": 146.28515625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 4.76,
+              "rss_mib": 9.3984375,
+              "peak_rss_mib": 9.3984375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 5,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "up",
+      "round": 2,
+      "mib_s": 42.28,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 9.135082604470359,
+          "system_busy_cores": 0.27405247813411077,
+          "softirq_cores": 0.06851311953352769,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.0,
+              "rss_mib": 7.8515625,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 15.214180206794682,
+          "system_busy_cores": 0.15214180206794684,
+          "softirq_cores": 0.03545051698670606,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 8.95703125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 2.16,
+              "rss_mib": 9.4140625,
+              "peak_rss_mib": 9.4140625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 1,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "down",
+      "round": 2,
+      "mib_s": 38.52,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 13.429472735466426,
+          "system_busy_cores": 0.4028841820639928,
+          "softirq_cores": 0.135196034249662,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.0,
+              "rss_mib": 7.9921875,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 10.447761194029852,
+          "system_busy_cores": 0.1044776119402985,
+          "softirq_cores": 0.027137042062415198,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 8.9609375,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 9.41796875,
+              "peak_rss_mib": 9.41796875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 11,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "up",
+      "round": 2,
+      "mib_s": 40.62,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 19.181946403385048,
+          "system_busy_cores": 0.5754583921015515,
+          "softirq_cores": 0.08039492242595205,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 8.6,
+              "rss_mib": 12.53125,
+              "peak_rss_mib": 12.53125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.96,
+              "rss_mib": 7.62890625,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 55.319148936170215,
+          "system_busy_cores": 0.5531914893617021,
+          "softirq_cores": 0.10070921985815603,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 8.9765625,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 9.28,
+              "rss_mib": 145.28515625,
+              "peak_rss_mib": 145.28515625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 4.92,
+              "rss_mib": 9.421875,
+              "peak_rss_mib": 9.421875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 11,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "down",
+      "round": 2,
+      "mib_s": 48.62,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 50.46271094175286,
+          "system_busy_cores": 1.5138813282525858,
+          "softirq_cores": 0.4050081654872074,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 14.24,
+              "rss_mib": 12.92578125,
+              "peak_rss_mib": 13.02734375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.76,
+              "rss_mib": 7.78125,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 22.240802675585286,
+          "system_busy_cores": 0.22240802675585283,
+          "softirq_cores": 0.030100334448160536,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.44,
+              "rss_mib": 8.9765625,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.8,
+              "rss_mib": 145.375,
+              "peak_rss_mib": 145.375,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 11.421875,
+              "peak_rss_mib": 11.421875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 5,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "up",
+      "round": 2,
+      "mib_s": 37.42,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 18.189730200174065,
+          "system_busy_cores": 0.5456919060052219,
+          "softirq_cores": 0.07049608355091384,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 7.96,
+              "rss_mib": 13.38671875,
+              "peak_rss_mib": 13.38671875,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.0,
+              "rss_mib": 7.875,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 65.06666666666666,
+          "system_busy_cores": 0.6506666666666666,
+          "softirq_cores": 0.11333333333333333,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 9.01953125,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 12.28,
+              "rss_mib": 22.18359375,
+              "peak_rss_mib": 146.859375,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 6.44,
+              "rss_mib": 11.42578125,
+              "peak_rss_mib": 11.42578125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 2,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "down",
+      "round": 2,
+      "mib_s": 40.92,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 55.48751766368347,
+          "system_busy_cores": 1.664625529910504,
+          "softirq_cores": 0.49882242110221386,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 15.72,
+              "rss_mib": 12.23828125,
+              "peak_rss_mib": 14.5546875,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.92,
+              "rss_mib": 7.734375,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 20.114122681883025,
+          "system_busy_cores": 0.20114122681883023,
+          "softirq_cores": 0.015691868758915834,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 8.96484375,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.4,
+              "rss_mib": 22.1953125,
+              "peak_rss_mib": 146.859375,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 11.92578125,
+              "peak_rss_mib": 11.92578125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 14,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "down",
+      "round": 3,
+      "mib_s": 39.33,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 54.82837528604119,
+          "system_busy_cores": 1.6448512585812356,
+          "softirq_cores": 0.494279176201373,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 16.0,
+              "rss_mib": 10.25390625,
+              "peak_rss_mib": 10.25390625,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.28,
+              "rss_mib": 7.9609375,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 19.613259668508288,
+          "system_busy_cores": 0.19613259668508287,
+          "softirq_cores": 0.016574585635359115,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 8.96484375,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.4,
+              "rss_mib": 143.58203125,
+              "peak_rss_mib": 143.58203125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 11.96875,
+              "peak_rss_mib": 11.96875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 12,
+            "pswpout": 1
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "up",
+      "round": 3,
+      "mib_s": 30.2,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 15.167930660888407,
+          "system_busy_cores": 0.4550379198266522,
+          "softirq_cores": 0.06717226435536294,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 7.84,
+              "rss_mib": 12.80078125,
+              "peak_rss_mib": 12.81640625,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.6,
+              "rss_mib": 7.91015625,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 55.530973451327434,
+          "system_busy_cores": 0.5553097345132744,
+          "softirq_cores": 0.1006637168141593,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 8.984375,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 12.56,
+              "rss_mib": 21.046875,
+              "peak_rss_mib": 145.45703125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 6.8,
+              "rss_mib": 11.9765625,
+              "peak_rss_mib": 11.9765625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 7,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "down",
+      "round": 3,
+      "mib_s": 16.51,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 9.657576378921467,
+          "system_busy_cores": 0.289727291367644,
+          "softirq_cores": 0.07873692843961452,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 4.56,
+              "rss_mib": 7.9609375,
+              "peak_rss_mib": 8.46484375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 5.397022332506204,
+          "system_busy_cores": 0.05397022332506204,
+          "softirq_cores": 0.009925558312655087,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.08,
+              "rss_mib": 8.9921875,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 11.99609375,
+              "peak_rss_mib": 11.99609375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 17,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "up",
+      "round": 3,
+      "mib_s": 57.06,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 12.720403022670025,
+          "system_busy_cores": 0.38161209068010077,
+          "softirq_cores": 0.11712846347607053,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.44,
+              "rss_mib": 7.81640625,
+              "peak_rss_mib": 8.5546875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 19.305019305019304,
+          "system_busy_cores": 0.19305019305019305,
+          "softirq_cores": 0.059845559845559844,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 8.984375,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 2.56,
+              "rss_mib": 11.99609375,
+              "peak_rss_mib": 11.99609375,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "down",
+      "round": 3,
+      "mib_s": 48.85,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 50.876232201533405,
+          "system_busy_cores": 1.5262869660460021,
+          "softirq_cores": 0.42059145673603504,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 14.28,
+              "rss_mib": 9.796875,
+              "peak_rss_mib": 9.796875,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.8,
+              "rss_mib": 7.73046875,
+              "peak_rss_mib": 8.5546875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 21.070234113712374,
+          "system_busy_cores": 0.21070234113712374,
+          "softirq_cores": 0.020066889632107024,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 9.0625,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.52,
+              "rss_mib": 145.69921875,
+              "peak_rss_mib": 145.69921875,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.32,
+              "rss_mib": 12.0078125,
+              "peak_rss_mib": 12.0078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 4,
+            "pswpout": 1
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "up",
+      "round": 3,
+      "mib_s": 28.77,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 16.482758620689655,
+          "system_busy_cores": 0.49448275862068963,
+          "softirq_cores": 0.06620689655172414,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 8.68,
+              "rss_mib": 13.6484375,
+              "peak_rss_mib": 13.6484375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.44,
+              "rss_mib": 8.47265625,
+              "peak_rss_mib": 8.5546875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 37.21174004192872,
+          "system_busy_cores": 0.3721174004192872,
+          "softirq_cores": 0.06813417190775681,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.64,
+              "rss_mib": 9.0625,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 8.64,
+              "rss_mib": 145.8125,
+              "peak_rss_mib": 145.8125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 4.52,
+              "rss_mib": 12.0078125,
+              "peak_rss_mib": 12.0078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 2,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "up",
+      "round": 4,
+      "mib_s": 34.71,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 16.482617586912067,
+          "system_busy_cores": 0.49447852760736194,
+          "softirq_cores": 0.07239263803680981,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 7.84,
+              "rss_mib": 12.19921875,
+              "peak_rss_mib": 12.19921875,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.16,
+              "rss_mib": 8.0078125,
+              "peak_rss_mib": 8.5546875,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 65.40880503144655,
+          "system_busy_cores": 0.6540880503144654,
+          "softirq_cores": 0.13333333333333333,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.6,
+              "rss_mib": 8.44140625,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 13.08,
+              "rss_mib": 21.2421875,
+              "peak_rss_mib": 145.9453125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 6.8,
+              "rss_mib": 8.828125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 85,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "down",
+      "round": 4,
+      "mib_s": 40.98,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 53.83890720678286,
+          "system_busy_cores": 1.6151672162034856,
+          "softirq_cores": 0.47762600094206314,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 15.32,
+              "rss_mib": 12.5546875,
+              "peak_rss_mib": 12.63671875,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.88,
+              "rss_mib": 7.078125,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 20.483641536273115,
+          "system_busy_cores": 0.20483641536273114,
+          "softirq_cores": 0.029871977240398292,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 8.44140625,
+              "peak_rss_mib": 10.203125,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.44,
+              "rss_mib": 21.25390625,
+              "peak_rss_mib": 145.9453125,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.32,
+              "rss_mib": 8.83203125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 6,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "up",
+      "round": 4,
+      "mib_s": 32.51,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 17.37957610789981,
+          "system_busy_cores": 0.5213872832369942,
+          "softirq_cores": 0.08323699421965318,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 8.68,
+              "rss_mib": 12.08984375,
+              "peak_rss_mib": 12.08984375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.36,
+              "rss_mib": 7.71875,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 44.40518256772674,
+          "system_busy_cores": 0.44405182567726736,
+          "softirq_cores": 0.08716136631330977,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 10.48046875,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 8.8,
+              "rss_mib": 144.1875,
+              "peak_rss_mib": 144.1875,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 4.88,
+              "rss_mib": 7.40234375,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 20,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "down",
+      "round": 4,
+      "mib_s": 36.73,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 42.680324370465215,
+          "system_busy_cores": 1.2804097311139564,
+          "softirq_cores": 0.3290653008962868,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 14.84,
+              "rss_mib": 12.73828125,
+              "peak_rss_mib": 12.73828125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.12,
+              "rss_mib": 7.390625,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 18.170103092783506,
+          "system_busy_cores": 0.18170103092783504,
+          "softirq_cores": 0.02577319587628866,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 10.48046875,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.48,
+              "rss_mib": 144.26171875,
+              "peak_rss_mib": 144.26171875,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 7.4453125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 9,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "up",
+      "round": 4,
+      "mib_s": 54.96,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 9.395973154362416,
+          "system_busy_cores": 0.28187919463087246,
+          "softirq_cores": 0.08419768151311775,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.4,
+              "rss_mib": 8.03125,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 19.172932330827066,
+          "system_busy_cores": 0.19172932330827067,
+          "softirq_cores": 0.07330827067669173,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 10.48046875,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 2.68,
+              "rss_mib": 10.1796875,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 4,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "down",
+      "round": 4,
+      "mib_s": 34.1,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 13.616161616161616,
+          "system_busy_cores": 0.4084848484848485,
+          "softirq_cores": 0.13575757575757577,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.04,
+              "rss_mib": 7.796875,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 7.990314769975787,
+          "system_busy_cores": 0.07990314769975787,
+          "softirq_cores": 0.026634382566585957,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 10.48046875,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 10.1796875,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 3,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "down",
+      "round": 5,
+      "mib_s": 33.48,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 40.3250773993808,
+          "system_busy_cores": 1.2097523219814241,
+          "softirq_cores": 0.2995356037151703,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 15.08,
+              "rss_mib": 10.20703125,
+              "peak_rss_mib": 10.20703125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.08,
+              "rss_mib": 8.05859375,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 17.88715486194478,
+          "system_busy_cores": 0.1788715486194478,
+          "softirq_cores": 0.021608643457382955,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 10.13671875,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.48,
+              "rss_mib": 144.28515625,
+              "peak_rss_mib": 144.28515625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.32,
+              "rss_mib": 9.73828125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 28,
+            "pswpout": 6
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "up",
+      "round": 5,
+      "mib_s": 51.22,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 25.55040556199305,
+          "system_busy_cores": 0.7665121668597914,
+          "softirq_cores": 0.10602549246813442,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 9.04,
+              "rss_mib": 13.24609375,
+              "peak_rss_mib": 13.24609375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.48,
+              "rss_mib": 7.63671875,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 58.793103448275865,
+          "system_busy_cores": 0.5879310344827586,
+          "softirq_cores": 0.10689655172413794,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.44,
+              "rss_mib": 10.15625,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 8.12,
+              "rss_mib": 144.5234375,
+              "peak_rss_mib": 144.5234375,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 4.4,
+              "rss_mib": 9.73828125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 8,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "down",
+      "round": 5,
+      "mib_s": 32.72,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 13.975155279503106,
+          "system_busy_cores": 0.4192546583850932,
+          "softirq_cores": 0.13858695652173914,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.32,
+              "rss_mib": 7.87890625,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 6.690140845070423,
+          "system_busy_cores": 0.06690140845070422,
+          "softirq_cores": 0.017605633802816902,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.6,
+              "rss_mib": 10.15625,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.4,
+              "rss_mib": 9.73828125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 1,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "up",
+      "round": 5,
+      "mib_s": 41.09,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 8.776091081593927,
+          "system_busy_cores": 0.26328273244781786,
+          "softirq_cores": 0.07258064516129033,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.88,
+              "rss_mib": 7.5234375,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 16.017316017316016,
+          "system_busy_cores": 0.16017316017316016,
+          "softirq_cores": 0.050505050505050504,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 10.15625,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 2.76,
+              "rss_mib": 9.73828125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 1,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "down",
+      "round": 5,
+      "mib_s": 38.83,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 53.67282559711582,
+          "system_busy_cores": 1.6101847679134746,
+          "softirq_cores": 0.48129788192879674,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 15.84,
+              "rss_mib": 10.078125,
+              "peak_rss_mib": 10.078125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.08,
+              "rss_mib": 7.5625,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 19.099590723055936,
+          "system_busy_cores": 0.19099590723055934,
+          "softirq_cores": 0.021828103683492497,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 10.14453125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.52,
+              "rss_mib": 144.96875,
+              "peak_rss_mib": 144.96875,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.32,
+              "rss_mib": 9.7265625,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 4,
+            "pswpout": 26
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "up",
+      "round": 5,
+      "mib_s": 44.89,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 19.29824561403509,
+          "system_busy_cores": 0.5789473684210527,
+          "softirq_cores": 0.07894736842105263,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 8.0,
+              "rss_mib": 12.6640625,
+              "peak_rss_mib": 12.8203125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.8,
+              "rss_mib": 7.703125,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 80.370942812983,
+          "system_busy_cores": 0.80370942812983,
+          "softirq_cores": 0.15301391035548687,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.48,
+              "rss_mib": 10.14453125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 12.36,
+              "rss_mib": 22.13671875,
+              "peak_rss_mib": 146.75,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 7.28,
+              "rss_mib": 9.7265625,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 11,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "up",
+      "round": 6,
+      "mib_s": 49.9,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 22.184684684684683,
+          "system_busy_cores": 0.6655405405405406,
+          "softirq_cores": 0.10304054054054054,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 8.88,
+              "rss_mib": 12.42578125,
+              "peak_rss_mib": 12.42578125,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.6,
+              "rss_mib": 8.1015625,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 59.764309764309765,
+          "system_busy_cores": 0.5976430976430976,
+          "softirq_cores": 0.132996632996633,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.44,
+              "rss_mib": 10.14453125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 8.52,
+              "rss_mib": 144.85546875,
+              "peak_rss_mib": 144.85546875,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 4.56,
+              "rss_mib": 9.7265625,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 3,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "current",
+      "direction": "down",
+      "round": 6,
+      "mib_s": 47.63,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 49.97319034852547,
+          "system_busy_cores": 1.499195710455764,
+          "softirq_cores": 0.4037533512064343,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 14.12,
+              "rss_mib": 12.671875,
+              "peak_rss_mib": 12.87109375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 1.84,
+              "rss_mib": 8.08984375,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 21.07843137254902,
+          "system_busy_cores": 0.2107843137254902,
+          "softirq_cores": 0.017973856209150325,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.44,
+              "rss_mib": 10.2578125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.64,
+              "rss_mib": 144.99609375,
+              "peak_rss_mib": 144.99609375,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.32,
+              "rss_mib": 10.1953125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 2,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "up",
+      "round": 6,
+      "mib_s": 34.79,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 16.45465736561346,
+          "system_busy_cores": 0.49363972096840375,
+          "softirq_cores": 0.0689372178908494,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 7.88,
+              "rss_mib": 11.5859375,
+              "peak_rss_mib": 11.5859375,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.4,
+              "rss_mib": 7.18359375,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 64.41717791411043,
+          "system_busy_cores": 0.6441717791411042,
+          "softirq_cores": 0.10797546012269939,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.56,
+              "rss_mib": 10.28125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 12.6,
+              "rss_mib": 21.484375,
+              "peak_rss_mib": 146.0625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 6.72,
+              "rss_mib": 10.1953125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 3,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "v2",
+      "direction": "down",
+      "round": 6,
+      "mib_s": 39.72,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 55.07113354749885,
+          "system_busy_cores": 1.6521340064249657,
+          "softirq_cores": 0.48737953189536487,
+          "processes": {
+            "client.pid": {
+              "cpu_seconds_per_gib": 15.72,
+              "rss_mib": 12.75390625,
+              "peak_rss_mib": 12.75390625,
+              "swap_mib": 0.0
+            },
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.0,
+              "rss_mib": 7.5546875,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 19.88873435326843,
+          "system_busy_cores": 0.19888734353268428,
+          "softirq_cores": 0.02642559109874826,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 10.28125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "server.pid": {
+              "cpu_seconds_per_gib": 3.52,
+              "rss_mib": 21.4921875,
+              "peak_rss_mib": 146.0625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.36,
+              "rss_mib": 10.1953125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 3,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "up",
+      "round": 6,
+      "mib_s": 40.84,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 8.062234794908063,
+          "system_busy_cores": 0.24186704384724186,
+          "softirq_cores": 0.06506364922206506,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.04,
+              "rss_mib": 7.82421875,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 20.054945054945055,
+          "system_busy_cores": 0.20054945054945056,
+          "softirq_cores": 0.07280219780219781,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 10.28125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 2.68,
+              "rss_mib": 10.1953125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 2,
+            "pswpout": 0
+          }
+        }
+      }
+    },
+    {
+      "mode": "raw",
+      "direction": "down",
+      "round": 6,
+      "mib_s": 34.9,
+      "hosts": {
+        "router": {
+          "system_busy_percent": 12.562189054726367,
+          "system_busy_cores": 0.376865671641791,
+          "softirq_cores": 0.13308457711442787,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 2.2,
+              "rss_mib": 8.16015625,
+              "peak_rss_mib": 8.890625,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        },
+        "amsterdam": {
+          "system_busy_percent": 8.0545229244114,
+          "system_busy_cores": 0.080545229244114,
+          "softirq_cores": 0.021065675340768277,
+          "processes": {
+            "monitor.pid": {
+              "cpu_seconds_per_gib": 0.52,
+              "rss_mib": 10.28125,
+              "peak_rss_mib": 10.6015625,
+              "swap_mib": 0.0
+            },
+            "target.pid": {
+              "cpu_seconds_per_gib": 0.44,
+              "rss_mib": 10.203125,
+              "peak_rss_mib": 12.05078125,
+              "swap_mib": 0.0
+            }
+          },
+          "swap_delta": {
+            "pswpin": 0,
+            "pswpout": 0
+          }
+        }
+      }
+    }
+  ]
+}
