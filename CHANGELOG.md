@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-22
+
+### Docker and installation
+
+- Simplify server/client env templates and add `scripts/init-env.sh HOST:PORT`
+  to generate matching credentials with owner-only file permissions, without
+  overwriting an existing configuration.
+- Change Docker defaults to SOCKS5 `28173`, obfs `28479` and metrics `8789`.
+  Plain SOCKS5 and metrics remain published on host loopback. Explicit env
+  values override these defaults. Standalone binary defaults are unchanged.
+- Enable obfs in the quick-start template; remove shared example credentials.
+- Add log rotation, a read-only container root, reduced privileges and a
+  30-second shutdown grace period. Keep pull-based updates using `latest`.
+- Cache Go dependencies and compilation, and cross-compile amd64/arm64 images
+  without QEMU in the build stage.
+- Shorten the README and move configuration, SDK, transport and operational
+  details into focused guides. Document inherited components in Credits and
+  third-party notices.
+
+**Existing Docker installations:** if your `.env` previously omitted port
+settings, add the values below before updating to preserve the old endpoints:
+
+```dotenv
+PROXY_PORT=1080
+OBFS_PORT=1443
+METRICS_PORT=8080
+```
+
+Otherwise update the firewall, client destination and monitoring configuration
+for the new ports. Keep existing credentials; do not rerun initialization over
+a working configuration. See the [Docker guide](docs/guides/docker.md).
+
 ### Performance
 
 - Drain complete, already-buffered obfs frames in one read without waiting for
@@ -245,5 +277,7 @@ Highlights:
 Last release of the 1.x line. See the field report in
 `docs/reports/v1.4.4-field-run.md`.
 
+[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/mazixs/S5Core/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mazixs/S5Core/releases/tag/v2.0.0
 [1.4.4]: https://github.com/mazixs/S5Core/releases/tag/v1.4.4
