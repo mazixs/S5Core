@@ -1,0 +1,7 @@
+PASS generator: matching secrets, permissions, custom port, refuses overwrite
+PASS Compose: four combinations and shell port overrides
+PASS base container: HTTP health, authenticated obfs payload, hardened runtime
+PASS plain SOCKS5 authentication and payload
+PASS WSS: mounted TLS keys, certificate validation and payload
+PASS users + WSS: atomic hash migration, traffic flush, recreation, graceful stop
+ALL LOCAL COMPOSE CHECKS PASSED

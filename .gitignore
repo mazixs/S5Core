@@ -32,6 +32,10 @@ go.work.sum
 
 # Environment variables
 .env
+.env.*
+!.env.example
+!.env.client.example
+.s5core-init.*/
 
 # IDE and Editor configurations
 .idea/
