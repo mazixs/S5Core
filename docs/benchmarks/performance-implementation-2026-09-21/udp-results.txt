@@ -1,0 +1,8 @@
+after-obfs-0	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=50.5ms	p99=50.5ms	max=50.6ms	jitter=100µs
+after-wss-0	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=50.5ms	p99=50.6ms	max=50.7ms	jitter=100µs
+before-obfs-0	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=50.5ms	p99=50.6ms	max=50.6ms	jitter=100µs
+before-wss-0	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=50.5ms	p99=50.5ms	max=51.5ms	jitter=100µs
+after-obfs-1	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=79.7ms	p99=120.7ms	max=121.2ms	jitter=5.2ms
+after-wss-1	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=95.1ms	p99=121.2ms	max=121.5ms	jitter=7.2ms
+before-obfs-1	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=100.4ms	p99=121.1ms	max=121.7ms	jitter=13.1ms
+before-wss-1	sent=400	lost=0 (0.0%)	p50=50.4ms	p95=96.6ms	p99=120.6ms	max=121.5ms	jitter=1.9ms

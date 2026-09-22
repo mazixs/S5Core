@@ -101,6 +101,7 @@ type Request struct {
 	// for the same reply throughout both, and it is zero when the session has
 	// no dial budget.
 	attemptDeadline time.Time
+	dialCandidates  []dialCandidate
 	// AddrSpec of the actual destination (might be affected by rewrite)
 	realDestAddr *AddrSpec
 	bufConn      io.Reader
@@ -210,7 +211,26 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	// Resolve the address if we have a FQDN
 	dest := req.DestAddr
 	if dest.FQDN != "" {
-		ctx_, addr, err := s.config.Resolver.Resolve(resolveCtx, dest.FQDN)
+		dnsPhase := s.startPhase(PhaseDNS)
+		var ctx_ context.Context
+		var addr net.IP
+		var ips []net.IP
+		var err error
+		if multi, ok := s.config.Resolver.(MultiNameResolver); ok && req.Command == ConnectCommand {
+			ctx_, ips, err = multi.ResolveAll(resolveCtx, dest.FQDN)
+			if err == nil {
+				ips = interleaveIPs(ips)
+			}
+			if err == nil && len(ips) == 0 {
+				err = errors.New("resolver returned no addresses")
+			}
+			if err == nil {
+				addr = ips[0]
+			}
+		} else {
+			ctx_, addr, err = s.config.Resolver.Resolve(resolveCtx, dest.FQDN)
+		}
+		dnsPhase.end(err == nil)
 		if err != nil {
 			failure := connFailure("dial", "resolve", err)
 			if replyErr := sendReply(conn, hostUnreachable, nil); replyErr != nil {
@@ -225,6 +245,28 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		// does. keepValues takes the one and leaves the other.
 		ctx = keepValues(ctx, ctx_)
 		dest.IP = addr
+		// The rewriter retains sole control when configured: its single
+		// result must never fall back to a pre-rewrite destination.
+		if s.config.Rewriter == nil && len(ips) > 0 {
+			for _, ip := range ips {
+				candidateAddr := *dest
+				candidateAddr.IP = append(net.IP(nil), ip...)
+				numericAddr := candidateAddr.Address()
+				candidateReq := *req
+				candidateReq.DestAddr = &candidateAddr
+				candidateCtx, allowed := s.config.Rules.Allow(ctx, &candidateReq)
+				if allowed {
+					req.dialCandidates = append(req.dialCandidates, dialCandidate{ctx: keepValues(ctx, candidateCtx), addr: numericAddr})
+				}
+			}
+			if len(req.dialCandidates) == 0 {
+				failure := &ConnError{Stage: "request", Op: "rules", Kind: FailurePolicy, Err: errors.New("resolved addresses blocked by rules")}
+				if err := sendReply(conn, ruleFailure, nil); err != nil {
+					return errors.Join(failure, err)
+				}
+				return failure
+			}
+		}
 	}
 
 	// Apply any address rewrites
@@ -286,7 +328,11 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		defer cancelDial()
 	}
 	dialPhase := s.startPhase(PhaseDial)
-	target, err := dial(dialCtx, "tcp", req.realDestAddr.Address())
+	candidates := req.dialCandidates
+	if len(candidates) == 0 {
+		candidates = []dialCandidate{{ctx: ctx, addr: req.realDestAddr.Address()}}
+	}
+	target, err := dialResolved(dialCtx, dial, candidates)
 	dialPhase.end(err == nil)
 	if err != nil {
 		msg := err.Error()

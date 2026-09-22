@@ -1,0 +1,14 @@
+[
+  ".env.example",
+  "README.md",
+  "cmd/httpsprobe/main.go",
+  "cmd/s5client/main.go",
+  "cmd/s5client/main_test.go",
+  "cmd/s5core/main.go",
+  "docs/performance-plan-2026-09-21.md",
+  "internal/utls/dialer.go",
+  "pkg/obfs/conn.go",
+  "pkg/transport/ws/dialer.go",
+  "pkg/transport/ws/pin_resumption_test.go",
+  "pkg/transport/ws/upgrader.go"
+]

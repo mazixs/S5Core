@@ -1,0 +1,23 @@
+File: s5client.test
+Build ID: 790e08d3b0f05b0618f0b7311514e9c722992766
+Type: alloc_space
+Time: 2026-09-21 23:22:51 +03
+Showing nodes accounting for 17815.56MB, 97.28% of 18313.49MB total
+Dropped 495 nodes (cum <= 91.57MB)
+Showing top 15 nodes out of 25
+      flat  flat%   sum%        cum   cum%
+17577.87MB 95.98% 95.98% 17681.30MB 96.55%  io.ReadAll
+  117.48MB  0.64% 96.62%   117.48MB  0.64%  bytes.growSlice
+   55.71MB   0.3% 96.93%    94.88MB  0.52%  io.copyBuffer
+   49.50MB  0.27% 97.20% 17744.10MB 96.89%  github.com/mazixs/S5Core/cmd/s5client.TestAuditHTTPSMeasurements
+   14.50MB 0.079% 97.28%   125.47MB  0.69%  crypto/tls.(*Conn).readFromUntil
+    0.50MB 0.0027% 97.28%   166.12MB  0.91%  net/http.(*conn).serve
+         0     0% 97.28%   109.43MB   0.6%  bufio.(*Reader).Read
+         0     0% 97.28%   110.47MB   0.6%  bytes.(*Buffer).Grow (inline)
+         0     0% 97.28%   117.48MB  0.64%  bytes.(*Buffer).grow
+         0     0% 97.28%   240.88MB  1.32%  crypto/tls.(*Conn).HandshakeContext (inline)
+         0     0% 97.28%   110.44MB   0.6%  crypto/tls.(*Conn).Read
+         0     0% 97.28%   127.74MB   0.7%  crypto/tls.(*Conn).clientHandshake
+         0     0% 97.28%   240.88MB  1.32%  crypto/tls.(*Conn).handshakeContext
+         0     0% 97.28%   132.48MB  0.72%  crypto/tls.(*Conn).readRecord (inline)
+         0     0% 97.28%   132.48MB  0.72%  crypto/tls.(*Conn).readRecordOrCCS

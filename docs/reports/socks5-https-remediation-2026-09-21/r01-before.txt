@@ -1,0 +1,17 @@
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:154: addresses=16 budget=10s elapsed=625ms error=connection refused parent=<nil>
+    dial_test.go:156: working address canceled prematurely
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:154: addresses=64 budget=10s elapsed=156.25ms error=connection refused parent=<nil>
+    dial_test.go:156: working address canceled prematurely
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:154: addresses=16 budget=1s elapsed=62.5ms error=connection refused parent=<nil>
+    dial_test.go:156: working address canceled prematurely
+--- FAIL: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- FAIL: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- FAIL: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- FAIL: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+FAIL
+FAIL	github.com/mazixs/S5Core/internal/socks5	0.009s
+FAIL

@@ -1,0 +1,15 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+               │ /tmp/s5core-implementation-20260921/ws-create-before.txt │ /tmp/s5core-implementation-20260921/ws-create-after.txt │
+               │                          sec/op                          │                 sec/op                  vs base         │
+PerfUpgrade-16                                                97.33µ ± 3%                              97.28µ ± 3%  ~ (p=1.000 n=6)
+
+               │ /tmp/s5core-implementation-20260921/ws-create-before.txt │ /tmp/s5core-implementation-20260921/ws-create-after.txt │
+               │                           B/op                           │               B/op                vs base               │
+PerfUpgrade-16                                               30.55Ki ± 0%                       35.35Ki ± 0%  +15.71% (p=0.002 n=6)
+
+               │ /tmp/s5core-implementation-20260921/ws-create-before.txt │ /tmp/s5core-implementation-20260921/ws-create-after.txt │
+               │                        allocs/op                         │             allocs/op              vs base              │
+PerfUpgrade-16                                                 135.0 ± 0%                          136.0 ± 0%  +0.74% (p=0.002 n=6)

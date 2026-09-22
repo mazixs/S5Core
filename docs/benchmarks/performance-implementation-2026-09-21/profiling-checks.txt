@@ -1,0 +1,2 @@
+go vet -tags=profiling ./...: PASS
+golangci-lint run --build-tags=profiling ./...: 0 issues.

@@ -1,0 +1,30 @@
+after-00.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+--- PASS: TestPerformanceProcesses (46.60s)
+    --- PASS: TestPerformanceProcesses/obfs (46.56s)
+PASS
+
+after-01.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+--- PASS: TestPerformanceProcesses (46.00s)
+    --- PASS: TestPerformanceProcesses/obfs (45.95s)
+PASS
+
+before-00.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+--- PASS: TestPerformanceProcesses (76.72s)
+    --- PASS: TestPerformanceProcesses/obfs (76.68s)
+PASS
+
+before-01.log
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/obfs
+--- PASS: TestPerformanceProcesses (76.92s)
+    --- PASS: TestPerformanceProcesses/obfs (76.88s)
+PASS
+
+clock-ticks.log
+100

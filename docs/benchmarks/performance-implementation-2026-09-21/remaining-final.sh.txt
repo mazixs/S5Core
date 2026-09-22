@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /home/mazix/Documents/GitHub/S5Core
+base=/tmp/s5core-implementation-20260921
+probe=$base/probe-final.test
+export S5_PERF_CLIENT=$base/final-client S5_PERF_SERVER=$base/candidate-server
+export S5_PERF_MODES=obfs,wss S5_PERF_PROTOCOLS=h1
+S5_PERF_FQDN=1 S5_PERF_ROUTES=10000 S5_PERF_SMALL=500 S5_PERF_CASES=small S5_PERF_REUSE=new python3 scripts/performance-ab.py --probe "$probe" --before-client "$base/routes-linear-client" --before-server "$base/candidate-server" --after-client "$base/pgo-off-client" --after-server "$base/candidate-server" --out "$base/routes-final-abba" --rounds 2
+for fqdn in 0 1; do
+ S5_PERF_FQDN=$fqdn S5_PERF_SMALL=1000 S5_PERF_CASES=small S5_PERF_REUSE=new S5_PERF_OUT=$base/fqdn-$fqdn "$probe" -test.run '^TestPerformanceProcesses$' -test.v -test.timeout=120s > "$base/fqdn-$fqdn.log" 2>&1
+done
+# Both directions are shaped inside a new network namespace. Small sample smoke.
+for spec in '20 0 1000' '50 0.1 100' '100 1 10'; do
+ read -r rtt loss rate <<< "$spec"
+ for version in before after; do
+  if [[ $version == before ]]; then client=$base/baseline-client; server=$base/baseline-server; else client=$base/final-client; server=$base/candidate-server; fi
+  S5_PERF_CLIENT=$client S5_PERF_SERVER=$server S5_PERF_REUSE=reuse S5_PERF_SMALL=20 S5_PERF_LARGE=1 S5_PERF_CASES=small,large S5_PERF_OUT=$base/netem-$rtt-$version scripts/performance-netem.sh "$rtt" "$loss" "$rate" "$probe" -test.run '^TestPerformanceProcesses$' -test.v -test.timeout=8m > "$base/netem-$rtt-$version.log" 2>&1
+ done
+ for auth in fallback member; do
+  S5_PERF_AUTH=$auth S5_PERF_REUSE=new S5_PERF_SMALL=10 S5_PERF_CASES=small S5_PERF_OUT=$base/auth-rtt-$rtt-$auth scripts/performance-netem.sh "$rtt" 0 1000 "$probe" -test.run '^TestPerformanceProcesses$' -test.v -test.timeout=120s > "$base/auth-rtt-$rtt-$auth.log" 2>&1
+ done
+done
+go build -pgo=off -o "$base/udpprobe" ./cmd/udpprobe
+openssl req -x509 -newkey ed25519 -noenc -keyout "$base/udp-key.pem" -out "$base/udp-cert.pem" -days 1 -subj /CN=localhost -addext subjectAltName=IP:127.0.0.1 > "$base/udp-cert.log" 2>&1
+chmod 600 "$base/udp-key.pem"
+for loss in 0 1; do
+ for variant in before after; do
+  for mode in obfs wss; do
+   scripts/performance-netem.sh 50 "$loss" 100 python3 "$base/udp-netem-fixture.py" "$variant" "$mode" "$loss" > "$base/udp-$loss-$variant-$mode.log" 2>&1
+  done
+ done
+done
+# Creation cost is measured separately from long-lived write cost.
+cp pkg/transport/ws/buffer_bench_test.go "$base/repo/pkg/transport/ws/perf_buffer_test.go"
+go test -c -o "$base/ws-create-after.test" ./pkg/transport/ws
+(cd "$base/repo" && go test -c -o "$base/ws-create-before.test" ./pkg/transport/ws)
+for variant in before after after before before after after before before after after before; do
+ "$base/ws-create-$variant.test" -test.run '^$' -test.bench '^BenchmarkPerfUpgrade$' -test.benchtime=300ms -test.benchmem >> "$base/ws-create-$variant.txt"
+done
+
+S5_PERF_MODES=wss S5_PERF_PROTOCOLS=h1 S5_PERF_REUSE=reuse S5_PERF_SMALL=20 S5_PERF_LARGE=5 S5_PERF_CASES=large scripts/performance-netem.sh 50 0.1 100 python3 scripts/performance-ab.py --probe "$probe" --before-client "$base/baseline-client" --before-server "$base/baseline-server" --after-client "$base/final-client" --after-server "$base/candidate-server" --out "$base/netem-50-repeat" --rounds 6 > "$base/netem-50-repeat.log" 2>&1

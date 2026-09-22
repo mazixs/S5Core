@@ -1,0 +1,31 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/cmd/s5client
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+                      │ docs/benchmarks/performance-implementation-2026-09-21/routes-before.txt │ docs/benchmarks/performance-implementation-2026-09-21/routes-after.txt │
+                      │                                 sec/op                                  │                     sec/op                       vs base               │
+RouteDomains/0-16                                                                  49.565n ± 4%                                       1.565n ± 4%  -96.84% (p=0.002 n=6)
+RouteDomains/10-16                                                                 749.60n ± 4%                                       71.74n ± 4%  -90.43% (p=0.002 n=6)
+RouteDomains/1000-16                                                             73865.00n ± 2%                                       75.86n ± 5%  -99.90% (p=0.002 n=6)
+RouteDomains/10000-16                                                           727651.50n ± 2%                                       76.63n ± 2%  -99.99% (p=0.002 n=6)
+geomean                                                                             6.685µ                                            28.42n       -99.57%
+
+                      │ docs/benchmarks/performance-implementation-2026-09-21/routes-before.txt │ docs/benchmarks/performance-implementation-2026-09-21/routes-after.txt │
+                      │                                  B/op                                   │                      B/op                       vs base                │
+RouteDomains/0-16                                                                  0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+RouteDomains/10-16                                                                 0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+RouteDomains/1000-16                                                               0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+RouteDomains/10000-16                                                              0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                       ²                                                   +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                      │ docs/benchmarks/performance-implementation-2026-09-21/routes-before.txt │ docs/benchmarks/performance-implementation-2026-09-21/routes-after.txt │
+                      │                                allocs/op                                │                   allocs/op                     vs base                │
+RouteDomains/0-16                                                                  0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+RouteDomains/10-16                                                                 0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+RouteDomains/1000-16                                                               0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+RouteDomains/10000-16                                                              0.000 ± 0%                                         0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                       ²                                                   +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

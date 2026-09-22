@@ -1,0 +1,110 @@
+=== RUN   TestAuditHTTPSMeasurements
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=false n=50 total_p50=1.55608ms total_p95=1.790609ms ttfb_p50=1.532639ms tls_p50=1.400292ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=false n=50 total_p50=1.65265ms total_p95=1.875696ms ttfb_p50=1.61645ms tls_p50=1.360769ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=false n=50 total_p50=1.810749ms total_p95=1.992023ms ttfb_p50=1.782226ms tls_p50=1.376203ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=false n=50 total_p50=2.548581ms total_p95=2.848054ms ttfb_p50=2.514146ms tls_p50=1.446359ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=true n=50 total_p50=47.836µs total_p95=58.925µs ttfb_p50=39.985µs tls_p50=0s MiBps_p50=0.5
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=true n=50 total_p50=56.997µs total_p95=75.102µs ttfb_p50=49.051µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=true n=50 total_p50=69.716µs total_p95=99.599µs ttfb_p50=62.597µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=true n=50 total_p50=86.957µs total_p95=111.942µs ttfb_p50=80.705µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=false n=15 total_p50=6.691577ms total_p95=7.092088ms ttfb_p50=1.692277ms tls_p50=1.430763ms MiBps_p50=1195.5
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=false n=15 total_p50=7.580655ms total_p95=8.803594ms ttfb_p50=1.884361ms tls_p50=1.418602ms MiBps_p50=1055.3
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=false n=15 total_p50=24.126864ms total_p95=27.441173ms ttfb_p50=2.43408ms tls_p50=1.456489ms MiBps_p50=331.6
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=false n=15 total_p50=28.691249ms total_p95=32.201505ms ttfb_p50=2.941286ms tls_p50=1.52989ms MiBps_p50=278.8
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=true n=15 total_p50=5.559473ms total_p95=6.316422ms ttfb_p50=208.429µs tls_p50=0s MiBps_p50=1439.0
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=true n=15 total_p50=5.821821ms total_p95=7.312384ms ttfb_p50=273.474µs tls_p50=0s MiBps_p50=1374.1
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=true n=15 total_p50=24.213481ms total_p95=29.371606ms ttfb_p50=803.406µs tls_p50=0s MiBps_p50=330.4
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=true n=15 total_p50=28.305606ms total_p95=31.0823ms ttfb_p50=407.321µs tls_p50=0s MiBps_p50=282.6
+--- PASS: TestAuditHTTPSMeasurements (3.53s)
+=== RUN   TestAuditHTTPSMeasurements
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=false n=50 total_p50=1.527048ms total_p95=1.66193ms ttfb_p50=1.509089ms tls_p50=1.377614ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=false n=50 total_p50=1.675545ms total_p95=2.619625ms ttfb_p50=1.648346ms tls_p50=1.372959ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=false n=50 total_p50=1.788934ms total_p95=1.93359ms ttfb_p50=1.76754ms tls_p50=1.367894ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=false n=50 total_p50=2.486135ms total_p95=2.773036ms ttfb_p50=2.462843ms tls_p50=1.415722ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=true n=50 total_p50=44.749µs total_p95=57.941µs ttfb_p50=37.123µs tls_p50=0s MiBps_p50=0.5
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=true n=50 total_p50=57.634µs total_p95=77.412µs ttfb_p50=51.63µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=true n=50 total_p50=68.03µs total_p95=80.179µs ttfb_p50=60.256µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=true n=50 total_p50=92.504µs total_p95=115.2µs ttfb_p50=84.464µs tls_p50=0s MiBps_p50=0.2
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=false n=15 total_p50=6.809527ms total_p95=7.20913ms ttfb_p50=1.700308ms tls_p50=1.442932ms MiBps_p50=1174.8
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=false n=15 total_p50=7.609465ms total_p95=8.212175ms ttfb_p50=1.871903ms tls_p50=1.439854ms MiBps_p50=1051.3
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=false n=15 total_p50=24.256547ms total_p95=27.06981ms ttfb_p50=2.433443ms tls_p50=1.435744ms MiBps_p50=329.8
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=false n=15 total_p50=29.339277ms total_p95=36.435975ms ttfb_p50=2.879514ms tls_p50=1.475218ms MiBps_p50=272.7
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=true n=15 total_p50=5.627211ms total_p95=5.805151ms ttfb_p50=217.674µs tls_p50=0s MiBps_p50=1421.7
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=true n=15 total_p50=5.780007ms total_p95=7.119403ms ttfb_p50=231.058µs tls_p50=0s MiBps_p50=1384.1
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=true n=15 total_p50=22.390669ms total_p95=24.705032ms ttfb_p50=2.180477ms tls_p50=0s MiBps_p50=357.3
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=true n=15 total_p50=30.527084ms total_p95=33.479732ms ttfb_p50=668.336µs tls_p50=0s MiBps_p50=262.1
+--- PASS: TestAuditHTTPSMeasurements (3.56s)
+=== RUN   TestAuditHTTPSMeasurements
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=false n=50 total_p50=1.473342ms total_p95=1.646229ms ttfb_p50=1.454487ms tls_p50=1.341276ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=false n=50 total_p50=1.642583ms total_p95=1.797428ms ttfb_p50=1.614076ms tls_p50=1.364559ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=false n=50 total_p50=1.820325ms total_p95=2.061778ms ttfb_p50=1.79379ms tls_p50=1.393433ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=false n=50 total_p50=2.529491ms total_p95=2.745931ms ttfb_p50=2.51232ms tls_p50=1.420503ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=true n=50 total_p50=43.882µs total_p95=56.207µs ttfb_p50=37.073µs tls_p50=0s MiBps_p50=0.5
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=true n=50 total_p50=54.264µs total_p95=75.496µs ttfb_p50=46.193µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=true n=50 total_p50=63.157µs total_p95=74.889µs ttfb_p50=56.508µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=true n=50 total_p50=81.14µs total_p95=96.966µs ttfb_p50=73.253µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=false n=15 total_p50=7.268761ms total_p95=8.248059ms ttfb_p50=1.740793ms tls_p50=1.4857ms MiBps_p50=1100.6
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=false n=15 total_p50=7.658186ms total_p95=8.690918ms ttfb_p50=1.901403ms tls_p50=1.423891ms MiBps_p50=1044.6
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=false n=15 total_p50=23.68691ms total_p95=25.435688ms ttfb_p50=2.257525ms tls_p50=1.45762ms MiBps_p50=337.7
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=false n=15 total_p50=28.904039ms total_p95=33.627299ms ttfb_p50=2.907288ms tls_p50=1.477482ms MiBps_p50=276.8
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=true n=15 total_p50=5.293128ms total_p95=6.084684ms ttfb_p50=185.171µs tls_p50=0s MiBps_p50=1511.4
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=true n=15 total_p50=6.270896ms total_p95=7.103018ms ttfb_p50=251.121µs tls_p50=0s MiBps_p50=1275.7
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=true n=15 total_p50=24.791214ms total_p95=28.431891ms ttfb_p50=297.237µs tls_p50=0s MiBps_p50=322.7
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=true n=15 total_p50=28.972645ms total_p95=30.476538ms ttfb_p50=370.039µs tls_p50=0s MiBps_p50=276.1
+--- PASS: TestAuditHTTPSMeasurements (3.74s)
+=== RUN   TestAuditHTTPSMeasurements
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=false n=50 total_p50=1.506305ms total_p95=1.650833ms ttfb_p50=1.485973ms tls_p50=1.362609ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=false n=50 total_p50=1.652401ms total_p95=1.785308ms ttfb_p50=1.634864ms tls_p50=1.371125ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=false n=50 total_p50=1.83415ms total_p95=2.046202ms ttfb_p50=1.798663ms tls_p50=1.386236ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=false n=50 total_p50=2.50791ms total_p95=3.049703ms ttfb_p50=2.483985ms tls_p50=1.428836ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=true n=50 total_p50=49.494µs total_p95=56.055µs ttfb_p50=41.788µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=true n=50 total_p50=58.324µs total_p95=76.157µs ttfb_p50=51.101µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=true n=50 total_p50=67.285µs total_p95=105.844µs ttfb_p50=59.324µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=true n=50 total_p50=83.118µs total_p95=118.662µs ttfb_p50=76.656µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=false n=15 total_p50=6.957508ms total_p95=7.552876ms ttfb_p50=1.755644ms tls_p50=1.475132ms MiBps_p50=1149.8
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=false n=15 total_p50=8.320441ms total_p95=9.426254ms ttfb_p50=1.885936ms tls_p50=1.408636ms MiBps_p50=961.5
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=false n=15 total_p50=24.015256ms total_p95=26.32424ms ttfb_p50=2.529544ms tls_p50=1.530078ms MiBps_p50=333.1
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=false n=15 total_p50=29.517177ms total_p95=33.154987ms ttfb_p50=3.166006ms tls_p50=1.565127ms MiBps_p50=271.0
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=true n=15 total_p50=5.447362ms total_p95=5.852983ms ttfb_p50=208.063µs tls_p50=0s MiBps_p50=1468.6
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=true n=15 total_p50=6.227157ms total_p95=6.824433ms ttfb_p50=249.521µs tls_p50=0s MiBps_p50=1284.7
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=true n=15 total_p50=23.508874ms total_p95=27.45071ms ttfb_p50=696.502µs tls_p50=0s MiBps_p50=340.3
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=true n=15 total_p50=30.324981ms total_p95=33.219867ms ttfb_p50=579.737µs tls_p50=0s MiBps_p50=263.8
+--- PASS: TestAuditHTTPSMeasurements (3.55s)
+=== RUN   TestAuditHTTPSMeasurements
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=false n=50 total_p50=1.498607ms total_p95=1.675512ms ttfb_p50=1.48537ms tls_p50=1.354706ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=false n=50 total_p50=1.640007ms total_p95=1.796216ms ttfb_p50=1.629796ms tls_p50=1.345747ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=false n=50 total_p50=1.838057ms total_p95=2.106615ms ttfb_p50=1.815095ms tls_p50=1.387607ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=false n=50 total_p50=2.509917ms total_p95=2.926982ms ttfb_p50=2.479942ms tls_p50=1.423644ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=true n=50 total_p50=47.507µs total_p95=72.57µs ttfb_p50=38.241µs tls_p50=0s MiBps_p50=0.5
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=true n=50 total_p50=56.21µs total_p95=76.38µs ttfb_p50=49.857µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=true n=50 total_p50=62.778µs total_p95=82.061µs ttfb_p50=55.087µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=true n=50 total_p50=80.026µs total_p95=92.942µs ttfb_p50=72.613µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=false n=15 total_p50=7.08626ms total_p95=7.525981ms ttfb_p50=1.730982ms tls_p50=1.465057ms MiBps_p50=1128.9
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=false n=15 total_p50=7.74706ms total_p95=8.679716ms ttfb_p50=1.894451ms tls_p50=1.442917ms MiBps_p50=1032.6
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=false n=15 total_p50=23.207921ms total_p95=26.30317ms ttfb_p50=2.130445ms tls_p50=1.423809ms MiBps_p50=344.7
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=false n=15 total_p50=29.047251ms total_p95=31.829837ms ttfb_p50=2.836119ms tls_p50=1.459647ms MiBps_p50=275.4
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=true n=15 total_p50=5.341388ms total_p95=5.637726ms ttfb_p50=176.545µs tls_p50=0s MiBps_p50=1497.7
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=true n=15 total_p50=6.134476ms total_p95=7.588762ms ttfb_p50=269.386µs tls_p50=0s MiBps_p50=1304.1
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=true n=15 total_p50=23.50689ms total_p95=25.913816ms ttfb_p50=1.192396ms tls_p50=0s MiBps_p50=340.3
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=true n=15 total_p50=29.292118ms total_p95=32.71921ms ttfb_p50=526.683µs tls_p50=0s MiBps_p50=273.1
+--- PASS: TestAuditHTTPSMeasurements (3.52s)
+=== RUN   TestAuditHTTPSMeasurements
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=false n=50 total_p50=1.508269ms total_p95=1.65839ms ttfb_p50=1.488567ms tls_p50=1.367018ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=false n=50 total_p50=1.620947ms total_p95=1.841602ms ttfb_p50=1.599976ms tls_p50=1.34478ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=false n=50 total_p50=1.825336ms total_p95=2.445415ms ttfb_p50=1.796639ms tls_p50=1.395633ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=false n=50 total_p50=2.514805ms total_p95=2.705003ms ttfb_p50=2.491924ms tls_p50=1.421262ms MiBps_p50=0.0
+    perf_https_test.go:194: MEASURE mode=direct size=small reuse=true n=50 total_p50=43.442µs total_p95=52.243µs ttfb_p50=37.775µs tls_p50=0s MiBps_p50=0.5
+    perf_https_test.go:194: MEASURE mode=plain size=small reuse=true n=50 total_p50=62.233µs total_p95=94.76µs ttfb_p50=52.837µs tls_p50=0s MiBps_p50=0.4
+    perf_https_test.go:194: MEASURE mode=obfs size=small reuse=true n=50 total_p50=68.999µs total_p95=101.043µs ttfb_p50=62.29µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=wss size=small reuse=true n=50 total_p50=86.72µs total_p95=124.605µs ttfb_p50=78.947µs tls_p50=0s MiBps_p50=0.3
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=false n=15 total_p50=6.717328ms total_p95=8.172242ms ttfb_p50=1.766922ms tls_p50=1.468992ms MiBps_p50=1190.9
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=false n=15 total_p50=7.948564ms total_p95=9.666963ms ttfb_p50=1.87325ms tls_p50=1.407137ms MiBps_p50=1006.5
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=false n=15 total_p50=22.002108ms total_p95=24.762925ms ttfb_p50=2.254516ms tls_p50=1.463078ms MiBps_p50=363.6
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=false n=15 total_p50=28.559671ms total_p95=33.902994ms ttfb_p50=2.982427ms tls_p50=1.483907ms MiBps_p50=280.1
+    perf_https_test.go:194: MEASURE mode=direct size=large reuse=true n=15 total_p50=5.977126ms total_p95=6.54301ms ttfb_p50=193.698µs tls_p50=0s MiBps_p50=1338.4
+    perf_https_test.go:194: MEASURE mode=plain size=large reuse=true n=15 total_p50=5.922324ms total_p95=6.489314ms ttfb_p50=264.638µs tls_p50=0s MiBps_p50=1350.8
+    perf_https_test.go:194: MEASURE mode=obfs size=large reuse=true n=15 total_p50=21.334996ms total_p95=27.258378ms ttfb_p50=1.331199ms tls_p50=0s MiBps_p50=375.0
+    perf_https_test.go:194: MEASURE mode=wss size=large reuse=true n=15 total_p50=31.512688ms total_p95=33.194434ms ttfb_p50=563.942µs tls_p50=0s MiBps_p50=253.9
+--- PASS: TestAuditHTTPSMeasurements (3.53s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	21.440s

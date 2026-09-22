@@ -50,8 +50,19 @@ func (c *conn) startKeepalive() {
 }
 
 func (c *conn) keepaliveLoop() {
+	interval := c.keepaliveDelay()
+	anchor := c.lastWriteAt()
 	for {
-		wait := c.keepaliveDelay()
+		// Recheck against the same target idle interval after application
+		// traffic, rather than starting a new full wait at suppression time.
+		last := c.lastWriteAt()
+		if last.Before(anchor) {
+			last = anchor
+		}
+		wait := interval - time.Since(last)
+		if wait < 0 {
+			wait = 0
+		}
 		timer := time.NewTimer(wait)
 		select {
 		case <-c.done:
@@ -59,20 +70,17 @@ func (c *conn) keepaliveLoop() {
 			return
 		case <-timer.C:
 		}
-
-		// Suppression. Data that went out during the wait has already told
-		// every box on the path that the connection is alive, and the point
-		// of the keepalive is the silence, not the period.
-		if idle := time.Since(c.lastWriteAt()); idle < wait {
+		if time.Since(c.lastWriteAt()) < interval {
 			continue
 		}
-
 		if err := c.writeKeepalive(); err != nil {
-			// The connection is gone, or going. Whoever is reading or writing
-			// it will see the same error with more context than this
-			// goroutine has.
 			return
 		}
+		anchor = c.lastWriteAt()
+		if !anchor.After(last) {
+			anchor = time.Now()
+		} // no opening sent yet
+		interval = c.keepaliveDelay()
 	}
 }
 

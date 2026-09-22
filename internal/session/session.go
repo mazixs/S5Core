@@ -257,8 +257,9 @@ type Session struct {
 
 	// graceAt is when Grace began, unix nanoseconds; exhausted is the
 	// terminal account state Grace resolves to when the session closes.
-	graceAt   atomic.Int64
-	exhausted atomic.Uint32
+	frameBodyAt atomic.Int64
+	graceAt     atomic.Int64
+	exhausted   atomic.Uint32
 
 	closeOnce sync.Once
 }
@@ -336,6 +337,11 @@ func (s *Session) Enter(p Protocol) bool {
 func (s *Session) Frame(f Frames) bool {
 	if s == nil {
 		return false
+	}
+	// Only the frame reader drives this region. Publish the absolute start
+	// before AwaitBody, so concurrent writes cannot extend an incomplete frame.
+	if f == AwaitBody && s.Frames() != AwaitBody && legalFrames(s.frames.Load(), uint32(f)) {
+		s.frameBodyAt.Store(time.Now().UnixNano())
 	}
 	return s.move(RegionFrames, &s.frames, uint32(f), legalFrames)
 }
@@ -419,7 +425,7 @@ func (s *Session) deadline(now time.Time, idle time.Duration, read bool) (time.T
 			d = after(now, idle)
 		}
 		if read && s.Frames() == AwaitBody {
-			d = stricter(d, after(now, s.sla.FrameBody))
+			d = stricter(d, after(time.Unix(0, s.frameBodyAt.Load()), s.sla.FrameBody))
 		}
 		if end, ok := s.GraceDeadline(); ok {
 			d = stricter(d, end)

@@ -1,0 +1,47 @@
+{
+  "platform": "Linux 4.9-ndm-5 aarch64",
+  "/proc/cpuinfo": "processor\t: 0\nmodel name\t: ARMv8 Processor rev 0 (v8l)\nBogoMIPS\t: 26.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x1\nCPU part\t: 0xd09\nCPU revision\t: 0\n\nprocessor\t: 1\nmodel name\t: ARMv8 Processor rev 0 (v8l)\nBogoMIPS\t: 26.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x1\nCPU part\t: 0xd09\nCPU revision\t: 0\n\nprocessor\t: 2\nmodel name\t: ARMv8 Processor rev 0 (v8l)\nBogoMIPS\t: 26.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x1\nCPU part\t: 0xd09\nCPU revision\t: 0\n\n",
+  "memory_before": "MemTotal:        1015072 kB\nMemFree:          292728 kB\nMemAvailable:     540336 kB\nBuffers:          132240 kB\nCached:           142652 kB\nSwapCached:            0 kB\nActive:           306556 kB\nInactive:         106880 kB\n",
+  "load_before": "0.24 1.33 1.16 1/265 28409\n",
+  "rounds": 6,
+  "clock_ticks_per_second": 100,
+  "completed": true,
+  "generator_gomaxprocs": 3,
+  "environment": {
+    "S5_PERF_PROCS": "1",
+    "S5_PERF_AUTH": "member",
+    "S5_PERF_PROTOCOLS": "h1",
+    "S5_PERF_MODES": "direct,obfs",
+    "S5_PERF_SMALL": "1700",
+    "S5_PERF_LARGE": "10",
+    "S5_PERF_CASES": "small"
+  },
+  "binaries": {
+    "before-client": {
+      "path": "/opt/tmp/s5core-perf-20260922.ItAFkx/before-client",
+      "sha256": "2279c52ade836d6c3d30ce792749ba8c03c95eb658bcbe08ee95a0d05917b4fb"
+    },
+    "before-server": {
+      "path": "/opt/tmp/s5core-perf-20260922.ItAFkx/before-server",
+      "sha256": "58b6996ba9ca15e2d0bf0698569d7a9c53f9a2a1a439657cf9de6ec7d309c94a"
+    },
+    "after-client": {
+      "path": "/opt/tmp/s5core-perf-20260922.ItAFkx/after-client",
+      "sha256": "03c3ac00f47fbcd333cfaf75c8af8418e7944d53f5ecd2d03cda797f4a814a90"
+    },
+    "after-server": {
+      "path": "/opt/tmp/s5core-perf-20260922.ItAFkx/after-server",
+      "sha256": "4459fb06816c91fdaac6f1f3d9e8e0c7cd64eb01e9aad467aaab0d269cd3ec05"
+    },
+    "probe": {
+      "path": "/opt/tmp/s5core-perf-20260922.ItAFkx/probe",
+      "sha256": "0ca0baee96ffb34607fd54e7300446090d9f9bd5a2409d12b2334f47ce4a1adb"
+    },
+    "runner": {
+      "path": "/opt/tmp/s5core-perf-20260922.ItAFkx/runner",
+      "sha256": "dda4cbd9ed0113172d78c972fed59aede3db6abb83acb01e877d1ba694cad5bd"
+    }
+  },
+  "load_after": "1.57 1.68 1.38 1/268 30039\n",
+  "memory_after": "MemTotal:        1015072 kB\nMemFree:          199456 kB\nMemAvailable:     534156 kB\nBuffers:          118236 kB\nCached:           243240 kB\nSwapCached:            0 kB\nActive:           331912 kB\nInactive:         165592 kB\n"
+}

@@ -1,0 +1,14 @@
+=== RUN   TestAuditDNSFallback
+    socks_dns_audit_test.go:89: DNS addresses=[127.0.0.2 127.0.0.1]
+    socks_dns_audit_test.go:104: SOCKS err=socks5 stage=dial op=connect kind=network: dial tcp 127.0.0.2:42787: connect: connection refused elapsed=364.078µs reply=05050001000000000000 selected=127.0.0.2
+--- PASS: TestAuditDNSFallback (0.00s)
+=== RUN   TestAuditDNSPhaseAndRepeatedLookup
+    socks_dns_audit_test.go:131: DNSMETRIC request=0 total=200.777885ms phases=map[dial:130.799µs first_byte:63.971µs] dns_packets=2
+    socks_dns_audit_test.go:131: DNSMETRIC request=1 total=200.743791ms phases=map[dial:103.075µs first_byte:33.83µs] dns_packets=4
+    socks_dns_audit_test.go:131: DNSMETRIC request=2 total=200.681643ms phases=map[dial:78.317µs first_byte:30.658µs] dns_packets=6
+--- PASS: TestAuditDNSPhaseAndRepeatedLookup (0.60s)
+=== RUN   TestAuditHTTPSFirstByteMetric
+    socks_dns_audit_test.go:186: HTTPS phase_first_byte=3.45988ms actual_response_headers=255.89283ms
+--- PASS: TestAuditHTTPSFirstByteMetric (0.26s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.871s

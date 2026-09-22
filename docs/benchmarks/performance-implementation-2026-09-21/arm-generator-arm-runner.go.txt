@@ -1,0 +1,51 @@
+package main
+
+import (
+ "context"
+ "encoding/binary"
+ "fmt"
+ "os"
+ "os/exec"
+ "os/signal"
+ "path/filepath"
+ "syscall"
+ "time"
+)
+
+// A task-local supervisor: bound lifetime and terminate only each test's own
+// process group, including proxy children if SSH or the test fails.
+func run(ctx context.Context, dir, name, variant string) error {
+ log, err := os.Create(filepath.Join(dir, name+".log")); if err != nil { return err }; defer log.Close()
+ cmd := exec.Command(filepath.Join(dir,"probe"), "-test.run=^TestPerformanceProcesses$", "-test.v", "-test.timeout=8m")
+ cmd.SysProcAttr=&syscall.SysProcAttr{Setpgid:true}
+ cmd.Stdout=log; cmd.Stderr=log
+ cmd.Env=append(os.Environ(), "GOMAXPROCS=3", "S5_PERF_PROCS=1", "S5_PERF_MODES=obfs", "S5_PERF_AUTH=member", "S5_PERF_PROTOCOLS=h1", "S5_PERF_CASES=small,large,upload,mixed", "S5_PERF_SMALL=500", "S5_PERF_LARGE=10", "S5_PERF_CLIENT="+filepath.Join(dir,variant+"-client"), "S5_PERF_SERVER="+filepath.Join(dir,variant+"-server"), "S5_PERF_OUT="+filepath.Join(dir,"runs",name))
+ if err=cmd.Start();err!=nil{return err}
+ done:=make(chan error,1);go func(){done<-cmd.Wait()}()
+ defer syscall.Kill(-cmd.Process.Pid,syscall.SIGTERM)
+ select {
+ case err=<-done:return err
+ case <-ctx.Done():
+  _=syscall.Kill(-cmd.Process.Pid,syscall.SIGTERM)
+  select {case <-done:case <-time.After(15*time.Second): _=syscall.Kill(-cmd.Process.Pid,syscall.SIGKILL);<-done}
+  return ctx.Err()
+ }
+}
+func main(){
+ if len(os.Args)!=2 { panic("expected task directory") }
+ dir:=os.Args[1]
+ aux,err:=os.ReadFile("/proc/self/auxv");if err!=nil{panic(err)}
+ ticks:=uint64(0)
+ for i:=0;i+16<=len(aux);i+=16 { if binary.LittleEndian.Uint64(aux[i:])==17 {ticks=binary.LittleEndian.Uint64(aux[i+8:]);break} }
+ if ticks==0{panic("missing AT_CLKTCK")}
+ if err:=os.WriteFile(filepath.Join(dir,"clock-ticks.log"),[]byte(fmt.Sprint(ticks)),0600);err!=nil{panic(err)}
+ ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM,syscall.SIGHUP);defer stop()
+ ctx,cancel:=context.WithTimeout(ctx,15*time.Minute);defer cancel()
+ if err:=os.Mkdir(filepath.Join(dir,"runs"),0700);err!=nil{panic(err)}
+ for i,variant:=range []string{"before","after","after","before"}{
+  index:=0;if i>=2{index=1};name:=fmt.Sprintf("%s-%02d",variant,index)
+  fmt.Println(name)
+  if err:=run(ctx,dir,name,variant);err!=nil{fmt.Fprintln(os.Stderr,err);os.Exit(1)}
+ }
+ fmt.Println("ARM ABBA complete")
+}

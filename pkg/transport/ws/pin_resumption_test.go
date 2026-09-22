@@ -31,7 +31,7 @@ import (
 // asked it for a certificate. A resumed handshake does not ask, so the
 // counter is how a test tells the two apart without reaching inside the
 // client's connection.
-func wssEcho(t *testing.T) (url string, pool *x509.CertPool, leaf *x509.Certificate, certAsks *atomic.Int64) {
+func wssEcho(t testing.TB) (url string, pool *x509.CertPool, leaf *x509.Certificate, certAsks *atomic.Int64) {
 	t.Helper()
 
 	certFile, keyFile, err := testcert.Generate(t.TempDir())
@@ -69,9 +69,11 @@ func wssEcho(t *testing.T) (url string, pool *x509.CertPool, leaf *x509.Certific
 		t.Fatalf("listen: %v", err)
 	}
 	srv := &http.Server{
-		Handler: mux,
+		Handler:      mux,
+		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13,
+			NextProtos: []string{"http/1.1"},
 			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 				certAsks.Add(1)
 				return &cert, nil

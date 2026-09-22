@@ -1,0 +1,96 @@
+BenchmarkWssSmallH1New-16 1 1652109.0 ns/op
+BenchmarkWssLargeH1New-16 1 26030723.0 ns/op 46799999.99999999 cpu-ns/op
+BenchmarkWssUploadH1New-16 1 28623178.0 ns/op 48400000.0 cpu-ns/op
+BenchmarkWssMixedH1New-16 1 2085620.0 ns/op
+BenchmarkWssSmallH1Reuse-16 1 92860.0 ns/op
+BenchmarkWssLargeH1Reuse-16 1 25546177.0 ns/op 53600000.0 cpu-ns/op
+BenchmarkWssUploadH1Reuse-16 1 27727867.0 ns/op 50800000.0 cpu-ns/op
+BenchmarkWssMixedH1Reuse-16 1 122624.0 ns/op
+BenchmarkObfsSmallH1New-16 1 1031202.5 ns/op
+BenchmarkObfsLargeH1New-16 1 10278669.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsUploadH1New-16 1 10985410.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsMixedH1New-16 1 1360916.5 ns/op
+BenchmarkObfsSmallH1Reuse-16 1 79166.5 ns/op
+BenchmarkObfsLargeH1Reuse-16 1 8600993.0 ns/op 19200000.0 cpu-ns/op
+BenchmarkObfsUploadH1Reuse-16 1 9416460.0 ns/op 20400000.0 cpu-ns/op
+BenchmarkObfsMixedH1Reuse-16 1 101000.0 ns/op
+BenchmarkWssSmallH1New-16 1 1659214.5 ns/op
+BenchmarkWssLargeH1New-16 1 25054796.0 ns/op 45200000.0 cpu-ns/op
+BenchmarkWssUploadH1New-16 1 28848218.0 ns/op 48400000.0 cpu-ns/op
+BenchmarkWssMixedH1New-16 1 2117416.9999999995 ns/op
+BenchmarkWssSmallH1Reuse-16 1 95751.5 ns/op
+BenchmarkWssLargeH1Reuse-16 1 24137013.0 ns/op 50000000.0 cpu-ns/op
+BenchmarkWssUploadH1Reuse-16 1 27032923.0 ns/op 48400000.0 cpu-ns/op
+BenchmarkWssMixedH1Reuse-16 1 122447.0 ns/op
+BenchmarkObfsSmallH1New-16 1 1029883.5 ns/op
+BenchmarkObfsLargeH1New-16 1 10290716.0 ns/op 19200000.0 cpu-ns/op
+BenchmarkObfsUploadH1New-16 1 10614230.0 ns/op 19200000.0 cpu-ns/op
+BenchmarkObfsMixedH1New-16 1 1387092.0 ns/op
+BenchmarkObfsSmallH1Reuse-16 1 73713.0 ns/op
+BenchmarkObfsLargeH1Reuse-16 1 9032179.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsUploadH1Reuse-16 1 9307546.0 ns/op 20400000.0 cpu-ns/op
+BenchmarkObfsMixedH1Reuse-16 1 101997.0 ns/op
+BenchmarkWssSmallH1New-16 1 1655451.4999999998 ns/op
+BenchmarkWssLargeH1New-16 1 25268086.0 ns/op 45200000.0 cpu-ns/op
+BenchmarkWssUploadH1New-16 1 28904435.0 ns/op 48799999.99999999 cpu-ns/op
+BenchmarkWssMixedH1New-16 1 2103021.4999999995 ns/op
+BenchmarkWssSmallH1Reuse-16 1 105541.50000000001 ns/op
+BenchmarkWssLargeH1Reuse-16 1 24426372.0 ns/op 49600000.0 cpu-ns/op
+BenchmarkWssUploadH1Reuse-16 1 26729787.0 ns/op 47200000.0 cpu-ns/op
+BenchmarkWssMixedH1Reuse-16 1 125698.0 ns/op
+BenchmarkObfsSmallH1New-16 1 1026524.0 ns/op
+BenchmarkObfsLargeH1New-16 1 10049830.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsUploadH1New-16 1 10568237.0 ns/op 19200000.0 cpu-ns/op
+BenchmarkObfsMixedH1New-16 1 1378019.5 ns/op
+BenchmarkObfsSmallH1Reuse-16 1 76765.5 ns/op
+BenchmarkObfsLargeH1Reuse-16 1 8713156.0 ns/op 18799999.999999996 cpu-ns/op
+BenchmarkObfsUploadH1Reuse-16 1 9501272.0 ns/op 18799999.999999996 cpu-ns/op
+BenchmarkObfsMixedH1Reuse-16 1 100849.50000000001 ns/op
+BenchmarkWssSmallH1New-16 1 1676061.0 ns/op
+BenchmarkWssLargeH1New-16 1 25913242.0 ns/op 45599999.99999999 cpu-ns/op
+BenchmarkWssUploadH1New-16 1 28926582.0 ns/op 48000000.0 cpu-ns/op
+BenchmarkWssMixedH1New-16 1 2088549.0 ns/op
+BenchmarkWssSmallH1Reuse-16 1 95347.5 ns/op
+BenchmarkWssLargeH1Reuse-16 1 23268269.0 ns/op 45599999.99999999 cpu-ns/op
+BenchmarkWssUploadH1Reuse-16 1 27253017.0 ns/op 50000000.0 cpu-ns/op
+BenchmarkWssMixedH1Reuse-16 1 121965.5 ns/op
+BenchmarkObfsSmallH1New-16 1 1033664.5 ns/op
+BenchmarkObfsLargeH1New-16 1 10404474.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsUploadH1New-16 1 10687113.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsMixedH1New-16 1 1343024.4999999998 ns/op
+BenchmarkObfsSmallH1Reuse-16 1 76561.0 ns/op
+BenchmarkObfsLargeH1Reuse-16 1 8941576.0 ns/op 20400000.0 cpu-ns/op
+BenchmarkObfsUploadH1Reuse-16 1 9685679.0 ns/op 19200000.0 cpu-ns/op
+BenchmarkObfsMixedH1Reuse-16 1 101755.0 ns/op
+BenchmarkWssSmallH1New-16 1 1664619.0 ns/op
+BenchmarkWssLargeH1New-16 1 26804230.0 ns/op 47200000.0 cpu-ns/op
+BenchmarkWssUploadH1New-16 1 29501329.0 ns/op 49600000.0 cpu-ns/op
+BenchmarkWssMixedH1New-16 1 2084600.0 ns/op
+BenchmarkWssSmallH1Reuse-16 1 90460.5 ns/op
+BenchmarkWssLargeH1Reuse-16 1 24794701.0 ns/op 51600000.0 cpu-ns/op
+BenchmarkWssUploadH1Reuse-16 1 27197640.0 ns/op 50800000.0 cpu-ns/op
+BenchmarkWssMixedH1Reuse-16 1 122130.0 ns/op
+BenchmarkObfsSmallH1New-16 1 1031305.0000000001 ns/op
+BenchmarkObfsLargeH1New-16 1 10087121.0 ns/op 18799999.999999996 cpu-ns/op
+BenchmarkObfsUploadH1New-16 1 10813441.0 ns/op 20400000.0 cpu-ns/op
+BenchmarkObfsMixedH1New-16 1 1344366.5 ns/op
+BenchmarkObfsSmallH1Reuse-16 1 76016.0 ns/op
+BenchmarkObfsLargeH1Reuse-16 1 8928388.0 ns/op 20000000.0 cpu-ns/op
+BenchmarkObfsUploadH1Reuse-16 1 9330072.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsMixedH1Reuse-16 1 100311.5 ns/op
+BenchmarkWssSmallH1New-16 1 1654486.5 ns/op
+BenchmarkWssLargeH1New-16 1 24761069.0 ns/op 44400000.0 cpu-ns/op
+BenchmarkWssUploadH1New-16 1 29119724.0 ns/op 48799999.99999999 cpu-ns/op
+BenchmarkWssMixedH1New-16 1 2097762.0 ns/op
+BenchmarkWssSmallH1Reuse-16 1 91759.5 ns/op
+BenchmarkWssLargeH1Reuse-16 1 24799041.0 ns/op 51200000.0 cpu-ns/op
+BenchmarkWssUploadH1Reuse-16 1 27575195.0 ns/op 49200000.0 cpu-ns/op
+BenchmarkWssMixedH1Reuse-16 1 121704.0 ns/op
+BenchmarkObfsSmallH1New-16 1 1030610.4999999999 ns/op
+BenchmarkObfsLargeH1New-16 1 10024352.0 ns/op 19200000.0 cpu-ns/op
+BenchmarkObfsUploadH1New-16 1 10549901.0 ns/op 19600000.0 cpu-ns/op
+BenchmarkObfsMixedH1New-16 1 1370771.5 ns/op
+BenchmarkObfsSmallH1Reuse-16 1 76577.0 ns/op
+BenchmarkObfsLargeH1Reuse-16 1 9277107.0 ns/op 20800000.0 cpu-ns/op
+BenchmarkObfsUploadH1Reuse-16 1 9135338.0 ns/op 18799999.999999996 cpu-ns/op
+BenchmarkObfsMixedH1Reuse-16 1 101728.0 ns/op

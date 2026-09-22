@@ -1,0 +1,232 @@
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+=== RUN   TestDialingIsVisibleWhileTheDialBlocks
+--- PASS: TestDialingIsVisibleWhileTheDialBlocks (0.00s)
+=== RUN   TestDialFallbackCancelsBlackhole
+--- PASS: TestDialFallbackCancelsBlackhole (0.00s)
+=== RUN   TestDialAllAttemptsShareBudget
+=== RUN   TestDialAllAttemptsShareBudget/enough_time_for_all
+=== RUN   TestDialAllAttemptsShareBudget/short_budget
+--- PASS: TestDialAllAttemptsShareBudget (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/enough_time_for_all (0.00s)
+    --- PASS: TestDialAllAttemptsShareBudget/short_budget (0.00s)
+=== RUN   TestDialClosesLateWinningSocket
+--- PASS: TestDialClosesLateWinningSocket (0.00s)
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses
+    dial_test.go:167: addresses=16 budget=10s elapsed=1s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set
+    dial_test.go:167: addresses=64 budget=10s elapsed=1.5s error=<nil> parent=<nil>
+=== RUN   TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget
+    dial_test.go:167: addresses=16 budget=1s elapsed=750ms error=<nil> parent=<nil>
+--- PASS: TestDialLargeAddressSetPreservesWorkingCandidate (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/review_16_addresses (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/large_mixed_set (0.00s)
+    --- PASS: TestDialLargeAddressSetPreservesWorkingCandidate/short_parent_budget (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.042s

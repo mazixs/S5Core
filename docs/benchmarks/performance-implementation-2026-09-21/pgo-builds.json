@@ -1,0 +1,30 @@
+[
+  {
+    "mode": "off",
+    "binary": "s5client",
+    "seconds": 0.27546246800920926,
+    "bytes": 12077413,
+    "profile": "off"
+  },
+  {
+    "mode": "off",
+    "binary": "s5core",
+    "seconds": 0.4310293750022538,
+    "bytes": 20086571,
+    "profile": "off"
+  },
+  {
+    "mode": "on",
+    "binary": "s5client",
+    "seconds": 5.757409171012114,
+    "bytes": 12202202,
+    "profile": "/tmp/s5core-implementation-20260921/pgo-client.pprof"
+  },
+  {
+    "mode": "on",
+    "binary": "s5core",
+    "seconds": 6.982224499006406,
+    "bytes": 20200604,
+    "profile": "/tmp/s5core-implementation-20260921/pgo-server.pprof"
+  }
+]

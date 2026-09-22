@@ -1,0 +1,18 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkWSSHandshake/full-16         	     846	    718197 ns/op	  188070 B/op	     986 allocs/op
+BenchmarkWSSHandshake/full-16         	     762	    706889 ns/op	  187845 B/op	     985 allocs/op
+BenchmarkWSSHandshake/full-16         	     866	    695905 ns/op	  187902 B/op	     985 allocs/op
+BenchmarkWSSHandshake/full-16         	     776	    694152 ns/op	  188116 B/op	     985 allocs/op
+BenchmarkWSSHandshake/full-16         	     855	    715871 ns/op	  188112 B/op	     986 allocs/op
+BenchmarkWSSHandshake/full-16         	     783	    708112 ns/op	  187817 B/op	     985 allocs/op
+BenchmarkWSSHandshake/resumed-16      	    1034	    608187 ns/op	  204833 B/op	    1071 allocs/op
+BenchmarkWSSHandshake/resumed-16      	     985	    602000 ns/op	  204919 B/op	    1072 allocs/op
+BenchmarkWSSHandshake/resumed-16      	    1005	    607649 ns/op	  204864 B/op	    1072 allocs/op
+BenchmarkWSSHandshake/resumed-16      	     956	    608477 ns/op	  204826 B/op	    1071 allocs/op
+BenchmarkWSSHandshake/resumed-16      	     999	    601755 ns/op	  204894 B/op	    1072 allocs/op
+BenchmarkWSSHandshake/resumed-16      	     961	    615117 ns/op	  204940 B/op	    1072 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	7.085s

@@ -1,0 +1,1 @@
+Parsed Go files: 243; function/method declarations: 1750; var specs: 451; syntax errors: 0

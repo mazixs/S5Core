@@ -18,13 +18,16 @@ const (
 	// PhaseAuth covers credential verification only. Password hashing lives
 	// here, so this is where Argon2id shows up if it is on the hot path.
 	PhaseAuth Phase = "auth"
-	// PhaseDial covers resolving and connecting to the destination.
+	// PhaseDNS covers name resolution, including failed lookups.
+	PhaseDNS Phase = "dns"
+	// PhaseDial covers TCP attempts against the resolved destination addresses.
 	PhaseDial Phase = "dial"
-	// PhaseFirstByte covers the wait between a successful dial and the first
-	// byte the destination sends back.
+	// PhaseFirstByte covers the wait between the SOCKS success reply and the first
+	// byte the destination sends back. For HTTPS this is usually TLS data,
+	// not the HTTP response.
 	PhaseFirstByte Phase = "first_byte"
-	// PhaseSession covers the whole connection, from the first byte read off
-	// the client to the moment the handler returns.
+	// PhaseSession covers the whole connection, from entering the handler
+	// (before waiting for the version byte) to the moment it returns.
 	PhaseSession Phase = "session"
 )
 

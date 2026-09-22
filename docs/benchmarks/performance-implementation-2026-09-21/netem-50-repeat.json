@@ -1,0 +1,62 @@
+[
+  {
+    "scenario": [
+      "wss",
+      "large",
+      "h1",
+      "reuse"
+    ],
+    "variants": {
+      "before": {
+        "p50_ms": 5032.792499,
+        "p95_ms": 7000.656094,
+        "p99_ms": 7246.871955,
+        "n": 30,
+        "runs": 6,
+        "run_p99_ms": [
+          6188.030414,
+          6288.858539,
+          7000.656094,
+          5088.025989,
+          7246.871955,
+          2573.412515
+        ],
+        "setup_p50_ms": 0,
+        "ttfb_p99_ms": 51.230601,
+        "server_cpu_seconds_per_gib": 5.8453333333333335,
+        "server_rss_bytes": 28626944,
+        "server_peak_rss_bytes": 31277056,
+        "client_cpu_seconds_per_gib": 10.538666666666668,
+        "client_rss_bytes": 12603392,
+        "client_peak_rss_bytes": 12603392
+      },
+      "after": {
+        "p50_ms": 3137.187239,
+        "p95_ms": 6593.298868,
+        "p99_ms": 7197.134351,
+        "n": 30,
+        "runs": 6,
+        "run_p99_ms": [
+          2189.512608,
+          6593.298868,
+          5784.5661,
+          1723.306486,
+          7197.134351,
+          3137.187239
+        ],
+        "setup_p50_ms": 0,
+        "ttfb_p99_ms": 106.611223,
+        "server_cpu_seconds_per_gib": 5.034666666666667,
+        "server_rss_bytes": 29732864,
+        "server_peak_rss_bytes": 31551488,
+        "client_cpu_seconds_per_gib": 11.264000000000001,
+        "client_rss_bytes": 12681216,
+        "client_peak_rss_bytes": 12681216
+      }
+    },
+    "median_run_p99_change_ci_percent": [
+      -68.63946526462284,
+      29.58461458833559
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+=== RUN   TestPerformanceIdleConnections
+    idle_memory_linux_test.go:64: connections=1000 heap_delta=20022568 heap_per_pair=20022 VmRSS:	   34236 kB
+--- PASS: TestPerformanceIdleConnections (0.15s)
+PASS
+=== RUN   TestPerformanceIdleConnections
+    idle_memory_linux_test.go:64: connections=1000 heap_delta=20021088 heap_per_pair=20021 VmRSS:	   34728 kB
+--- PASS: TestPerformanceIdleConnections (0.15s)
+PASS
+=== RUN   TestPerformanceIdleConnections
+    idle_memory_linux_test.go:64: connections=10000 heap_delta=199565504 heap_per_pair=19956 VmRSS:	  218424 kB
+--- PASS: TestPerformanceIdleConnections (1.11s)
+PASS
+=== RUN   TestPerformanceIdleConnections
+    idle_memory_linux_test.go:64: connections=10000 heap_delta=199557648 heap_per_pair=19955 VmRSS:	  209780 kB
+--- PASS: TestPerformanceIdleConnections (1.12s)
+PASS

@@ -5,6 +5,73 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Performance
+
+- Drain complete, already-buffered obfs frames in one read without waiting for
+  more network data. Yield outside read/write locks after large batches to
+  preserve interactive latency during bulk transfers. The wire format, cipher,
+  padding and shaping are unchanged.
+- Give the WebSocket upgrader an explicit 4096-byte payload buffer, reducing
+  allocations on a representative 22752-byte batch from 8 to 6. The measured
+  cost is about 768 additional retained heap bytes per idle WS pair and
+  4.80 KiB additional allocation when creating a pair, without TLS/obfs.
+- Compile domain routes once into exact and label-boundary suffix maps.
+  With 10000 rules, lookup decreased from about 728 microseconds to 77
+  nanoseconds; a separate process test confirmed lower CONNECT latency.
+- Add explicit `PROXY_AUTH_MODE=member-only` and `password-fallback` modes.
+  Member-only saves one greeting RTT for applicable new tunnels, keeps
+  authentication required, and fails closed on incompatible configuration.
+- Reuse bounded TLS session caches per immutable client configuration, with
+  separate Go TLS and uTLS caches and preserved certificate/pin validation.
+  `WS_TLS_SESSION_CACHE=false` disables reuse. Browser fingerprints without
+  a resumption extension retain full handshakes.
+
+Desktop process A/B measurements of complete 8 MiB HTTPS responses showed
+obfs throughput gains of 145-206% across download/upload and new/reused
+connections, and WSS gains of 26-28%. Obfs download CPU/GiB decreased by
+37-40%; WSS download CPU/GiB increased by 3-13%. These are laboratory
+results, not WAN guarantees. Real ARM execution and a 10200-request-per-case
+obfs tail-latency comparison passed the specified latency threshold.
+The [implementation report](docs/reports/performance-implementation-2026-09-22.md)
+records samples, tradeoffs, rejected experiments and remaining release gates.
+DNS caching and PGO were evaluated but not enabled without demonstrated benefit.
+
+### Fixed
+
+- Keep active HTTPS downloads alive by refreshing the pending stream read
+  deadline on successful outbound writes. Blocked writes and incomplete obfs
+  frames retain independent, bounded deadlines.
+- Schedule suppressed keepalives from the latest activity instead of adding a
+  second full interval; stop service frames on write half-close.
+- Try validated DNS address candidates within one shared budget, with at most
+  two concurrent attempts and a two-second minimum per-attempt allowance
+  capped by the remaining time. Preserve custom resolver and rewriter policy.
+- Bound WSS DNS/TCP/TLS/HTTP Upgrade by the caller's context, interrupt canceled
+  upgrades, and include transport dialing in the tunnel handshake budget.
+- Preserve data returned with a transport error and keep terminal obfs read
+  failures sticky. Validate the SOCKS greeting response version.
+
+The [HTTPS remediation report](docs/reports/socks5-https-remediation-2026-09-21.md)
+documents H01-H05 and the subsequent R01 address-budget correction.
+
+### Diagnostics and validation
+
+- Add `httpsprobe` with actual HTTP response timing, complete-body verification,
+  upload support and new/reused HTTP/1.1/2 connections; expose DNS as a separate
+  server phase instead of conflating TCP first-byte timing with HTTP TTFB.
+- Add opt-in process ABBA benchmarks, CPU/RSS accounting, isolated netem,
+  mixed traffic and long-stream checks. Diagnostic builds write local profiles
+  without publishing a pprof HTTP endpoint.
+- Validate old/new client-server combinations, authentication modes, uTLS
+  profiles, 4/16/64 request concurrency, UDP under simulated loss, full race
+  checks and both release binaries across all five supported platform targets.
+
+See the [validation guide](docs/performance-validation.md) for reproduction.
+Publication of these changes is not a production deployment: representative
+WAN/VPS acceptance, peak-load budgets and a limited canary remain outstanding.
+
 ## [2.0.0] - 2026-09-21
 
 A major release: the obfuscated wire format changed and the pre-2.0 one is no

@@ -1,0 +1,31 @@
+File: s5client.test
+Build ID: b50a9cd481398f47a4fad18101331fd1fc576110
+Type: cpu
+Time: 2026-09-21 23:23:09 +03
+Duration: 17.25s, Total samples = 32.68s (189.40%)
+Showing nodes accounting for 26.81s, 82.04% of 32.68s total
+Dropped 744 nodes (cum <= 0.16s)
+Showing top 22 nodes out of 162
+      flat  flat%   sum%        cum   cum%
+    11.73s 35.89% 35.89%     11.73s 35.89%  internal/runtime/syscall/linux.Syscall6
+     4.09s 12.52% 48.41%      4.09s 12.52%  crypto/internal/fips140/sha256.blockSHANI
+     2.25s  6.88% 55.29%      2.25s  6.88%  crypto/internal/fips140/aes/gcm.gcmAesDec
+     2.21s  6.76% 62.06%      2.21s  6.76%  crypto/internal/fips140/aes/gcm.gcmAesEnc
+     2.03s  6.21% 68.27%      2.03s  6.21%  runtime.memmove
+     1.10s  3.37% 71.63%      1.10s  3.37%  runtime.memclrNoHeapPointers
+     1.01s  3.09% 74.72%      1.01s  3.09%  crypto/internal/fips140/bigmod.addMulVVW1024
+     0.91s  2.78% 77.51%      0.91s  2.78%  runtime.procyieldAsm
+     0.31s  0.95% 78.46%      1.66s  5.08%  crypto/internal/fips140/bigmod.(*Nat).montgomeryMul
+     0.27s  0.83% 79.28%      0.27s  0.83%  crypto/internal/fips140/aes.encryptBlockAsm
+     0.20s  0.61% 79.90%      0.44s  1.35%  runtime.stealWork
+     0.10s  0.31% 80.20%      0.20s  0.61%  runtime.scanObject
+     0.09s  0.28% 80.48%      0.17s  0.52%  runtime.tryDeferToSpanScan
+     0.08s  0.24% 80.72%      1.38s  4.22%  runtime.markroot
+     0.06s  0.18% 80.91%      2.34s  7.16%  crypto/internal/fips140/aes/gcm.seal
+     0.06s  0.18% 81.09%      4.85s 14.84%  crypto/tls.(*Conn).readRecordOrCCS
+     0.06s  0.18% 81.27%      1.68s  5.14%  runtime.findRunnable
+     0.05s  0.15% 81.43%      5.05s 15.45%  crypto/tls.(*Conn).writeRecordLocked
+     0.05s  0.15% 81.58%     10.34s 31.64%  github.com/mazixs/S5Core/cmd/s5client.TestAuditHTTPSMeasurements
+     0.05s  0.15% 81.73%      2.97s  9.09%  github.com/mazixs/S5Core/pkg/obfs.(*conn).Read
+     0.05s  0.15% 81.88%      2.79s  8.54%  github.com/mazixs/S5Core/pkg/obfs.(*conn).readFrame
+     0.05s  0.15% 82.04%     11.42s 34.94%  io.copyBuffer

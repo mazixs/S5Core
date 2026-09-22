@@ -1,0 +1,4 @@
+=== RUN   TestPerformanceIdleConnections
+    idle_memory_linux_test.go:64: connections=10000 heap_delta=150921304 heap_per_pair=15092 VmRSS:	  183312 kB
+--- PASS: TestPerformanceIdleConnections (1.11s)
+PASS

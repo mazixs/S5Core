@@ -52,6 +52,8 @@ type Options struct {
 	// hex encoded. When non-empty the chain must validate AND the leaf key
 	// must match one of the pins.
 	PinSHA256 []string
+	// SessionCache belongs to one endpoint and immutable trust configuration.
+	SessionCache utls.ClientSessionCache
 }
 
 // DialContext dials TCP and performs a uTLS handshake using the specified
@@ -82,9 +84,12 @@ func DialContext(ctx context.Context, network, addr string, opts Options) (net.C
 	}
 
 	config := &utls.Config{
-		ServerName: serverName,
-		RootCAs:    opts.RootCAs,
-		MinVersion: utls.VersionTLS13,
+		ServerName:         serverName,
+		RootCAs:            opts.RootCAs,
+		MinVersion:         utls.VersionTLS13,
+		ClientSessionCache: opts.SessionCache,
+		// Never add a PSK extension to a named browser fingerprint.
+		PreferSkipResumptionOnNilExtension: true,
 	}
 	if len(pins) > 0 {
 		// Runs after the chain has been verified, so a pin is an extra

@@ -1,0 +1,17 @@
+Uploading task binaries to ARM
+Verified uploaded hashes; running ARM ABBA
+before-00
+after-00
+after-01
+before-01
+before-02
+after-02
+after-03
+before-03
+before-04
+after-04
+after-05
+before-05
+ARM ABBA complete
+ARM runner exit 0
+ARM results downloaded and temporary files removed

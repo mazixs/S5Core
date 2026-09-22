@@ -1,0 +1,5 @@
+=== RUN   TestPerformanceDNS
+    resolver_perf_test.go:34: first=86.468µs p50=5.012µs p95=10.275µs p99=23.345µs n=100; LookupIP exposes no TTL
+--- PASS: TestPerformanceDNS (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	0.002s

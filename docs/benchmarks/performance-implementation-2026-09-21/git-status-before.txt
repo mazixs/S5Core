@@ -1,0 +1,30 @@
+ M .gitignore
+ M README.md
+ M cmd/s5client/main.go
+ M internal/session/session.go
+ M internal/session/session_test.go
+ M internal/socks5/phase.go
+ M internal/socks5/request.go
+ M internal/socks5/resolver.go
+ M internal/socks5/ruleset.go
+ M pkg/obfs/keepalive.go
+ M pkg/s5server/conn.go
+ M pkg/s5server/telemetry.go
+ M pkg/s5server/timeouts_synctest_test.go
+ M pkg/transport/ws/dialer.go
+?? cmd/httpsprobe/
+?? cmd/s5client/https_stream_test.go
+?? docs/benchmarks/performance-implementation-2026-09-21/
+?? docs/benchmarks/performance-plan-2026-09-21/
+?? docs/performance-plan-2026-09-21.md
+?? docs/reports/socks5-https-2026-09-21/
+?? docs/reports/socks5-https-performance-audit-2026-09-21.md
+?? docs/reports/socks5-https-remediation-2026-09-21.md
+?? docs/reports/socks5-https-remediation-2026-09-21/
+?? docs/reports/socks5-https-remediation-review-2026-09-21.md
+?? docs/reports/socks5-https-remediation-review-2026-09-21/
+?? internal/socks5/dial.go
+?? internal/socks5/dial_test.go
+?? internal/socks5/dns_fallback_test.go
+?? pkg/obfs/keepalive_idle_test.go
+?? pkg/transport/ws/dial_context_test.go

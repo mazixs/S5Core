@@ -1,0 +1,6 @@
+=== RUN   TestReviewFallbackPrematurelyAbortsWorkingIP
+    review_budget_test.go:36: old single-address behavior: success in 1s
+    review_budget_test.go:48: new fallback: elapsed=625ms err=connection refused parent_err=<nil>
+--- PASS: TestReviewFallbackPrematurelyAbortsWorkingIP (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.013s

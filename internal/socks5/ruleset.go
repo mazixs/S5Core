@@ -6,6 +6,8 @@ import (
 
 // RuleSet is used to provide custom rules to allow or prohibit actions.
 //
+// For multi-address CONNECT it is first asked before DNS, then once per
+// resolved candidate (with DestAddr.IP set). Only allowed candidates are dialed.
 // It is asked twice on a UDP association: once for the ASSOCIATE request
 // itself, and once for every datagram that association carries, with
 // Request.Datagram set and DestAddr naming that datagram's destination. The

@@ -1,0 +1,129 @@
+
+==> Версия toolchain
+   ok go 1.26.6
+
+==> Целостность зависимостей (go mod verify)
+   ok модули не изменены
+
+==> Форматирование (gofmt -s)
+   ok все файлы отформатированы
+
+==> Символы в исходниках
+   ok длинного тире в .go нет
+
+==> Актуальность go.mod (go mod tidy -diff)
+   ok go.mod и go.sum актуальны
+
+==> go vet
+   ok vet чист
+
+==> Статический анализ (golangci-lint v2.13.2)
+0 issues.
+   ok 0 замечаний
+
+==> Уязвимости зависимостей (govulncheck)
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 2 vulnerabilities in packages you import and 19
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.
+   ok вызываемых уязвимостей нет
+
+==> Тесты с детектором гонок
+PASS
+coverage: 20.9% of statements
+ok  	github.com/mazixs/S5Core/cmd/connlat	(cached)	coverage: 20.9% of statements
+PASS
+coverage: 59.7% of statements
+ok  	github.com/mazixs/S5Core/cmd/fpcollect	(cached)	coverage: 59.7% of statements
+PASS
+coverage: 25.1% of statements
+ok  	github.com/mazixs/S5Core/cmd/fpprobe	(cached)	coverage: 25.1% of statements
+PASS
+coverage: 50.4% of statements
+ok  	github.com/mazixs/S5Core/cmd/s5core	(cached)	coverage: 50.4% of statements
+PASS
+coverage: 49.4% of statements
+ok  	github.com/mazixs/S5Core/cmd/wirebench	(cached)	coverage: 49.4% of statements
+PASS
+coverage: [no statements]
+ok  	github.com/mazixs/S5Core/internal/arch	(cached)	coverage: [no statements]
+PASS
+coverage: 100.0% of statements
+ok  	github.com/mazixs/S5Core/internal/signals	(cached)	coverage: 100.0% of statements
+PASS
+coverage: 100.0% of statements
+ok  	github.com/mazixs/S5Core/internal/logging	(cached)	coverage: 100.0% of statements
+PASS
+coverage: 95.1% of statements
+ok  	github.com/mazixs/S5Core/internal/session	(cached)	coverage: 95.1% of statements
+PASS
+coverage: 79.7% of statements
+ok  	github.com/mazixs/S5Core/internal/utls	(cached)	coverage: 79.7% of statements
+PASS
+coverage: 91.7% of statements
+ok  	github.com/mazixs/S5Core/internal/s5core	(cached)	coverage: 91.7% of statements
+PASS
+PASS
+coverage: 94.4% of statements
+ok  	github.com/mazixs/S5Core/internal/relay	(cached)	coverage: 94.4% of statements
+coverage: 81.6% of statements
+ok  	github.com/mazixs/S5Core/internal/identity	(cached)	coverage: 81.6% of statements
+PASS
+coverage: 83.3% of statements
+ok  	github.com/mazixs/S5Core/pkg/obfs/legacy	(cached)	coverage: 83.3% of statements
+PASS
+PASS
+coverage: 74.0% of statements
+ok  	github.com/mazixs/S5Core/internal/stealth	(cached)	coverage: 74.0% of statements
+coverage: 97.5% of statements
+ok  	github.com/mazixs/S5Core/internal/passwordhash	(cached)	coverage: 97.5% of statements
+PASS
+coverage: 90.2% of statements
+ok  	github.com/mazixs/S5Core/scripts/testreport	(cached)	coverage: 90.2% of statements
+PASS
+coverage: 66.4% of statements
+ok  	github.com/mazixs/S5Core/cmd/s5client	(cached)	coverage: 66.4% of statements
+PASS
+coverage: 87.2% of statements
+ok  	github.com/mazixs/S5Core/pkg/veil	(cached)	coverage: 87.2% of statements
+PASS
+coverage: 92.4% of statements
+ok  	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	(cached)	coverage: 92.4% of statements
+PASS
+coverage: 85.7% of statements
+ok  	github.com/mazixs/S5Core/internal/userstore	(cached)	coverage: 85.7% of statements
+PASS
+coverage: 87.4% of statements
+ok  	github.com/mazixs/S5Core/internal/socks5	(cached)	coverage: 87.4% of statements
+PASS
+coverage: 91.0% of statements
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	(cached)	coverage: 91.0% of statements
+PASS
+coverage: 86.3% of statements
+ok  	github.com/mazixs/S5Core/pkg/obfs	(cached)	coverage: 86.3% of statements
+PASS
+coverage: 87.6% of statements
+ok  	github.com/mazixs/S5Core/pkg/s5server	(cached)	coverage: 87.6% of statements
+	github.com/mazixs/S5Core/cmd/udpprobe		coverage: 0.0% of statements
+	github.com/mazixs/S5Core/internal/testcert		coverage: 0.0% of statements
+	github.com/mazixs/S5Core/cmd/idleprobe		coverage: 0.0% of statements
+	github.com/mazixs/S5Core/internal/diagnostics		coverage: 0.0% of statements
+	github.com/mazixs/S5Core/cmd/stealthcheck		coverage: 0.0% of statements
+	github.com/mazixs/S5Core/internal/buildinfo		coverage: 0.0% of statements
+PASS
+coverage: 56.2% of statements
+ok  	github.com/mazixs/S5Core/cmd/httpsprobe	1.438s	coverage: 56.2% of statements
+   ok тесты зеленые
+
+==> Бенчмарки запускаются
+   ok бенчмарки живы
+
+==> Сборка бинарей
+   ok s5core и s5client собираются
+
+Все проверки пройдены.

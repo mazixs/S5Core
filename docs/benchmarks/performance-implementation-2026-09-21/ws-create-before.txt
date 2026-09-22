@@ -1,0 +1,36 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfUpgrade-16    	    3234	     96689 ns/op	   31277 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfUpgrade-16    	    3662	     99788 ns/op	   31287 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfUpgrade-16    	    3374	    100680 ns/op	   31287 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfUpgrade-16    	    3363	     95817 ns/op	   31287 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfUpgrade-16    	    3483	     94378 ns/op	   31267 B/op	     135 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/transport/ws
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkPerfUpgrade-16    	    3687	     97969 ns/op	   31272 B/op	     135 allocs/op
+PASS

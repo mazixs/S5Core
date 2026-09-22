@@ -1,0 +1,31 @@
+                     │ docs/benchmarks/performance-implementation-2026-09-21/pgo-before.txt │ docs/benchmarks/performance-implementation-2026-09-21/pgo-after.txt │
+                     │                                sec/op                                │                    sec/op                      vs base              │
+WssSmallH1New-16                                                                1.674m ± 1%                                    1.657m ±  1%       ~ (p=0.065 n=6)
+WssLargeH1New-16                                                                25.53m ± 4%                                    25.59m ±  5%       ~ (p=0.589 n=6)
+WssUploadH1New-16                                                               29.22m ± 4%                                    28.92m ±  2%       ~ (p=0.065 n=6)
+WssMixedH1New-16                                                                2.092m ± 2%                                    2.093m ±  1%       ~ (p=0.937 n=6)
+WssSmallH1Reuse-16                                                              94.33µ ± 3%                                    94.10µ ± 12%       ~ (p=1.000 n=6)
+WssLargeH1Reuse-16                                                              24.58m ± 3%                                    24.61m ±  5%       ~ (p=0.699 n=6)
+WssUploadH1Reuse-16                                                             27.87m ± 3%                                    27.23m ±  2%       ~ (p=0.093 n=6)
+WssMixedH1Reuse-16                                                              122.0µ ± 9%                                    122.3µ ±  3%       ~ (p=0.589 n=6)
+ObfsSmallH1New-16                                                               1.031m ± 1%                                    1.031m ±  0%       ~ (p=0.699 n=6)
+ObfsLargeH1New-16                                                               10.31m ± 5%                                    10.18m ±  2%       ~ (p=0.485 n=6)
+ObfsUploadH1New-16                                                              10.99m ± 4%                                    10.65m ±  3%       ~ (p=0.065 n=6)
+ObfsMixedH1New-16                                                               1.361m ± 1%                                    1.366m ±  2%       ~ (p=0.937 n=6)
+ObfsSmallH1Reuse-16                                                             76.65µ ± 4%                                    76.57µ ±  4%       ~ (p=0.937 n=6)
+ObfsLargeH1Reuse-16                                                             8.993m ± 7%                                    8.935m ±  4%       ~ (p=0.485 n=6)
+ObfsUploadH1Reuse-16                                                            9.483m ± 4%                                    9.373m ±  3%       ~ (p=0.240 n=6)
+ObfsMixedH1Reuse-16                                                             101.8µ ± 4%                                    101.4µ ±  1%       ~ (p=0.589 n=6)
+geomean                                                                         2.489m                                         2.474m        -0.63%
+
+                     │ docs/benchmarks/performance-implementation-2026-09-21/pgo-before.txt │ docs/benchmarks/performance-implementation-2026-09-21/pgo-after.txt │
+                     │                              cpu-sec/op                              │                  cpu-sec/op                    vs base              │
+WssLargeH1New-16                                                               46.20m ±  4%                                    45.40m ±  4%       ~ (p=0.377 n=6)
+WssUploadH1New-16                                                              49.40m ±  3%                                    48.60m ±  2%       ~ (p=0.110 n=6)
+WssLargeH1Reuse-16                                                             48.00m ±  4%                                    50.60m ± 10%       ~ (p=0.071 n=6)
+WssUploadH1Reuse-16                                                            51.20m ±  3%                                    49.60m ±  5%  -3.12% (p=0.024 n=6)
+ObfsLargeH1New-16                                                              19.40m ±  5%                                    19.40m ±  3%       ~ (p=0.989 n=6)
+ObfsUploadH1New-16                                                             19.80m ±  5%                                    19.60m ±  4%       ~ (p=0.188 n=6)
+ObfsLargeH1Reuse-16                                                            19.60m ± 10%                                    19.80m ±  5%       ~ (p=0.985 n=6)
+ObfsUploadH1Reuse-16                                                           19.80m ±  9%                                    19.40m ±  5%       ~ (p=0.524 n=6)
+geomean                                                                        30.92m                                          30.80m        -0.41%
