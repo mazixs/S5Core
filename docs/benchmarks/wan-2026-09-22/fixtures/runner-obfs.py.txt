@@ -1,0 +1,150 @@
+import hashlib,itertools,json,os,re,secrets,shlex,shutil,subprocess,time,signal
+from pathlib import Path
+D=Path(__file__).resolve().parent
+addresses=json.loads((D/'addresses.json').read_text());VPS=addresses['vps'];SOURCE=addresses['source']
+HOSTS=('router','amsterdam');token=secrets.token_hex(5)
+REMOTE={'router':'/opt/tmp/s5core-wan-'+token,'amsterdam':'/var/tmp/s5core-wan-'+token}
+PORT=47941;TARGET=47943;LOCAL=11891
+rows=(D/'samples.jsonl').open('w',buffering=1)
+state={'remote':REMOTE,'started':time.time(),'completed':False,'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()}
+(D/'state.json').write_text(json.dumps(state,indent=2))
+def ssh(host,cmd,data=None,timeout=30):
+ p=subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=8','-o','ServerAliveInterval=10','-o','ServerAliveCountMax=3',host,cmd],input=data,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+ if p.returncode:raise RuntimeError(f'{host}: exit {p.returncode}: '+p.stderr.decode()[:300])
+ return p.stdout.decode()
+def upload(host,name,data,execute=False):
+ path=shlex.quote(REMOTE[host]+'/'+name)
+ ssh(host,f'umask 077; cat > {path}; chmod {"700" if execute else "600"} {path}',data,60)
+def env(host,name,values):upload(host,name,(''.join(f'export {k}={shlex.quote(str(v))}\n' for k,v in values.items())).encode())
+def start(host,name,binary,config,args=''):
+ r=REMOTE[host]
+ upload(host,name+'.sh',f'#!/bin/sh\ncd {r}\n. ./{config}\nexec ./{binary} {args}\n'.encode(),True)
+ ssh(host,f'cd {r}; nohup ./{name}.sh >> {name}.log 2>&1 < /dev/null & echo $! > {r}/{name}.pid')
+def stop(host,name):
+ r=REMOTE[host]
+ ssh(host,f'''p=$(cat {r}/{name}.pid 2>/dev/null) || exit 0
+case "$(readlink /proc/$p/exe 2>/dev/null)" in {r}/*) kill -TERM "$p" 2>/dev/null || true;; *) rm -f {r}/{name}.pid; exit 0;; esac
+for i in 1 2 3 4 5; do test ! -e /proc/$p/exe && break; sleep 1; done
+case "$(readlink /proc/$p/exe 2>/dev/null)" in {r}/*) kill -KILL "$p";; esac
+rm -f {r}/{name}.pid''',timeout=15)
+def stop_script(host):
+ r=REMOTE[host]
+ return f'''for f in {r}/*.pid; do
+ test -f "$f" || continue
+ p=$(cat "$f")
+ case "$(readlink /proc/$p/exe 2>/dev/null)" in {r}/*) kill -TERM "$p" 2>/dev/null || true;; esac
+done'''
+def snapshot(host):
+ r=REMOTE[host]
+ return ssh(host,f'''head -1 /proc/stat
+head -5 /proc/meminfo
+cat /proc/loadavg
+for f in {r}/*.pid; do
+ test -f "$f" || continue
+ p=$(cat "$f")
+ echo "PROCESS $(basename "$f")"
+ cat /proc/$p/stat 2>/dev/null || true
+ sed -n '/^VmRSS:/p; /^VmHWM:/p; /^VmSwap:/p' /proc/$p/status 2>/dev/null
+ done
+sed -n '/^pswp/p' /proc/vmstat''')
+def production(host):
+ r=REMOTE[host]
+ cmd=f'''for e in /proc/[0-9]*/exe; do
+ v=$(readlink "$e" 2>/dev/null) || continue
+ case "$v" in {r}/*) continue;; esac
+ case "$v" in *s5client*|*s5core*) p=${{e#/proc/}}; p=${{p%/exe}}; echo "$p $v";; esac
+done'''
+ return ssh(host,cmd)
+def emit(row):rows.write(json.dumps(row)+'\n')
+def transfer(mode,direction,size,stage,round_):
+ host='router';r=REMOTE[host];url=f'http://{VPS if mode=="raw" else "127.0.0.1"}:{TARGET}'
+ args=[r+'/wirebench-client','-url',url,'-n',size,'-dir',direction,'-label',mode]
+ if mode!='raw':args+=['-socks',f'127.0.0.1:{LOCAL}']
+ row={'kind':'throughput','mode':mode,'direction':direction,'size':size,'stage':stage,'round':round_,'resources_before':{h:snapshot(h) for h in HOSTS},'start':time.time()}
+ cmd=shlex.join(args)+f' & p=$!; echo "$p" > {r}/wirebench.pid; wait "$p"; rc=$?; rm -f {r}/wirebench.pid; exit "$rc"'
+ try:
+  out=ssh(host,cmd,timeout=150);row['output']=out
+  m=re.search(r'([0-9.]+) MiB/s aggregate',out)
+  if not m or 'failed 0' not in out:raise RuntimeError('missing successful transfer result')
+  row.update(ok=True,mib_s=float(m[1]))
+ except Exception as exc:row.update(ok=False,error=str(exc))
+ row['finish']=time.time();row['resources_after']={h:snapshot(h) for h in HOSTS};emit(row)
+ print(f'{stage} round={round_} {mode} {direction}: '+(str(row['mib_s'])+' MiB/s' if row['ok'] else row['error']),flush=True)
+ if not row['ok']:raise RuntimeError('transfer failed; evidence retained')
+def latency(mode,round_):
+ r=REMOTE['router'];url=f'http://{VPS if mode=="raw" else "127.0.0.1"}:{TARGET}/small'
+ args=[r+'/httpprobe','-url',url,'-count','50','-timeout','5s','-http2=false']
+ if mode!='raw':args+=['-socks',f'127.0.0.1:{LOCAL}']
+ # Go source overlay changes only the probe URL validation to allow HTTP.
+ cmd=shlex.join(args)+f' & p=$!; echo "$p" > {r}/latency.pid; wait "$p"; rc=$?; rm -f {r}/latency.pid; exit "$rc"'
+ out=ssh('router',cmd,timeout=280)
+ expected=hashlib.sha256(b'S5Core verified response').hexdigest()
+ for line in out.splitlines():
+  m=json.loads(line)
+  assert m.get('error','')=='' and m['status']==200 and m['bytes']==len(b'S5Core verified response') and m['sha256']==expected,m
+  emit({'kind':'latency','mode':mode,'round':round_,'measurement':m})
+ print(f'latency round={round_} {mode}: 50 verified requests',flush=True)
+def interrupted(signum,frame):raise KeyboardInterrupt('interrupted')
+signal.signal(signal.SIGTERM,interrupted)
+started=[];production_before={};cleanup_errors=[]
+try:
+ for h in HOSTS:
+  r=REMOTE[h];ssh(h,f'umask 077; mkdir {r}');started.append(h)
+  production_before[h]=production(h)
+  (D/(h+'-production-before.txt')).write_text(production_before[h])
+  (D/(h+'-environment.txt')).write_text(ssh(h,'uname -smr; cat /proc/cpuinfo; head -5 /proc/meminfo; cat /proc/sys/net/ipv4/tcp_congestion_control; cat /proc/sys/net/ipv4/tcp_rmem; cat /proc/sys/net/ipv4/tcp_wmem'))
+  # Install a task-scoped watchdog before uploading/launching test processes.
+  upload(h,'watchdog.sh',('#!/bin/sh\nsleep 1200\n'+stop_script(h)+'\n').encode(),True)
+  ssh(h,f'nohup {r}/watchdog.sh >/dev/null 2>&1 < /dev/null & echo $! > {r}/watchdog-id')
+ names={'router':['client-v2','client-current','wirebench-client','httpprobe'],'amsterdam':['server-v2','server-current','wirebench-server']}
+ manifest={}
+ for h,ns in names.items():
+  arch='arm64' if h=='router' else 'amd64'
+  shutil.copyfile(Path('/tmp/s5core-wan-20260921/tcpdiag')/('monitor-'+arch),D/('monitor-'+arch))
+  for n in ns+['monitor-'+arch]:
+   data=(D/n).read_bytes();upload(h,n,data,True);digest=hashlib.sha256(data).hexdigest()
+   assert ssh(h,'sha256sum '+shlex.quote(REMOTE[h]+'/'+n)).split()[0]==digest
+   manifest[n]=digest
+  env(h,'monitor.env',{'TCPDIAG_PROC_ONLY':1 if h=='router' else 0})
+  start(h,'monitor','monitor-'+arch,'monitor.env','-duration 19m -interval 200ms')
+ (D/'manifest.json').write_text(json.dumps(manifest,indent=2))
+ key,password=secrets.token_hex(16),secrets.token_urlsafe(18)
+ for mode in ('v2','current'):
+  server=dict(PROXY_USER='wan-bench',PROXY_PASSWORD=password,REQUIRE_AUTH='true',PROXY_LISTEN_IP='0.0.0.0',PROXY_PORT=0,ALLOWED_IPS=SOURCE+',127.0.0.1',OBFS_ENABLED='true',OBFS_PORT=PORT,OBFS_PSK=key,OBFS_NODE_ID='wan-bench',OBFS_MTU=1400,OBFS_MAX_PADDING=256,OBFS_REPLAY_WINDOW=10000,MAX_CONNECTIONS=5000,METRICS_PORT=0,METRICS_BIND_ADDR='127.0.0.1',LOG_LEVEL='info',SHUTDOWN_TIMEOUT='3s')
+  client=dict(CLIENT_LISTEN_ADDR=f'127.0.0.1:{LOCAL}',SERVER_ADDR=f'{VPS}:{PORT}',PROXY_USER='wan-bench',PROXY_PASS=password,OBFS_PSK=key,OBFS_NODE_ID='wan-bench',OBFS_MTU=1400,OBFS_MAX_PADDING=256,OBFS_FORMAT='v1',OBFS_PROLOGUE='printable',TRANSPORT='obfs',TIMEZONE_CHECK='false',LOG_LEVEL='error',SHUTDOWN_TIMEOUT='3s')
+  env('amsterdam',mode+'.env',server);env('router',mode+'.env',client)
+ env('amsterdam','target.env',{'BENCH_ALLOW_IP':SOURCE})
+ start('amsterdam','target','wirebench-server','target.env',f'-serve :{TARGET}')
+ time.sleep(.5)
+ for i,order in enumerate(itertools.permutations(('raw','v2','current')),1):
+  for mode in order:
+   if mode!='raw':
+    start('amsterdam','server','server-'+mode,mode+'.env');start('router','client','client-'+mode,mode+'.env');time.sleep(.5)
+   for direction in ('down','up') if i%2 else ('up','down'):
+    transfer(mode,direction,'4MB','warm',i)
+    transfer(mode,direction,'256MB','measure',i)
+   latency(mode,i)
+   if mode!='raw':stop('router','client');stop('amsterdam','server')
+ state['completed']=True
+ print('All six permutations completed.',flush=True)
+finally:
+ rows.close()
+ for h in started:
+  r=REMOTE[h]
+  try:
+   ssh(h,stop_script(h));time.sleep(.3)
+   for name in ('monitor','target','client','server','wirebench','latency'):stop(h,name)
+   for name in ('monitor','target','client','server'):
+    (D/(h+'-'+name+'.log')).write_text(ssh(h,f'cat {r}/{name}.log 2>/dev/null || true',timeout=60))
+   after=production(h);(D/(h+'-production-after.txt')).write_text(after)
+   if after!=production_before[h]:raise RuntimeError('production process inventory changed')
+   ssh(h,f'''w=$(cat {r}/watchdog-id); children=$(cat /proc/$w/task/$w/children 2>/dev/null); case "$(cat /proc/$w/cmdline 2>/dev/null)" in *{r}/watchdog.sh*) kill $children "$w" 2>/dev/null || true;; esac''')
+   # Refuse removal while any executable from this exact directory is alive.
+   left=ssh(h,f'''for e in /proc/[0-9]*/exe; do v=$(readlink "$e" 2>/dev/null) || continue; case "$v" in {r}/*) echo "$e";; esac; done''').strip()
+   if left:raise RuntimeError('task executable still running')
+   ssh(h,'rm -rf '+shlex.quote(r));print(h+': temporary processes/files removed; production process inventory unchanged',flush=True)
+  except Exception as exc:cleanup_errors.append(h+': '+str(exc));print('CLEANUP ERROR '+cleanup_errors[-1],flush=True)
+ state.update(finished=time.time(),cleanup_errors=cleanup_errors)
+ (D/'state.json').write_text(json.dumps(state,indent=2))
+ (D/'cleanup.txt').write_text('\n'.join(cleanup_errors) if cleanup_errors else 'Task processes and temporary directories removed on both hosts. Production process inventories unchanged.\n')
+ if cleanup_errors:raise RuntimeError('cleanup needs attention')

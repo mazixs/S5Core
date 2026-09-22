@@ -353,6 +353,14 @@ and [reproduction guide](docs/performance-validation.md). These are lab and ARM
 loopback results, not production WAN acceptance or a completed canary. Older
 measurements below retain their original workloads and are not directly comparable.
 
+A subsequent [raw / released 2.0.0 / current WAN comparison](docs/benchmarks/wan-2026-09-22/README.md)
+tested the ARM router and VPS with commit `9e0eb39`. Obfs download improved
+in all six paired rounds, with median throughput 44.84 -> 51.54 MiB/s
+(about +15%). Upload and WSS median gains were not statistically stable across
+the six rounds; short-request latency was essentially unchanged. The report
+includes separate raw controls, CPU/RSS, TCP evidence and limitations. Working
+services were not upgraded.
+
 Every number below states the command that produced it and the machine it ran
 on. A performance figure without those two things is not admissible in this
 README (plan task Ф0-6): three mutually incompatible throughput numbers used to

@@ -1,0 +1,36 @@
+Linux 6.12.107+deb13-amd64 x86_64
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 15
+model		: 6
+model name	: Common KVM processor
+stepping	: 1
+microcode	: 0x1
+cpu MHz		: 2197.452
+cache size	: 16384 KB
+physical id	: 0
+siblings	: 1
+core id		: 0
+cpu cores	: 1
+apicid		: 0
+initial apicid	: 0
+fpu		: yes
+fpu_exception	: yes
+cpuid level	: 13
+wp		: yes
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 syscall nx pdpe1gb rdtscp lm constant_tsc nopl xtopology cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault pti ssbd ibrs ibpb fsgsbase bmi1 avx2 smep bmi2 xsaveopt arat
+bugs		: cpu_meltdown spectre_v1 spectre_v2 spec_store_bypass l1tf mds swapgs itlb_multihit mmio_unknown bhi ibpb_no_ret its
+bogomips	: 4394.90
+clflush size	: 64
+cache_alignment	: 128
+address sizes	: 46 bits physical, 48 bits virtual
+power management:
+
+MemTotal:         990564 kB
+MemFree:          123464 kB
+MemAvailable:     202120 kB
+Buffers:           30048 kB
+Cached:           176364 kB
+cubic
+4096	131072	6291456
+4096	16384	4194304

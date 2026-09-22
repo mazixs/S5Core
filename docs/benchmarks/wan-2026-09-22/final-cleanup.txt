@@ -1,0 +1,1 @@
+Both hosts: no listener on TCP 47941, 47943 or 11891. No task executable remains running. Both series removed temporary directories and watchdogs; production process inventories unchanged.
