@@ -2,9 +2,9 @@ import collections,gzip,json,statistics as st
 from pathlib import Path
 D=Path(__file__).resolve().parent
 cal=json.loads((D/'clock-calibration.json').read_text())
-offset=cal['amsterdam']['best']['remote_minus_local_seconds']
+offset=cal['node-a']['best']['remote_minus_local_seconds']
 rows=[]
-path=D/'amsterdam-monitor.log'
+path=D/'node-a-monitor.log'
 text=path.read_text() if path.exists() else gzip.decompress(path.with_suffix('.log.gz').read_bytes()).decode()
 for line in text.splitlines():
  try:rows.append(json.loads(line))
