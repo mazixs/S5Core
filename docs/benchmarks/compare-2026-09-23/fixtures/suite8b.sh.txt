@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Reruns suite8 cells that failed before measuring (port busy at start): usage suite8b.sh DIR...
+# Each DIR is a results8 cell such as lo4-v210-obfs-5; the old one moves to results8/failed.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results8}
+mkdir -p "$out/failed"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+ONLY="tcp/,http/,https/,h2/,h3/,udp/rtt,udp/stream"
+for d in "$@"; do
+	[[ $d =~ ^lo([14])-(direct|v210-obfs|cur-obfs|v210-wss|cur-wss)-([0-9])$ ]] || { echo "skip $d"; continue; }
+	p=${BASH_REMATCH[1]} v=${BASH_REMATCH[2]}
+	[[ -d $out/$d ]] && { rm -rf "$out/failed/$d"; mv "$out/$d" "$out/failed/$d"; mv -f "$out/$d.log" "$out/failed/$d.log" 2>/dev/null; }
+	if [[ $v == direct ]]; then
+		taskset -c 0-5,8-13 ./run.sh direct "$out/$d" -only "$ONLY" > "$out/$d.log" 2>&1
+	else
+		SERVER_PROCS=$p CLIENT_PROCS=$p TAG=${v%-*} taskset -c 0-5,8-13 ./run.sh "${v#*-}" "$out/$d" -only "$ONLY" > "$out/$d.log" 2>&1
+	fi
+	echo "rerun $d rc=$?"
+done
+echo suite8b-done

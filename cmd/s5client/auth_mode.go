@@ -3,7 +3,7 @@ package main
 import "fmt"
 
 // auto preserves existing configurations. member-only explicitly pipelines
-// CONNECT without password negotiation or fallback to the legacy format.
+// CONNECT without password negotiation.
 func validateAuthMode(cfg clientParams) error {
 	switch cfg.AuthMode {
 	case "", "auto":
@@ -17,9 +17,6 @@ func validateAuthMode(cfg clientParams) error {
 		}
 		if cfg.ProxyUser != "" || cfg.ProxyPass != "" {
 			return fmt.Errorf("PROXY_AUTH_MODE=member-only forbids PROXY_USER/PROXY_PASS; use password-fallback for method negotiation")
-		}
-		if cfg.Format != string(formatV1) {
-			return fmt.Errorf("PROXY_AUTH_MODE=member-only requires OBFS_FORMAT=v1 (no legacy fallback)")
 		}
 	case "password-fallback":
 		if cfg.ProxyUser == "" || cfg.ProxyPass == "" {

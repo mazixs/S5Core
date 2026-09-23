@@ -111,25 +111,31 @@ func udpHeaderLen(src *AddrSpec) int {
 func AppendUDPHeader(dst []byte, src *AddrSpec) []byte {
 	// RSV(2) + FRAG(1)
 	dst = append(dst, 0x00, 0x00, 0x00)
+	return AppendAddr(dst, src)
+}
 
-	switch {
-	case src.FQDN != "":
-		dst = append(dst, fqdnAddress, byte(len(src.FQDN)))
-		dst = append(dst, src.FQDN...)
-	case src.IP.To4() != nil:
-		dst = append(dst, ipv4Address)
-		dst = append(dst, src.IP.To4()...)
-	case src.IP.To16() != nil:
-		dst = append(dst, ipv6Address)
-		dst = append(dst, src.IP.To16()...)
-	default:
-		// An address that is neither is written as the zero IPv4 address,
-		// which is what this encoder has always done.
-		dst = append(dst, ipv4Address)
-		dst = append(dst, net.IPv4zero.To4()...)
+// AppendAddr appends ATYP, address and port - the tail shared by a reply and
+// a UDP header - and allocates nothing when dst has the room. A nil address,
+// or one that is neither a name nor an IP, is written as 0.0.0.0:0 or the
+// zero IPv4 address with its port, which is what every encoder here did.
+func AppendAddr(dst []byte, a *AddrSpec) []byte {
+	if a == nil {
+		return append(dst, ipv4Address, 0, 0, 0, 0, 0, 0)
 	}
-
-	return binary.BigEndian.AppendUint16(dst, uint16(src.Port))
+	switch {
+	case a.FQDN != "":
+		dst = append(dst, fqdnAddress, byte(len(a.FQDN)))
+		dst = append(dst, a.FQDN...)
+	case a.IP.To4() != nil:
+		dst = append(dst, ipv4Address)
+		dst = append(dst, a.IP.To4()...)
+	case a.IP.To16() != nil:
+		dst = append(dst, ipv6Address)
+		dst = append(dst, a.IP.To16()...)
+	default:
+		dst = append(dst, ipv4Address, 0, 0, 0, 0)
+	}
+	return binary.BigEndian.AppendUint16(dst, uint16(a.Port))
 }
 
 // AppendUDPHeaderFromAddr is AppendUDPHeader for a *net.UDPAddr, which is what

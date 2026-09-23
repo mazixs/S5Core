@@ -262,7 +262,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 			if len(req.dialCandidates) == 0 {
 				failure := &ConnError{Stage: "request", Op: "rules", Kind: FailurePolicy, Err: errors.New("resolved addresses blocked by rules")}
 				if err := sendReply(conn, ruleFailure, nil); err != nil {
-					return errors.Join(failure, err)
+					return errors.Join(failure, connFailure("request", "reply_write", err))
 				}
 				return failure
 			}
@@ -517,9 +517,7 @@ func (s *Server) handleBind(ctx context.Context, conn conn, req *Request) error 
 	return nil
 }
 
-// readAddrSpec is used to read AddrSpec.
-// readAddrSpec is used to read AddrSpec.
-// Expects an address type byte, follwed by the address and port
+// readAddrSpec reads an address type byte followed by the address and port.
 func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	d := &AddrSpec{}
 
@@ -572,41 +570,11 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 
 // sendReply is used to send a reply message
 func sendReply(w io.Writer, resp uint8, addr *AddrSpec) error {
-	// Format the address
-	var addrType uint8
-	var addrBody []byte
-	var addrPort uint16
-	switch {
-	case addr == nil:
-		addrType = ipv4Address
-		addrBody = []byte{0, 0, 0, 0}
-		addrPort = 0
-
-	case addr.FQDN != "":
-		addrType = fqdnAddress
-		addrBody = append([]byte{byte(len(addr.FQDN))}, addr.FQDN...)
-		addrPort = uint16(addr.Port)
-
-	case addr.IP.To4() != nil:
-		addrType = ipv4Address
-		addrBody = []byte(addr.IP.To4())
-		addrPort = uint16(addr.Port)
-
-	case addr.IP.To16() != nil:
-		addrType = ipv6Address
-		addrBody = []byte(addr.IP.To16())
-		addrPort = uint16(addr.Port)
-
-	default:
+	if addr != nil && addr.FQDN == "" && addr.IP.To16() == nil {
 		return fmt.Errorf("failed to format address: %v", addr)
 	}
-
-	msg := make([]byte, 0, 6+len(addrBody))
-	msg = append(msg, Socks5Version, resp, 0, addrType)
-	msg = append(msg, addrBody...)
-	msg = append(msg, byte(addrPort>>8), byte(addrPort&0xff))
-
-	// Send the message
+	var buf [4 + 1 + 255 + 2]byte
+	msg := AppendAddr(append(buf[:0], Socks5Version, resp, 0), addr)
 	_, err := w.Write(msg)
 	return err
 }

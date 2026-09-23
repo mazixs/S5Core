@@ -7,14 +7,20 @@ import (
 	utlslib "github.com/refraction-networking/utls"
 )
 
-// Dialer owns bounded TLS session caches for one immutable endpoint and trust
+// Dialer owns TLS session caches for one immutable endpoint and trust
 // configuration. Construct a new Dialer when endpoint, SNI, CA, pin or browser
 // fingerprint changes. Each instance has independent crypto/tls and uTLS caches.
-// Browser presets without a resumption extension retain their original wire
-// fingerprint and perform a full handshake.
+//
+// Only the crypto/tls path ever resumes. Browser presets carry no resumption
+// extension, so with TLS_FINGERPRINT every dial is a full handshake with the
+// preset's JA4 and the uTLS cache stays unused. Without a fingerprint
+// crypto/tls does not spend a TLS 1.3 ticket: dials that start before a fresh
+// ticket arrives offer the same PSK identity in clear text, which links them
+// for a passive observer (session_cache_test.go).
 type Dialer struct{ opts DialOpts }
 
-// NewDialer snapshots options and keeps at most 16 sessions per TLS stack.
+// NewDialer snapshots options. Both stacks key sessions by server name, so one
+// Dialer holds one live session; the LRU bound of 16 is headroom, not a pool.
 // Caller-supplied TLSConfig session caches are replaced to prevent cross-policy
 // resumption. Verification callbacks must themselves remain immutable.
 func NewDialer(opts DialOpts) *Dialer {
@@ -39,3 +45,11 @@ func NewDialer(opts DialOpts) *Dialer {
 
 // DialContext opens a new connection, reusing only the TLS session state.
 func (d *Dialer) DialContext(ctx context.Context) (*Conn, error) { return DialContext(ctx, d.opts) }
+
+// DialFrames is DialContext for a shaper whose band moved after NewDialer, as
+// transport advice does: the write buffer follows maxFrame, the caches stay.
+func (d *Dialer) DialFrames(ctx context.Context, maxFrame int) (*Conn, error) {
+	opts := d.opts
+	opts.WriteBufferSize = maxFrame
+	return DialContext(ctx, opts)
+}

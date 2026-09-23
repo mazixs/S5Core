@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Аудит качества S5Core</title>
+<style>
+:root{--bg:#fbfbf9;--fg:#1d1f22;--muted:#5e636b;--line:#dcdcd6;--card:#ffffff;--accent:#1f5fbf;--hi:#b3261e;--mid:#a15c00;--lo:#3d6b35;--code:#f0f0ec}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--fg:#e6e6e3;--muted:#a0a4ab;--line:#2e3136;--card:#1c1f23;--accent:#7fb0ff;--hi:#ff8a80;--mid:#f0b35a;--lo:#8fcf80;--code:#262a2f}}
+:root[data-theme="dark"]{--bg:#15171a;--fg:#e6e6e3;--muted:#a0a4ab;--line:#2e3136;--card:#1c1f23;--accent:#7fb0ff;--hi:#ff8a80;--mid:#f0b35a;--lo:#8fcf80;--code:#262a2f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:28px 16px 64px}
+h1{font-size:26px;margin:0 0 4px}
+h2{font-size:20px;margin:36px 0 10px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:22px 0 6px}
+p,li{max-width:78ch}
+.sub{color:var(--muted);margin:0 0 20px}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.tl{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:14px 18px;margin:14px 0}
+.tl ul{margin:6px 0 0;padding-left:20px}
+.wrap{overflow-x:auto;margin:10px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;background:var(--card)}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--code);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.b{display:inline-block;padding:0 7px;border-radius:10px;font-size:12px;font-weight:600;border:1px solid currentColor;white-space:nowrap}
+.hi{color:var(--hi)}.mid{color:var(--mid)}.lo{color:var(--lo)}.mu{color:var(--muted)}
+.good{color:var(--lo)}.bad{color:var(--hi)}
+small{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>Аудит качества кода S5Core</h1>
+<p class="sub">22.09.2026 · HEAD <code>cd79abe</code> (2.1.0) · фокус на доработке задержек <code>9e0eb39</code> · стенд i7-11700K, Go 1.26.6</p>
+
+<div class="tl" style="border-left-color:var(--mid)">
+<b>Поправка от 22.09.2026, после процессного A/B.</b> Вывод отчета про <code>Gosched</code> опроверг процессный стенд: <code>scripts/performance-ab.py</code>, 6 раундов ABBA, 10200 наблюдений на сценарий, HTTPS h1, obfs и WSS. Полные таблицы лежат в <code>docs/benchmarks/yield.md</code>.
+<ul>
+<li>Польза уступки большая, но внутрипроцессный стенд ее не видел: там один runtime планирует обе стороны туннеля. Без уступки p99 мелких запросов на фоне параллельной закачки 8 МиБ растет в 4,7-66 раз (obfs mixed/new 6,2 -&gt; 29,2 мс, WSS mixed/reuse 0,27 -&gt; 17,7 мс). Поэтому удалять <code>Gosched</code> нельзя.</li>
+<li>Цена измерена верно: уступка после каждой пачки стоит 35-59% CPU на GiB по сравнению с вариантом без уступки.</li>
+<li>Выбрана ветка "амортизировать" из п. В1: не больше одной уступки на направление раз в 100 мкс (<code>yieldInterval</code>, <code>yieldDue</code>). В одном дереве по сравнению с уступкой после каждой пачки: bulk CPU/GiB ниже на 13-21%, bulk p50 ниже на 1-16%, p99 mixed не изменился (все 95% CI содержат ноль). По сравнению с вариантом без уступки: CPU/GiB выше на 7-27%, p99 mixed ниже в 4,7-66 раз. 25 мкс экономит меньше CPU. 400 мкс больше не экономит и ухудшает WSS mixed/reuse.</li>
+<li>Рабочее дерево против 2.1.0: bulk CPU/GiB ниже на 11-21%, bulk p50 от +2% до -16%. Регрессии p99 на mixed и small нет ни при <code>GOMAXPROCS=8</code>, ни при <code>GOMAXPROCS=2</code>.</li>
+<li>Устарели четыре места: третий пункт "Коротко", вердикт PERF-01 по <code>Gosched</code> в разделе 1, "если tail не хуже порога, удалить" в В1 и ожидание "-35-40% CPU/GiB" в шаге 1 раздела 6. Они помечены ниже, остальные выводы в силе.</li>
+</ul>
+<b>Статус находок в рабочем дереве.</b> Сделаны: В1 (интервал), С1, С2, С3 (документация и тесты), Н1, Н2, Н3, Н5, Н7, единый <code>AppendAddr</code>, <code>isTimeout</code> через <code>errors.As</code>, комментарии <code>veil.go</code> и <code>udp_client.go</code>, удаление legacy и сырого пролога, релей-бенчмарк <code>pkg/obfs/relay_bench_test.go</code>. Не сделаны, по решению: Н4, Н6, Н8, перенос тестовых функций и <code>internal/testutil</code>.
+</div>
+
+<div class="tl">
+<b>Коротко.</b>
+<ul>
+<li>Основной выигрыш доработки подтвердился: объединение кадров при чтении obfs (PERF-01) дает <b>+107-200%</b> к потоку на upload в моем стенде. Это совпадает с отчетом.</li>
+<li>У нее есть скрытая цена: <code>runtime.Gosched()</code> после каждого большого Read/Write. Только он дает регрессию микробенчмарков <b>+50-57%</b> на записях 4 КиБ и <b>+8-18%</b> на 32 КиБ. На релее он добавляет <b>+57% CPU/GiB</b> на download и отнимает 20-30% потока. Если его выключить, все возвращается к базе или становится лучше. <span class="b mid">по CPU верно, но tail без него рушится, см. поправку</span></li>
+<li><span class="b hi">опровергнуто, см. поправку</span> Польза <code>Gosched</code> по задержке в моем стенде маленькая. Около -10% p50 малого запроса есть только при <code>GOMAXPROCS=2</code>, а изменение p99 статистически незначимо. При <code>GOMAXPROCS=1</code> он не помогает вообще: около 10 мс у всех вариантов, включая базу. Отчет доработки отдельно этот вклад не изолировал.</li>
+<li>Мертвого кода почти нет, staticcheck чистый. Устаревшее - формат <code>legacy</code> и сырой пролог, по графику их удаляют в 2.2.</li>
+<li>На WAN ждать большого эффекта от дальнейших CPU-оптимизаций не стоит: там упор в канал и RTT (G1, WAN-прогон дал около +15% на obfs download). Выигрыш будет на ARM-роутере (CPU-bound) и в плотности сервера (CPU на ГиБ, соединения на ядро).</li>
+</ul>
+</div>
+
+<h2>1. Что дала доработка и чего она стоила</h2>
+<div class="wrap"><table>
+<tr><th>Пункт</th><th>Выигрыш</th><th>Цена</th><th>Вердикт</th></tr>
+<tr><td>PERF-01: объединение целых кадров в одном <code>Read</code></td><td>Upload через релей +107% (16 P) и +200% (2 P), CPU/GiB -38% и -67%. Раньше каждый кадр 1,3 КБ был отдельным <code>write</code> в сокет цели.</td><td>Код сложнее: <code>readErr</code>, <code>wireReadErr</code>, <code>bufferedFrameReady</code>. Маска длины считается дважды на кадр (п. Н5).</td><td class="good">Оправдано, оставить</td></tr>
+<tr><td>PERF-01: <code>Gosched</code> после Read/Write больше кадра</td><td>p50 малого запроса на фоне bulk -10% при 2 P, p99 в пределах шума.</td><td>Микро: +50-57% (4 КиБ), +8-18% (32 КиБ). Релей, 16 P: download -16% потока и +57% CPU/GiB; без него upload +153% вместо +107%.</td><td class="mid">Было: не доказано. Процессный A/B: польза есть (p99 mixed в 4,7-66 раз ниже), уступка ограничена интервалом 100 мкс (поправка)</td></tr>
+<tr><td>PERF-02: <code>WriteBufferSize</code> 4096 в WS upgrader</td><td>Shaped WS -89% B/op, -66% allocs, поток +10%. Заодно убран хвостовой TLS-record 1-14 Б у кадров 4083-4096.</td><td>+4,8 КиБ временно на upgrade, +768 Б на idle-пару. При <code>WS_MAX_FRAME</code> &gt; 4096 появляется постоянная длина записи (п. С1).</td><td class="good">Оправдано, поправить случай с большим кадром</td></tr>
+<tr><td>PERF-03A: <code>member-only</code></td><td>-1 RTT против <code>password-fallback</code>.</td><td>Против <code>auto</code> без <code>PROXY_USER</code> выигрыша нет, провод тот же. Fail-closed реализован корректно.</td><td class="good">Оправдано</td></tr>
+<tr><td>PERF-03B: кеш TLS-сессий</td><td>Рукопожатие -14% (707 -&gt; 608 мкс) без fingerprint.</td><td>С браузерными профилями uTLS не работает вообще: у Chrome/Firefox/Safari/iOS в utls 1.8.2 нет PSK. Из 16 слотов занят 1, потому что ключ - ServerName.</td><td class="mid">Работает только без fingerprint. Уточнить документацию</td></tr>
+<tr><td>PERF-05: компилированные маршруты</td><td>10000 правил: 728 мкс -&gt; 77 нс на поиск.</td><td>Нет.</td><td class="good">Оправдано</td></tr>
+<tr><td>H01-H05: дедлайны, DNS-кандидаты, отмена WSS</td><td>Исправлены обрывы активных загрузок и мертвые первые адреса (250 мс вместо полного таймаута).</td><td><code>timeoutConn.Write</code> теперь на каждой записи перевзводит и дедлайн чтения: около 110 нс плюс mutex (п. Н6).</td><td class="good">Оправдано</td></tr>
+</table></div>
+
+<h2>2. Главная находка: <code>runtime.Gosched()</code> на горячем пути</h2>
+<p><code>pkg/obfs/conn.go:738-743</code> (Write) и <code>:946-951</code> (Read). Уступка выполняется после каждой записи больше <code>maxFrame</code> и после каждого чтения, вернувшего больше одного кадра. Под нагрузкой это каждая итерация <code>io.Copy</code>. Голый <code>Gosched</code> в цикле стоит около 100 нс, но после реальной работы он обходится в 300-700 нс. Горутина уходит в глобальную очередь, будит простаивающий M и переезжает на другое ядро с холодным кешем. Скорее всего, этим объясняется и рост CPU у WSS на 3-13% из отчета.</p>
+
+<h3>Микробенчмарки: переключатель <code>Gosched</code>, остальной код HEAD, n=6</h3>
+<div class="wrap"><table>
+<tr><th>Бенчмарк</th><th>Без Gosched</th><th>С Gosched (HEAD)</th><th>Разница</th></tr>
+<tr><td>FramingOnly/Padding256/4KiB</td><td class="n">1,393 мкс</td><td class="n">2,091 мкс</td><td class="n bad">+50%</td></tr>
+<tr><td>FramingOnly/Padding256/32KiB</td><td class="n">9,92 мкс</td><td class="n">11,07 мкс</td><td class="n bad">+12%</td></tr>
+<tr><td>TunnelByCipher/aes/4KiB</td><td class="n">1,370 мкс</td><td class="n">2,099 мкс</td><td class="n bad">+53%</td></tr>
+<tr><td>TunnelByCipher/aes/32KiB</td><td class="n">10,12 мкс</td><td class="n">11,19 мкс</td><td class="n bad">+11%</td></tr>
+<tr><td>EndToEnd/AESGCM/4KiB (loopback TCP)</td><td class="n">12,6 мкс</td><td class="n">19,8 мкс</td><td class="n bad">+57%</td></tr>
+<tr><td>1400B, все бенчмарки</td><td colspan="3">без изменений: запись в один кадр уступку не вызывает</td></tr>
+</table></div>
+<p><small>Сравнение базы <code>c0f137a</code> с HEAD дает те же числа (+48-57% на 4 КиБ). Значит, весь регресс микробенчмарков вносит <code>Gosched</code>, а не объединение кадров.</small></p>
+
+<h3>Релей: obfs поверх TCP, сервер копирует в сокет цели как <code>internal/relay</code>, n=6</h3>
+<div class="wrap"><table>
+<tr><th>Сценарий</th><th>База 2.0</th><th>HEAD</th><th>HEAD без Gosched</th></tr>
+<tr><td>Upload, 16 P, поток</td><td class="n">453 МиБ/с</td><td class="n">940 МиБ/с (+108%)</td><td class="n good">1147 МиБ/с (+153%)</td></tr>
+<tr><td>Upload, 16 P, CPU-с/ГиБ</td><td class="n">4,45</td><td class="n">2,76</td><td class="n good">1,74</td></tr>
+<tr><td>Download, 16 P, поток</td><td class="n">1,38 ГиБ/с</td><td class="n bad">1,16 ГиБ/с (-17%)</td><td class="n">1,40 ГиБ/с (=)</td></tr>
+<tr><td>Download, 16 P, CPU-с/ГиБ</td><td class="n">1,39</td><td class="n bad">2,18 (+57%)</td><td class="n">1,38 (=)</td></tr>
+<tr><td>Upload, 2 P, поток</td><td class="n">350 МиБ/с</td><td class="n">1050 МиБ/с</td><td class="n good">1174 МиБ/с</td></tr>
+<tr><td>Малый запрос на фоне bulk, 16 P, p50 / p99</td><td class="n">24 / 48 мкс</td><td class="n">29 / 50 мкс</td><td class="n">24,5 / 48 мкс</td></tr>
+<tr><td>То же, 2 P, p50 / p99</td><td class="n">64 / 358 мкс</td><td class="n good">65 / 378 мкс</td><td class="n">70 / 423 мкс <small>(p99: p=0,13)</small></td></tr>
+<tr><td>То же, 1 P, p50</td><td class="n">8,8 мс</td><td class="n">10,0 мс</td><td class="n">10,3 мс</td></tr>
+</table></div>
+<p><small>Download в стенде уходит в <code>io.Discard</code>, поэтому выигрыш объединения на нем не виден, зато цена <code>Gosched</code> видна в чистом виде. У настоящего клиента приемник - сокет приложения, и объединение там экономит syscall так же, как на upload. Повторная серия с вариантом "уступка раз в 256 КиБ" дала промежуточный результат (CPU -20-26% против HEAD, p50 при 2 P -4%), то есть заметного преимущества перед полным удалением не показала. Около 10 мс при 1 P - это квант вытеснения планировщика Go: пока bulk всегда готов, netpoll почти не опрашивается. <code>Gosched</code> этого не лечит.</small></p>
+
+<p><b>Почему это не приговор.</b> В отчете доработки прототип без уступки провалил tail на процессном стенде (p99 на mixed вырос до нескольких мс), а мой стенд работает внутри одного процесса и без HTTP-origin. Поэтому решение принимается процессным A/B, а не этим бенчмарком (п. В1).</p>
+<p><b>Итог процессного A/B.</b> Предположение подтвердилось: этот стенд уступку недооценивает. Без нее p99 mixed растет в 4,7-66 раз, поэтому уступка оставлена и ограничена интервалом 100 мкс (поправка в начале отчета, <code>docs/benchmarks/yield.md</code>).</p>
+
+<h2>3. Находки по приоритету</h2>
+<div class="wrap"><table>
+<tr><th>#</th><th>Где</th><th>Суть и цена</th><th>Что делать</th></tr>
+<tr><td>В1 <span class="b hi">высокая</span></td><td><code>pkg/obfs/conn.go:738, 946</code></td><td>Безусловный <code>Gosched</code>: +50% CPU на 4 КиБ, +57% CPU/GiB на download, -20-30% потока. Польза не изолирована.</td><td>Добавить временный переключатель и прогнать процессный ABBA по mixed (10200 наблюдений) на desktop и на роутере с <code>GOMAXPROCS=3</code>. Если tail не хуже порога <code>max(5%, 1 мс)</code>, удалить. Если хуже, оставить только при малом <code>GOMAXPROCS</code> или амортизировать.<br><small>Сделано: tail без уступки хуже в 4,7-66 раз, выбрана амортизация, одна уступка раз в 100 мкс.</small></td></tr>
+<tr><td>С1 <span class="b mid">средняя</span></td><td><code>pkg/transport/ws/upgrader.go:44</code></td><td>Буфер 4096 зафиксирован, а <code>WS_MAX_FRAME</code> может быть больше. Тогда gorilla пишет две TLS-записи, и первая всегда 4096 + заголовок. Это постоянная длина, та самая мода, с которой борется R09 (стелс).</td><td>Передать max frame в <code>UpgraderOpts</code> и ставить <code>max(DefaultMaxFrame, maxFrame)</code>, либо отклонять такую конфигурацию на старте.</td></tr>
+<tr><td>С2 <span class="b mid">средняя</span></td><td><code>cmd/s5client/main.go:496, 501</code></td><td><code>io.Copy</code> через <code>TCPConn.ReadFrom/WriteTo</code> выделяет 2 x 32 КиБ на каждый туннель. На сервере для этого есть пул, на клиенте нет. При браузинге с десятками соединений это давление на GC роутера.</td><td>Пул буферов плюс <code>io.CopyBuffer</code> с обертками, скрывающими <code>ReaderFrom/WriterTo</code>, или <code>relay.Half</code>.</td></tr>
+<tr><td>С3 <span class="b mid">средняя</span></td><td><code>pkg/transport/ws/session.go</code>, <code>internal/utls/dialer.go:84</code></td><td>Кеш TLS-сессий ничего не дает с <code>TLS_FINGERPRINT=chrome/firefox/safari/ios</code>. В режиме без fingerprint Go не расходует тикет TLS 1.3, поэтому параллельные соединения несут один PSK identity и связываются пассивно.</td><td>Записать в README/CHANGELOG. Добавить тест: второй ClientHello под chrome дает тот же JA4. Поправить комментарий про 16 слотов.</td></tr>
+<tr><td>Н1 <span class="b lo">низкая</span></td><td><code>internal/socks5/dial.go:129</code></td><td><code>firstErr</code> - первая ошибка по времени. При dual-stack без IPv6-маршрута клиент получает REP 0x03 вместо 0x04, и лог говорит про v6. Ветка <code>ctx.Done</code> возвращает голый deadline без адреса.</td><td>Предпочитать ошибку основного семейства, как <code>dialParallel</code> в stdlib. При дедлайне возвращать <code>firstErr</code>.</td></tr>
+<tr><td>Н2 <span class="b lo">низкая</span></td><td><code>dial.go:84-91</code></td><td><code>WithTimeout</code> поверх <code>valueContext</code>: context не узнает родителя и поднимает горутину пропагации на каждую попытку.</td><td>Сначала <code>WithTimeout(ctx)</code>, затем <code>keepValues</code>.</td></tr>
+<tr><td>Н3 <span class="b lo">низкая</span></td><td><code>dial.go:55-111, 17-47</code></td><td>Один кандидат (IP, один A) все равно платит канал, таймер и горутину. <code>interleaveIPs</code> использует map и два <code>ip.String()</code> на адрес. Это микросекунды на CONNECT, на фоне RTT незаметно.</td><td>Быстрый путь при <code>len==1</code>, ключ <code>netip.Addr</code>. Делать попутно.</td></tr>
+<tr><td>Н4 <span class="b lo">низкая</span></td><td><code>dial.go:138-146</code></td><td>Вторая попытка через 250 мс идет и в том же семействе. Для далеких целей (RTT больше 250 мс) это лишний SYN на каждый CONNECT. RFC 8305 это допускает.</td><td>Осознанно оставить или ограничить разными семействами.</td></tr>
+<tr><td>Н5 <span class="b lo">низкая</span></td><td><code>pkg/obfs/conn.go:992, 1041</code></td><td>Маска длины для одного счетчика считается дважды: в <code>bufferedFrameReady</code> и в <code>readFrame</code>. AES-блок стоит 10-15 нс на кадр около 580 нс.</td><td>Кешировать пару (счетчик, маска). Оценка: 1-2% на объединенных кадрах.</td></tr>
+<tr><td>Н6 <span class="b lo">низкая</span></td><td><code>pkg/s5server/conn.go:77-86</code></td><td>Каждый Write в Stream-релее: <code>SetWriteDeadline</code>, mutex и <code>SetReadDeadline</code>. Замер: 106-116 нс на вызов, <code>time.Now</code> 25 нс. На пачку около 22 КБ это 1-2%.</td><td>Не трогать без профиля. Троттлинг перевзвода сломает точные synctest-утверждения ("ровно через 30 с").</td></tr>
+<tr><td>Н7 <span class="b lo">косметика</span></td><td><code>internal/socks5/request.go:265, 521</code></td><td>Ошибка не обернута в <code>connFailure("request","reply_write")</code>, поэтому метрика теряет код. Дубль строки комментария и опечатка "follwed".</td><td>Поправить.</td></tr>
+<tr><td>Н8 <span class="b lo">косметика</span></td><td><code>cmd/s5client/main.go:200</code>, <code>cmd/s5core/main.go:138</code></td><td><code>os.Exit</code> после <code>defer diagnostics.Start()()</code>: профиль неудачного старта не сбрасывается. Касается только сборки с тегом profiling.</td><td>По желанию.</td></tr>
+</table></div>
+
+<h3>Проверено, проблем нет</h3>
+<ul>
+<li>Телеметрия переходов на каждый кадр (<code>BenchmarkFrameObserver</code>): разница bare/sdk-telemetry в пределах шума. Опции атрибутов предвычислены.</li>
+<li>Ни одной аллокации на кадре в пределах MTU, в том числе после объединения чтений.</li>
+<li>Keepalive: горутина на соединение и таймер раз в 10-20 с. Для сотен соединений на роутере это несущественно.</li>
+</ul>
+
+<h2>4. Мертвый, устаревший и дублирующийся код</h2>
+<p>deadcode не нашел функций, недостижимых одновременно из бинарей и тестов. staticcheck без стилистики дает 0 находок. Экспортированные символы <code>internal/*</code> без использования отсутствуют. Публичный SDK (<code>Admin</code>, <code>DefaultConfig</code>, <code>ws.Dial</code> и т.д.) - это API, а не мертвый код.</p>
+<div class="wrap"><table>
+<tr><th>Что</th><th>Категория</th><th>Рекомендация</th></tr>
+<tr><td><code>pkg/obfs/legacy</code> (231 стр.), <code>formatLegacy</code>, <code>OBFS_FORMAT_REPROBE</code>, <code>PrologueRaw</code></td><td>устаревший</td><td>Удалить в 2.2 по графику <code>docs/field/migration.md</code> (4.5, 4.6) вместе с тестами. Значение <code>legacy</code> должно стать ошибкой старта. Это самое крупное упрощение: из клиента уходят ветки политики формата.</td></tr>
+<tr><td><code>sendReply</code>, <code>AppendUDPHeader</code>, ручная сборка в <code>udp_client.go:158-177</code></td><td>дубль</td><td>Три кодировщика ATYP+адрес+порт свести в один <code>appendAddr</code>. Hot path <code>AppendUDPHeader</code> проверить бенчмарком.</td></tr>
+<tr><td><code>isTimeout</code> в 4 местах</td><td>дубль</td><td>В <code>internal/socks5/associate.go:700</code> перейти на <code>errors.As</code>: сейчас обернутую ошибку он не видит. Пробы не трогать.</td></tr>
+<tr><td><code>BuildUDPHeader</code>, <code>udpHeaderLen</code>, <code>Server.ListenAndServe</code></td><td>только тесты</td><td>Перенести в <code>_test.go</code> или удалить. Это наследие форка armon.</td></tr>
+<tr><td>Тестовые SOCKS5-клиенты, эхо-серверы и <code>freePort</code> в нескольких пакетах; <code>allocPair</code>/<code>benchPair</code></td><td>дубль (тесты)</td><td>Вынести в <code>internal/testutil</code>.</td></tr>
+<tr><td>Комментарии <code>pkg/veil/veil.go:169</code> ("Symmetric is the scheme in use"), <code>udp_client.go:154-157</code></td><td>устаревший комментарий</td><td>Поправить: в проде работают Clocked/Roster.</td></tr>
+<tr><td>perfsprint: 58 <code>fmt.Errorf</code> без аргументов</td><td>стиль</td><td>Игнорировать: это путь старта, не hot path.</td></tr>
+</table></div>
+
+<h2>5. Что сделано хорошо и трогать не надо</h2>
+<ul>
+<li>Объединение кадров при чтении: выигрыш настоящий, аллокаций нет, данные вместе с ошибкой транспорта не теряются.</li>
+<li>Свой перебор адресов в <code>dialResolved</code> оправдан. <code>net.Dialer</code> на host:port резолвил бы мимо <code>Config.Resolver</code>, правил и хука <code>Dial</code>. Горутины не утекают, поздний победитель закрывается.</li>
+<li>Отмена WS upgrade через <code>context.AfterFunc</code> работает без гонок. Пин проверяется на возобновленной сессии в обоих TLS-стеках.</li>
+<li><code>member-only</code> действительно fail-closed. Компилированные маршруты сохраняют семантику, включая IDN.</li>
+<li>Отказ от спекулятивного DNS-кеша и PGO без доказанной пользы - правильное решение.</li>
+</ul>
+
+<h2>6. Что улучшать, какой результат ждать и чем проверять</h2>
+<div class="wrap"><table>
+<tr><th>Шаг</th><th>Ожидаемый результат</th><th>Чем проверяется</th></tr>
+<tr><td>1. Решающий A/B по <code>Gosched</code> (В1)</td><td>Если tail не страдает: obfs CPU/GiB еще -35-40%, поток на CPU-bound путях +15-30%, 4 КиБ записи снова 1,4 мкс. На WAN с VPS-клиентом эффект небольшой, на роутере заметный: гигабит сейчас стоит ему около 1,8 ядра.<br><small>Факт: tail страдает, полное удаление отвергнуто. Интервал 100 мкс дал bulk CPU/GiB -13-21% против уступки после каждой пачки при том же p99.</small></td><td><code>S5_PERF=... go test ./cmd/httpsprobe/</code> + <code>scripts/performance-ab.py</code>, mixed, 6 прогонов по 10200 наблюдений, порог p99 <code>max(5%, 1 мс)</code>. Отдельно на роутере с <code>S5_PERF_PROCS=3</code>. Микро: <code>./scripts/bench.sh save/compare</code> на <code>TunnelByCipher</code> 4/32 КиБ.</td></tr>
+<tr><td>2. Буфер upgrader по реальному <code>WS_MAX_FRAME</code> (С1)</td><td>Нет постоянной длины TLS-записи при больших кадрах.</td><td>Тест по образцу <code>TestTheBoundDoesNotMakeOneLengthTheShape</code> при <code>WS_MAX_FRAME=8192</code>: доля самой частой длины меньше 5%.</td></tr>
+<tr><td>3. Пул буферов в клиентском релее (С2)</td><td>-64 КиБ аллокаций на каждый CONNECT. Меньше GC-циклов на роутере при браузинге, пиковый RSS под <code>GOMEMLIMIT</code> не хуже.</td><td>Бенчмарк <code>handleClient</code> с <code>-benchmem</code> (allocs/op). <code>GODEBUG=gctrace=1</code> на роутере при 200 соединениях (методика <code>docs/benchmarks/arm-router.md</code>).</td></tr>
+<tr><td>4. Документация кеша TLS и тест JA4 (С3)</td><td>Ожидания пользователей совпадают с поведением. Апгрейд utls не сменит отпечаток незаметно.</td><td>Новый тест в <code>pkg/transport/ws/fingerprint_test.go</code>: два соединения через один Dialer под chrome.</td></tr>
+<tr><td>5. Мелочи dial.go (Н1-Н4), кеш маски (Н5), косметика (Н7)</td><td>Корректный REP-код и лог. Микросекунды на CONNECT, 1-2% на объединенных кадрах.</td><td>Юнит-тест с фейковым dial (v6 unreachable + v4 blackhole -&gt; <code>hostUnreachable</code>). <code>go test -race ./...</code>, <code>./scripts/pre-commit.sh</code>.</td></tr>
+<tr><td>6. Удаление legacy в 2.2</td><td>Минус около 230 строк формата и ветки политики клиента. Меньше поверхность отличия на проводе.</td><td>Весь pipeline, <code>spec_test.go</code>, матрица совместимости старый/новый из <code>docs/performance-validation.md</code>.</td></tr>
+<tr><td>7. Потоковый релей-бенчмарк в репозиторий</td><td>Цена <code>Gosched</code> и подобных вещей видна на каждом PR, а не только в процессном стенде.</td><td>Бенчмарк <code>BenchmarkRelayUpload/Download/MixedSmallLatency</code> с метрикой CPU-с/ГиБ (исходник в <code>bench/audit-2026-09-22/relay-src</code>).</td></tr>
+</table></div>
+
+<h2>7. Методика и ограничения</h2>
+<ul>
+<li>Микробенчмарки: база <code>c0f137a</code> (родитель доработки) против HEAD, чередование ABAB, 6 прогонов, benchstat. Эксперимент: копия HEAD с переключателями через переменные окружения (<code>EXP_NOGOSCHED</code>, <code>EXP_YIELD_BYTES</code>), рабочий код репозитория не менялся.</li>
+<li>Релей-бенчмарк работает в одном процессе на loopback без TLS, SOCKS5, учета и телеметрии. Он изолирует obfs и планировщик, но не заменяет процессный ABBA и WAN. Вторая серия шла шумнее (разброс 20-70%), выводы сделаны только по значимым различиям.</li>
+<li>Дедлайны и <code>Gosched</code> замерены отдельным микробенчмарком. Мертвый код искали deadcode, staticcheck и golangci-lint с unparam/prealloc/gocritic/dupl/perfsprint, находки перепроверены через grep.</li>
+<li>Сырые данные лежат в <code>bench/audit-2026-09-22/</code> (в .gitignore): <code>results/*.txt</code>, <code>results/relay</code>, <code>results/yield</code>, отчеты линтеров.</li>
+</ul>
+</main>
+</body>
+</html>

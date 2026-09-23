@@ -23,7 +23,7 @@ Explicit member-only authentication can additionally save one greeting RTT on
 applicable new tunnels. Bounded TLS session reuse preserves trust checks.
 DNS caching and PGO were evaluated and left disabled without sufficient benefit.
 
-See the [changelog](../../CHANGELOG.md#unreleased), [evidence and limitations](../reports/performance-implementation-2026-09-22.md)
+See the [changelog](../../CHANGELOG.md#210---2026-09-22), [evidence and limitations](../reports/performance-implementation-2026-09-22.md)
 and [reproduction guide](../performance-validation.md). These are lab and ARM
 loopback results, not production WAN acceptance or a completed canary. Older
 measurements below retain their original workloads and are not directly comparable.

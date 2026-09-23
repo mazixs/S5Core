@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -9,6 +10,8 @@ import (
 	"net/netip"
 	"sync"
 	"sync/atomic"
+
+	"github.com/mazixs/S5Core/internal/socks5"
 )
 
 var (
@@ -108,6 +111,24 @@ func addrOf(a net.Addr) netip.Addr {
 	return ip.Unmap()
 }
 
+// socksUDPHeader reports whether d starts with a header the server's
+// socks5.ParseUDPHeader accepts. It checks the same things without building
+// the address, because it runs on every datagram.
+func socksUDPHeader(d []byte) bool {
+	if len(d) < 4 || d[0] != 0 || d[1] != 0 || d[2] != 0 {
+		return false
+	}
+	switch d[3] {
+	case addrIPv4:
+		return len(d) >= 4+net.IPv4len+2
+	case addrIPv6:
+		return len(d) >= 4+net.IPv6len+2
+	case addrFQDN:
+		return len(d) >= 5 && len(d) >= 5+int(d[4])+2
+	}
+	return false
+}
+
 // handleUDPAssociate handles the client side of UDP Associate.
 // It opens a local UDP socket, tells the application its address,
 // and then multiplexes UDP packets over the obfuscated TCP tunnel.
@@ -151,31 +172,8 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 
 	// 3. Send success response to application with our local UDP port
 	boundAddr := udpConn.LocalAddr().(*net.UDPAddr)
-	// BuildUDPHeader adds RSV+FRAG which we don't want for the TCP reply,
-	// we just want standard SOCKS5 reply format: [VER, REP, RSV, ATYP, BND.ADDR, BND.PORT]
-	// Actually, socks5.BuildUDPHeader produces exactly RSV(0,0) FRAG(0) ATYP ... which happens to match VER(5) REP(0) RSV(0) ATYP ... if we tweak it.
-	// But it's safer to build by hand:
-	var atyp byte
-	var addrLen int
-	var ipBytes []byte
-
-	if ip := boundAddr.IP.To4(); ip != nil {
-		atyp = 0x01
-		addrLen = 4
-		ipBytes = ip
-	} else {
-		atyp = 0x04
-		addrLen = 16
-		ipBytes = boundAddr.IP.To16()
-	}
-
-	tcpReply := make([]byte, 4+addrLen+2)
-	tcpReply[0] = 0x05 // VER
-	tcpReply[1] = 0x00 // REP Success
-	tcpReply[2] = 0x00 // RSV
-	tcpReply[3] = atyp // ATYP
-	copy(tcpReply[4:], ipBytes)
-	binary.BigEndian.PutUint16(tcpReply[4+addrLen:], uint16(boundAddr.Port))
+	// VER, REP=success, RSV, then BND.ADDR and BND.PORT.
+	tcpReply := socks5.AppendAddr([]byte{socks5Ver, 0x00, 0x00}, &socks5.AddrSpec{IP: boundAddr.IP, Port: boundAddr.Port})
 
 	if _, err := clientConn.Write(tcpReply); err != nil {
 		slog.Error("Failed to send UDP Associate reply", "error", err)
@@ -222,6 +220,15 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 			// Validate it's from the same IP as the TCP connection
 			if src.Addr().Unmap() != appIP {
 				continue // Drop packets from strangers
+			}
+			// A datagram without a SOCKS5 UDP header is not the application
+			// speaking: the server would refuse it, and taking its port below
+			// would send every answer of the association there. A reflector
+			// answering a stale port did exactly that, and the answers it got
+			// back carried a valid header, so the two ends looped
+			// (docs/benchmarks/matrix-2026-09-22/README.md).
+			if !socksUDPHeader(buf[:n]) {
+				continue
 			}
 
 			// Where the answers go. Stored only when it changes, which is
@@ -281,10 +288,17 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				continue
 			}
 
-			if _, err := udpConn.WriteToUDPAddrPort(frameBuf, *addr); err != nil {
+			_, err := udpConn.WriteToUDPAddrPort(frameBuf, *addr)
+			udpFramePool.Put(framePtr)
+			if errors.Is(err, net.ErrClosed) {
+				// The association is being torn down; answers still in the
+				// tunnel have nowhere to go.
+				errCh <- err
+				return
+			}
+			if err != nil {
 				slog.Warn("Failed to send UDP packet to application", "error", err)
 			}
-			udpFramePool.Put(framePtr)
 		}
 	}()
 

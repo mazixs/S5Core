@@ -79,3 +79,9 @@ type valueContext struct {
 }
 
 func (c valueContext) Value(key any) any { return c.values.Value(key) }
+
+// AfterFunc lets a context derived from this one attach to the lifetime
+// directly. Without it context.WithTimeout cannot find the lifetime's
+// cancelCtx - Value answers from the resolver - and parks a goroutine per
+// derived context to watch Done, one per dial attempt.
+func (c valueContext) AfterFunc(f func()) func() bool { return context.AfterFunc(c.Context, f) }

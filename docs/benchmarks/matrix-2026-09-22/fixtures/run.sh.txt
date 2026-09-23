@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# usage: run.sh MODE OUTDIR [matrix args]   MODE: direct|plain|obfs|wss
+# Starts s5core (and s5client) on fixed ports, runs ./matrix through them and
+# records fd, threads, RSS, CPU and the session gauge before and after.
+set -euo pipefail
+cd "$(dirname "$0")"
+mode=$1 outdir=$2
+shift 2
+mkdir -p "$outdir"
+BIN=${BIN:-../work}
+TAG=${TAG:-final}
+PLAIN=${PLAIN_PORT:-41080} OBFS=${OBFS_PORT:-41443} WS=${WS_PORT:-41444} MET=${METRICS_PORT:-41090} CLI=${CLIENT_PORT:-41081}
+PSK=${PSK:-$(od -An -tx1 -N16 /dev/urandom | tr -d " \n")}
+[[ -f tls/cert.pem ]] || { mkdir -p tls; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3 \
+	-subj /CN=127.0.0.1 -addext subjectAltName=IP:127.0.0.1 -keyout tls/key.pem -out tls/cert.pem 2>/dev/null; }
+
+pids=()
+cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; wait 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_port() { for _ in $(seq 200); do (exec 3<>/dev/tcp/127.0.0.1/"$1") 2>/dev/null && return 0; sleep 0.05; done; echo "port $1 did not open" >&2; exit 1; }
+
+snap() { # pid name phase
+	local pid=$1 st fd
+	st=($(cut -d' ' -f14,15 /proc/"$pid"/stat))
+	fd=$(ls /proc/"$pid"/fd | wc -l)
+	printf '{"proc":"%s","phase":"%s","cpu_ticks":%d,"fds":%d,"threads":%d,"rss_kb":%d,"hwm_kb":%d}\n' "$2" "$3" \
+		$((st[0] + st[1])) "$fd" "$(awk '/^Threads/{print $2}' /proc/"$pid"/status)" \
+		"$(awk '/^VmRSS/{print $2}' /proc/"$pid"/status)" "$(awk '/^VmHWM/{print $2}' /proc/"$pid"/status)" >> "$outdir/resources.jsonl"
+}
+
+gauge() { curl -s "http://127.0.0.1:$MET/metrics" | grep -E '^s5core_(sessions|connections_active|connections_in_phase|obfs_handshake_failures_total|half_close_failures_total|connections_rejected_total)|^s5core_session_transitions_total.*illegal="true"' | sed "s/^/$1 /" >> "$outdir/gauges.txt" || true; }
+
+socks=""
+if [[ $mode != direct ]]; then
+	env -i PATH="$PATH" S5_LOWAT="${S5_LOWAT:-}" GODEBUG="${GODEBUG:-}" GOMAXPROCS="${SERVER_PROCS:-4}" PROXY_LISTEN_IP=127.0.0.1 PROXY_PORT=$PLAIN REQUIRE_AUTH=false \
+		OBFS_ENABLED=true OBFS_PORT=$OBFS OBFS_PSK=$PSK OBFS_MAX_PADDING=256 OBFS_MTU=1400 \
+		WS_ENABLED=true WS_ADDR=127.0.0.1:$WS WS_CERT_FILE=tls/cert.pem WS_KEY_FILE=tls/key.pem WS_MIN_FRAME=256 WS_MAX_FRAME=4096 \
+		METRICS_PORT=$MET METRICS_BIND_ADDR=127.0.0.1 TRAFFIC_FLUSH_INTERVAL=1s LOG_LEVEL=${LOG_LEVEL:-warn} \
+		"$BIN/s5core-$TAG" > "$outdir/server.log" 2>&1 &
+	spid=$!
+	pids+=("$spid")
+	wait_port "$PLAIN"
+	socks=127.0.0.1:$PLAIN
+fi
+if [[ $mode == obfs || $mode == wss ]]; then
+	extra=(TRANSPORT=obfs)
+	[[ $mode == wss ]] && extra=(TRANSPORT=ws WS_URL=wss://127.0.0.1:$WS/ws WS_CA_FILE=tls/cert.pem WS_MIN_FRAME=256 WS_MAX_FRAME=4096)
+	env -i PATH="$PATH" S5_LOWAT="${S5_LOWAT:-}" GODEBUG="${GODEBUG:-}" GOMAXPROCS="${CLIENT_PROCS:-4}" CLIENT_LISTEN_ADDR=127.0.0.1:$CLI SERVER_ADDR=127.0.0.1:$OBFS OBFS_PSK=$PSK \
+		OBFS_MAX_PADDING=256 OBFS_MTU=1400 KEEPALIVE_MIN=10s KEEPALIVE_MAX=20s LOG_LEVEL=${LOG_LEVEL:-warn} "${extra[@]}" \
+		"$BIN/s5client-$TAG" > "$outdir/client.log" 2>&1 &
+	cpid=$!
+	pids+=("$cpid")
+	wait_port "$CLI"
+	socks=127.0.0.1:$CLI
+fi
+sleep 0.3
+[[ -n ${spid:-} ]] && { snap "$spid" server before; gauge before; }
+[[ -n ${cpid:-} ]] && snap "$cpid" client before
+start=$(date +%s.%N)
+if [[ -n ${SAMPLE:-} ]]; then
+	(t=0; while sleep "$SAMPLE"; do t=$((t + SAMPLE))
+		[[ -n ${spid:-} ]] && { snap "$spid" server "t$t" || true; gauge "t$t"; }
+		[[ -n ${cpid:-} ]] && { snap "$cpid" client "t$t" || true; }
+	done) &
+	pids+=($!)
+fi
+set +e
+GOMAXPROCS=${GEN_PROCS:-4} ./matrix -socks "$socks" -label "$mode" -out "$outdir/result.json" "$@" 2> >(tee "$outdir/matrix.log" >&2)
+rc=$?
+set -e
+end=$(date +%s.%N)
+[[ -n ${spid:-} ]] && { snap "$spid" server after; gauge after; }
+[[ -n ${cpid:-} ]] && snap "$cpid" client after
+sleep "${SETTLE:-5}"
+[[ -n ${spid:-} ]] && { snap "$spid" server settled; gauge settled; }
+[[ -n ${cpid:-} ]] && snap "$cpid" client settled
+echo "{\"seconds\":$(echo "$end - $start" | bc),\"rc\":$rc}" > "$outdir/run.json"
+for f in "$outdir"/server.log "$outdir"/client.log; do
+	[[ -f $f ]] || continue
+	grep -E '"level":"(ERROR|WARN)"|level=(ERROR|WARN)' "$f" | sed -E 's/"time":"[^"]*",//; s/[0-9]+/N/g' | sort | uniq -c | sed "s|^|$(basename "$f") |"
+done > "$outdir/log-counts.txt" || true
+exit $rc

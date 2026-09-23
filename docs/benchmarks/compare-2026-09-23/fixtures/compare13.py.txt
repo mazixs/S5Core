@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Paired rounds from suite13.sh (0.5% loss): compare13.py RESULTS"""
+import json, sys
+from math import comb
+from pathlib import Path
+from statistics import median
+
+root = Path(sys.argv[1])
+
+
+def load(v, r):
+    f = root / f'{v}-{r}' / 'result.json'
+    return json.loads(f.read_text())['result'] if f.exists() else None
+
+
+def sign(a, b):
+    worse, better = sum(y > x for x, y in zip(a, b)), sum(y < x for x, y in zip(a, b))
+    t = worse + better
+    p = min(1.0, 2 * sum(comb(t, i) for i in range(min(worse, better) + 1)) / 2 ** t) if t else 1.0
+    return worse, len(a), p
+
+
+rounds = sorted({int(d.name.rsplit('-', 1)[1]) for d in root.iterdir() if d.is_dir()})
+names = sorted({n for r in rounds for v in ('v210-obfs', 'cur-obfs') if load(v, r) for n in load(v, r)})
+print('| Сценарий | Путь | Метрика | raw | 2.1 | current | 2.1 по раундам | current по раундам | current хуже в раундах | p |')
+print('|---|---|---|---:|---:|---:|---|---|---:|---:|')
+for n in names:
+    bulk = n.endswith(('/upload', '/large'))
+    keys = [('mbps', 'МБ/с')] if bulk else [('p50_ms', 'p50'), ('p99_ms', 'p99'), ('slow_pct', 'медленных, %')]
+    for m in ('obfs', 'wss'):
+        for k, label in keys:
+            raw, a, b = [], [], []
+            for r in rounds:
+                d, x, y = load(f'direct-{m}', r), load(f'v210-{m}', r), load(f'cur-{m}', r)
+                if d and n in d:
+                    raw.append(d[n].get(k, 0))
+                if x and y and n in x and n in y:
+                    a.append(x[n].get(k, 0))
+                    b.append(y[n].get(k, 0))
+            if not a:
+                continue
+            if bulk:
+                a, b = [-v for v in a], [-v for v in b]
+            worse, t, p = sign(a, b)
+            if bulk:
+                a, b = [-v for v in a], [-v for v in b]
+            f = lambda v: f'{v:.1f}'
+            print(f'| `{n}` | {m} | {label} | {f(median(raw)) if raw else "-"} | {f(median(a))} | {f(median(b))} | '
+                  + ', '.join(f(v) for v in a) + ' | ' + ', '.join(f(v) for v in b) + f' | {worse}/{t} | {p:.3f} |')

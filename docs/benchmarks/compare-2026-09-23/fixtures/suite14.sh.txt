@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# The one flag left after suite11: wss, h3/small-reuse-under-bulk, GOMAXPROCS=1 (p50 +28%, 8 of 10 rounds).
+# cury0 is the tree with yieldInterval = 0, i.e. a yield after every batch as in 2.1.0: if it matches 2.1, the interval is the cause.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results14}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+vs=(v210 cur cury0)
+for r in $(seq 1 "${ROUNDS:-12}"); do
+	for i in 0 1 2; do
+		v=${vs[$(((r + i) % 3))]}
+		SERVER_PROCS=1 CLIENT_PROCS=1 TAG=$v taskset -c 0-5,8-13 ./run.sh wss "$out/$v-wss-$r" -only h3/small-reuse > "$out/$v-wss-$r.log" 2>&1
+		echo "$v-wss-$r rc=$?"
+	done
+done
+echo suite14-done

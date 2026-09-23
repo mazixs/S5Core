@@ -20,9 +20,9 @@ import (
 // follows it from its next connection. And a transport that has just failed
 // to set up is rested for TRANSPORT_COOLDOWN while the other configured one
 // takes its turn, so that a blocked port does not take the client down with
-// it. OBFS_FORMAT does the same for the wire format itself: auto tries the
-// current format and falls back to the previous one when a server that
-// accepted the connection does not answer, for OBFS_FORMAT_REPROBE.
+// it. The wire format is not a choice any more: the previous one was
+// removed in 2.2, and OBFS_FORMAT only refuses to start on it
+// (docs/field/migration.md, 4.1).
 //
 // Everything here is decided before the dial; nothing changes under a
 // connection that is already up.
@@ -36,20 +36,10 @@ const (
 	transportWS   transportKind = "ws"
 )
 
-// formatKind is which obfuscation format a connection speaks.
-type formatKind string
-
-const (
-	formatAuto   formatKind = "auto"
-	formatV1     formatKind = "v1"
-	formatLegacy formatKind = "legacy"
-)
-
 // clientPolicy is the state shared by every connection of one client: the
-// server's latest advice, which transports are resting, and whether the
-// previous format is in use. It is written from connection goroutines and
-// read before every dial, hence the mutex; the work under it is a few
-// comparisons.
+// server's latest advice and which transports are resting. It is written
+// from connection goroutines and read before every dial, hence the mutex;
+// the work under it is a few comparisons.
 type clientPolicy struct {
 	mu  sync.Mutex
 	now func() time.Time
@@ -67,16 +57,6 @@ type clientPolicy struct {
 	// adviceNoWS remembers that the "ws advised without WS_URL" warning
 	// has been given for the current advice, so it is given once.
 	adviceNoWS bool
-
-	// pinnedFormat is OBFS_FORMAT when it is not auto.
-	pinnedFormat formatKind
-	reprobe      time.Duration
-	// legacyUntil, when in the future, sends connections over the
-	// previous format; zero means the current one.
-	legacyUntil time.Time
-	// legacyWarned rate-limits the "you are on the old format" warning
-	// to once per fallback window.
-	legacyWarned bool
 }
 
 // newClientPolicy reads the policy settings out of the configuration and
@@ -87,7 +67,6 @@ func newClientPolicy(cfg clientParams) (*clientPolicy, error) {
 		now:          time.Now,
 		wsConfigured: cfg.WSUrl != "",
 		cooldown:     cfg.TransportCooldown,
-		reprobe:      cfg.FormatReprobe,
 		failedAt:     map[transportKind]time.Time{},
 	}
 
@@ -104,18 +83,28 @@ func newClientPolicy(cfg clientParams) (*clientPolicy, error) {
 		return nil, fmt.Errorf("TRANSPORT %q is not one this build knows (auto, obfs, ws)", cfg.Transport)
 	}
 
-	switch formatKind(cfg.Format) {
-	case formatAuto, "":
-	case formatV1, formatLegacy:
-		p.pinnedFormat = formatKind(cfg.Format)
-	default:
-		return nil, fmt.Errorf("OBFS_FORMAT %q is not one this build knows (auto, v1, legacy)", cfg.Format)
+	if err := checkFormat(cfg.Format); err != nil {
+		return nil, err
 	}
-
-	if p.cooldown < 0 || p.reprobe < 0 {
-		return nil, fmt.Errorf("TRANSPORT_COOLDOWN and OBFS_FORMAT_REPROBE must not be negative")
+	if p.cooldown < 0 {
+		return nil, fmt.Errorf("TRANSPORT_COOLDOWN must not be negative")
 	}
 	return p, nil
+}
+
+// checkFormat accepts the names of the current wire format. legacy gets its
+// own refusal: a client that silently spoke v1 instead would look to its
+// operator like a server that stopped answering.
+func checkFormat(format string) error {
+	switch format {
+	case "", "auto", "v1":
+		return nil
+	case "legacy":
+		return fmt.Errorf("OBFS_FORMAT=legacy was removed in 2.2 together with the previous wire format; " +
+			"current servers do not accept it. Remove OBFS_FORMAT or set it to v1 (docs/field/migration.md, 4.1)")
+	default:
+		return fmt.Errorf("OBFS_FORMAT %q is not one this build knows (auto, v1)", format)
+	}
 }
 
 // configured is the transport the client would use with no advice and no
@@ -145,6 +134,21 @@ func (p *clientPolicy) coolingDown(t transportKind, now time.Time) bool {
 	return ok && p.cooldown > 0 && now.Sub(failed) < p.cooldown
 }
 
+// checkPrologue keeps the client on the printable opening. raw is refused
+// rather than sent: on a filtering path it does not connect at all, and every
+// 2.x server reads the printable one. The server still reads raw, for 2.0 and
+// 2.1 clients configured with it.
+func checkPrologue(v string) error {
+	switch obfs.PrologueEncoding(v) {
+	case "", obfs.ProloguePrintable:
+		return nil
+	case obfs.PrologueRaw:
+		return fmt.Errorf("OBFS_PROLOGUE=raw was removed from the client in 2.2: every 2.x server reads the " +
+			"printable opening, and the raw one is what a filtering path blocks. Remove OBFS_PROLOGUE or set it to printable")
+	}
+	return fmt.Errorf("OBFS_PROLOGUE %q is not one this build knows (printable)", v)
+}
+
 // chooseTransport is the whole decision, in order: a pinned transport; else
 // the advised transport when the client can reach it, else the configured
 // one; and if that one is resting after a failure, the other configured
@@ -171,18 +175,8 @@ func (p *clientPolicy) chooseTransport(now time.Time) transportKind {
 	return preferred
 }
 
-func (p *clientPolicy) chooseFormat(now time.Time) formatKind {
-	if p.pinnedFormat != "" {
-		return p.pinnedFormat
-	}
-	if now.Before(p.legacyUntil) {
-		return formatLegacy
-	}
-	return formatV1
-}
-
 // apply returns the configuration one connection attempt is made with: the
-// transport and format chosen now, and the shape the server advised laid
+// transport chosen now, and the shape the server advised laid
 // over the configured one. Fields the advice leaves at zero keep their
 // configured values, so a server that only names a transport changes
 // nothing else.
@@ -192,7 +186,6 @@ func (p *clientPolicy) apply(cfg clientParams) clientParams {
 	now := p.now()
 
 	cfg.transport = p.chooseTransport(now)
-	cfg.format = p.chooseFormat(now)
 
 	if a := p.advice; a != nil {
 		if a.WSMinFrame > 0 && a.WSMaxFrame > 0 {
@@ -278,19 +271,17 @@ func (p *clientPolicy) onAdvice(a obfs.Advice) {
 	}
 }
 
-// onFailure records a setup failure against the transport and format the
-// attempt used. Only the phases that mean "this transport or format does
-// not get through" count: a dial that never connected, or a server that
+// onFailure records a setup failure against the transport the attempt used.
+// Only the phases that mean "this transport does not get through" count: a dial that never connected, or a server that
 // accepted the connection and did not answer the greeting or the
 // authentication. A CONNECT that fails is the destination's problem and
 // says nothing about the path.
 //
 // phaseAuthRejected is deliberately not in that list. A rejection is an
-// answer, and an answer proves the transport and the format worked all the
-// way through a SOCKS5 exchange; treating it as a path failure made a wrong
-// password move the whole client onto the previous wire format for the
-// reprobe window - a format the server no longer accepts, so a typo took the
-// client down for ten minutes and blamed the PSK in the log.
+// answer, and an answer proves the transport worked all the way through a
+// SOCKS5 exchange; treating it as a path failure rested a working transport
+// over a typo in the password (and, before 2.2, moved the client onto a wire
+// format the server no longer accepted).
 func (p *clientPolicy) onFailure(attempt clientParams, phase tunnelPhase) {
 	switch phase {
 	case phaseDial, phaseGreeting, phaseAuth:
@@ -308,43 +299,13 @@ func (p *clientPolicy) onFailure(attempt clientParams, phase tunnelPhase) {
 				"failed", attempt.transport, "next", other, "phase", phase, "cooldown", p.cooldown)
 		}
 	}
-
-	// The dial did connect and nothing came back: that is what a server
-	// on the other format looks like from here (and also what a wrong PSK
-	// looks like, which the hint in the log says). Auto tries the other
-	// format next, for a while; if that fails too, it comes back.
-	if phase == phaseDial || p.pinnedFormat != "" || p.reprobe <= 0 {
-		return
-	}
-	switch attempt.format {
-	case formatV1:
-		p.legacyUntil = now.Add(p.reprobe)
-		p.legacyWarned = false
-		slog.Warn("The server did not answer the current obfuscation format; the next connection tries the previous one",
-			"phase", phase, "for", p.reprobe,
-			"hint", "if the server is an older build, update it: the previous format is scheduled for removal (docs/field/migration.md)")
-	case formatLegacy:
-		p.legacyUntil = time.Time{}
-	}
 }
 
-// onSuccess clears the record of the transport that just worked and, if the
-// attempt spoke the current format, ends any fallback to the previous one.
+// onSuccess clears the record of the transport that just worked.
 func (p *clientPolicy) onSuccess(attempt clientParams) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.failedAt, attempt.transport)
-	switch attempt.format {
-	case formatV1:
-		p.legacyUntil = time.Time{}
-	case formatLegacy:
-		if !p.legacyWarned {
-			p.legacyWarned = true
-			slog.Warn("Connected over the previous obfuscation format: the server is an older build. "+
-				"Update the server - this format is scheduled for removal (docs/field/migration.md)",
-				"pinned", p.pinnedFormat != "")
-		}
-	}
 }
 
 func (p *clientPolicy) otherAvailable(t transportKind) transportKind {
@@ -362,11 +323,7 @@ func (p *clientPolicy) describe() []any {
 	if p.pinned != "" {
 		transport = string(p.pinned)
 	}
-	format := string(formatAuto)
-	if p.pinnedFormat != "" {
-		format = string(p.pinnedFormat)
-	}
-	return []any{"transport", transport, "default_transport", p.configured(), "format", format}
+	return []any{"transport", transport, "default_transport", p.configured()}
 }
 
 // usesWS says whether this connection attempt goes over the WebSocket

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Runs run.sh inside the netem namespace and prints the namespace's UDP counters around it.
+snmp() { awk '/^Udp:/{if(!h){split($0,k);h=1}else{for(i=2;i<=NF;i++)printf "%s=%s ",k[i],$i;print ""}}' /proc/net/snmp; }
+echo "before: $(snmp)"
+"$@"
+rc=$?
+echo "after:  $(snmp)"
+exit $rc

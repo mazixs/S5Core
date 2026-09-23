@@ -57,6 +57,9 @@ type Config struct {
 	// tunnel's own path when the request is not a WebSocket upgrade.
 	DecoyUpstream string
 	Subprotocols  []string
+	// MaxFrame is the server shaper's WS_MAX_FRAME, which sizes the
+	// upgrader's write buffer. Zero means ws.DefaultMaxFrame.
+	MaxFrame int
 	// Logger receives upstream failures. Nil means slog.Default.
 	Logger *slog.Logger
 }
@@ -166,7 +169,7 @@ func NewListener(cfg Config) (*Listener, error) {
 		tlsListener: tlsListener,
 		conns:       make(chan net.Conn, 64),
 		done:        make(chan struct{}),
-		upgrader:    ws.NewUpgrader(ws.UpgraderOpts{Path: cfg.WSPath, Subprotocols: cfg.Subprotocols}),
+		upgrader:    ws.NewUpgrader(ws.UpgraderOpts{Path: cfg.WSPath, Subprotocols: cfg.Subprotocols, WriteBufferSize: cfg.MaxFrame}),
 	}
 
 	decoy, err := newDecoyHandler(cfg)

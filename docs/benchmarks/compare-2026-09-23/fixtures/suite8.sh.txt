@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# raw (direct) vs 2.1.0 (v210) vs the tree (cur), member-only auth unless stated.
+# Loopback phases run one process set at a time; netem phases run direct, v210 and cur
+# side by side, each in its own netns on its own cores, swapping cores between rounds.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results8}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+ONLY="tcp/,http/,https/,h2/,h3/,udp/rtt,udp/stream"
+A="1-2,9-10" B="3-4,11-12" D="0,8"
+
+lo() { # round procs variant
+	local r=$1 p=$2 v=$3 tag=${3%-*} m=${3#*-}
+	if [[ $v == direct ]]; then
+		taskset -c 0-5,8-13 ./run.sh direct "$out/lo$p-direct-$r" -only "$ONLY" > "$out/lo$p-direct-$r.log" 2>&1
+	else
+		SERVER_PROCS=$p CLIENT_PROCS=$p TAG=$tag taskset -c 0-5,8-13 ./run.sh "$m" "$out/lo$p-$v-$r" -only "$ONLY" > "$out/lo$p-$v-$r.log" 2>&1
+	fi
+	echo "lo$p-$v-$r rc=$?"
+}
+
+for r in 1 2 3 4 5; do
+	vs=(direct v210-obfs cur-obfs v210-wss cur-wss)
+	((r % 2 == 0)) && vs=(cur-wss v210-wss cur-obfs v210-obfs direct)
+	for v in "${vs[@]}"; do lo "$r" 4 "$v"; done
+done
+for r in 1 2 3; do
+	vs=(v210-obfs cur-obfs v210-wss cur-wss)
+	((r % 2 == 0)) && vs=(cur-wss v210-wss cur-obfs v210-obfs)
+	for v in "${vs[@]}"; do lo "$r" 1 "$v"; done
+done
+
+ne() { # name loss round transport [extra matrix args]
+	local name=$1 loss=$2 r=$3 m=$4 ca=$A cb=$B
+	shift 4
+	((r % 2 == 0)) && { ca=$B; cb=$A; }
+	taskset -c "$D" ./netem.sh 40 "$loss" 200 all ./run.sh direct "$out/$name-direct-$m-$r" -scale 0.3 "$@" > "$out/$name-direct-$m-$r.log" 2>&1 &
+	TAG=v210 taskset -c "$ca" ./netem.sh 40 "$loss" 200 tunnel ./run.sh "$m" "$out/$name-v210-$m-$r" -scale 0.3 "$@" > "$out/$name-v210-$m-$r.log" 2>&1 &
+	TAG=cur taskset -c "$cb" ./netem.sh 40 "$loss" 200 tunnel ./run.sh "$m" "$out/$name-cur-$m-$r" -scale 0.3 "$@" > "$out/$name-cur-$m-$r.log" 2>&1 &
+	wait
+	echo "$name-$m-$r done: $(for t in direct v210 cur; do printf '%s=%s ' $t "$(grep -o '"rc":[0-9]*' "$out/$name-$t-$m-$r/run.json" 2>/dev/null)"; done)"
+}
+
+for r in 1 2; do for m in obfs wss; do ne clean 0 "$r" "$m"; done; done
+for r in 1 2 3; do for m in obfs wss; do ne loss 0.5 "$r" "$m"; done; done
+
+for m in obfs wss; do for a in none member password fallback; do
+	AUTH=$a TAG=v210 taskset -c "$A" ./netem.sh 40 0 200 tunnel ./run.sh "$m" "$out/auth-v210-$m-$a" -scale 0.3 -only tcp/connect,small-new > "$out/auth-v210-$m-$a.log" 2>&1 &
+	AUTH=$a TAG=cur taskset -c "$B" ./netem.sh 40 0 200 tunnel ./run.sh "$m" "$out/auth-cur-$m-$a" -scale 0.3 -only tcp/connect,small-new > "$out/auth-cur-$m-$a.log" 2>&1 &
+	wait
+	echo "auth-$m-$a done"
+done; done
+
+for v in v210-obfs cur-obfs v210-wss cur-wss; do
+	TAG=${v%-*} SAMPLE=30 SETTLE=10 taskset -c 0-5,8-13 ./run.sh "${v#*-}" "$out/soak-$v" -soak 5m -workers 32 -idle 75s > "$out/soak-$v.log" 2>&1
+	echo "soak-$v rc=$?"
+done
+echo suite8-done

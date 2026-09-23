@@ -65,20 +65,18 @@ func baseParams(wsURL string) clientParams {
 		KeepaliveMin:      10 * time.Second,
 		KeepaliveMax:      20 * time.Second,
 		TransportCooldown: 5 * time.Minute,
-		FormatReprobe:     10 * time.Minute,
 	}
 }
 
 func TestTheTransportPolicyIsReadFromTheEnvironment(t *testing.T) {
 	tests := []struct {
-		name         string
-		transport    string
-		format       string
-		wsURL        string
-		wantErr      string
-		wantPinned   transportKind
-		wantDefault  transportKind
-		wantPinnedFm formatKind
+		name        string
+		transport   string
+		format      string
+		wsURL       string
+		wantErr     string
+		wantPinned  transportKind
+		wantDefault transportKind
 	}{
 		{name: "auto without WS_URL", transport: "auto", format: "auto", wantDefault: transportObfs},
 		{name: "auto with WS_URL", transport: "auto", format: "auto", wsURL: "wss://cdn.example/ws", wantDefault: transportWS},
@@ -87,8 +85,8 @@ func TestTheTransportPolicyIsReadFromTheEnvironment(t *testing.T) {
 		{name: "ws pinned", transport: "ws", wsURL: "wss://cdn.example/ws", wantPinned: transportWS, wantDefault: transportWS},
 		{name: "ws pinned without WS_URL", transport: "ws", wantErr: "WS_URL"},
 		{name: "a transport this build does not know", transport: "quic", wantErr: "TRANSPORT"},
-		{name: "v1 pinned", format: "v1", wantPinnedFm: formatV1, wantDefault: transportObfs},
-		{name: "legacy pinned", format: "legacy", wantPinnedFm: formatLegacy, wantDefault: transportObfs},
+		{name: "v1 is the current format", format: "v1", wantDefault: transportObfs},
+		{name: "legacy was removed", format: "legacy", wantErr: "removed in 2.2"},
 		{name: "a format this build does not know", format: "v3", wantErr: "OBFS_FORMAT"},
 	}
 	for _, tt := range tests {
@@ -105,11 +103,24 @@ func TestTheTransportPolicyIsReadFromTheEnvironment(t *testing.T) {
 			if err != nil {
 				t.Fatalf("refused: %v", err)
 			}
-			if p.pinned != tt.wantPinned || p.configured() != tt.wantDefault || p.pinnedFormat != tt.wantPinnedFm {
-				t.Fatalf("pinned=%q default=%q format=%q, want %q/%q/%q",
-					p.pinned, p.configured(), p.pinnedFormat, tt.wantPinned, tt.wantDefault, tt.wantPinnedFm)
+			if p.pinned != tt.wantPinned || p.configured() != tt.wantDefault {
+				t.Fatalf("pinned=%q default=%q, want %q/%q", p.pinned, p.configured(), tt.wantPinned, tt.wantDefault)
 			}
 		})
+	}
+}
+
+func TestTheClientSendsOnlyThePrintableOpening(t *testing.T) {
+	for _, ok := range []string{"", "printable"} {
+		if err := checkPrologue(ok); err != nil {
+			t.Errorf("OBFS_PROLOGUE=%q refused: %v", ok, err)
+		}
+	}
+	if err := checkPrologue("raw"); err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Errorf("OBFS_PROLOGUE=raw: got %v, want the removal named", err)
+	}
+	if err := checkPrologue("base32"); err == nil {
+		t.Error("an unknown encoding was accepted")
 	}
 }
 
@@ -119,8 +130,8 @@ func TestAnAutoClientFollowsTheServersAdvice(t *testing.T) {
 
 	// With no advice: the configured default, the configured shape.
 	got := p.apply(base)
-	if got.transport != transportWS || got.format != formatV1 || got.MaxPadding != 256 {
-		t.Fatalf("before any advice: transport=%s format=%s padding=%d", got.transport, got.format, got.MaxPadding)
+	if got.transport != transportWS || got.MaxPadding != 256 {
+		t.Fatalf("before any advice: transport=%s padding=%d", got.transport, got.MaxPadding)
 	}
 
 	// The server would rather see obfs with less padding and a slower
@@ -230,9 +241,9 @@ func TestAFailedTransportRestsWhileTheOtherIsTried(t *testing.T) {
 	}
 
 	// A success clears the record at once.
-	p.onSuccess(clientParams{transport: transportWS, format: formatV1})
-	p.onSuccess(clientParams{transport: transportObfs, format: formatV1})
-	p.onFailure(clientParams{transport: transportWS, format: formatV1}, phaseDial)
+	p.onSuccess(clientParams{transport: transportWS})
+	p.onSuccess(clientParams{transport: transportObfs})
+	p.onFailure(clientParams{transport: transportWS}, phaseDial)
 	if got := p.apply(base); got.transport != transportObfs {
 		t.Fatalf("obfs was still resting after its success: %s", got.transport)
 	}
@@ -353,8 +364,8 @@ func TestTheHelloGoesUpAndTheAdviceComesDownOneRealTunnel(t *testing.T) {
 	defer conn.Close()
 
 	// The connection that carried the advice was made as configured...
-	if used.MaxPadding != 256 || used.transport != transportObfs || used.format != formatV1 {
-		t.Fatalf("the first attempt used padding=%d transport=%s format=%s", used.MaxPadding, used.transport, used.format)
+	if used.MaxPadding != 256 || used.transport != transportObfs {
+		t.Fatalf("the first attempt used padding=%d transport=%s", used.MaxPadding, used.transport)
 	}
 	// ...and the server learnt which build it is talking to.
 	select {
@@ -392,7 +403,7 @@ func TestClientDefaultsMatchTheLibraries(t *testing.T) {
 		{"KEEPALIVE_MIN", cfg.KeepaliveMin, obfs.DefaultKeepaliveMin},
 		{"KEEPALIVE_MAX", cfg.KeepaliveMax, obfs.DefaultKeepaliveMax},
 		{"TRANSPORT", cfg.Transport, string(transportAuto)},
-		{"OBFS_FORMAT", cfg.Format, string(formatAuto)},
+		{"OBFS_FORMAT", cfg.Format, "auto"},
 		{"OBFS_PROLOGUE", cfg.Prologue, string(obfs.DefaultPrologueEncoding)},
 	}
 	for _, c := range checks {
@@ -407,13 +418,13 @@ func TestClientDefaultsMatchTheLibraries(t *testing.T) {
 // one typo moved every following connection onto the previous wire format
 // for the whole reprobe window - a format the server no longer accepts - and
 // the log blamed the PSK and the clock. The failure here must move nothing.
-func TestARejectedPasswordDoesNotMoveTheTransportOrTheFormat(t *testing.T) {
+func TestARejectedPasswordDoesNotMoveTheTransport(t *testing.T) {
 	base := baseParams("wss://cdn.example/ws")
 	p, _ := policyFor(t, base)
 
 	attempt := p.apply(base)
-	if attempt.transport != transportWS || attempt.format != formatV1 {
-		t.Fatalf("unexpected first attempt: %s/%s", attempt.transport, attempt.format)
+	if attempt.transport != transportWS {
+		t.Fatalf("unexpected first attempt: %s", attempt.transport)
 	}
 
 	p.onFailure(attempt, phaseAuthRejected)
@@ -422,15 +433,12 @@ func TestARejectedPasswordDoesNotMoveTheTransportOrTheFormat(t *testing.T) {
 	if next.transport != transportWS {
 		t.Errorf("a rejected password moved the client to %s", next.transport)
 	}
-	if next.format != formatV1 {
-		t.Errorf("a rejected password moved the client to the %s format", next.format)
-	}
 
-	// The silent case still counts: that one really can be a format or a
+	// The silent case still counts: that one really can be a path or a
 	// PSK that does not match.
 	p.onFailure(next, phaseAuth)
-	if got := p.apply(base); got.format != formatLegacy {
-		t.Errorf("a silent server left the client on %s", got.format)
+	if got := p.apply(base); got.transport != transportObfs {
+		t.Errorf("a silent server left the client on %s", got.transport)
 	}
 }
 

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Second pass on the -fix binaries: HTTPS and HTTP/2 rows, the soak that
+# checks the UDP fix, then the client's UDP loop before and after it.
+set -uo pipefail
+cd "$(dirname "$0")"
+until grep -q suite-done suite.log 2>/dev/null; do sleep 5; done
+mv matrix-new matrix
+out=${OUT:-results}
+T="taskset -c 0-5,8-13"
+export TAG=fix
+WEB=https,h2/
+for m in direct plain obfs wss; do
+	$T ./run.sh "$m" "$out/lo-$m-web" -only $WEB > "$out/lo-$m-web.log" 2>&1; echo "lo-$m-web rc=$?"
+done
+NE="${RTT:-40} ${LOSS:-0.5} ${RATE:-200}"
+SC=${NSCALE:-0.3}
+$T ./netem.sh $NE all ./run.sh direct "$out/ne-direct-web" -scale "$SC" -only $WEB > "$out/ne-direct-web.log" 2>&1; echo "ne-direct-web rc=$?"
+PLAIN_PORT=41443 OBFS_PORT=41445 $T ./netem.sh $NE tunnel ./run.sh plain "$out/ne-plain-web" -scale "$SC" -only $WEB > "$out/ne-plain-web.log" 2>&1; echo "ne-plain-web rc=$?"
+for m in obfs wss; do
+	$T ./netem.sh $NE tunnel ./run.sh "$m" "$out/ne-$m-web" -scale "$SC" -only $WEB > "$out/ne-$m-web.log" 2>&1; echo "ne-$m-web rc=$?"
+done
+for m in obfs wss; do
+	SETTLE=10 $T ./run.sh "$m" "$out/soak-$m-fix" -soak "${SOAK:-5m}" -workers 32 -idle 75s > "$out/soak-$m-fix.log" 2>&1; echo "soak-$m-fix rc=$?"
+done
+root=$(cd ../.. && pwd)
+ov=${UDP_OVERLAY:?set UDP_OVERLAY to the overlay without the header check}
+: > "$out/udp-before.txt"
+: > "$out/udp-after.txt"
+for i in $(seq 10); do
+	(cd "$root" && $T go test -run '^$' -bench '^BenchmarkUDPDatagramRoundTrip$' -benchmem -count 1 -overlay "$ov" ./cmd/s5client/ >> "bench/matrix/$out/udp-before.txt" 2>&1)
+	(cd "$root" && $T go test -run '^$' -bench '^BenchmarkUDPDatagramRoundTrip$' -benchmem -count 1 ./cmd/s5client/ >> "bench/matrix/$out/udp-after.txt" 2>&1)
+done
+echo "udp-bench rc=$?"
+echo suite2-done

@@ -8,6 +8,7 @@ CLAUDE.md
 /s5core
 /s5client
 /idleprobe
+/httpsprobe
 /udpprobe
 /connlat
 /stealthcheck
@@ -25,14 +26,15 @@ bin/
 
 # Measurements, coverage and profiles
 bench/
+scripts/matrix/
 coverage.txt
 *.out
+**/__pycache__
 
 # Local configuration
 .env*
 .s5core-init.*/
 .ci-reports/
-/httpsprobe
 
 # Documentation and editor files
 docs/

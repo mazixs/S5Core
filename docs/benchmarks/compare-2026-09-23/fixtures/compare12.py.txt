@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Soak runs side by side: compare12.py RESULTS... (results8 results12)"""
+import json, re, sys
+from pathlib import Path
+
+print('| Прогон | Операций | Ошибок | Простой 75 с | WARN/ERROR | p99 http_reuse, мс | p99 tcp_echo, мс | p99 udp_burst, мс | http_reuse за 30 с, мин-макс по окнам |')
+print('|---|---:|---:|---|---:|---:|---:|---:|---|')
+for root in map(Path, sys.argv[1:]):
+    for v in ('v210-obfs', 'cur-obfs', 'v210-wss', 'cur-wss'):
+        f = root / f'soak-{v}' / 'result.json'
+        if not f.exists():
+            continue
+        r = json.loads(f.read_text())['result']
+        k = r['kinds']
+        ops = sum(x['n'] for x in k.values())
+        errs = sum(x.get('errors', 0) for x in k.values())
+        idle = 'ok' if all('ok' in s for s in (r.get('idle') or {}).values()) else str(r.get('idle'))
+        text = ''.join((root / f'soak-{v}' / n).read_text() for n in ('server.log', 'client.log') if (root / f'soak-{v}' / n).exists())
+        warn = len(re.findall(r'"level":"(?:WARN|ERROR)"', text))
+        w = [x['n'] for x in r['windows']['http_reuse'][:-1]]
+        print(f"| {root.name} {v} | {ops} | {errs} | {idle} | {warn} | {k['http_reuse']['p99_ms']:.1f} | {k['tcp_echo']['p99_ms']:.1f} | {k['udp_burst']['p99_ms']:.1f} | {min(w)}-{max(w)} |")

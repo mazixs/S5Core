@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Paired rounds from suite11.sh: compare11.py RESULTS"""
+import json, sys
+from math import comb
+from pathlib import Path
+from statistics import median
+
+root = Path(sys.argv[1])
+
+
+def load(v, r):
+    f = root / f'{v}-{r}' / 'result.json'
+    return json.loads(f.read_text())['result'] if f.exists() else None
+
+
+rounds = sorted({int(d.name.rsplit('-', 1)[1]) for d in root.iterdir() if d.is_dir()})
+names = sorted({n for r in rounds for v in ('v210-obfs', 'cur-obfs') if load(v, r) for n in load(v, r)})
+print('| Сценарий | Путь | Метрика | 2.1, медиана мс | current, медиана мс | Δ медиан | current хуже в раундах | p (знаковый тест) |')
+print('|---|---|---|---:|---:|---:|---:|---:|')
+for n in names:
+    for m in ('obfs', 'wss'):
+        for k in ('p50_ms', 'p99_ms'):
+            a, b = [], []
+            for r in rounds:
+                x, y = load(f'v210-{m}', r), load(f'cur-{m}', r)
+                if x and y and n in x and n in y:
+                    a.append(x[n][k])
+                    b.append(y[n][k])
+            if not a:
+                continue
+            worse = sum(y > x for x, y in zip(a, b))
+            t = len(a)
+            tail = min(worse, t - worse)
+            p = min(1.0, 2 * sum(comb(t, i) for i in range(tail + 1)) / 2 ** t)
+            d = median(b) / median(a) - 1
+            print(f'| `{n}` | {m} | {k[:3]} | {median(a):.3f} | {median(b):.3f} | {d:+.0%} | {worse}/{t} | {p:.3f} |')
+
+
+def cpu(v, r):
+    f = root / f'{v}-{r}' / 'resources.jsonl'
+    if not f.exists():
+        return None
+    rows = [json.loads(l) for l in f.read_text().splitlines()]
+    total = 0
+    for p in ('server', 'client'):
+        b = [x for x in rows if x['proc'] == p and x['phase'] == 'before']
+        a = [x for x in rows if x['proc'] == p and x['phase'] == 'after']
+        if not (a and b):
+            return None
+        total += (a[0]['cpu_ticks'] - b[0]['cpu_ticks']) / 100
+    return total
+
+
+print()
+print('| Путь | CPU 2.1, с, медиана | CPU current, с, медиана | Δ | current дороже в раундах | 2.1 по раундам | current по раундам |')
+print('|---|---:|---:|---:|---:|---|---|')
+for m in ('obfs', 'wss'):
+    pairs = [(cpu(f'v210-{m}', r), cpu(f'cur-{m}', r)) for r in rounds]
+    pairs = [(x, y) for x, y in pairs if x is not None and y is not None]
+    if not pairs:
+        continue
+    a, b = [x for x, _ in pairs], [y for _, y in pairs]
+    print(f'| {m} | {median(a):.2f} | {median(b):.2f} | {median(b) / median(a) - 1:+.0%} | {sum(y > x for x, y in pairs)}/{len(pairs)} | '
+          + ', '.join(f'{x:.2f}' for x in a) + ' | ' + ', '.join(f'{y:.2f}' for y in b) + ' |')

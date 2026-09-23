@@ -1,0 +1,44 @@
+--- a/bench/matrix/probe.go
++++ b/bench/matrix/probe.go
+@@ -11,7 +11,9 @@
+ 	"net"
+ 	"net/http"
+ 	"net/http/httptrace"
++	"os"
+ 	"slices"
++	"sort"
+ 	"strconv"
+ 	"sync"
+ 	"sync/atomic"
+@@ -29,6 +31,7 @@
+ 	P99      float64            `json:"p99_ms"`
+ 	Max      float64            `json:"max_ms"`
+ 	MBps     float64            `json:"mbps,omitempty"`
++	SlowPct  float64            `json:"slow_pct,omitempty"`
+ 	Extra    map[string]float64 `json:"extra,omitempty"`
+ 	FirstErr string             `json:"first_error,omitempty"`
+ }
+@@ -53,6 +56,11 @@
+ 	s.d = append(s.d, d)
+ }
+ 
++func slowMargin() time.Duration {
++	v, _ := strconv.Atoi(os.Getenv("SLOW_MS"))
++	return time.Duration(v) * time.Millisecond
++}
++
+ func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+ 
+ func (s *sample) stats() stats {
+@@ -66,6 +74,11 @@
+ 	slices.Sort(d)
+ 	q := func(p float64) float64 { return ms(d[int(p*float64(len(d)-1))]) }
+ 	st.P50, st.P90, st.P99, st.Max = q(0.5), q(0.9), q(0.99), ms(d[len(d)-1])
++	// Share of samples that paid a retransmission timeout: p99 under loss only says whether one landed in the top 1%.
++	if slow := slowMargin(); slow > 0 {
++		cut := d[len(d)/2] + slow
++		st.SlowPct = 100 * float64(len(d)-sort.Search(len(d), func(i int) bool { return d[i] > cut })) / float64(len(d))
++	}
+ 	return st
+ }
+ 

@@ -207,13 +207,12 @@ release:
 - **`TRANSPORT` and `TRANSPORT_COOLDOWN` on the client.** In `auto` a transport
   that fails to set up rests for the cooldown while the other one carries the
   traffic; a pinned transport never switches.
-- **`OBFS_FORMAT` on the client.** `auto` speaks the current wire format and
-  falls back to the previous one for `OBFS_FORMAT_REPROBE` when a server accepts
-  the connection and stays silent, so a new client reaches a server that has not
-  been updated yet. Update clients first, then servers, then pin `OBFS_FORMAT=v1`:
-  the previous format is detectable, and `auto` shows it to anyone who accepts
-  a connection and says nothing. The previous format is removed two minor
-  releases after the first release with the current one.
+- **`OBFS_FORMAT` on the client.** Until 2.1, `auto` fell back to the previous
+  wire format when a server accepted the connection and stayed silent, so a new
+  client reached a server that had not been updated yet. The previous format was
+  removed in 2.2, two minor releases after 2.0, as scheduled: `auto` and `v1`
+  now name the same format and `legacy` stops the client at startup. A fleet
+  still on 1.x servers migrates through 2.1 (`docs/field/migration.md`, 4.2).
 
 Whether a migration is working is read off `s5core_client_connections_total`
 (builds and transports of the clients that introduced themselves) against

@@ -20,6 +20,17 @@ type UpgraderOpts struct {
 	// DefaultReadLimit; a negative value removes the limit. A server sets
 	// this only if it knows its clients batch more than the default allows.
 	ReadLimit int64
+	// WriteBufferSize is the payload gorilla assembles into one socket
+	// write; see writeBufferSize.
+	WriteBufferSize int
+}
+
+// writeBufferSize covers the shaper's largest message. A message longer than
+// gorilla's buffer leaves as a full buffer and a remainder, so every large
+// frame would open with one constant-length TLS record. Zero means
+// DefaultMaxFrame; smaller values are raised to it.
+func writeBufferSize(maxFrame int) int {
+	return max(maxFrame, DefaultMaxFrame)
 }
 
 // Upgrader wraps a gorilla websocket.Upgrader and validates the request path.
@@ -40,8 +51,7 @@ func NewUpgrader(opts UpgraderOpts) *Upgrader {
 			Subprotocols: namedSubprotocols(opts.Subprotocols),
 			CheckOrigin:  checkOrigin,
 			// Payload capacity; Gorilla reserves its frame header separately.
-			// Keep this bounded even when shaping allows larger messages.
-			WriteBufferSize: DefaultMaxFrame,
+			WriteBufferSize: writeBufferSize(opts.WriteBufferSize),
 		},
 	}
 }
