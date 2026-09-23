@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-24
+
+### Upgrade notes
+
+- The wire format does not change for a fleet already on 2.x: a 2.2 client
+  talks to 2.0 and 2.1 servers, and a 2.2 server accepts 2.0 and 2.1 clients,
+  including those configured with `OBFS_PROLOGUE=raw`.
+- A client configuration with `OBFS_FORMAT=legacy` or `OBFS_PROLOGUE=raw`
+  now fails at startup with a message naming the fix: remove the variable.
+  `OBFS_FORMAT_REPROBE` is ignored.
+- A 2.2 client cannot reach a 1.x server. Move such a fleet through 2.1
+  first ([migration](docs/field/migration.md), 4.2).
+- SDK: the `pkg/obfs/legacy` package is gone.
+
+### Removed
+
+- The previous obfuscation format (`pkg/obfs/legacy`) and the client's
+  `OBFS_FORMAT=legacy` and `OBFS_FORMAT_REPROBE`. No 2.x server accepts that
+  format. `OBFS_FORMAT=auto` and `v1` keep working and mean the same thing;
+  `legacy` is now a startup error that says what to set instead. A fleet
+  still on 1.x moves through 2.1 ([migration](docs/field/migration.md), 4.2).
+- The client's `OBFS_PROLOGUE=raw`: every 2.x server reads the printable
+  opening, and a filtering path blocks the raw one. Servers still accept
+  both encodings from 2.0 and 2.1 clients.
+
+### Performance
+
+- Bound the obfs relay's scheduling point by time: at most one
+  `runtime.Gosched()` per 100 microseconds per direction, and only after a
+  batch longer than one frame. Removing the yield entirely raised mixed-load
+  p99 by 4.7-66 times in the process benchmark. Against yielding after every
+  batch, the bound takes 13-21% off bulk CPU per GiB and leaves mixed-load p99
+  where it was; against no yield at all it costs 7-27% of bulk CPU per GiB
+  ([measurements](docs/benchmarks/yield.md)). On the ARM router one batch
+  takes longer than the interval, so there the bound behaves like yielding
+  after every batch: the same CPU, and 16-31% lower mixed-load p99 than no
+  yield.
+- Size the WebSocket write buffer on both ends to the shaper's
+  `WS_MAX_FRAME` (never below 4096). With `WS_MAX_FRAME` above 4096, every
+  larger frame used to leave as a full 4096-byte buffer plus a remainder,
+  which gave the stream one constant-length record.
+- Take the client's relay buffers from a pool instead of allocating
+  32 KiB per direction per tunnel.
+- Compute each obfs frame's length mask once. A coalescing read unmasked
+  every buffered frame twice, once to see that it is whole and once to
+  parse it.
+- Dial a single resolved address inline, without a goroutine, channel or
+  timer. A derived dial deadline no longer parks one goroutine per attempt.
+- Encode SOCKS5 addresses with one function (`socks5.AppendAddr`) for
+  replies, UDP headers and the client's UDP associate reply.
+
+### Fixed
+
+- The client's UDP associate no longer lets a datagram without a SOCKS5 UDP
+  header decide where answers go. The answer port follows the application's
+  last datagram, and a late reply from a UDP reflector to a reused port used
+  to take it: the association's answers went to the reflector, the server
+  logged `invalid udp-tcpmux header`, and the application saw a timeout
+  ([matrix run](docs/benchmarks/matrix-2026-09-22/README.md)).
+- The client no longer logs a warning per answer still in the tunnel when a
+  UDP association closes, and a connection that closes before the SOCKS5
+  greeting (a port check) is logged at debug level instead of as an error.
+- When one address family fails with "network unreachable" and the other
+  meets a real error, the client now gets the real error.
+- `isTimeout` in the UDP associate path now recognises wrapped timeouts.
+- A failed reply write after a rule rejection is classified as a
+  connection failure, like other reply writes.
+
+### Documentation
+
+- TLS session resumption: browser fingerprints never resume, so the session
+  cache only affects clients without `TLS_FINGERPRINT`. Those clients present
+  the same PSK identity on parallel connections, so a passive observer can
+  link the connections. Tests record this behaviour
+  (`pkg/transport/ws/session_cache_test.go`).
+- WAN comparison of 2.2 against 2.1.0 on a third node (RTT 51 ms, router
+  client): connection setup matches to the millisecond, zero errors in all
+  cells, equal CPU and RSS, and the one upload flag from three rounds did not
+  hold on eight (19.0 against 19.0 MB/s). Every number has a control without
+  the tunnel ([field notes](docs/field/nodes.md)).
+- Measurements behind the relay's scheduling bound
+  ([yield](docs/benchmarks/yield.md)), the protocol matrix of 2026-09-22 and
+  the version comparison of 2026-09-23 (`docs/benchmarks/`).
+
+### Tooling
+
+- `scripts/matrix`: one benchmark pipeline for comparing builds from git refs
+  and the working tree against a run without the proxy. A TOML plan covers
+  TCP, HTTP, HTTPS, HTTP/2, HTTP/3, UDP and soak over loopback, netem or a
+  real WAN path. Each cell runs in its own unprivileged network namespace
+  under three timeout levels (operation, scenario, cell), and hung, stalled
+  and crashed cells are recorded as such instead of stopping the run. Runs
+  resume after a failure, and the HTML report gives a paired verdict per
+  round. The WAN mode runs the server as transient systemd units behind an IP
+  filter and cleans up after itself
+  ([README](scripts/matrix/README.md)).
+
 ## [2.1.0] - 2026-09-22
 
 ### Docker and installation
@@ -277,7 +374,8 @@ Highlights:
 Last release of the 1.x line. See the field report in
 `docs/reports/v1.4.4-field-run.md`.
 
-[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/mazixs/S5Core/releases/tag/v2.2.0
 [2.1.0]: https://github.com/mazixs/S5Core/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mazixs/S5Core/releases/tag/v2.0.0
 [1.4.4]: https://github.com/mazixs/S5Core/releases/tag/v1.4.4
