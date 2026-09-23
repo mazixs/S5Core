@@ -549,6 +549,7 @@ func (s *Server) Start(ctx context.Context) error {
 			WSPath:        s.cfg.WSPath,
 			DecoyUpstream: s.cfg.WSDecoyUpstream,
 			Subprotocols:  subprotocols,
+			MaxFrame:      s.cfg.WSMaxFrame,
 			Logger:        s.logger,
 		})
 		if err != nil {

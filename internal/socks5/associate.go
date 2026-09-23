@@ -3,6 +3,7 @@ package socks5
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -696,13 +697,8 @@ var udpBufPool = sync.Pool{
 	},
 }
 
-// isTimeout checks if an error is a network timeout.
+// isTimeout checks if an error, or one it wraps, is a network timeout.
 func isTimeout(err error) bool {
-	type timeout interface {
-		Timeout() bool
-	}
-	if t, ok := err.(timeout); ok {
-		return t.Timeout()
-	}
-	return false
+	var t interface{ Timeout() bool }
+	return errors.As(err, &t) && t.Timeout()
 }

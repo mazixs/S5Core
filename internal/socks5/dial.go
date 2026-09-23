@@ -3,7 +3,11 @@ package socks5
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"net/netip"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -19,13 +23,18 @@ func interleaveIPs(ips []net.IP) []net.IP {
 		return nil
 	}
 	var first, other []net.IP
-	seen := make(map[string]bool)
+	seen := make(map[netip.Addr]struct{}, len(ips))
 	prefer4 := ips[0].To4() != nil
 	for _, ip := range ips {
-		if ip.To16() == nil || seen[ip.String()] {
+		key, ok := netip.AddrFromSlice(ip)
+		if !ok {
 			continue
 		}
-		seen[ip.String()] = true
+		key = key.Unmap()
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
 		if (ip.To4() != nil) == prefer4 {
 			first = append(first, ip)
 		} else {
@@ -53,6 +62,9 @@ func interleaveIPs(ips []net.IP) []net.IP {
 // deadline. A large DNS answer must not shrink a usable attempt to milliseconds.
 // An unbuffered result channel transfers socket ownership exactly once.
 func dialResolved(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidates []dialCandidate) (net.Conn, error) {
+	if len(candidates) == 1 {
+		return dialOne(ctx, dial, candidates[0])
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {
@@ -81,24 +93,19 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 		next++
 		active++
 		go func() {
-			attempt := keepValues(ctx, candidate.ctx)
+			// The budget is cut from the lifetime and the values attached
+			// after, so the timeout context finds its parent's cancelCtx.
+			lifetime := ctx
 			if end, ok := ctx.Deadline(); ok && remaining > 1 {
 				var stop context.CancelFunc
 				left := time.Until(end)
 				// Match net.partialDeadline's lower bound. With less than 2s
 				// left, spend only the remaining parent budget.
 				share := min(left, max(2*time.Second, left/time.Duration(remaining)))
-				attempt, stop = context.WithTimeout(attempt, share)
+				lifetime, stop = context.WithTimeout(ctx, share)
 				defer stop()
 			}
-			c, err := dial(attempt, "tcp", candidate.addr)
-			if err == nil && c == nil {
-				err = errors.New("dial returned no connection")
-			}
-			if err != nil && c != nil {
-				_ = c.Close()
-				c = nil
-			}
+			c, err := checkedDial(keepValues(lifetime, candidate.ctx), dial, candidate.addr)
 			select {
 			case results <- result{c, err}:
 			case <-ctx.Done():
@@ -116,7 +123,7 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 	for active > 0 {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("dial %s: %w", candidates[next-1].addr, ctx.Err())
 		case r := <-results:
 			active--
 			if r.err == nil {
@@ -126,7 +133,10 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 				}
 				return r.conn, nil
 			}
-			if firstErr == nil {
+			// The first failure names the preferred family, as in
+			// net.Dialer, unless it only says this host has no route for
+			// that family: then what the other family met is the answer.
+			if firstErr == nil || (noRoute(firstErr) && !noRoute(r.err)) {
 				firstErr = r.err
 			}
 			if next < len(candidates) {
@@ -147,4 +157,33 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 		}
 	}
 	return nil, firstErr
+}
+
+// dialOne is the single-address path: no race, so no goroutine, channel or
+// timer, and the whole budget belongs to the one attempt.
+func dialOne(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidate dialCandidate) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return checkedDial(keepValues(ctx, candidate.ctx), dial, candidate.addr)
+}
+
+// checkedDial holds a Dial hook to one outcome: a connection or an error.
+func checkedDial(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), addr string) (net.Conn, error) {
+	c, err := dial(ctx, "tcp", addr)
+	if err == nil && c == nil {
+		err = errors.New("dial returned no connection")
+	}
+	if err != nil && c != nil {
+		_ = c.Close()
+		c = nil
+	}
+	return c, err
+}
+
+// noRoute reports a local "no route for this family" failure, the one IPv6
+// gives on a host without IPv6. The text match covers Dial hooks that return
+// their own errors; handleConnect maps replies by the same text.
+func noRoute(err error) bool {
+	return errors.Is(err, syscall.ENETUNREACH) || strings.Contains(err.Error(), "network is unreachable")
 }

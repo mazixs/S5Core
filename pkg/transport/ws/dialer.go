@@ -48,7 +48,10 @@ type DialOpts struct {
 	PinSHA256 []string
 	// ReadLimit bounds one message from the server. Zero means
 	// DefaultReadLimit; a negative value removes the limit.
-	ReadLimit        int64
+	ReadLimit int64
+	// WriteBufferSize is the payload one socket write carries, the shaper's
+	// WS_MAX_FRAME. Zero means DefaultMaxFrame; see writeBufferSize.
+	WriteBufferSize  int
 	utlsSessionCache utlslib.ClientSessionCache
 }
 
@@ -68,6 +71,7 @@ func DialContext(ctx context.Context, opts DialOpts) (*Conn, error) {
 	dialer := websocket.Dialer{
 		Subprotocols:     namedSubprotocols(opts.Subprotocols),
 		HandshakeTimeout: wsHandshakeTimeout,
+		WriteBufferSize:  writeBufferSize(opts.WriteBufferSize),
 	}
 
 	headers := make(http.Header)

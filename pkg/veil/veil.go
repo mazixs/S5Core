@@ -166,9 +166,10 @@ type Result struct {
 // SaltSize is the prologue length of the symmetric scheme.
 const SaltSize = 32
 
-// Symmetric is the scheme in use: the client draws a random salt, sends it,
-// and both ends derive the session keys from the PSK and that salt. No point
-// of a curve reaches the wire, and no new cryptographic code is vendored.
+// Symmetric is the bare scheme under Clocked, the default: the client draws a
+// random salt, sends it, and both ends derive the session keys from the PSK
+// and that salt. No point of a curve reaches the wire, and no new
+// cryptographic code is vendored.
 //
 // What it does not provide is forward secrecy. The salt is public, so
 // whoever learns the PSK can derive the keys of a recorded session. That is a

@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Markdown tables from matrix results: tables.py RESULTS PREFIX (lo or ne)."""
+import json, sys
+from pathlib import Path
+
+root, prefix = Path(sys.argv[1]), sys.argv[2]
+modes = [m for m in ('direct', 'plain', 'obfs', 'wss') if (root / f'{prefix}-{m}' / 'result.json').exists()]
+res = {}
+for m in modes:
+    res[m] = json.loads((root / f'{prefix}-{m}' / 'result.json').read_text())['result']
+    web = root / f'{prefix}-{m}-web' / 'result.json'
+    if web.exists():
+        res[m].update(json.loads(web.read_text())['result'])
+order = ['tcp/connect', 'tcp/echo-64', 'http/small-new', 'http/small-reuse', 'http/large', 'http/upload', 'http/small-reuse-under-bulk',
+         'https/small-new', 'https/small-reuse', 'https/large', 'https/upload', 'https/small-reuse-under-bulk',
+         'h2/small-new', 'h2/small-reuse', 'h2/small-same-conn-under-bulk',
+         'h3/small-new', 'h3/small-reuse', 'h3/large', 'h3/upload', 'h3/small-reuse-under-bulk',
+         'udp/rtt-64', 'udp/rtt-1200', 'udp/rtt-64-under-bulk', 'udp/stream-40mbit', 'udp/stream-200mbit']
+names = [n for n in order if any(n in r for r in res.values())]
+
+
+def cell(s, name):
+    if s is None:
+        return '-'
+    e = s.get('extra') or {}
+    if name.endswith(('large', 'upload')):
+        v = f"{s.get('mbps', s.get('MBps', 0)):.0f} MB/s"
+    elif name.startswith('udp/stream'):
+        v = f"{s['p50_ms']:.2f}/{s['p99_ms']:.2f}, loss {e.get('loss_pct', 0):.2f}%"
+    else:
+        v = f"{s['p50_ms']:.3f}/{s['p99_ms']:.3f}"
+        if 'loss_pct' in e and e['loss_pct']:
+            v += f", loss {e['loss_pct']:.2f}%"
+    if s.get('errors'):
+        v += f" **err {s['errors']}**"
+    return v
+
+
+print('| Scenario | ' + ' | '.join(modes) + ' |')
+print('|---|' + '---:|' * len(modes))
+for n in names:
+    print(f'| `{n}` | ' + ' | '.join(cell(res[m].get(n), n) for m in modes) + ' |')

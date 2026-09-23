@@ -1,0 +1,1 @@
+{"Replace":{"<repo>/pkg/obfs/conn.go":"<repo>/bench/work/conn-cury0.go"}}

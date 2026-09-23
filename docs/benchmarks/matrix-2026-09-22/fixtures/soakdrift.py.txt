@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Per-kind drift over soak windows: soakdrift.py result.json"""
+import json, sys
+r = json.load(open(sys.argv[1]))['result']
+print('| Kind | n/30s first..last | p99 ms first..last | worst window p99 | errors by window |')
+print('|---|---:|---:|---:|---|')
+for k, ws in sorted(r['windows'].items()):
+    full = [w for w in ws if w['n'] > 100]
+    errs = ','.join(str(w['errors']) for w in full)
+    print(f"| `{k}` | {full[0]['n']}..{full[-1]['n']} | {full[0]['p99_ms']:.1f}..{full[-1]['p99_ms']:.1f} | {max(w['p99_ms'] for w in full):.1f} | {errs} |")
+print('idle:', r['idle'])

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Скорость и стабильность S5Core</title>
+<style>
+:root{--bg:#fbfbf9;--fg:#1d1f22;--muted:#5e636b;--line:#dcdcd6;--card:#ffffff;--accent:#1f5fbf;--hi:#b3261e;--mid:#a15c00;--lo:#3d6b35;--code:#f0f0ec}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--fg:#e6e6e3;--muted:#a0a4ab;--line:#2e3136;--card:#1c1f23;--accent:#7fb0ff;--hi:#ff8a80;--mid:#f0b35a;--lo:#8fcf80;--code:#262a2f}}
+:root[data-theme="dark"]{--bg:#15171a;--fg:#e6e6e3;--muted:#a0a4ab;--line:#2e3136;--card:#1c1f23;--accent:#7fb0ff;--hi:#ff8a80;--mid:#f0b35a;--lo:#8fcf80;--code:#262a2f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:28px 16px 64px}
+h1{font-size:26px;margin:0 0 4px}
+h2{font-size:20px;margin:36px 0 10px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:22px 0 6px}
+p,li{max-width:78ch}
+.sub{color:var(--muted);margin:0 0 20px}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.tl{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:14px 18px;margin:14px 0}
+.tl ul{margin:6px 0 0;padding-left:20px}
+.wrap{overflow-x:auto;margin:10px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;background:var(--card)}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--code);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.b{display:inline-block;padding:0 7px;border-radius:10px;font-size:12px;font-weight:600;border:1px solid currentColor;white-space:nowrap}
+.hi{color:var(--hi)}.mid{color:var(--mid)}.lo{color:var(--lo)}.mu{color:var(--muted)}
+.good{color:var(--lo)}.bad{color:var(--hi)}
+small{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>Скорость реакции и стабильность S5Core</h1>
+<p class="sub">22-23.09.2026 · дерево <code>cd79abe</code> (2.1.0) плюс правки 2.2 из аудита · стенд i7-11700K, Linux 7.0, Go 1.26.6 · loopback и netem (RTT 40 мс, потери 0,5%, 200 Мбит/с)</p>
+
+<div class="tl">
+<b>Коротко.</b>
+<ul>
+<li><b>Доработки по плану аудита выполнены</b>, кроме пунктов, отложенных по решению (Н4, Н6, Н8, перенос тестовых функций, <code>internal/testutil</code>). Полный <code>scripts/pre-commit.sh</code> (тот же, что в CI) зеленый: gofmt, vet, <code>go mod tidy -diff</code>, golangci-lint (0 замечаний), govulncheck (вызываемых уязвимостей нет), race-тесты и сборка обоих бинарей. Race-тесты повторно без кеша (<code>-count=1</code>): 25 пакетов, все зеленые.</li>
+<li><b>Реакция на открытом соединении</b>: туннель кругов не добавляет. На RTT 40 мс короткий ответ приходит за 40,2-40,4 мс на всех путях и протоколах, на loopback туннель добавляет 0,04-0,06 мс.</li>
+<li><b>Реакция на новом соединении</b> считается в кругах. obfs платит +1 круг сверх прямого пути на TCP, HTTP, HTTPS и HTTP/2 и +2 на HTTP/3 и UDP. wss платит +3 и +4. Это устройство протокола, а не CPU: на loopback вся цена туннеля 0,3-1,1 мс.</li>
+<li><b>Стабильность</b>: смешанная нагрузка в 32 потока, 5 и 15 минут. За 15 минут obfs выполнил 13,8 млн операций, wss 6,5 млн, ошибок 0. Утечек нет: fd и сессии возвращаются к исходным, живая куча после GC стоит на месте все 15 минут (сервер 9 МБ, клиент 5 МБ). Дрейфа p99 нет. Простой 75 с (дольше <code>READ_TIMEOUT</code>) пережили и TCP, и UDP.</li>
+<li><b>Найден и исправлен дефект UDP-ассоциации клиента</b>: поздний ответ цели забирал себе все ответы ассоциации. До исправления было 4 ошибки на soak каждого транспорта, после 0. Цена проверки не отличима от шума, аллокаций 0.</li>
+<li><b>Полоса</b>: под сетью obfs дает 83% прямого пути, wss 77% (на боевых узлах 84-88%). На loopback упор в CPU: obfs 818-990 МБ/с, wss 238-382 МБ/с, запас до гигабита в 2-8 раз.</li>
+<li><b>UDP</b>: одна ассоциация проходит без потерь до 10 Мбит/с. Выше упор в один TCP-поток туннеля, и очередь в буфере сокета растет до секунд. Укоротить эту очередь опцией <code>TCP_NOTSENT_LOWAT</code> пробовали на четырех значениях по три повтора. Значение, которое держит хвост (128 КиБ), примерно вдвое режет загрузку по HTTP/3. Значение, которое HTTP/3 не трогает (1 МиБ), хвост не держит. Опция не включена.</li>
+<li><b>Главный непройденный рычаг реакции</b> - оптимистичный ответ приложению: -1 круг на каждом новом соединении, obfs HTTPS 162 -&gt; около 121 мс, как у прямого пути. Не реализован, потому что меняет семантику ошибок и форму первого залпа.</li>
+</ul>
+</div>
+
+<h2>1. Что сделано по плану</h2>
+<div class="wrap"><table>
+<tr><th>Пункт аудита</th><th>Что сделано</th><th>Чем проверено</th></tr>
+<tr><td>В1: <code>runtime.Gosched()</code> на горячем пути</td><td>Уступка ограничена интервалом: не чаще раза в 100 мкс на направление и только после пачки длиннее кадра (<code>yieldInterval</code>). Полное удаление отвергнуто: без уступки p99 мелких запросов под закачкой растет в 4,7-66 раз.</td><td>Процессный ABBA <code>scripts/performance-ab.py</code>: bulk CPU/GiB -13-21% против уступки на каждой пачке, p99 mixed без изменений. На ARM-роутере интервал равен уступке на каждой пачке, p99 mixed на 16-31% ниже, чем без уступки (<code>docs/benchmarks/yield.md</code>).</td></tr>
+<tr><td>С1: буфер записи WebSocket</td><td>Буфер gorilla на обеих сторонах берется по <code>WS_MAX_FRAME</code>, но не меньше 4096. Раньше при <code>WS_MAX_FRAME</code> больше 4096 каждый большой кадр открывался записью постоянной длины.</td><td><code>pkg/transport/ws/writebuffer_test.go</code></td></tr>
+<tr><td>С2: буферы релея клиента</td><td>Два буфера по 32 КиБ на туннель берутся из <code>sync.Pool</code>, а не аллоцируются на каждый CONNECT.</td><td><code>cmd/s5client/relay_buffer_test.go</code></td></tr>
+<tr><td>С3: кеш TLS-сессий</td><td>Документировано, что браузерные профили uTLS не возобновляют сессию, а без профиля параллельные соединения предъявляют один PSK identity, по которому их можно связать.</td><td><code>pkg/transport/ws/session_cache_test.go</code></td></tr>
+<tr><td>Н1-Н3: дозвон</td><td>"network unreachable" одного семейства больше не заслоняет настоящую ошибку другого. Один адрес набирается без горутины, канала и таймера. Производный дедлайн не паркует горутину на попытку.</td><td><code>internal/socks5/dial_choice_test.go</code></td></tr>
+<tr><td>Н5, Н7 и мелочи</td><td>Маска длины не считается дважды на кадр. Единый <code>socks5.AppendAddr</code> для всех адресов. <code>isTimeout</code> через <code>errors.As</code>. Отказ записи ответа после правила попадает в метрику с кодом.</td><td><code>go test -race ./...</code>, <code>pkg/obfs/alloc_test.go</code></td></tr>
+<tr><td>Удаление по графику 2.2</td><td>Удалены прежний формат провода (<code>pkg/obfs/legacy</code>, <code>OBFS_FORMAT=legacy</code>) и отправка сырого пролога клиентом. Сервер по-прежнему читает сырой пролог клиентов 2.0 и 2.1.</td><td><code>pkg/obfs/spec_test.go</code>, <code>cmd/s5client/transport_test.go</code></td></tr>
+<tr><td>Релей-бенчмарк</td><td>В репозитории появился потоковый бенчмарк релея с метрикой CPU на ГиБ.</td><td><code>pkg/obfs/relay_bench_test.go</code></td></tr>
+<tr><td>Найдено в этом прогоне</td><td>Датаграмма без заголовка SOCKS5 UDP больше не решает, куда идут ответы ассоциации. Закрытие ассоциации не пишет WARN на каждый ответ, оставшийся в туннеле. Проверка порта до приветствия SOCKS5 пишется в Debug, а не в ERROR.</td><td><code>TestADatagramWithoutAHeaderDoesNotTakeTheAnswers</code>, soak (раздел 5)</td></tr>
+</table></div>
+
+<h2>2. Скорость реакции</h2>
+<p>Четыре пути: <code>direct</code> - контроль без прокси, <code>plain</code> - plain SOCKS5 сервера, <code>obfs</code> - <code>s5client</code> и обфусцированный слушатель, <code>wss</code> - <code>s5client</code> и WebSocket поверх TLS. Все процессы настоящие, источники - HTTP/1.1, HTTPS (TLS 1.3, без кеша сессий), HTTP/2, HTTP/3 поверх QUIC, TCP и UDP echo. HTTP/3 и UDP через туннель идут командой <code>0x83</code> (UDP поверх TCP). В ячейках p50/p99 в мс.</p>
+
+<h3>Loopback: цена кода без сети</h3>
+<div class="wrap"><table>
+<tr><th>Сценарий</th><th>direct</th><th>plain</th><th>obfs</th><th>wss</th></tr>
+<tr><td><code>tcp/connect</code></td><td class="n">0.060/0.118</td><td class="n">0.194/0.368</td><td class="n">0.369/0.862</td><td class="n">0.967/1.326</td></tr>
+<tr><td><code>http/small-new</code></td><td class="n">0.117/0.175</td><td class="n">0.276/0.425</td><td class="n">0.417/0.613</td><td class="n">1.040/1.399</td></tr>
+<tr><td><code>https/small-new</code></td><td class="n">0.626/0.831</td><td class="n">0.838/1.223</td><td class="n">1.035/1.508</td><td class="n">1.671/2.104</td></tr>
+<tr><td><code>h2/small-new</code></td><td class="n">0.665/0.999</td><td class="n">0.818/1.028</td><td class="n">1.055/1.298</td><td class="n">1.727/2.282</td></tr>
+<tr><td><code>h3/small-new</code> (QUIC)</td><td class="n">0.881/1.461</td><td class="n">1.067/1.443</td><td class="n">1.349/1.866</td><td class="n">1.986/2.434</td></tr>
+<tr><td><code>http/small-reuse</code></td><td class="n">0.040/0.075</td><td class="n">0.062/0.100</td><td class="n">0.081/0.119</td><td class="n">0.094/0.149</td></tr>
+<tr><td><code>https/small-reuse</code></td><td class="n">0.041/0.068</td><td class="n">0.062/0.101</td><td class="n">0.081/0.119</td><td class="n">0.098/0.148</td></tr>
+<tr><td><code>h3/small-reuse</code></td><td class="n">0.081/0.129</td><td class="n">0.097/0.145</td><td class="n">0.141/0.221</td><td class="n">0.145/0.268</td></tr>
+<tr><td><code>udp/rtt-64</code></td><td class="n">0.006/0.012</td><td class="n">0.021/0.036</td><td class="n">0.046/0.075</td><td class="n">0.067/0.113</td></tr>
+<tr><td><code>https/small-reuse-under-bulk</code></td><td class="n">0.043/0.250</td><td class="n">0.088/2.451</td><td class="n">0.104/0.320</td><td class="n">0.120/0.309</td></tr>
+<tr><td><code>h3/small-reuse-under-bulk</code></td><td class="n">0.099/1.515</td><td class="n">0.167/4.447</td><td class="n">0.156/0.923</td><td class="n">0.163/0.650</td></tr>
+<tr><td><code>udp/rtt-64-under-bulk</code></td><td class="n">0.006/0.042</td><td class="n">0.024/2.410</td><td class="n">0.059/0.289</td><td class="n">0.074/0.240</td></tr>
+</table></div>
+<ul>
+<li>Новое соединение. obfs добавляет к прямому пути 0,30 мс на HTTP, 0,41 мс на HTTPS и 0,47 мс на HTTP/3. wss добавляет 0,92, 1,05 и 1,11 мс, это его собственное рукопожатие TLS и WebSocket upgrade.</li>
+<li>Открытое соединение. Туннель добавляет 0,04-0,06 мс на всех протоколах.</li>
+<li>Под параллельной закачкой в соседнем соединении p99 короткого ответа у obfs и wss 0,24-0,92 мс, у plain 2,4-4,4 мс. У релея plain нет ограниченной уступки планировщику. Это наблюдение, отдельного A/B на plain не было.</li>
+<li>Ошибок 0 во всех сценариях всех путей.</li>
+</ul>
+
+<h3>Netem: RTT 40 мс, потери 0,5%, 200 Мбит/с</h3>
+<p>Для туннелей шейпится только плечо клиент - сервер, плечо сервер - источник остается быстрым, как в поле. UDP через <code>plain</code> идет мимо шейпера, поэтому его ячейки заменены прочерком.</p>
+<div class="wrap"><table>
+<tr><th>Сценарий</th><th>direct</th><th>plain</th><th>obfs</th><th>wss</th></tr>
+<tr><td><code>tcp/connect</code></td><td class="n">80.2/80.4</td><td class="n">160.8/1179.1</td><td class="n">121.0/409.8</td><td class="n">202.1/448.9</td></tr>
+<tr><td><code>http/small-new</code></td><td class="n">80.4/1119.9</td><td class="n">161.0/161.4</td><td class="n">121.2/407.4</td><td class="n">202.2/256.9</td></tr>
+<tr><td><code>https/small-new</code></td><td class="n">121.2/121.5</td><td class="n">201.9/533.2</td><td class="n">162.2/492.4</td><td class="n">243.2/572.9</td></tr>
+<tr><td><code>h2/small-new</code></td><td class="n">121.2/174.8</td><td class="n">202.0/1209.0</td><td class="n">162.2/242.7</td><td class="n">243.3/576.9</td></tr>
+<tr><td><code>h3/small-new</code> (QUIC)</td><td class="n">81.5/81.9</td><td class="n">-</td><td class="n">162.5/268.4</td><td class="n">243.7/283.8</td></tr>
+<tr><td><code>https/small-reuse</code></td><td class="n">40.2/40.4</td><td class="n">40.3/285.4</td><td class="n">40.4/287.0</td><td class="n">40.4/368.5</td></tr>
+<tr><td><code>h3/small-reuse</code></td><td class="n">40.3/40.4</td><td class="n">-</td><td class="n">40.4/93.9</td><td class="n">40.4/146.2</td></tr>
+<tr><td><code>udp/rtt-1200</code></td><td class="n">40.2/40.6, потери 1,33%</td><td class="n">-</td><td class="n">40.4/40.6, потерь 0</td><td class="n">40.4/324.4, потерь 0</td></tr>
+<tr><td><code>https/small-reuse-under-bulk</code></td><td class="n">62.0/164.7</td><td class="n">64.6/150.2</td><td class="n">59.4/319.6</td><td class="n">59.3/180.1</td></tr>
+<tr><td><code>h2/small-same-conn-under-bulk</code></td><td class="n">151.9/330.7</td><td class="n">199.1/352.2</td><td class="n">215.6/373.7</td><td class="n">241.0/385.9</td></tr>
+</table></div>
+<p>p50 нового соединения в кругах RTT:</p>
+<div class="wrap"><table>
+<tr><th></th><th>direct</th><th>plain</th><th>obfs</th><th>wss</th></tr>
+<tr><td>TCP CONNECT, HTTP</td><td class="n">2</td><td class="n">4</td><td class="n">3</td><td class="n">5</td></tr>
+<tr><td>HTTPS, HTTP/2</td><td class="n">3</td><td class="n">5</td><td class="n">4</td><td class="n">6</td></tr>
+<tr><td>HTTP/3 (QUIC)</td><td class="n">2</td><td class="n">-</td><td class="n">4</td><td class="n">6</td></tr>
+</table></div>
+<ul>
+<li>obfs тратит один круг на TCP-рукопожатие до сервера, а приветствие, CONNECT и первый кадр идут одним залпом. Лишний круг - это ожидание ответа сервера на CONNECT перед ответом приложению. UDP-ассоциация платит еще и TCP-рукопожатие туннеля, поэтому HTTP/3 выходит +2.</li>
+<li>wss добавляет к этому TLS туннеля и WebSocket upgrade, отсюда +3 и +4.</li>
+<li>Хвосты p99 под потерями - это лотерея RTO (284-370 мс) и повтора SYN (1,1-1,2 с). При n=90 p99 решает один запрос, и выпадает он любому пути, включая <code>direct</code>. Сравнивать пути по нему нельзя.</li>
+<li>Под закачкой p50 растет на всех путях одинаково, с 40 до 51-75 мс, включая <code>direct</code>. Это очередь самого узкого места, а не планирование туннеля.</li>
+<li><code>h2/small-same-conn-under-bulk</code> плох у всех путей. Короткие запросы и закачка идут в одном соединении HTTP/2, и окно потока 4 МиБ дает до 290 мс очереди. Туннель добавляет к ней свои буферы.</li>
+</ul>
+
+<h2>3. Полоса</h2>
+<div class="wrap"><table>
+<tr><th>Сценарий</th><th>direct</th><th>plain</th><th>obfs</th><th>wss</th></tr>
+<tr><td>loopback <code>http/large</code>, МБ/с</td><td class="n">2975</td><td class="n">1741</td><td class="n">818</td><td class="n">382</td></tr>
+<tr><td>loopback <code>https/large</code>, МБ/с</td><td class="n">1545</td><td class="n">1323</td><td class="n">898</td><td class="n">238</td></tr>
+<tr><td>loopback <code>https/upload</code>, МБ/с</td><td class="n">2113</td><td class="n">1779</td><td class="n">990</td><td class="n">355</td></tr>
+<tr><td>loopback <code>h3/large</code>, МБ/с</td><td class="n">806</td><td class="n">279</td><td class="n">176</td><td class="n">78</td></tr>
+<tr><td>netem, фоновая закачка без паузы 40-50 с, МБ/с</td><td class="n">15,7-17,2</td><td class="n">15,4-17,2</td><td class="n">13,1-14,3 (83%)</td><td class="n">11,4-13,4 (77%)</td></tr>
+<tr><td>netem <code>h3/large</code>, МБ/с</td><td class="n">4,6</td><td class="n">-</td><td class="n">3,5</td><td class="n">1,8</td></tr>
+<tr><td>netem <code>h3/upload</code>, МБ/с</td><td class="n">1,2</td><td class="n">-</td><td class="n">3,4</td><td class="n">1,2</td></tr>
+</table></div>
+<ul>
+<li>На loopback упор в CPU. До гигабита (125 МБ/с) у obfs запас в 6-8 раз, у wss в 2-3 раза. HTTP/3 через wss (78/71 МБ/с) уже меньше гигабита: одна QUIC-сессия через <code>0x83</code> поверх WebSocket дает на этом процессоре около 600 Мбит/с.</li>
+<li>Под сетью obfs дает 83% прямого пути, wss 77%. Это совпадает с боевыми узлами (84-88% канала у obfs, <code>docs/field/nodes.md</code>).</li>
+<li>HTTP/3 поверх <code>0x83</code> под потерями на загрузке быстрее прямого пути (3,4 против 1,2 МБ/с): потери плеча чинит TCP, и QUIC их не видит. На скачивании он медленнее (3,5 против 4,6 МБ/с).</li>
+<li>Строки <code>large</code>/<code>upload</code> под netem при n=4 решает одна остановка RTO, поэтому устойчивая полоса взята из фоновой закачки.</li>
+</ul>
+
+<h2>4. UDP</h2>
+<h3>Одна ассоциация под нарастающим потоком</h3>
+<p>10 с датаграмм по 1200 байт с постоянной скоростью, эхо возвращает каждую. В ячейке p50/p99 мс и потери. Потеря - датаграмма, которая не вернулась совсем.</p>
+<div class="wrap"><table>
+<tr><th>Путь, потери сети</th><th>2 Мбит/с</th><th>5 Мбит/с</th><th>10 Мбит/с</th><th>20 Мбит/с</th><th>40 Мбит/с</th></tr>
+<tr><td>direct, 0,5%</td><td class="n">40.2/40.4, 0,96%</td><td class="n">40.1/40.2, 1,17%</td><td class="n">40.2/40.3, 0,88%</td><td class="n">40.2/40.3, 1,07%</td><td class="n">40.2/40.5, 1,02%</td></tr>
+<tr><td>obfs, 0,5%</td><td class="n">40.3/94.3, 0</td><td class="n">41.7/89.9, 0</td><td class="n">62.8/112.7, 0</td><td class="n">68.1/229.5, 0,06%</td><td class="n bad">71.6/1685, 14,3%</td></tr>
+<tr><td>wss, 0,5%</td><td class="n">44.5/94.1, 0</td><td class="n">54.1/113.0, 0</td><td class="n">69.7/125.4, 0</td><td class="n">78.8/707.4, 1,08%</td><td class="n bad">668/990, 22,3%</td></tr>
+<tr><td>direct, 0,05%</td><td class="n">40.2/40.4, 0</td><td class="n">40.1/40.2, 0,04%</td><td class="n">40.2/40.2, 0,03%</td><td class="n">40.2/40.3, 0,13%</td><td class="n">40.2/40.5, 0,11%</td></tr>
+<tr><td>obfs, 0,05%</td><td class="n">40.3/60.8, 0</td><td class="n">40.2/69.3, 0</td><td class="n">40.3/76.6, 0</td><td class="n">46.6/538.4, 0,01%</td><td class="n bad">79.4/1934, 30,5%</td></tr>
+<tr><td>wss, 0,05%</td><td class="n">40.3/65.4, 0</td><td class="n">40.3/84.7, 0</td><td class="n">44.5/80.2, 0</td><td class="n">57.5/1002, 0</td><td class="n bad">58.8/1107, 10,8%</td></tr>
+</table></div>
+<ul>
+<li>До 10 Мбит/с туннель не теряет ни одной датаграммы, а прямой путь теряет вдвое больше заданных потерь (датаграмма и ответ проходят сеть по разу). Цена - хвост: p99 61-125 мс против 40 мс. Голос, игры и видеозвонок (до 2-4 Мбит/с) живут в этой части таблицы.</li>
+<li>Выше ассоциация упирается в одно TCP-соединение туннеля: каждая датаграмма - отдельная мелкая запись, и потери бьют по ней без скидки. Очередь копится в буфере отправки сокета туннеля (до 4 МБ), p99 уходит в секунды. Когда буфер полон, клиент перестает читать свой UDP-сокет, и излишек отбрасывает ядро. Проверено счетчиком: <code>RcvbufErrors</code> в <code>/proc/net/snmp</code> вырос на 7651 при 7651 потерянных датаграммах.</li>
+<li>Адаптивный отправитель находит свою скорость сам: QUIC через тот же <code>0x83</code> потерь не видит (раздел 3). Страдает неадаптивный поток выше потолка: постоянный битрейт получает секундную задержку раньше, чем потери.</li>
+</ul>
+
+<h3>Можно ли укоротить очередь: <code>TCP_NOTSENT_LOWAT</code></h3>
+<p>Опция не дает сокету принимать запись, пока в нем больше N неотправленных байтов, то есть делает очередь туннеля короткой. Проверено два варианта. Первый - sysctl на все сокеты стенда, 128 КиБ. Второй - опция только на двух концах туннеля (сборка через <code>go build -overlay</code>, рабочий код не менялся): четыре значения, по три повтора, obfs, RTT 40 мс, потери 0,5% и 0,05%. Ниже - второй вариант, по шесть прогонов на ячейку UDP (два уровня потерь × три повтора) и по три на HTTP/3.</p>
+<div class="wrap"><table>
+<tr><th>Порог</th><th>p99 на 40 Мбит/с, мс</th><th>потеряно на 20 Мбит/с</th><th><code>h3/upload</code>, МБ/с</th><th><code>h3/large</code>, МБ/с</th><th>отброшено на UDP-сокете за прогон h3</th></tr>
+<tr><td>выкл</td><td class="n bad">355-2177</td><td class="n good">0-0,41%</td><td class="n good">4,8-7,7</td><td class="n">4,2-6,2</td><td class="n good">0</td></tr>
+<tr><td>128 КиБ</td><td class="n good">148-241</td><td class="n bad">0,42-6,70%</td><td class="n bad">2,6-2,8</td><td class="n">3,3-4,3</td><td class="n bad">31-254</td></tr>
+<tr><td>512 КиБ</td><td class="n">246-469</td><td class="n bad">0-6,88%</td><td class="n bad">1,8-3,3</td><td class="n">3,6-6,3</td><td class="n bad">0-272</td></tr>
+<tr><td>1 МиБ</td><td class="n">228-729</td><td class="n bad">0-10,6%</td><td class="n good">4,8-6,5</td><td class="n">2,4-7,8</td><td class="n good">0</td></tr>
+</table></div>
+<ul>
+<li>Хвост постоянного битрейта выше потолка держит только 128 КиБ: p99 148-241 мс во всех шести прогонах против 355-2177 без опции. Но опция меняет задержку на потери, а не убирает одно из них: запись в туннель блокируется раньше, и излишек раньше отбрасывается на UDP-сокете клиента.</li>
+<li>HTTP/3 режут те значения, при которых отбрасываются датаграммы. QUIC принимает отброс за перегрузку и сжимает окно: <code>h3/upload</code> 1,8-3,3 МБ/с против 4,8-7,7. HTTP/3 - основной UDP-трафик браузера, так что это цена, а не побочный эффект.</li>
+<li>У самого потолка (20 Мбит/с) меньше всех теряет вариант без опции. На TCP через туннель ни одно значение не действует сильнее разброса. Sysctl на все сокеты дал ту же картину (p99 122-236 мс на 40 Мбит/с, <code>h3/large</code> 2,7-3,6 против 4,1-5,1 МБ/с).</li>
+<li>Итог: ни одно значение не лучше варианта без опции по всем осям. Потолок одной ассоциации - свойство UDP поверх одного TCP-потока, и очередью он не лечится. Поднять его может только другая схема (ассоциация на нескольких TCP-соединениях или датаграммный транспорт), и обе меняют форму на проводе.</li>
+</ul>
+
+<h2>5. Стабильность: смешанная нагрузка 5 и 15 минут</h2>
+<p>32 воркера без пауз выбирают случайно одну из семи операций: новое HTTP-соединение, запрос по открытому, тело 256 КиБ, HTTP/3 по открытому и по новому QUIC-соединению, пачку из 16 датаграмм на новой UDP-ассоциации, TCP-эхо. Рядом держатся TCP-соединение и UDP-ассоциация без трафика дольше <code>READ_TIMEOUT</code> (30 с). Нагрузка на loopback, CPU занят полностью: это проверка устойчивости, а не полосы.</p>
+<div class="wrap"><table>
+<tr><th></th><th>obfs до исправления</th><th>obfs после</th><th>wss до исправления</th><th>wss после</th></tr>
+<tr><td>операций</td><td class="n">3 785 210</td><td class="n">4 313 911</td><td class="n">1 908 429</td><td class="n">2 171 804</td></tr>
+<tr><td>ошибок</td><td class="n bad">4 (<code>udp_burst</code>)</td><td class="n good">0</td><td class="n bad">4 (<code>udp_burst</code>)</td><td class="n good">0</td></tr>
+<tr><td>p99 по видам операций, мс</td><td class="n">4,1-16,8</td><td class="n">3,0-13,1</td><td class="n">7,1-29,6</td><td class="n">4,7-17,5</td></tr>
+<tr><td>max, мс</td><td class="n">48-214</td><td class="n">21-37</td><td class="n">78-230</td><td class="n">17-30</td></tr>
+<tr><td>простой 75 с, TCP и UDP</td><td class="n">жив</td><td class="n">жив</td><td class="n">жив</td><td class="n">жив</td></tr>
+<tr><td>fd сервера / клиента до и после</td><td class="n">9/6 -&gt; 9/6</td><td class="n">9/6 -&gt; 9/6</td><td class="n">9/6 -&gt; 9/6</td><td class="n">9/6 -&gt; 9/6</td></tr>
+<tr><td>RSS сервера, МБ</td><td class="n">16 -&gt; 40</td><td class="n">16 -&gt; 42</td><td class="n">16 -&gt; 38</td><td class="n">16 -&gt; 37</td></tr>
+<tr><td>RSS клиента, МБ</td><td class="n">10 -&gt; 24</td><td class="n">9 -&gt; 25</td><td class="n">10 -&gt; 25</td><td class="n">10 -&gt; 26</td></tr>
+<tr><td>открытых соединений после</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td>недопустимых переходов автомата</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td></tr>
+</table></div>
+<ul>
+<li>Дрейфа нет. По 30-секундным окнам число операций и p99 от первого окна к последнему не растут, ошибок нет ни в одном окне. Например, у obfs <code>h3_new</code> p99 13,3 -&gt; 12,6 мс, у wss 17,5 -&gt; 16,7 мс.</li>
+<li>RSS вырастает с 16 до 37-42 МБ у сервера и с 10 до 24-26 МБ у клиента в первые 30 секунд. Это рабочий набор под 32 воркерами, а не рост: в 15-минутном прогоне он стоит на месте до конца (ниже).</li>
+<li>В логах после исправления у сервера только предупреждение о работе без аутентификации. У клиента 5 (obfs) и 3 (wss) строки <code>Dropping returning UDP packet</code>: поздний ответ цели пришел раньше первой датаграммы приложения. Ошибок у приложения нет.</li>
+<li>Операций на 14% больше, но соседние прогоны на этом стенде расходятся по объему и на 10%. Поэтому скорость в заслугу исправлению не записана, записаны 0 ошибок против 4.</li>
+</ul>
+
+<h3>15 минут: память по окнам и живая куча</h3>
+<p>Тот же набор операций, 15 минут. RSS, fd и потоки снимаются каждые 30 с, получается 30 точек вместо двух. RSS плохо отвечает на вопрос об утечке, потому что Go отдает память системе не сразу. Поэтому wss прогнан еще раз с <code>GODEBUG=gctrace=1</code>: трасса печатает живую кучу после каждой сборки.</p>
+<div class="wrap"><table>
+<tr><th></th><th>obfs</th><th>wss</th><th>wss с трассой GC</th></tr>
+<tr><td>операций</td><td class="n">13 777 795</td><td class="n">6 455 981</td><td class="n">6 290 417</td></tr>
+<tr><td>ошибок</td><td class="n good">0</td><td class="n good">0</td><td class="n good">0</td></tr>
+<tr><td>p99 по видам операций, мс</td><td class="n">2,7-11,8</td><td class="n">4,8-18,0</td><td class="n">4,9-18,2</td></tr>
+<tr><td>простой 75 с, TCP и UDP</td><td class="n">жив</td><td class="n">жив</td><td class="n">жив</td></tr>
+<tr><td>RSS сервера по 30 окнам, МБ</td><td class="n">39,7-42,6</td><td class="n">37,4-41,7</td><td class="n">39,3-41,9</td></tr>
+<tr><td>RSS клиента по 30 окнам, МБ</td><td class="n">24,2-26,0</td><td class="n">25,2-27,2</td><td class="n">26,1-28,5</td></tr>
+<tr><td>живая куча сервера / клиента по минутам, медиана</td><td class="n">-</td><td class="n">-</td><td class="n good">9 / 5 МБ во всех 15 минутах</td></tr>
+<tr><td>доля CPU на GC, сервер / клиент</td><td class="n">-</td><td class="n">-</td><td class="n">2% / 4%</td></tr>
+<tr><td>fd сервера / клиента после</td><td class="n">9 / 6</td><td class="n">9 / 6</td><td class="n">9 / 6</td></tr>
+<tr><td>открытых сессий под нагрузкой / после</td><td class="n">38-57 / 0</td><td class="n">26-45 / 0</td><td class="n">- / 0</td></tr>
+<tr><td>недопустимых переходов автомата</td><td class="n">0</td><td class="n">0</td><td class="n">0</td></tr>
+</table></div>
+<ul>
+<li>Утечки нет: живая куча стоит на месте все 15 минут (сервер 7-12 МБ, клиент 4-8 МБ), fd и сессии возвращаются к исходным.</li>
+<li>Дрейфа нет. У obfs операций за окно к концу больше (+10%), а p99 ниже. У wss в первом прогоне в окнах 13-16 было проседание до -26% операций. В тех же окнах одновременно упал CPU обоих процессов, то есть им не дали процессор. По времени это совпадает с внешней нагрузкой на машину: разбор дампов <code>apport</code> и <code>whoopsie</code>, +316 задач в sysstat, load average 15,9 на 16 потоках. Повтор с трассой GC проседания не дал.</li>
+<li>Выделяется около 70-90 КБ на операцию, в основном на новых соединениях (рукопожатия TLS и WebSocket, буферы обфускации). GC на этом стоит 2-4% CPU, узким местом это не является.</li>
+</ul>
+
+<h2>6. Найденный дефект: ответы UDP-ассоциации уходили постороннему</h2>
+<p>Порт, на который клиент отдает ответы, идет за последним отправителем с IP приложения. Так задумано: у приложения может быть несколько сокетов. Но отправителем считалась любая датаграмма, в том числе без заголовка SOCKS5 UDP. Поздний ответ UDP-эха приходил на порт, который ядро уже выдало новой ассоциации. Клиент запоминал адрес эха как адрес приложения и отправлял туда все последующие ответы. Сервер получал от клиента мусор (<code>invalid udp-tcpmux header</code>, 43 и 52 строки за soak), а приложение - таймаут на всю ассоциацию.</p>
+<p>Исправление (<code>cmd/s5client/udp_client.go</code>, <code>socksUDPHeader</code>): датаграмма без заголовка, который принял бы серверный <code>socks5.ParseUDPHeader</code>, отбрасывается до того, как повлияет на адрес ответа. Тест <code>TestADatagramWithoutAHeaderDoesNotTakeTheAnswers</code> без исправления падает, с ним проходит. Цена - <code>BenchmarkUDPDatagramRoundTrip</code>, 10 чередований: 15,16 мкс против 15,08 мкс (p=0,684, не отличимо от шума), аллокаций 0.</p>
+<p>В поле это проявится у любого приложения, которое открывает UDP-ассоциации часто (QUIC, DNS, WebRTC): редкие ассоциации, которые целиком молчат до таймаута.</p>
+
+<h2>7. Рекомендации</h2>
+<p>Ни одна не реализована: каждая меняет поведение, которое видит приложение или наблюдатель. Решение за владельцем.</p>
+<div class="wrap"><table>
+<tr><th>Рычаг</th><th>Ожидаемый эффект</th><th>Цена и риск</th><th>Чем проверить</th></tr>
+<tr><td><b>Оптимистичный ответ приложению</b> на CONNECT и UDP ASSOCIATE: отвечать успехом сразу после отправки запроса в туннель</td><td>-1 круг на каждом новом соединении. На RTT 40 мс: obfs HTTP 121 -&gt; около 81 мс, HTTPS 162 -&gt; около 121 мс (как у прямого пути), HTTP/3 162 -&gt; около 122 мс, wss HTTPS 243 -&gt; около 203 мс. Сервер к этому уже готов: все, что пришло раньше его ответа, он передает релею (<code>Request.bufConn</code>), то есть правка только в клиенте и совместима с серверами 2.x.</td><td>Отказ сервера (цель недоступна, квота, запрет) приложение увидит как закрытие после успеха, а не как код SOCKS5. Неверный PSK выглядит как соединение, которое молчит до <code>HANDSHAKE_TIMEOUT</code>. Первый залп меняет форму: за открытием без паузы идет ClientHello приложения. Политика транспорта узнает об отказе позже.</td><td>Эта матрица под netem (<code>*/small-new</code>). Чек-лист стелса (<code>TestTheStealthChecklist</code>) и <code>cmd/fpprobe</code> на фильтрующем пути до выката.</td></tr>
+<tr><td><b><code>TCP_NOTSENT_LOWAT</code> на сокетах туннеля</b></td><td>При 128 КиБ p99 UDP-потока 40 Мбит/с 148-241 мс вместо 355-2177.</td><td><b>Не включать.</b> HTTP/3 теряет до половины полосы (<code>h3/upload</code> 2,6-2,8 против 4,8-7,7 МБ/с), у потолка растут потери. Значение, которое не трогает QUIC (1 МиБ), не держит хвост.</td><td><code>suite5.sh</code> (сборка через <code>-overlay</code>, раздел 4).</td></tr>
+<tr><td><b>Поднять потолок одной UDP-ассоциации</b> (сейчас 10-20 Мбит/с на RTT 40 мс под потерями)</td><td>Постоянный битрейт выше 20 Мбит/с без секундной очереди.</td><td>Нужна другая схема: ассоциация на нескольких TCP-соединениях или датаграммный транспорт туннеля. Обе меняют форму на проводе. Голос, видеозвонок и HTTP/3 живут ниже потолка или подстраиваются сами, поэтому это не первая очередь.</td><td>Развертка <code>udp/sweep-*</code> под netem, чек-лист стелса.</td></tr>
+<tr><td><b>FIN-кадр при закрытии UDP-ассоциации</b> (<code>CloseWrite</code> перед закрытием)</td><td>Счетчик <code>s5core_obfs_handshake_failures_total{reason="eof_before_frame"}</code> снова показывает обрывы, сканеры и неверный PSK. Сейчас каждая закрытая ассоциация попадает туда: 473 858 событий за soak при 473 861 ассоциации, и любой клиент с QUIC дает тысячи событий в минуту.</td><td>Еще один кадр в конце каждой ассоциации.</td><td>Счетчик после soak должен упасть до единиц. Тест на отсутствие события при штатном закрытии.</td></tr>
+<tr><td><b>Пул теплых WSS-туннелей</b></td><td>Снимает два круга wss (TLS и upgrade) на новом соединении.</td><td>Отдельное проектное решение: простаивающий туннель без трафика - тоже форма, его должен покрывать keepalive.</td><td>Матрица под netem, <code>scripts/keepalive_matrix.sh</code>.</td></tr>
+<tr><td><b>Ограниченная уступка в релее plain</b></td><td>p99 короткого ответа под соседней закачкой на plain 2,4-4,4 мс против 0,24-0,92 у obfs и wss.</td><td>Только наблюдение: отдельного A/B на plain не было.</td><td><code>scripts/performance-ab.py</code> на plain-слушателе.</td></tr>
+</table></div>
+
+<h2>8. Что не проверено и ограничения</h2>
+<ul>
+<li>Loopback и netem, не WAN. Полевые числа по полосе и UDP на настоящем пути - в <code>docs/field/nodes.md</code> (20.09.2026). WAN-прогон этой матрицы не делался: бюджет трафика стенда за сентябрь почти выбран (около 18 из 20-30 ГБ).</li>
+<li>Одна машина: генератор, клиент, сервер и источник делят CPU и планировщик. На loopback полоса - это цена CPU, а p99 под нагрузкой включает конкуренцию процессов.</li>
+<li>Клиент HTTPS без кеша TLS-сессий, поэтому каждое новое соединение - полное рукопожатие. Браузер с возобновлением платит меньше CPU, но не меньше кругов.</li>
+<li>netem на <code>lo</code> теряет пакеты GSO, а не сегменты: для объемного TCP "0,5%" - это около 0,03-0,05% на сегмент, близко к полевым 0,02%. Мелкие записи видят честные 0,5%.</li>
+<li>ARM-роутер матрицей не проверялся. Его числа по уступке - в <code>docs/benchmarks/yield.md</code>, по полосе и памяти - в <code>docs/benchmarks/arm-router.md</code>.</li>
+<li>Датаграммы одной ассоциации через туннель на стенде иногда приходят не по порядку (до 481 события на 40 Мбит/с). Это свойство <code>lo</code> без RPS, а не туннеля: со всеми процессами на одном ядре 0 событий в обоих повторах, на нескольких ядрах 103-254. На настоящей сетевой карте механизм другой, и число в поле не переносится.</li>
+<li>Ячейка матрицы - один прогон. Повторы есть у развертки UDP и A/B <code>TCP_NOTSENT_LOWAT</code> (три) и у веб-сценариев A/B (два с sysctl, три на сокетах). Соседние прогоны расходятся по объему до 10%, поэтому разница меньше этого не записывается ни в заслугу, ни в вину.</li>
+<li>A/B <code>TCP_NOTSENT_LOWAT</code> делался только на obfs, wss не проверялся.</li>
+</ul>
+
+<h2>9. Где данные и как повторить</h2>
+<ul>
+<li>Подробный разбор с таблицами - <code>docs/benchmarks/matrix-2026-09-22/README.md</code>. Исходники стенда - там же, в <code>fixtures/</code> (расширение <code>.txt</code>).</li>
+<li>Стенд - отдельный модуль с <code>quic-go</code>. Бинари <code>s5core</code> и <code>s5client</code> собираются из дерева. Прогоны: <code>suite.sh</code> (loopback, soak, netem), <code>suite2.sh</code> (HTTPS и HTTP/2, soak после исправления, benchstat), <code>suite3.sh</code> (развертка UDP), <code>suite4.sh</code> и <code>suite5.sh</code> (A/B <code>TCP_NOTSENT_LOWAT</code>, сокетный вариант через <code>go build -overlay</code>, рабочий код не меняется), <code>suite6.sh</code> (soak 15 минут со снимками RSS и fd каждые 30 с), <code>suite7.sh</code> (soak wss с <code>GODEBUG=gctrace=1</code>). netem работает без root: <code>unshare --user --net</code>.</li>
+<li>Сырые результаты (<code>result.json</code>, <code>resources.jsonl</code>, <code>gauges.txt</code>, логи) лежат в <code>bench/matrix/results</code> и не коммитятся. Все числа отчета взяты из них.</li><li>Продолжение: <a href="raw-v21-current-2026-09-23.html">raw, 2.1 и current на одном стенде</a> (23.09.2026) - сравнение с 2.1 и прямым путем по всем протоколам, member-only, доля запросов с RTO под потерями, перепроверка флагов "хуже".</li>
+</ul>
+</main>
+</body>
+</html>

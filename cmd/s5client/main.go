@@ -21,7 +21,6 @@ import (
 	"github.com/mazixs/S5Core/internal/signals"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
-	"github.com/mazixs/S5Core/pkg/obfs/legacy"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
 	"github.com/mazixs/S5Core/pkg/veil"
 )
@@ -56,12 +55,10 @@ type clientParams struct {
 	// and ChaCha20 where it has not (plan task Ф5-5). The server accepts
 	// either, so this is a knob for measuring, not for matching.
 	Cipher string `env:"OBFS_CIPHER" envDefault:""`
-	// Prologue is how the prologue looks on the wire: "printable" encodes
-	// it so the connection opens with printable characters, which is what
-	// exempts the first packet from a fully-encrypted-traffic policy, and
-	// "raw" is the pre-phase-5 wire. The server accepts both, so this only
-	// has to be lowered when the server is older than the client
-	// (docs/field/migration.md).
+	// Prologue is how the prologue looks on the wire. Only "printable" is
+	// left: it opens the connection with printable characters, which is
+	// what exempts the first packet from a fully-encrypted-traffic policy.
+	// "raw" is refused since 2.2 (docs/field/migration.md, 4.6).
 	Prologue string `env:"OBFS_PROLOGUE" envDefault:"printable"`
 	// SplitOpening sends the opening in a packet of its own, ahead of the
 	// first frames. It is the second exemption measured in the field: a
@@ -149,24 +146,19 @@ type clientParams struct {
 	// TransportCooldown is how long a transport that failed to set up is
 	// rested while the other one is used. Zero disables the switch.
 	TransportCooldown time.Duration `env:"TRANSPORT_COOLDOWN" envDefault:"5m"`
-	// Format is the obfuscation format: v1 (docs/veil-spec.md), legacy
-	// (the format before it, for a server that has not been updated), or
-	// auto - v1 first, legacy for FormatReprobe after a server accepted
-	// the connection and did not answer. The legacy format is scheduled
-	// for removal; see docs/field/migration.md.
-	Format        string        `env:"OBFS_FORMAT" envDefault:"auto"`
-	FormatReprobe time.Duration `env:"OBFS_FORMAT_REPROBE" envDefault:"10m"`
+	// Format names the obfuscation format, docs/veil-spec.md: auto and v1
+	// are the same one, legacy is refused since 2.2.
+	Format string `env:"OBFS_FORMAT" envDefault:"auto"`
 
 	// rootCAs is WSCAFile after it has been read; unexported, so env.Parse
 	// leaves it alone.
 	rootCAs  *x509.CertPool
 	wsDialer *ws.Dialer
-	// policy is the shared decision state built from Transport and Format;
-	// transport and format are what it chose for this attempt. All three
-	// are unexported for the same reason as rootCAs.
+	// policy is the shared decision state built from Transport; transport
+	// is what it chose for this attempt. Both are unexported for the same
+	// reason as rootCAs.
 	policy    *clientPolicy
 	transport transportKind
-	format    formatKind
 }
 
 // loadRootCAs reads a PEM file of trusted certificates. The pool replaces the
@@ -234,9 +226,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if !obfs.PrologueEncoding(cfg.Prologue).Valid() {
-		slog.Error("OBFS_PROLOGUE is not a prologue encoding this build knows",
-			"value", cfg.Prologue, "known", []string{string(obfs.ProloguePrintable), string(obfs.PrologueRaw)})
+	if err := checkPrologue(cfg.Prologue); err != nil {
+		slog.Error("OBFS_PROLOGUE is not usable", "error", err)
 		os.Exit(1)
 	}
 
@@ -419,6 +410,11 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	}
 	// Step 1-2: SOCKS5 handshake (read request)
 	connectReq, cmd, destFQDN, err := socks5Handshake(clientConn)
+	if errors.Is(err, io.EOF) {
+		// A port check or a scanner: it connected and left without a word.
+		slog.Debug("SOCKS5 handshake failed", "error", err)
+		return
+	}
 	if err != nil {
 		slog.Error("SOCKS5 handshake failed", "error", err)
 		return
@@ -486,23 +482,40 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Step 6: Bidirectional relay
 	slog.Info("TCP Tunnel established", "domain", destFQDN, "server", cfg.ServerAddr,
-		"transport", cfg.effectiveTransport(), "format", cfg.effectiveFormat())
+		"transport", cfg.effectiveTransport())
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		io.Copy(obfsConn, clientConn) //nolint:errcheck
+		relayCopy(obfsConn, clientConn)
 		endWrite(obfsConn)
 	}()
 	go func() {
 		defer wg.Done()
-		io.Copy(clientConn, obfsConn) //nolint:errcheck
+		relayCopy(clientConn, obfsConn)
 		endWrite(clientConn)
 	}()
 
 	wg.Wait()
+}
+
+// relayBuffers backs both directions of every tunnel. Plain io.Copy reaches
+// TCPConn.ReadFrom/WriteTo, which have nothing to splice to a tunnel and fall
+// back to a fresh 32 KiB buffer per direction per connection - garbage the
+// router pays for on every page load.
+var relayBuffers = sync.Pool{New: func() any {
+	b := make([]byte, 32*1024)
+	return &b
+}}
+
+// relayCopy hides ReaderFrom/WriterTo so that io.CopyBuffer uses the pooled
+// buffer instead of handing the copy to the socket.
+func relayCopy(dst io.Writer, src io.Reader) {
+	buf := relayBuffers.Get().(*[]byte)
+	defer relayBuffers.Put(buf)
+	_, _ = io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, *buf)
 }
 
 // endWrite tells the other end that this side has nothing more to send.
@@ -649,7 +662,6 @@ func logTunnelFailure(err error, dest string, cfg clientParams) {
 		"dest", dest,
 		"server", cfg.ServerAddr,
 		"transport", cfg.effectiveTransport(),
-		"format", cfg.effectiveFormat(),
 		"error", err,
 	}
 	if hint := setupHint(err, cfg); hint != "" {
@@ -686,14 +698,9 @@ func setupHint(err error, cfg clientParams) string {
 		// send the operator after the two things this failure rules out.
 		return ""
 	case phaseGreeting, phaseAuth, phaseConnect, phaseConnectReply:
-		if cfg.effectiveFormat() == formatLegacy {
-			return "the server accepted the connection and then went quiet while the client spoke the previous " +
-				"obfuscation format: check OBFS_PSK, and if the server is a current build, set OBFS_FORMAT=v1 or leave it on auto"
-		}
 		return fmt.Sprintf("the server accepted the connection and then went quiet: check OBFS_PSK and OBFS_NODE_ID, "+
 			"and check this machine's clock - the tunnel binds its keys to the hour and tolerates about %d "+
-			"hours of skew (local time is now %s); a server that has not been updated is also silent, "+
-			"and OBFS_FORMAT=auto tries the previous format next",
+			"hours of skew (local time is now %s); a server older than 2.0 is also silent",
 			veil.DefaultEpochWindow, time.Now().Format(time.RFC3339))
 	default:
 		return ""
@@ -737,7 +744,7 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 		var wsConn *ws.Conn
 		var err error
 		if cfg.wsDialer != nil {
-			wsConn, err = cfg.wsDialer.DialContext(ctx)
+			wsConn, err = cfg.wsDialer.DialFrames(ctx, cfg.WSMaxFrame)
 		} else {
 			wsConn, err = ws.DialContext(ctx, cfg.wsOptions())
 		}
@@ -861,19 +868,11 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	return obfsConn, nil
 }
 
-// wrapTunnel puts the obfuscation format of this attempt over the raw
-// transport. The current format carries the client's hello - its build and
-// the transport it arrived on, for the server's telemetry - and takes the
-// server's advice back for the policy (plan task Ф5-7). The previous format
-// has neither; it is here for a server that has not been updated yet.
+// wrapTunnel puts the obfuscation format over the raw transport. It carries
+// the client's hello - its build and the transport it arrived on, for the
+// server's telemetry - and takes the server's advice back for the policy
+// (plan task Ф5-7).
 func wrapTunnel(serverConn net.Conn, cfg clientParams) (net.Conn, error) {
-	if cfg.effectiveFormat() == formatLegacy {
-		return legacy.NewConn(serverConn, legacy.Config{
-			PSK:        []byte(cfg.PSK),
-			MaxPadding: cfg.MaxPadding,
-			MTU:        cfg.MTU,
-		})
-	}
 	obfsCfg := obfs.Config{
 		PSK:              []byte(cfg.PSK),
 		MaxPadding:       cfg.MaxPadding,
@@ -892,15 +891,6 @@ func wrapTunnel(serverConn net.Conn, cfg clientParams) (net.Conn, error) {
 		obfsCfg.OnAdvice = cfg.policy.onAdvice
 	}
 	return obfs.NewClientConn(serverConn, obfsCfg)
-}
-
-// effectiveFormat is the format of this attempt; unset means the current
-// one, which is what a configuration built by hand gets.
-func (cfg clientParams) effectiveFormat() formatKind {
-	if cfg.format == "" {
-		return formatV1
-	}
-	return cfg.format
 }
 
 func buildUserPassAuthPacket(user, pass string) []byte {

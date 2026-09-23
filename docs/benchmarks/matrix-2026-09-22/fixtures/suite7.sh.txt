@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Soak with the Go GC trace on both binaries: the live heap after each GC is the leak signal, RSS is not.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results}; T="taskset -c 0-5,8-13"; export TAG=fix
+for m in ${MODES:-wss}; do
+	GODEBUG=gctrace=1 SAMPLE=30 SETTLE=10 $T ./run.sh "$m" "$out/soakgc-$m" -soak "${SOAK:-15m}" -workers 32 -idle 75s > "$out/soakgc-$m.log" 2>&1; echo "soakgc-$m rc=$?"
+done
+echo suite7-done

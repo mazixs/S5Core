@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Second soak round in the reverse order of suite8c: one run per variant could not tell the code from the host.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results12}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+for v in cur-wss v210-wss cur-obfs v210-obfs; do
+	taskset -c 0-5,8-13 env TAG="${v%-*}" SAMPLE=30 SETTLE=10 ./run.sh "${v#*-}" "$out/soak-$v" -soak 5m -workers 32 -idle 75s > "$out/soak-$v.log" 2>&1
+	echo "soak-$v rc=$?"
+done
+echo suite12-done

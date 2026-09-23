@@ -293,6 +293,17 @@ type conn struct {
 	// since it delivers the frames in order.
 	writeCounter uint64
 	readCounter  uint64
+	// nextMask caches the length mask for readCounter: a coalescing Read
+	// unmasks each buffered frame once to see that it is whole and again in
+	// readFrame to parse it, and the second AES block bought nothing.
+	nextMask       uint16
+	nextMaskFor    uint64
+	nextMaskCached bool
+
+	// writeYieldAt and readYieldAt are when each direction last yielded,
+	// held under writeMu and readMu; see yieldDue.
+	writeYieldAt time.Time
+	readYieldAt  time.Time
 
 	// Pre-allocated write buffers and scratch, held under writeMu. The mask
 	// scratch is per direction: one shared pair of arrays meant a reader and
@@ -663,6 +674,15 @@ func (c *conn) sendMask(counter uint64) uint16 { return c.maskSend.Mask(counter)
 
 func (c *conn) recvMask(counter uint64) uint16 { return c.maskRecv.Mask(counter) }
 
+// nextRecvMask is recvMask(readCounter), computed once per frame. The caller
+// holds readMu.
+func (c *conn) nextRecvMask() uint16 {
+	if !c.nextMaskCached || c.nextMaskFor != c.readCounter {
+		c.nextMask, c.nextMaskFor, c.nextMaskCached = c.recvMask(c.readCounter), c.readCounter, true
+	}
+	return c.nextMask
+}
+
 // randBytes fills dst with random bytes from the buffered source.
 // This batches crypto/rand syscalls to reduce overhead.
 func (c *conn) randBytes(dst []byte) {
@@ -731,13 +751,10 @@ func batchBytes(frames, frameLen, limit int) int {
 // Zero-alloc hot path: all buffers are pre-allocated and reused.
 func (c *conn) Write(b []byte) (int, error) {
 	c.writeMu.Lock()
-	largeWrite := len(b) > c.maxFrame
-	// A busy relay can keep the socket writable continuously. Yield between
-	// completed batches so another tunnel can run; never pause within a frame
-	// or while holding writeMu. No timer or wire-format change is involved.
+	yield := len(b) > c.maxFrame && yieldDue(&c.writeYieldAt)
 	defer func() {
 		c.writeMu.Unlock()
-		if largeWrite {
+		if yield {
 			runtime.Gosched()
 		}
 	}()
@@ -941,11 +958,10 @@ func (c *conn) ensure(n int, want FrameState) error {
 func (c *conn) Read(b []byte) (int, error) {
 	c.readMu.Lock()
 	total := 0
-	// Match the writer's scheduling point only after returning a batch larger
-	// than one frame. Small interactive reads retain the direct return path.
 	defer func() {
+		yield := total > c.maxFrame && yieldDue(&c.readYieldAt)
 		c.readMu.Unlock()
-		if total > c.maxFrame {
+		if yield {
 			runtime.Gosched()
 		}
 	}()
@@ -979,6 +995,27 @@ func (c *conn) Read(b []byte) (int, error) {
 	}
 }
 
+// yieldInterval bounds how long a busy relay direction runs without passing
+// through the scheduler. A bulk copy whose socket never blocks otherwise never
+// parks, and the runtime is slow to notice that another tunnel's socket became
+// readable: without any yield the process benchmark's small requests under a
+// parallel download went from 1.0 to 9.6 ms at p99. A yield after every batch
+// fixed that but cost 35-59% more CPU per GiB; one per interval keeps the
+// scheduling point and makes its cost a fixed share of time instead of a
+// price per write (docs/benchmarks/yield.md).
+var yieldInterval = 100 * time.Microsecond
+
+// yieldDue reports whether a direction last yielded at least yieldInterval
+// ago, and restarts its interval if so.
+func yieldDue(last *time.Time) bool {
+	now := time.Now()
+	if now.Sub(*last) < yieldInterval {
+		return false
+	}
+	*last = now
+	return true
+}
+
 // bufferedFrameReady includes FIN and invalid lengths, which readFrame can
 // resolve without I/O. Length masks use the next counter without advancing it.
 func (c *conn) bufferedFrameReady() bool {
@@ -989,7 +1026,7 @@ func (c *conn) bufferedFrameReady() bool {
 		return false
 	}
 	masked := binary.BigEndian.Uint16(c.readBuf[c.readLo : c.readLo+2])
-	size := int(masked ^ c.recvMask(c.readCounter))
+	size := int(masked ^ c.nextRecvMask())
 	return size < minCiphertext || c.buffered() >= 2+size
 }
 
@@ -1038,7 +1075,7 @@ func (c *conn) readFrame(b []byte) (int, error) {
 	}
 	counter := c.readCounter
 	masked := binary.BigEndian.Uint16(c.readBuf[c.readLo : c.readLo+2])
-	frameSize := int(masked ^ c.recvMask(counter))
+	frameSize := int(masked ^ c.nextRecvMask())
 
 	// A length below the minimum cannot come from this format. It is the
 	// cheapest place to notice a scanner: the two bytes it sent unmask to

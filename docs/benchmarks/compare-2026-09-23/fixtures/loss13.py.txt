@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""RTO share under loss, pooled over rounds: loss13.py DIR [ROUNDS] > fragment.html"""
+import json, sys
+from math import comb
+from pathlib import Path
+
+root = Path(sys.argv[1]); rounds = int(sys.argv[2]) if len(sys.argv) > 2 else 6
+names = {'tcp/connect': 'Новое TCP-соединение', 'tcp/echo-64': 'TCP эхо 64 Б', 'http/small-reuse': 'HTTP/1.1, открытое соединение',
+         'https/small-reuse': 'HTTPS, открытое соединение', 'h2/small-new': 'HTTP/2, новое соединение', 'h2/small-same-conn-under-bulk': 'HTTP/2, запросы в одном соединении с закачкой',
+         'h3/small-reuse': 'HTTP/3, открытая сессия', 'udp/rtt-64': 'UDP 64 Б', 'http/small-reuse-under-bulk': 'HTTP/1.1 под закачкой',
+         'https/small-reuse-under-bulk': 'HTTPS под закачкой', 'h3/small-reuse-under-bulk': 'HTTP/3 под закачкой', 'udp/rtt-64-under-bulk': 'UDP под закачкой'}
+
+
+def pooled(v, m, k):
+    slow = n = 0
+    for r in range(1, rounds + 1):
+        try:
+            s = json.loads((root / f'{v}-{m}-{r}' / 'result.json').read_text())['result'][k]
+        except Exception:
+            continue
+        n += s['n']; slow += round(s.get('slow_pct', 0) * s['n'] / 100)
+    return slow, n
+
+
+def binom(a, b):
+    k = a + b
+    if not k:
+        return 1.0
+    lo = min(a, b)
+    return min(1.0, 2 * sum(comb(k, i) for i in range(lo + 1)) / 2 ** k)
+
+
+pct = lambda s, n: f'{100 * s / n:.1f}'.replace('.', ',') if n else '-'
+print('<div class="wrap"><table><thead><tr><th>Сценарий</th><th>Путь</th><th class="n">raw</th><th class="n">2.1</th><th class="n">current</th><th class="n">current против 2.1, запросов</th><th class="n">p</th></tr></thead><tbody>')
+for k, nm in names.items():
+    for m in ('obfs', 'wss'):
+        d, a, c = pooled('direct', m, k), pooled('v210', m, k), pooled('cur', m, k)
+        if not a[1]:
+            continue
+        p = binom(a[0], c[0])
+        cls = ' bad' if p < 0.05 and c[0] > a[0] else ' good' if p < 0.05 else ''
+        print(f'<tr><td>{nm}</td><td>{m}</td><td class="n">{pct(*d)}</td><td class="n">{pct(*a)}</td><td class="n">{pct(*c)}</td>'
+              f'<td class="n{cls}">{c[0]} против {a[0]} из {c[1]}</td><td class="n">' + f'{p:.2f}'.replace('.', ',') + '</td></tr>')
+print('</tbody></table></div>')

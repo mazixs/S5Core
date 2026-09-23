@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Per tunnel connection timeline from cap.sh captures: pcap_timeline.py PCAP PORT
+Prints the median timeline of connections grouped by their data-packet pattern:
+for each data packet, direction (> client to server, < back), payload bytes and ms since SYN."""
+import subprocess, sys
+from collections import defaultdict
+from statistics import median
+
+pcap, port = sys.argv[1], sys.argv[2]
+out = subprocess.run(['tshark', '-r', pcap, '-T', 'fields', '-E', 'separator=,', '-e', 'frame.time_relative', '-e', 'tcp.stream',
+                      '-e', 'tcp.srcport', '-e', 'tcp.dstport', '-e', 'tcp.len', '-e', 'tcp.flags.syn', '-e', 'tcp.flags.ack', '-e', 'tcp.flags.fin',
+                      f'tcp.port=={port}'], capture_output=True, text=True, check=True).stdout
+streams = defaultdict(list)
+for line in out.splitlines():
+    t, s, sp, dp, ln, syn, ack, fin = line.split(',')
+    streams[int(s)].append((float(t), '>' if dp == port else '<', int(ln or 0), syn in ('1', 'True'), ack in ('1', 'True'), fin in ('1', 'True')))
+
+groups = defaultdict(list)
+for s, pk in streams.items():
+    t0 = next((p[0] for p in pk if p[3] and not p[4]), None)
+    if t0 is None:
+        continue
+    data = [(round((p[0] - t0) * 1000, 1), p[1], p[2]) for p in pk if p[2] > 0]
+    fin = next((round((p[0] - t0) * 1000, 1) for p in pk if p[5]), None)
+    key = ' '.join(d for _, d, _ in data)
+    groups[key].append((data, fin, pk[0][0]))
+
+for key, conns in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+    if len(conns) < 3:
+        continue
+    print(f'\n{len(conns)} connections, pattern: {key}')
+    n = len(conns[0][0])
+    for i in range(n):
+        ts = [c[0][i][0] for c in conns]
+        ls = [c[0][i][2] for c in conns]
+        print(f'  #{i + 1:<2} {conns[0][0][i][1]} {int(median(ls)):>6} B  at {median(ts):8.1f} ms (min {min(ts):.1f}, max {max(ts):.1f})')
+    fins = [c[1] for c in conns if c[1] is not None]
+    if fins:
+        print(f'  first FIN at {median(fins):.1f} ms')

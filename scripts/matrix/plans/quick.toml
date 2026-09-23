@@ -1,0 +1,64 @@
+# Smoke run of the pipeline and a rough look at the working tree against HEAD.
+# 5-10 minutes; 3 loopback rounds give verdicts, netem rounds only show the tunnel works under loss.
+name = "quick"
+description = "raw, HEAD и рабочее дерево: loopback и netem на малом объеме"
+base = "head"
+candidate = "wt"
+
+[defaults]
+auth = "member"
+scale = 0.1
+scenario_timeout = "2m"
+hang_grace = "20s"
+settle = "3s"
+retries = 1
+
+[env.server]
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+
+[env.client]
+OBFS_FORMAT = "v1"
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+KEEPALIVE_MIN = "10s"
+KEEPALIVE_MAX = "20s"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.head]
+ref = "HEAD"
+
+[variants.wt]
+ref = "worktree"
+title = "рабочее дерево"
+
+[cpus]
+loopback = "0-5,8-13"
+raw = "0,8"
+obfs = ["1-2,9-10", "3-4,11-12"]
+wss = ["6,14", "7,15"]
+
+[guard]
+max_foreign_cores = 3.0
+load_wait = "60s"
+
+[[series]]
+name = "lo"
+title = "loopback, 4 ядра"
+rounds = 3
+only = ["tcp/connect", "=tcp/echo-64", "=http/small-reuse", "=https/small-new", "=http/large", "=h2/small-reuse", "=h3/small-reuse", "=h3/large", "=udp/rtt-64", "=udp/stream-40mbit", "=http/small-reuse-under-bulk"]
+
+[[series]]
+name = "loss"
+title = "RTT 40 мс, потери 0,5%"
+network = { rtt_ms = 40, loss_pct = 0.5, rate_mbit = 200 }
+rounds = 1
+slow_ms = 150
+only = ["tcp/connect", "=http/small-reuse", "=https/small-new", "=h3/small-reuse", "=udp/rtt-64"]

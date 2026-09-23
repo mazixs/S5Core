@@ -14,6 +14,7 @@
 /fpprobe
 /fpcollect
 /wirebench
+/scripts/matrix/matrix
 dist/
 build/
 bin/
@@ -22,13 +23,24 @@ bin/
 .ci-reports/
 *.test
 
-# Coverage and profiles
+# Coverage, profiles and captures
 coverage.txt
 *.out
+*.prof
+*.pprof
+*.pcap
+*.pcapng
+
+# Local measurements: runs, work copies, suites
+bench/
 
 # Go workspace file
 go.work
 go.work.sum
+
+# Python caches (scripts/matrix, scripts/*.py)
+__pycache__/
+*.py[cod]
 
 # Environment variables
 .env
@@ -44,8 +56,15 @@ go.work.sum
 *.swo
 *~
 .DS_Store
+
+# Patch and merge leftovers
+*.orig
+*.rej
+*.bak
+
+# Local-only scripts and Claude Code settings
 scripts/transparent_proxy.sh
-bench/
+.claude/settings.local.json
 
 # Local Compose accounts and TLS keys
 /data/

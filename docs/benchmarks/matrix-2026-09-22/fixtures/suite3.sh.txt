@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# UDP rate sweep under netem: ten seconds per rate, two loss levels, direct as the control.
+# plain is left out: its UDP ASSOCIATE is not on the shaped ports.
+set -uo pipefail
+cd "$(dirname "$0")"
+until grep -q suite2-done suite2.log 2>/dev/null; do sleep 5; done
+mv matrix-sweep matrix
+out=${OUT:-results}
+T="taskset -c 0-5,8-13"
+export TAG=fix
+for loss in 0.5 0.05; do
+	$T ./netem.sh 40 "$loss" 200 all ./run.sh direct "$out/sw-direct-$loss" -only udp/sweep > "$out/sw-direct-$loss.log" 2>&1; echo "sw-direct-$loss rc=$?"
+	for m in obfs wss; do
+		$T ./netem.sh 40 "$loss" 200 tunnel ./run.sh "$m" "$out/sw-$m-$loss" -only udp/sweep > "$out/sw-$m-$loss.log" 2>&1; echo "sw-$m-$loss rc=$?"
+	done
+done
+echo suite3-done

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# The rest of suite8 after it was stopped: clean round 2, loss rounds 1-3, auth, soak, then the loopback reruns.
+# obfs and wss triples run at once, every process set in its own netns on its own cores; finished cells are skipped.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results8}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+declare -A D=([obfs]="0,8" [wss]="5,13") A=([obfs]="1-2,9-10" [wss]="6,14") B=([obfs]="3-4,11-12" [wss]="7,15")
+
+cell() { # dir cores cmd...
+	local d=$1 c=$2
+	shift 2
+	grep -q '"rc":0' "$out/$d/run.json" 2>/dev/null && [[ -s $out/$d/result.json ]] && return
+	rm -rf "${out:?}/$d"
+	taskset -c "$c" "$@" > "$out/$d.log" 2>&1
+}
+
+rc() { printf '%s=%s ' "$1" "$(grep -o '"rc":[0-9]*' "$out/$1/run.json" 2>/dev/null || echo none)"; }
+
+ne() { # name loss round transport
+	local name=$1 loss=$2 r=$3 m=$4 ca=${A[$4]} cb=${B[$4]}
+	((r % 2 == 0)) && { ca=${B[$m]}; cb=${A[$m]}; }
+	cell "$name-direct-$m-$r" "${D[$m]}" ./netem.sh 40 "$loss" 200 all ./run.sh direct "$out/$name-direct-$m-$r" -scale 0.3 &
+	cell "$name-v210-$m-$r" "$ca" env TAG=v210 ./netem.sh 40 "$loss" 200 tunnel ./run.sh "$m" "$out/$name-v210-$m-$r" -scale 0.3 &
+	cell "$name-cur-$m-$r" "$cb" env TAG=cur ./netem.sh 40 "$loss" 200 tunnel ./run.sh "$m" "$out/$name-cur-$m-$r" -scale 0.3 &
+	wait
+	echo "$name-$m-$r done: $(for t in direct v210 cur; do rc "$name-$t-$m-$r"; done)"
+}
+
+round() { ne "$1" "$2" "$3" obfs & ne "$1" "$2" "$3" wss & wait; }
+
+round clean 0 2
+for r in 1 2 3; do round loss 0.5 "$r"; done
+
+for a in none member password fallback; do
+	for m in obfs wss; do
+		cell "auth-v210-$m-$a" "${A[$m]}" env AUTH="$a" TAG=v210 ./netem.sh 40 0 200 tunnel ./run.sh "$m" "$out/auth-v210-$m-$a" -scale 0.3 -only tcp/connect,small-new &
+		cell "auth-cur-$m-$a" "${B[$m]}" env AUTH="$a" TAG=cur ./netem.sh 40 0 200 tunnel ./run.sh "$m" "$out/auth-cur-$m-$a" -scale 0.3 -only tcp/connect,small-new &
+	done
+	wait
+	echo "auth-$a done: $(for m in obfs wss; do for v in v210 cur; do rc "auth-$v-$m-$a"; done; done)"
+done
+
+for v in v210-obfs cur-obfs v210-wss cur-wss; do
+	cell "soak-$v" 0-5,8-13 env TAG="${v%-*}" SAMPLE=30 SETTLE=10 ./run.sh "${v#*-}" "$out/soak-$v" -soak 5m -workers 32 -idle 75s
+	echo "soak-$v done: $(rc "soak-$v")"
+done
+
+./suite8b.sh lo4-v210-obfs-5 lo4-cur-obfs-5 lo4-v210-wss-5 lo1-v210-obfs-4 lo1-cur-obfs-4 lo1-v210-wss-4 lo1-cur-wss-4 \
+	lo1-cur-wss-5 lo1-v210-wss-5 lo1-cur-obfs-5 lo1-v210-obfs-5
+echo suite8c-done

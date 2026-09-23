@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# A/B of net.ipv4.tcp_notsent_lowat inside the netem namespace (no code change):
+# the UDP sweep at the rates where the tunnel saturates, then bulk and HTTP/3 rows,
+# then the reordering check with every process on one CPU.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results/ab-lowat}
+mkdir -p "$out"
+T="taskset -c 0-5,8-13"
+export TAG=fix
+inside() { # lowat outdir args...
+	local lowat=$1 dir=$2
+	shift 2
+	echo "sysctl -w net.ipv4.tcp_notsent_lowat=$lowat >/dev/null && exec ./diag-udp.sh ./run.sh $*"
+}
+for rep in 1 2 3; do
+	for loss in 0.5 0.05; do
+		for lowat in 4294967295 131072; do
+			d=$out/udp-$loss-$lowat-$rep
+			$T ./netem.sh 40 "$loss" 200 tunnel bash -c "$(inside $lowat $d obfs $d -only udp/sweep-20mbit,udp/sweep-40mbit)" > "$d.log" 2>&1; echo "udp-$loss-$lowat-$rep rc=$?"
+		done
+	done
+done
+for rep in 1 2; do
+	for lowat in 4294967295 131072; do
+		d=$out/web-$lowat-$rep
+		$T ./netem.sh 40 0.5 200 tunnel bash -c "$(inside $lowat $d obfs $d -scale 0.3 -only http/small-reuse-under-bulk,h2/small-same-conn)" > "$d.log" 2>&1; echo "web-$lowat-$rep rc=$?"
+		d=$out/h3-$lowat-$rep
+		$T ./netem.sh 40 0.5 200 tunnel bash -c "$(inside $lowat $d obfs $d -only h3/large,h3/upload)" > "$d.log" 2>&1; echo "h3-$lowat-$rep rc=$?"
+	done
+done
+for rep in 1 2; do
+	d=$out/pin-$rep
+	taskset -c 3 ./netem.sh 40 0.5 200 tunnel ./run.sh obfs "$d" -only udp/sweep-10mbit,udp/sweep-20mbit > "$d.log" 2>&1; echo "pin-$rep rc=$?"
+	d=$out/spread-$rep
+	$T ./netem.sh 40 0.5 200 tunnel ./run.sh obfs "$d" -only udp/sweep-10mbit,udp/sweep-20mbit > "$d.log" 2>&1; echo "spread-$rep rc=$?"
+done
+echo suite4-done

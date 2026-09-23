@@ -109,6 +109,48 @@ func TestTheAnswerGoesToThePortTheApplicationLastSentFrom(t *testing.T) {
 	}
 }
 
+// The port follows the last sender, so a datagram that is not SOCKS5 must not
+// count as one: the matrix soak lost whole associations to a UDP echo that
+// answered a port reused by a new association.
+func TestADatagramWithoutAHeaderDoesNotTakeTheAnswers(t *testing.T) {
+	sender, local, tunnel := udpTunnelUp(t)
+	stray := appSocket(t)
+
+	question := datagram("question")
+	if _, err := sender.WriteToUDPAddrPort(question, local); err != nil {
+		t.Fatalf("sending a datagram: %v", err)
+	}
+	readFrame(t, tunnel, len(question))
+
+	for _, junk := range [][]byte{{0xc3, 0, 0, 0, 1, 8}, {0, 0, 0, 0, 0, 0, 0, 9}, {0, 0, 0, addrIPv4, 1}, {0, 0, 1, addrIPv4, 1, 2, 3, 4, 0, 53}} {
+		if _, err := stray.WriteToUDPAddrPort(junk, local); err != nil {
+			t.Fatalf("sending junk: %v", err)
+		}
+	}
+	again := datagram("again")
+	if _, err := sender.WriteToUDPAddrPort(again, local); err != nil {
+		t.Fatalf("sending a datagram: %v", err)
+	}
+	if got, want := readFrame(t, tunnel, len(again)), tunnelFrame(again); !bytes.Equal(got, want) {
+		t.Fatalf("the next frame out of the tunnel is % x, want the application's % x", got, want)
+	}
+
+	answer := datagram("answer")
+	if _, err := tunnel.Write(tunnelFrame(answer)); err != nil {
+		t.Fatalf("answering through the tunnel: %v", err)
+	}
+	_ = sender.SetReadDeadline(time.Now().Add(5 * time.Second))
+	buf := make([]byte, 2048)
+	n, _, err := sender.ReadFromUDPAddrPort(buf)
+	if err != nil || !bytes.Equal(buf[:n], answer) {
+		t.Fatalf("the application got % x (%v), want % x", buf[:n], err, answer)
+	}
+	_ = stray.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	if n, _, err := stray.ReadFromUDPAddrPort(buf); err == nil {
+		t.Fatalf("the answer went to the junk sender: % x", buf[:n])
+	}
+}
+
 func TestADatagramFromAnotherAddressIsNotTunnelled(t *testing.T) {
 	sender, local, tunnel := udpTunnelUp(t)
 

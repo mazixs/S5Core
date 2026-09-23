@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Long soak on the -fix binaries with RSS, fd and session gauges sampled every 30 s.
+set -uo pipefail
+cd "$(dirname "$0")"
+until grep -q suite5-done suite5.log 2>/dev/null; do sleep 5; done
+out=${OUT:-results}
+T="taskset -c 0-5,8-13"
+export TAG=fix
+for m in obfs wss; do
+	SAMPLE=30 SETTLE=10 $T ./run.sh "$m" "$out/soak15-$m" -soak "${SOAK:-15m}" -workers 32 -idle 75s > "$out/soak15-$m.log" 2>&1; echo "soak15-$m rc=$?"
+done
+echo suite6-done

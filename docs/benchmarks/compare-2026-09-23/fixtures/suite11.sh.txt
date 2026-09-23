@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# The one loopback flag left after five rounds: small requests on a reused obfs connection with GOMAXPROCS=1.
+# 10 rounds, 2.1.0 and the tree back to back in alternating order, wss as the control.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results11}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+ONLY="tcp/echo-64,http/small-reuse,https/small-reuse,h2/small-reuse,h3/small-reuse"
+for r in $(seq 1 10); do
+	vs=(v210-obfs cur-obfs v210-wss cur-wss)
+	((r % 2 == 0)) && vs=(cur-wss v210-wss cur-obfs v210-obfs)
+	for v in "${vs[@]}"; do
+		SERVER_PROCS=1 CLIENT_PROCS=1 TAG=${v%-*} taskset -c 0-5,8-13 ./run.sh "${v#*-}" "$out/$v-$r" -only "$ONLY" > "$out/$v-$r.log" 2>&1
+		echo "$v-$r rc=$?"
+	done
+done
+echo suite11-done

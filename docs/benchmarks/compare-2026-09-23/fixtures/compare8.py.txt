@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""raw / 2.1.0 / current tables from suite8.sh results: compare8.py RESULTS [--json OUT]."""
+import json, re, sys
+from pathlib import Path
+from statistics import median
+
+root = Path(sys.argv[1])
+ORDER = ['tcp/connect', 'tcp/echo-64', 'http/small-new', 'http/small-reuse', 'http/large', 'http/upload', 'http/small-reuse-under-bulk',
+         'https/small-new', 'https/small-reuse', 'https/large', 'https/upload', 'https/small-reuse-under-bulk',
+         'h2/small-new', 'h2/small-reuse', 'h2/small-same-conn-under-bulk',
+         'h3/small-new', 'h3/small-reuse', 'h3/large', 'h3/upload', 'h3/small-reuse-under-bulk',
+         'udp/rtt-64', 'udp/rtt-1200', 'udp/rtt-64-under-bulk', 'udp/stream-40mbit', 'udp/stream-200mbit',
+         'udp/sweep-2mbit', 'udp/sweep-5mbit', 'udp/sweep-10mbit', 'udp/sweep-20mbit', 'udp/sweep-40mbit']
+
+
+def load(d):
+    f = root / d / 'result.json'
+    return json.loads(f.read_text())['result'] if f.exists() else None
+
+
+def cpu(d):
+    ticks = {}
+    f = root / d / 'resources.jsonl'
+    if not f.exists():
+        return None
+    rows = [json.loads(l) for l in f.read_text().splitlines()]
+    for p in ('server', 'client'):
+        b = [r for r in rows if r['proc'] == p and r['phase'] == 'before']
+        a = [r for r in rows if r['proc'] == p and r['phase'] == 'after']
+        if b and a:
+            ticks[p] = (a[0]['cpu_ticks'] - b[0]['cpu_ticks']) / 100
+            ticks[p + '_hwm_mb'] = max(r['hwm_kb'] for r in rows if r['proc'] == p) / 1000
+    return ticks
+
+
+def metrics(name, s):
+    """The numbers a row compares, with the direction that is better."""
+    if s is None:
+        return {}
+    e = s.get('extra') or {}
+    if name.endswith(('large', 'upload')):
+        return {'MB/s': (s.get('mbps', 0), +1)}
+    if name.startswith(('udp/stream', 'udp/sweep')):
+        return {'loss%': (e.get('loss_pct', 0), -1), 'p99': (s['p99_ms'], -1)}
+    m = {'p50': (s['p50_ms'], -1), 'p99': (s['p99_ms'], -1)}
+    if name.startswith('udp/rtt'):
+        m['loss%'] = (e.get('loss_pct', 0), -1)
+    return m
+
+
+def runs(prefix, variant, rounds, suffix=''):
+    out = []
+    for r in rounds:
+        res = load(f'{prefix}-{variant}{suffix}-{r}')
+        if res is not None:
+            out.append((r, res))
+    return out
+
+
+def summarise(cond, rounds, direct_of):
+    """direct_of(transport) -> directory variant for raw; returns rows."""
+    rows = []
+    for name in ORDER:
+        row = {'scenario': name}
+        for t in ('obfs', 'wss'):
+            raw = [res.get(name) for _, res in runs(cond, direct_of(t), rounds)]
+            old = dict((r, res.get(name)) for r, res in runs(cond, f'v210-{t}', rounds))
+            new = dict((r, res.get(name)) for r, res in runs(cond, f'cur-{t}', rounds))
+            for key in {k for s in list(old.values()) + list(new.values()) for k in metrics(name, s)}:
+                def vals(ss):
+                    return [metrics(name, s)[key][0] for s in ss if s is not None and key in metrics(name, s)]
+                better = next(metrics(name, s)[key][1] for s in list(old.values()) + list(new.values()) if s and key in metrics(name, s))
+                ov, nv, rv = vals(old.values()), vals(new.values()), vals(raw)
+                paired = [(old[r], new[r]) for r in old if r in new and old[r] and new[r]]
+                signs = []
+                for o, n in paired:
+                    a, b = metrics(name, o)[key][0], metrics(name, n)[key][0]
+                    if a != b:
+                        signs.append(1 if (b - a) * better > 0 else -1)
+                row[(t, key)] = {'raw': rv, 'v210': ov, 'cur': nv, 'signs': signs, 'better': better}
+            row[(t, 'errors')] = {'v210': sum((s or {}).get('errors', 0) for s in old.values()),
+                                  'cur': sum((s or {}).get('errors', 0) for s in new.values()),
+                                  'raw': sum((s or {}).get('errors', 0) for s in raw)}
+        if any(k for k in row if k != 'scenario'):
+            rows.append(row)
+    return rows
+
+
+def fmt(v, key):
+    if not v:
+        return '-'
+    m = median(v)
+    if key == 'loss%':
+        s = f'{m:.2f}%'
+    elif key == 'MB/s':
+        s = f'{m:.1f}'
+    else:
+        s = f'{m:.3f}' if m < 10 else f'{m:.1f}'
+    if len(v) > 1 and max(v) != min(v):
+        lo, hi = min(v), max(v)
+        if key == 'loss%':
+            s += f' ({lo:.2f}-{hi:.2f})'
+        elif key == 'MB/s':
+            s += f' ({lo:.1f}-{hi:.1f})'
+        elif m >= 10:
+            s += f' ({lo:.0f}-{hi:.0f})'
+    return s
+
+
+def delta(c, key):
+    ov, nv = c['v210'], c['cur']
+    if not ov or not nv:
+        return '-'
+    a, b = median(ov), median(nv)
+    if key == 'loss%':
+        if a == b:
+            return '='
+        d, big = f'{b - a:+.2f} п.п.', abs(b - a) >= 0.5
+    elif a == 0:
+        return '-'
+    else:
+        d, big = f'{(b / a - 1) * 100:+.0f}%', abs(b / a - 1) >= 0.05
+    signs = c['signs']
+    if len(signs) < 3:
+        return d
+    # A verdict only when every paired round agrees and the change is at least 5% (0.5 p.p.).
+    if big and all(s == 1 for s in signs):
+        d += ' лучше'
+    elif big and all(s == -1 for s in signs):
+        d += ' хуже'
+    else:
+        d += ' шум'
+    return d
+
+
+def table(rows, keys_for):
+    print('| Сценарий | Метрика | raw | 2.1 obfs | cur obfs | cur/2.1 obfs | 2.1 wss | cur wss | cur/2.1 wss |')
+    print('|---|---|---:|---:|---:|---|---:|---:|---|')
+    for row in rows:
+        name = row['scenario']
+        keys = [k for k in keys_for(name) if (('obfs', k) in row or ('wss', k) in row)]
+        for k in keys:
+            o, w = row.get(('obfs', k)), row.get(('wss', k))
+            raw = o['raw'] if o else w['raw']
+            cells = [fmt(raw, k)]
+            for c in (o, w):
+                cells += [fmt(c['v210'], k), fmt(c['cur'], k), delta(c, k)] if c else ['-', '-', '-']
+            print(f'| `{name}` | {k} | ' + ' | '.join(cells) + ' |')
+        errs = {t: row[(t, 'errors')] for t in ('obfs', 'wss')}
+        if any(v for e in errs.values() for v in e.values()):
+            print(f'| `{name}` | ошибки | {errs["obfs"]["raw"]} | {errs["obfs"]["v210"]} | {errs["obfs"]["cur"]} | | {errs["wss"]["v210"]} | {errs["wss"]["cur"]} | |')
+
+
+def keys_for(name):
+    if name.endswith(('large', 'upload')):
+        return ['MB/s']
+    if name.startswith(('udp/stream', 'udp/sweep')):
+        return ['loss%', 'p99']
+    if name.startswith('udp/rtt'):
+        return ['p50', 'p99', 'loss%']
+    return ['p50', 'p99']
+
+
+def cpu_table(cond, rounds):
+    print('| Путь | CPU сервера, с | CPU клиента, с | CPU сумма, с | RSS пик сервера, МБ | RSS пик клиента, МБ |')
+    print('|---|---:|---:|---:|---:|---:|')
+    for t in ('obfs', 'wss'):
+        for v in ('v210', 'cur'):
+            cs = [cpu(f'{cond}-{v}-{t}-{r}') for r in rounds]
+            cs = [c for c in cs if c]
+            if not cs:
+                continue
+            g = lambda k: median(c[k] for c in cs)
+            print(f'| {v} {t} | {g("server"):.2f} | {g("client"):.2f} | {median(c["server"] + c["client"] for c in cs):.2f} | {g("server_hwm_mb"):.1f} | {g("client_hwm_mb"):.1f} |')
+
+
+def logs(d):
+    f = root / d / 'log-counts.txt'
+    return f.read_text().strip() if f.exists() else ''
+
+
+sections = [
+    ('lo4', range(1, 6), lambda t: 'direct', 'Loopback, GOMAXPROCS=4, 5 раундов'),
+    ('lo1', range(1, 6), lambda t: 'direct', 'Loopback, GOMAXPROCS=1 у сервера и клиента, 5 раундов (raw из lo4)'),
+    ('clean', range(1, 3), lambda t: f'direct-{t}', 'Netem RTT 40 мс, потери 0%, 200 Мбит/с'),
+    ('loss', range(1, 4), lambda t: f'direct-{t}', 'Netem RTT 40 мс, потери 0,5%, 200 Мбит/с, 3 раунда'),
+]
+for cond, rounds, direct_of, title in sections:
+    if cond == 'lo1':
+        rows = summarise('lo1', rounds, direct_of)
+        raw_rows = {r['scenario']: r for r in summarise('lo4', range(1, 6), direct_of)}
+        for row in rows:
+            for k in list(row):
+                if k != 'scenario' and k[1] != 'errors' and k in raw_rows.get(row['scenario'], {}):
+                    row[k]['raw'] = raw_rows[row['scenario']][k]['raw']
+    else:
+        rows = summarise(cond, rounds, direct_of)
+    if not rows:
+        continue
+    print(f'\n### {title}\n')
+    table(rows, keys_for)
+    print()
+    cpu_table(cond, rounds)
+
+print('\n### Аутентификация: RTT 40 мс, потери 0%, p50 мс\n')
+print('| Путь | Сценарий | none 2.1 | none cur | member 2.1 | member cur | password 2.1 | password cur | fallback 2.1 | fallback cur |')
+print('|---|---|---:|---:|---:|---:|---:|---:|---:|---:|')
+for t in ('obfs', 'wss'):
+    for name in ('tcp/connect', 'http/small-new', 'https/small-new', 'h2/small-new', 'h3/small-new'):
+        cells = []
+        for a in ('none', 'member', 'password', 'fallback'):
+            for v in ('v210', 'cur'):
+                res = load(f'auth-{v}-{t}-{a}')
+                s = res.get(name) if res else None
+                cells.append(f"{s['p50_ms']:.1f}" + (f" err {s['errors']}" if s and s.get('errors') else '') if s else '-')
+        print(f'| {t} | `{name}` | ' + ' | '.join(cells) + ' |')
+
+print('\n### Soak 5 минут, 32 потока, member-only\n')
+for v in ('v210-obfs', 'cur-obfs', 'v210-wss', 'cur-wss'):
+    res = load(f'soak-{v}')
+    if not res:
+        continue
+    kinds = res.get('Kinds') or res.get('kinds') or {}
+    ops = sum(k.get('n', 0) for k in kinds.values())
+    errs = sum(k.get('errors', 0) for k in kinds.values())
+    p99 = ', '.join(f"{n} {k['p99_ms']:.1f}" for n, k in sorted(kinds.items()))
+    c = cpu(f'soak-{v}') or {}
+    text = ''.join((root / f'soak-{v}' / f).read_text() for f in ('server.log', 'client.log') if (root / f'soak-{v}' / f).exists())
+    hdr = text.count('udp-tcpmux header')
+    warn = len(re.findall(r'"level":"(?:WARN|ERROR)"', text))
+    print(f'- {v}: операций {ops}, ошибок {errs}, idle {res.get("Idle") or res.get("idle")}, WARN/ERROR строк {warn}, из них udp-tcpmux header {hdr}, RSS пик сервер/клиент {c.get("server_hwm_mb", 0):.1f}/{c.get("client_hwm_mb", 0):.1f} МБ; p99 мс: {p99}')

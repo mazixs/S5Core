@@ -29,9 +29,10 @@ const (
 	// under Ex2 (the first six bytes printable) without claiming to be a
 	// protocol the connection cannot then speak.
 	ProloguePrintable PrologueEncoding = "printable"
-	// PrologueRaw puts the scheme's bytes on the wire as they are. It is the
-	// format of every build before this one, kept because a server accepts
-	// both and a fleet is not updated in one step (docs/field/migration.md).
+	// PrologueRaw puts the scheme's bytes on the wire as they are, the
+	// format of every build before phase 5. A server keeps reading it for
+	// 2.0 and 2.1 clients configured with it; s5client stops sending it in
+	// 2.2 (docs/field/migration.md, 4.6).
 	PrologueRaw PrologueEncoding = "raw"
 )
 

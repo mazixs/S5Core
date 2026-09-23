@@ -1,0 +1,20 @@
+package s5server
+
+import (
+	"net"
+	"os"
+	"strconv"
+	"syscall"
+)
+
+var expLowat, _ = strconv.Atoi(os.Getenv("S5_LOWAT"))
+
+func setLowat(c net.Conn) {
+	tc, ok := c.(*net.TCPConn)
+	if !ok || expLowat <= 0 {
+		return
+	}
+	if rc, err := tc.SyscallConn(); err == nil {
+		_ = rc.Control(func(fd uintptr) { _ = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, 25, expLowat) })
+	}
+}

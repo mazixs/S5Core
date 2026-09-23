@@ -1,0 +1,209 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"math/rand/v2"
+	"net"
+	"sync"
+	"time"
+)
+
+type soakReport struct {
+	Seconds float64                     `json:"seconds"`
+	Workers int                         `json:"workers"`
+	Kinds   map[string]stats            `json:"kinds"`
+	Windows map[string][]map[string]any `json:"windows"`
+	Idle    map[string]string           `json:"idle"`
+}
+
+// soak runs a mixed load for d with w workers and, alongside it, holds a TCP
+// connection and a UDP association idle for longer than READ_TIMEOUT.
+func (p *prober) soak(d time.Duration, w int, idle time.Duration) soakReport {
+	kinds := []string{"http_new", "http_reuse", "http_256k", "h3_reuse", "h3_new", "udp_burst", "tcp_echo"}
+	window := 30 * time.Second
+	nwin := int(d/window) + 1
+	all := map[string]*sample{}
+	win := map[string][]*sample{}
+	for _, k := range kinds {
+		all[k] = p.sample()
+		win[k] = make([]*sample, nwin)
+		for i := range win[k] {
+			win[k][i] = p.sample()
+		}
+	}
+	httpReuse := p.httpClient(true, w)
+	httpNew := p.httpClient(false, 1)
+	h3c, h3tr := p.h3(nil)
+	start := time.Now()
+	end := start.Add(d)
+	record := func(k string, t time.Duration, err error) {
+		all[k].add(t, err)
+		i := min(int(time.Since(start)/window), nwin-1)
+		win[k][i].add(t, err)
+	}
+
+	idleRes := map[string]string{}
+	var idleMu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Go(func() { r := p.idleTCP(idle); idleMu.Lock(); idleRes["tcp"] = r; idleMu.Unlock() })
+	wg.Go(func() { r := p.idleUDP(idle); idleMu.Lock(); idleRes["udp"] = r; idleMu.Unlock() })
+
+	var workers sync.WaitGroup
+	for id := range w {
+		workers.Go(func() {
+			rng := rand.New(rand.NewPCG(uint64(id), 7))
+			for time.Now().Before(end) && p.ctx.Err() == nil {
+				ctx, cancel := p.opCtx()
+				s := time.Now()
+				switch r := rng.IntN(100); {
+				case r < 30:
+					_, t, err := get(ctx, httpNew, "http://"+p.o.HTTP+"/small", smallBody)
+					record("http_new", t, err)
+				case r < 55:
+					_, t, err := get(ctx, httpReuse, "http://"+p.o.HTTP+"/small", smallBody)
+					record("http_reuse", t, err)
+				case r < 65:
+					_, t, err := get(ctx, httpReuse, "http://"+p.o.HTTP+"/size?n=262144", largeBody[:262144])
+					record("http_256k", t, err)
+				case r < 82:
+					_, t, err := get(ctx, h3c, "https://"+p.o.H3+"/small", smallBody)
+					record("h3_reuse", t, err)
+				case r < 85:
+					c, tr := p.h3(nil)
+					_, t, err := get(ctx, c, "https://"+p.o.H3+"/small", smallBody)
+					_ = tr.Close()
+					record("h3_new", t, err)
+				case r < 93:
+					err := p.udpBurst(ctx, 16, 512)
+					record("udp_burst", time.Since(s), err)
+				default:
+					err := p.tcpOnce(ctx)
+					record("tcp_echo", time.Since(s), err)
+				}
+				cancel()
+			}
+		})
+	}
+	workers.Wait()
+	_ = h3tr.Close()
+	httpReuse.CloseIdleConnections()
+	wg.Wait()
+
+	rep := soakReport{Seconds: time.Since(start).Seconds(), Workers: w, Kinds: map[string]stats{}, Windows: map[string][]map[string]any{}, Idle: idleRes}
+	for _, k := range kinds {
+		rep.Kinds[k] = all[k].stats()
+		for i, s := range win[k] {
+			st := s.stats()
+			rep.Windows[k] = append(rep.Windows[k], map[string]any{"from_s": i * int(window/time.Second), "n": st.N, "errors": st.Errors, "p50_ms": st.P50, "p99_ms": st.P99})
+		}
+	}
+	return rep
+}
+
+func (p *prober) tcpOnce(ctx context.Context) error {
+	c, err := p.dial(ctx, "tcp", p.o.TCPEcho)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+	msg := bytes.Repeat([]byte{9}, 1024)
+	if _, err := c.Write(msg); err != nil {
+		return err
+	}
+	_, err = io.ReadFull(c, make([]byte, len(msg)))
+	return err
+}
+
+// udpBurst sends n datagrams on a fresh association and wants every echo.
+func (p *prober) udpBurst(ctx context.Context, n, size int) error {
+	pc, err := listenPacket(ctx, p.socks)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = pc.Close() }()
+	dst, _ := net.ResolveUDPAddr("udp", p.o.UDPEcho)
+	msg := make([]byte, size)
+	for i := range n {
+		binary.BigEndian.PutUint64(msg, uint64(i))
+		if _, err := pc.WriteTo(msg, dst); err != nil {
+			return err
+		}
+	}
+	buf := make([]byte, 65535)
+	seen := make([]bool, n)
+	got := 0
+	for got < n {
+		_ = pc.SetReadDeadline(time.Now().Add(2 * time.Second))
+		m, _, err := pc.ReadFrom(buf)
+		if err != nil {
+			return fmt.Errorf("udp burst: %d of %d echoed: %w", got, n, err)
+		}
+		if seq := binary.BigEndian.Uint64(buf); m == size && seq < uint64(n) && !seen[seq] {
+			seen[seq] = true
+			got++
+		}
+	}
+	return nil
+}
+
+func (p *prober) idleTCP(idle time.Duration) string {
+	ctx, cancel := p.opCtx()
+	c, err := p.dial(ctx, "tcp", p.o.TCPEcho)
+	cancel()
+	if err != nil {
+		return "dial: " + err.Error()
+	}
+	defer func() { _ = c.Close() }()
+	echo := func() error {
+		_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := c.Write([]byte("ping")); err != nil {
+			return err
+		}
+		_, err := io.ReadFull(c, make([]byte, 4))
+		return err
+	}
+	if err := echo(); err != nil {
+		return "first echo: " + err.Error()
+	}
+	if !p.sleep(idle) {
+		return "cut: scenario budget ran out during the idle hold"
+	}
+	if err := echo(); err != nil {
+		return fmt.Sprintf("after %s idle: %v", idle, err)
+	}
+	return fmt.Sprintf("ok after %s idle", idle)
+}
+
+func (p *prober) idleUDP(idle time.Duration) string {
+	ctx, cancel := p.opCtx()
+	pc, err := listenPacket(ctx, p.socks)
+	cancel()
+	if err != nil {
+		return "associate: " + err.Error()
+	}
+	defer func() { _ = pc.Close() }()
+	dst, _ := net.ResolveUDPAddr("udp", p.o.UDPEcho)
+	echo := func() error {
+		if _, err := pc.WriteTo([]byte("ping-udp"), dst); err != nil {
+			return err
+		}
+		_ = pc.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _, err := pc.ReadFrom(make([]byte, 64))
+		return err
+	}
+	if err := echo(); err != nil {
+		return "first echo: " + err.Error()
+	}
+	if !p.sleep(idle) {
+		return "cut: scenario budget ran out during the idle hold"
+	}
+	if err := echo(); err != nil {
+		return fmt.Sprintf("after %s idle: %v", idle, err)
+	}
+	return fmt.Sprintf("ok after %s idle", idle)
+}

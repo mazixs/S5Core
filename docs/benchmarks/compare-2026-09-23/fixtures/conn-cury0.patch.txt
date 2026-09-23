@@ -1,0 +1,11 @@
+--- a/pkg/obfs/conn.go
++++ b/bench/work/conn-cury0.go
+@@ -1003,7 +1003,7 @@
+ // fixed that but cost 35-59% more CPU per GiB; one per interval keeps the
+ // scheduling point and makes its cost a fixed share of time instead of a
+ // price per write (docs/benchmarks/yield.md).
+-var yieldInterval = 100 * time.Microsecond
++var yieldInterval time.Duration
+ 
+ // yieldDue reports whether a direction last yielded at least yieldInterval
+ // ago, and restarts its interval if so.

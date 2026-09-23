@@ -1,0 +1,179 @@
+# The series of docs/benchmarks/compare-2026-09-23 as one plan: the same scenario
+# filters, scales, rounds and CPU sets as bench/matrix/suite8c.sh ... suite14.sh.
+# Deviations from those scripts: one raw cell per netem round instead of one per
+# transport, and 3 rounds of the auth series instead of 1 (1 round gives no verdict).
+# Takes a whole night on a 16-thread machine; series can be run one at a time with --series.
+name = "compare"
+description = "raw, 2.1.0 и рабочее дерево: матрица серии 2026-09-23"
+base = "v210"
+candidate = "cur"
+
+[defaults]
+auth = "member"
+scale = 1.0
+flush = "60s"
+scenario_timeout = "5m"
+hang_grace = "30s"
+max_errors_in_row = 50
+server_procs = 4
+client_procs = 4
+gen_procs = 4
+settle = "5s"
+retries = 2
+min_pairs = 3
+
+[env.server]
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+
+[env.client]
+OBFS_FORMAT = "v1"
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+KEEPALIVE_MIN = "10s"
+KEEPALIVE_MAX = "20s"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.v210]
+ref = "v2.1.0"
+
+[variants.cur]
+ref = "worktree"
+title = "рабочее дерево"
+
+[variants.cury0]
+ref = "worktree"
+patch = "../patches/yield-every-batch.patch"
+title = "рабочее дерево с уступкой после каждой пачки"
+
+# Machine-specific: 8 cores x 2 threads, CPU n and n+8 are siblings.
+[cpus]
+loopback = "0-5,8-13"
+raw = "0,8"
+obfs = ["1-2,9-10", "3-4,11-12"]
+wss = ["6,14", "7,15"]
+
+[guard]
+max_foreign_cores = 2.5
+load_wait = "120s"
+min_free_mb = 2048
+
+[[series]]
+name = "lo4"
+title = "loopback, 4 ядра"
+variants = ["raw", "v210", "cur"]
+rounds = 5
+only = ["tcp/", "http/", "https/", "h2/", "h3/", "udp/rtt", "udp/stream"]
+
+[[series]]
+name = "lo1"
+title = "loopback, одно ядро"
+variants = ["v210", "cur"]
+rounds = 5
+server_procs = 1
+client_procs = 1
+only = ["tcp/", "http/", "https/", "h2/", "h3/", "udp/rtt", "udp/stream"]
+
+[[series]]
+name = "lo1small"
+title = "loopback, одно ядро, малые запросы по открытому соединению"
+variants = ["v210", "cur"]
+rounds = 10
+server_procs = 1
+client_procs = 1
+only = ["tcp/echo-64", "http/small-reuse", "https/small-reuse", "h2/small-reuse", "h3/small-reuse"]
+
+[[series]]
+name = "clean"
+title = "RTT 40 мс, без потерь"
+network = { rtt_ms = 40, loss_pct = 0, rate_mbit = 200 }
+variants = ["raw", "v210", "cur"]
+rounds = 2
+scale = 0.3
+
+[[series]]
+name = "loss"
+title = "RTT 40 мс, потери 0,5%"
+network = { rtt_ms = 40, loss_pct = 0.5, rate_mbit = 200 }
+variants = ["raw", "v210", "cur"]
+rounds = 3
+scale = 0.3
+
+[[series]]
+name = "rto"
+title = "RTT 40 мс, потери 0,5%: доля запросов, заплативших RTO"
+network = { rtt_ms = 40, loss_pct = 0.5, rate_mbit = 200 }
+variants = ["raw", "v210", "cur"]
+rounds = 6
+scale = 0.3
+slow_ms = 150
+only = ["tcp/connect", "tcp/echo-64", "http/small-reuse", "https/small-reuse", "h2/small-new", "h2/small-same-conn-under-bulk",
+        "h3/small-reuse", "udp/rtt-64", "http/upload", "https/upload"]
+
+[[series]]
+name = "bulk"
+title = "малые запросы под закачкой, RTT 40 мс без потерь"
+network = { rtt_ms = 40, loss_pct = 0, rate_mbit = 200 }
+variants = ["raw", "v210", "cur"]
+rounds = 6
+scale = 0.3
+slow_ms = 150
+only = ["=http/small-reuse-under-bulk", "=https/small-reuse-under-bulk", "=h3/small-reuse-under-bulk", "=udp/rtt-64-under-bulk"]
+
+[[series]]
+name = "burst"
+title = "UDP-всплеск 40 Мбит/с на новой ассоциации"
+network = { rtt_ms = 40, loss_pct = 0, rate_mbit = 200 }
+variants = ["raw", "v210", "cur"]
+rounds = 10
+scale = 0.3
+only = ["udp/stream-40mbit", "udp/sweep-40mbit"]
+
+[[series]]
+name = "h3loss"
+title = "HTTP/3: закачка и выгрузка под потерями 0,5%"
+network = { rtt_ms = 40, loss_pct = 0.5, rate_mbit = 200 }
+variants = ["raw", "v210", "cur"]
+rounds = 6
+scale = 0.3
+only = ["h3/upload", "h3/large"]
+
+[[series]]
+name = "auth"
+title = "цена аутентификации, RTT 40 мс"
+network = { rtt_ms = 40, loss_pct = 0, rate_mbit = 200 }
+variants = ["v210", "cur"]
+auth = ["member", "password", "fallback", "none"]
+rounds = 3
+scale = 0.3
+only = ["tcp/connect", "small-new"]
+
+[[series]]
+name = "yield"
+title = "HTTP/3 через wss на одном ядре: интервал уступки"
+variants = ["v210", "cur", "cury0"]
+compare = [["v210", "cur"], ["cur", "cury0"]]
+transports = ["wss"]
+rounds = 12
+server_procs = 1
+client_procs = 1
+only = ["h3/small-reuse"]
+
+[[series]]
+name = "soak"
+title = "soak: 5 минут смешанной нагрузки и простой дольше READ_TIMEOUT"
+kind = "soak"
+variants = ["v210", "cur"]
+rounds = 2
+soak = "5m"
+workers = 32
+idle = "75s"
+sample_s = 30
+settle = "10s"

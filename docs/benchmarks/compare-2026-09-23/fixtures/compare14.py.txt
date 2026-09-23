@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""suite14.sh: 2.1.0, the tree and the tree with a yield after every batch, paired by round: compare14.py RESULTS"""
+import json, sys
+from math import comb
+from pathlib import Path
+from statistics import median
+
+root = Path(sys.argv[1])
+
+
+def load(v, r):
+    f = root / f'{v}-wss-{r}' / 'result.json'
+    return json.loads(f.read_text())['result'] if f.exists() else None
+
+
+def sign(a, b):
+    worse, better = sum(y > x for x, y in zip(a, b)), sum(y < x for x, y in zip(a, b))
+    t = worse + better
+    return worse, len(a), (min(1.0, 2 * sum(comb(t, i) for i in range(min(worse, better) + 1)) / 2 ** t) if t else 1.0)
+
+
+rounds = sorted({int(d.name.rsplit('-', 1)[1]) for d in root.iterdir() if d.is_dir()})
+names = sorted({n for r in rounds for v in ('v210', 'cur', 'cury0') if load(v, r) for n in load(v, r)})
+print('| Сценарий | Метрика | 2.1 | current | current, уступка на каждой пачке | current против 2.1 | current с уступкой против 2.1 | current против current с уступкой |')
+print('|---|---|---:|---:|---:|---|---|---|')
+for n in names:
+    for k in ('p50_ms', 'p99_ms'):
+        full = [r for r in rounds if all(load(v, r) and n in load(v, r) for v in ('v210', 'cur', 'cury0'))]
+        if not full:
+            continue
+        a, b, c = ([load(v, r)[n][k] for r in full] for v in ('v210', 'cur', 'cury0'))
+        cell = lambda x, y: '{:+.0%}, хуже в {}/{}, p={:.3f}'.format(median(y) / median(x) - 1, *sign(x, y))
+        print(f'| `{n}` | {k[:3]} | {median(a):.3f} | {median(b):.3f} | {median(c):.3f} | {cell(a, b)} | {cell(a, c)} | {cell(c, b)} |')

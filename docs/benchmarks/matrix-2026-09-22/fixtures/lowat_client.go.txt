@@ -1,0 +1,26 @@
+package main
+
+import (
+	"context"
+	"net"
+	"os"
+	"strconv"
+	"syscall"
+)
+
+func init() {
+	n, _ := strconv.Atoi(os.Getenv("S5_LOWAT"))
+	if n <= 0 {
+		return
+	}
+	orig := dialOutbound
+	dialOutbound = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := orig(ctx, network, addr)
+		if tc, ok := c.(*net.TCPConn); ok {
+			if rc, e := tc.SyscallConn(); e == nil {
+				_ = rc.Control(func(fd uintptr) { _ = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, 25, n) })
+			}
+		}
+		return c, err
+	}
+}

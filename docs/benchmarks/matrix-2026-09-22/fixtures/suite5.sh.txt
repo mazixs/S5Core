@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# A/B of TCP_NOTSENT_LOWAT set on the tunnel sockets only (s5client dial, s5core accept),
+# one pair of -lowat binaries switched by S5_LOWAT, alternating per repetition.
+set -uo pipefail
+cd "$(dirname "$0")"
+until grep -q suite4-done suite4.log 2>/dev/null; do sleep 5; done
+out=${OUT:-results/ab-sock}
+mkdir -p "$out"
+T="taskset -c 0-5,8-13"
+export TAG=lowat
+for rep in 1 2 3; do
+	for lw in 0 131072 524288 1048576; do
+		for loss in 0.5 0.05; do
+			d=$out/udp-$loss-$lw-$rep
+			S5_LOWAT=$lw $T ./netem.sh 40 "$loss" 200 tunnel ./diag-udp.sh ./run.sh obfs "$d" -only udp/sweep-20mbit,udp/sweep-40mbit > "$d.log" 2>&1; echo "udp-$loss-$lw-$rep rc=$?"
+		done
+		d=$out/web-$lw-$rep
+		S5_LOWAT=$lw $T ./netem.sh 40 0.5 200 tunnel ./diag-udp.sh ./run.sh obfs "$d" -scale 0.3 -only http/large,http/upload,http/small-reuse-under-bulk,h3/large,h3/upload > "$d.log" 2>&1; echo "web-$lw-$rep rc=$?"
+	done
+done
+echo suite5-done

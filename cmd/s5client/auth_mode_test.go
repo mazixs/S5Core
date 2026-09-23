@@ -19,7 +19,7 @@ func TestMemberOnlyConfiguration(t *testing.T) {
 	if e := validateAuthMode(good); e != nil {
 		t.Fatal(e)
 	}
-	for _, change := range []func(*clientParams){func(c *clientParams) { c.MemberID = "" }, func(c *clientParams) { c.MemberKey = "bad" }, func(c *clientParams) { c.ProxyUser = "alice" }, func(c *clientParams) { c.ProxyPass = "secret" }, func(c *clientParams) { c.Format = "auto" }, func(c *clientParams) { c.Format = "legacy" }} {
+	for _, change := range []func(*clientParams){func(c *clientParams) { c.MemberID = "" }, func(c *clientParams) { c.MemberKey = "bad" }, func(c *clientParams) { c.ProxyUser = "alice" }, func(c *clientParams) { c.ProxyPass = "secret" }} {
 		c := good
 		change(&c)
 		if e := validateAuthMode(c); e == nil {

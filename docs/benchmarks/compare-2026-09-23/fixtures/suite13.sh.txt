@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# suite8 flags under 0.5% loss, rechecked: p99 there is whether a retransmission timeout landed in the top 1%,
+# so each run also records slow_pct (share of samples above p50 + SLOW_MS). 6 rounds, triples as in suite10.
+# Then small requests under a parallel download without loss (2 rounds in suite8), 6 rounds.
+set -uo pipefail
+cd "$(dirname "$0")"
+./suite14.sh > results14.log 2>&1
+out=${OUT:-results13}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1 SLOW_MS=${SLOW_MS:-150}
+ONLY="tcp/connect,tcp/echo-64,http/small-reuse,https/small-reuse,h2/small-new,h2/small-same-conn-under-bulk,h3/small-reuse,udp/rtt-64,http/upload,https/upload"
+declare -A D=([obfs]="0,8" [wss]="5,13") A=([obfs]="1-2,9-10" [wss]="6,14") B=([obfs]="3-4,11-12" [wss]="7,15")
+
+pair() { # round transport
+	local r=$1 m=$2 ca=${A[$2]} cb=${B[$2]} loss=${LOSS:-0.5}
+	((r % 2 == 0)) && { ca=${B[$m]}; cb=${A[$m]}; }
+	taskset -c "${D[$m]}" ./netem.sh 40 "$loss" 200 all ./run13.sh direct "$out/direct-$m-$r" -scale 0.3 -only "$ONLY" > "$out/direct-$m-$r.log" 2>&1 &
+	TAG=v210 taskset -c "$ca" ./netem.sh 40 "$loss" 200 tunnel ./run13.sh "$m" "$out/v210-$m-$r" -scale 0.3 -only "$ONLY" > "$out/v210-$m-$r.log" 2>&1 &
+	TAG=cur taskset -c "$cb" ./netem.sh 40 "$loss" 200 tunnel ./run13.sh "$m" "$out/cur-$m-$r" -scale 0.3 -only "$ONLY" > "$out/cur-$m-$r.log" 2>&1 &
+	wait
+}
+
+rounds() {
+	for r in $(seq 1 "${ROUNDS:-6}"); do
+		pair "$r" obfs & pair "$r" wss & wait
+		echo "$out round $r done: $(for d in "$out"/*-"$r"; do printf '%s=%s ' "${d##*/}" "$(grep -o '"rc":[0-9]*' "$d/run.json" 2>/dev/null || echo none)"; done)"
+	done
+}
+rounds
+out=${out}-bulk ONLY="http/small-reuse-under-bulk,https/small-reuse-under-bulk,h3/small-reuse-under-bulk,udp/rtt-64-under-bulk" LOSS=0
+mkdir -p "$out"
+rounds
+S=${CAPDIR:?directory for the captures}
+for m in obfs wss; do
+	for a in member password; do
+		c=$S/cap-$m-$a
+		rm -rf "$c" "$c.pcap"
+		AUTH=$a TAG=cur ./netem.sh 40 0 200 tunnel "$S/cap.sh" "$m" "$c" "$c.pcap" http/small-new,https/small-new > "$c.log" 2>&1
+		echo "cap-$m-$a rc=$? size=$(stat -c %s "$c.pcap" 2>/dev/null)"
+	done
+done
+echo suite13-done

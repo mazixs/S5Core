@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""CPU per GB moved in suite11 runs (the under-bulk downloads run as long as the small requests do): cpu11.py RESULTS"""
+import json, re, sys
+from pathlib import Path
+from statistics import median
+
+root = Path(sys.argv[1])
+
+
+def cpu(d):
+    rows = [json.loads(l) for l in (d / 'resources.jsonl').read_text().splitlines()]
+    t = 0
+    for p in ('server', 'client'):
+        b = [x for x in rows if x['proc'] == p and x['phase'] == 'before']
+        a = [x for x in rows if x['proc'] == p and x['phase'] == 'after']
+        if not (a and b):
+            return None
+        t += (a[0]['cpu_ticks'] - b[0]['cpu_ticks']) / 100
+    return t
+
+
+def moved(d):
+    return sum(float(m[1]) * float(m[2]) for l in (d / 'matrix.log').read_text().splitlines()
+               if (m := re.search(r'background_MBps=([\d.]+).*\(([\d.]+)s\)', l))) / 1000
+
+
+def run(v, r):
+    d = root / f'{v}-{r}'
+    if not (d / 'resources.jsonl').exists() or not (d / 'run.json').exists():
+        return None
+    c = cpu(d)
+    return (c, moved(d)) if c else None
+
+
+rounds = sorted({int(d.name.rsplit('-', 1)[1]) for d in root.iterdir() if d.is_dir()})
+print('| Путь | Версия | CPU, с | Прокачано, ГБ | CPU на ГБ, с | по раундам |')
+print('|---|---|---:|---:|---:|---|')
+for m in ('obfs', 'wss'):
+    both = [r for r in rounds if run(f'v210-{m}', r) and run(f'cur-{m}', r)]
+    for v in ('v210', 'cur'):
+        xs = [run(f'{v}-{m}', r) for r in both]
+        print(f'| {m} | {v} | {median(c for c, _ in xs):.2f} | {median(g for _, g in xs):.1f} | {median(c / g for c, g in xs):.2f} | '
+              + ', '.join(f'{c / g:.2f}' for c, g in xs) + ' |')
+    k = [run(f'cur-{m}', r)[0] / run(f'cur-{m}', r)[1] > run(f'v210-{m}', r)[0] / run(f'v210-{m}', r)[1] for r in both]
+    print(f'| {m} | current дороже на ГБ в раундах | | | {sum(k)}/{len(k)} | |')

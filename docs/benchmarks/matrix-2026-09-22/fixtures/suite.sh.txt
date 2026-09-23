@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Full matrix on the final binaries: loopback, soak, netem.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results}
+mkdir -p "$out"
+T="taskset -c 0-5,8-13"
+for m in direct plain obfs wss; do
+	$T ./run.sh "$m" "$out/lo-$m" > "$out/lo-$m.log" 2>&1; echo "lo-$m rc=$?"
+done
+for m in obfs wss; do
+	SETTLE=10 $T ./run.sh "$m" "$out/soak-$m" -soak "${SOAK:-5m}" -workers 32 -idle 75s > "$out/soak-$m.log" 2>&1; echo "soak-$m rc=$?"
+done
+NE="${RTT:-40} ${LOSS:-0.5} ${RATE:-200}"
+SC=${NSCALE:-0.3}
+$T ./netem.sh $NE all ./run.sh direct "$out/ne-direct" -scale "$SC" > "$out/ne-direct.log" 2>&1; echo "ne-direct rc=$?"
+PLAIN_PORT=41443 OBFS_PORT=41445 $T ./netem.sh $NE tunnel ./run.sh plain "$out/ne-plain" -scale "$SC" > "$out/ne-plain.log" 2>&1; echo "ne-plain rc=$?"
+for m in obfs wss; do
+	$T ./netem.sh $NE tunnel ./run.sh "$m" "$out/ne-$m" -scale "$SC" > "$out/ne-$m.log" 2>&1; echo "ne-$m rc=$?"
+done
+echo suite-done

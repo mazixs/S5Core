@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""cur vs rcvbuf from suite9.sh: compare9.py RESULTS."""
+import json, sys
+from pathlib import Path
+from statistics import median
+root = Path(sys.argv[1])
+NAMES = ['udp/stream-40mbit', 'udp/stream-200mbit', 'udp/sweep-2mbit', 'udp/sweep-5mbit', 'udp/sweep-10mbit', 'udp/sweep-20mbit', 'udp/sweep-40mbit', 'h3/large', 'h3/upload']
+for loss in ('0', '0.5'):
+    print(f'\n### Потери {loss}%\n')
+    print('| Сценарий | cur потери | rcvbuf потери | cur p50/p99 | rcvbuf p50/p99 | cur МБ/с | rcvbuf МБ/с |')
+    print('|---|---:|---:|---:|---:|---:|---:|')
+    for n in NAMES:
+        cells = {}
+        for t in ('cur', 'rcvbuf'):
+            rs = []
+            for r in (1, 2, 3):
+                f = root / f'l{loss}-{t}-{r}' / 'result.json'
+                if f.exists():
+                    s = json.loads(f.read_text())['result'].get(n)
+                    if s:
+                        rs.append(s)
+            cells[t] = rs
+        def col(t, fn, fmt):
+            v = [fn(s) for s in cells[t]]
+            return (fmt % median(v) + (' (' + ', '.join(fmt % x for x in v) + ')' if len(v) > 1 else '')) if v else '-'
+        loss_f = lambda s: (s.get('extra') or {}).get('loss_pct', 0)
+        lat = lambda t: ', '.join(f"{s['p50_ms']:.0f}/{s['p99_ms']:.0f}" for s in cells[t]) or '-'
+        print(f'| `{n}` | {col("cur", loss_f, "%.2f%%")} | {col("rcvbuf", loss_f, "%.2f%%")} | {lat("cur")} | {lat("rcvbuf")} | {col("cur", lambda s: s.get("mbps", 0), "%.1f")} | {col("rcvbuf", lambda s: s.get("mbps", 0), "%.1f")} |')

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# A/B: current vs current with a 4 MiB receive buffer on both UDP sockets of 0x83 (overlay build "rcvbuf").
+# Pairs run side by side, each in its own netns on its own cores, swapping cores between rounds.
+set -uo pipefail
+cd "$(dirname "$0")"
+out=${OUT:-results9}
+mkdir -p "$out"
+export AUTH=${AUTH:-member} FLUSH=60s WARMUP=1
+ONLY="udp/stream,udp/sweep,h3/large,h3/upload"
+A="6,14" B="7,15"
+for loss in 0 0.5; do for r in 1 2 3; do
+	ca=$A cb=$B
+	((r % 2 == 0)) && { ca=$B; cb=$A; }
+	TAG=cur taskset -c "$ca" ./netem.sh 40 "$loss" 200 tunnel ./run.sh obfs "$out/l$loss-cur-$r" -scale 0.3 -only "$ONLY" > "$out/l$loss-cur-$r.log" 2>&1 &
+	TAG=rcvbuf taskset -c "$cb" ./netem.sh 40 "$loss" 200 tunnel ./run.sh obfs "$out/l$loss-rcvbuf-$r" -scale 0.3 -only "$ONLY" > "$out/l$loss-rcvbuf-$r.log" 2>&1 &
+	wait
+	echo "l$loss-$r done: $(for t in cur rcvbuf; do printf '%s=%s ' $t "$(grep -o '"rc":[0-9]*' "$out/l$loss-$t-$r/run.json" 2>/dev/null)"; done)"
+done; done
+echo suite9-done

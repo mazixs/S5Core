@@ -1,0 +1,555 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptrace"
+	"slices"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
+)
+
+type stats struct {
+	N        int                `json:"n"`
+	Errors   int                `json:"errors"`
+	P50      float64            `json:"p50_ms"`
+	P90      float64            `json:"p90_ms"`
+	P99      float64            `json:"p99_ms"`
+	Max      float64            `json:"max_ms"`
+	MBps     float64            `json:"mbps,omitempty"`
+	Extra    map[string]float64 `json:"extra,omitempty"`
+	FirstErr string             `json:"first_error,omitempty"`
+}
+
+type sample struct {
+	mu   sync.Mutex
+	d    []time.Duration
+	errs int
+	err  string
+}
+
+func (s *sample) add(d time.Duration, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.errs++
+		if s.err == "" {
+			s.err = err.Error()
+		}
+		return
+	}
+	s.d = append(s.d, d)
+}
+
+func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+
+func (s *sample) stats() stats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := stats{N: len(s.d), Errors: s.errs, FirstErr: s.err}
+	if len(s.d) == 0 {
+		return st
+	}
+	d := slices.Clone(s.d)
+	slices.Sort(d)
+	q := func(p float64) float64 { return ms(d[int(p*float64(len(d)-1))]) }
+	st.P50, st.P90, st.P99, st.Max = q(0.5), q(0.9), q(0.99), ms(d[len(d)-1])
+	return st
+}
+
+type prober struct {
+	socks string
+	o     *origin
+	dial  func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+// web is one way to speak HTTP over TCP: "http" (HTTP/1.1), "https"
+// (HTTP/1.1 over TLS 1.3) or "h2" (HTTP/2 over TLS 1.3).
+type web struct {
+	kind, addr string
+}
+
+func (p *prober) web(kind string) web {
+	if kind == "http" {
+		return web{kind, p.o.HTTP}
+	}
+	return web{kind, p.o.HTTPS}
+}
+
+func (w web) url(path string) string {
+	if w.kind == "http" {
+		return "http://" + w.addr + path
+	}
+	return "https://" + w.addr + path
+}
+
+func (p *prober) httpClient(reuse bool, conns int) *http.Client {
+	return p.client(p.web("http"), reuse, conns, nil)
+}
+
+// client builds a client for w. With TLS there is no session cache, so every
+// new connection is a full handshake; setup records the SOCKS5 connect plus
+// the TLS handshake of each one.
+func (p *prober) client(w web, reuse bool, conns int, setup *sample) *http.Client {
+	tr := &http.Transport{DialContext: p.dial, DisableKeepAlives: !reuse, MaxIdleConnsPerHost: conns, ForceAttemptHTTP2: w.kind == "h2"}
+	if w.kind != "http" {
+		protos := []string{"http/1.1"}
+		if w.kind == "h2" {
+			protos = []string{"h2"}
+		}
+		host, _, _ := net.SplitHostPort(w.addr)
+		cfg := &tls.Config{RootCAs: p.o.roots, MinVersion: tls.VersionTLS13, NextProtos: protos, ServerName: host}
+		tr.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			start := time.Now()
+			c, err := p.dial(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			tc := tls.Client(c, cfg)
+			if err := tc.HandshakeContext(ctx); err != nil {
+				_ = c.Close()
+				return nil, err
+			}
+			if setup != nil {
+				setup.add(time.Since(start), nil)
+			}
+			return tc, nil
+		}
+	}
+	return &http.Client{Transport: tr, Timeout: 60 * time.Second}
+}
+
+// get returns time to first byte and to the end of a verified body.
+func get(ctx context.Context, c *http.Client, url string, want []byte) (ttfb, total time.Duration, err error) {
+	start := time.Now()
+	var first time.Time
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotFirstResponseByte: func() { first = time.Now() }})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, 0, err
+	}
+	total = time.Since(start)
+	if resp.StatusCode != 200 || !bytes.Equal(body, want) {
+		return 0, 0, fmt.Errorf("status %d, %d bytes", resp.StatusCode, len(body))
+	}
+	if first.IsZero() {
+		first = time.Now()
+	}
+	return first.Sub(start), total, nil
+}
+
+func post(ctx context.Context, c *http.Client, url string, body []byte) (time.Duration, error) {
+	start := time.Now()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != 200 || string(got) != strconv.Itoa(len(body)) {
+		return 0, fmt.Errorf("status %d, server saw %s bytes", resp.StatusCode, got)
+	}
+	return time.Since(start), nil
+}
+
+// h3 builds an HTTP/3 client whose every QUIC connection rides its own UDP
+// association; dialMs records the association plus the QUIC handshake.
+func (p *prober) h3(dialMs *sample) (*http.Client, *http3.Transport) {
+	tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: p.o.roots, MinVersion: tls.VersionTLS13},
+		QUICConfig:      &quic.Config{MaxIdleTimeout: 60 * time.Second, KeepAlivePeriod: 10 * time.Second},
+		Dial: func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+			start := time.Now()
+			pc, err := listenPacket(ctx, p.socks)
+			if err != nil {
+				return nil, err
+			}
+			ua, err := net.ResolveUDPAddr("udp", addr)
+			if err != nil {
+				_ = pc.Close()
+				return nil, err
+			}
+			conn, err := quic.Dial(ctx, pc, ua, tlsCfg, cfg)
+			if err != nil {
+				_ = pc.Close()
+				return nil, err
+			}
+			if dialMs != nil {
+				dialMs.add(time.Since(start), nil)
+			}
+			go func() { <-conn.Context().Done(); _ = pc.Close() }()
+			return conn, nil
+		},
+	}
+	return &http.Client{Transport: tr, Timeout: 60 * time.Second}, tr
+}
+
+func opCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 60*time.Second)
+}
+
+func (p *prober) tcpConnect(n int) stats {
+	var s sample
+	msg := []byte("s5core-matrix-tcp-connect-probe!")
+	for range n {
+		ctx, cancel := opCtx()
+		start := time.Now()
+		c, err := p.dial(ctx, "tcp", p.o.TCPEcho)
+		if err == nil {
+			_, err = c.Write(msg)
+			if err == nil {
+				_, err = io.ReadFull(c, make([]byte, len(msg)))
+			}
+			_ = c.Close()
+		}
+		s.add(time.Since(start), err)
+		cancel()
+	}
+	return s.stats()
+}
+
+func (p *prober) tcpEcho(n, size int) stats {
+	var s sample
+	ctx, cancel := opCtx()
+	defer cancel()
+	c, err := p.dial(ctx, "tcp", p.o.TCPEcho)
+	if err != nil {
+		s.add(0, err)
+		return s.stats()
+	}
+	defer func() { _ = c.Close() }()
+	msg, buf := bytes.Repeat([]byte{0x42}, size), make([]byte, size)
+	for range n {
+		start := time.Now()
+		_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+		_, err := c.Write(msg)
+		if err == nil {
+			_, err = io.ReadFull(c, buf)
+		}
+		s.add(time.Since(start), err)
+		if err != nil {
+			break
+		}
+	}
+	return s.stats()
+}
+
+// protoCheck fails unless the origin saw the protocol w stands for: a
+// transport that quietly fell back to HTTP/1.1 would measure the wrong thing.
+func protoCheck(c *http.Client, w web) error {
+	want := map[string]string{"http": "HTTP/1.1", "https": "HTTP/1.1", "h2": "HTTP/2.0"}[w.kind]
+	ctx, cancel := opCtx()
+	defer cancel()
+	_, _, err := get(ctx, c, w.url("/proto"), []byte(want))
+	return err
+}
+
+func (p *prober) webSmall(kind string, n int, reuse bool) stats {
+	var ttfb, total, setup sample
+	w := p.web(kind)
+	c := p.client(w, reuse, 1, &setup)
+	defer c.CloseIdleConnections()
+	if err := protoCheck(c, w); err != nil {
+		total.add(0, fmt.Errorf("protocol check: %w", err))
+		return total.stats()
+	}
+	setup = sample{}
+	url := w.url("/small")
+	for range n {
+		ctx, cancel := opCtx()
+		f, t, err := get(ctx, c, url, smallBody)
+		cancel()
+		ttfb.add(f, err)
+		total.add(t, err)
+	}
+	st := total.stats()
+	tf := ttfb.stats()
+	st.Extra = map[string]float64{"ttfb_p50_ms": tf.P50, "ttfb_p99_ms": tf.P99}
+	if su := setup.stats(); su.N > 0 {
+		st.Extra["handshake_p50_ms"], st.Extra["handshake_p99_ms"] = su.P50, su.P99
+	}
+	return st
+}
+
+func (p *prober) webLarge(kind string, n int, upload bool) stats {
+	var s sample
+	w := p.web(kind)
+	c := p.client(w, true, 1, nil)
+	defer c.CloseIdleConnections()
+	var sum time.Duration
+	for range n {
+		ctx, cancel := opCtx()
+		var t time.Duration
+		var err error
+		if upload {
+			t, err = post(ctx, c, w.url("/upload"), largeBody)
+		} else {
+			_, t, err = get(ctx, c, w.url("/large"), largeBody)
+		}
+		cancel()
+		s.add(t, err)
+		sum += t
+	}
+	st := s.stats()
+	if st.N > 0 {
+		st.MBps = float64(st.N*largeSize) / sum.Seconds() / 1e6
+	}
+	return st
+}
+
+// h2Shared measures small requests multiplexed on the same HTTP/2 connection
+// as a download that never pauses, which is what a browser does with one
+// origin: the small answers queue behind the bulk in every buffer on the way.
+func (p *prober) h2Shared(n int) stats {
+	w := p.web("h2")
+	c := p.client(w, true, 1, nil)
+	defer c.CloseIdleConnections()
+	if err := protoCheck(c, w); err != nil {
+		var s sample
+		s.add(0, fmt.Errorf("protocol check: %w", err))
+		return s.stats()
+	}
+	return p.underLoadOn(c, w.url("/large"), func() stats {
+		var ttfb, total sample
+		for range n {
+			ctx, cancel := opCtx()
+			f, t, err := get(ctx, c, w.url("/small"), smallBody)
+			cancel()
+			ttfb.add(f, err)
+			total.add(t, err)
+		}
+		st := total.stats()
+		tf := ttfb.stats()
+		st.Extra = map[string]float64{"ttfb_p50_ms": tf.P50, "ttfb_p99_ms": tf.P99}
+		return st
+	})
+}
+
+func (p *prober) h3Small(n int, reuse bool) stats {
+	var ttfb, total, dial sample
+	url := "https://" + p.o.H3 + "/small"
+	c, tr := p.h3(&dial)
+	for i := range n {
+		if !reuse && i > 0 {
+			_ = tr.Close()
+			c, tr = p.h3(&dial)
+		}
+		ctx, cancel := opCtx()
+		f, t, err := get(ctx, c, url, smallBody)
+		cancel()
+		ttfb.add(f, err)
+		total.add(t, err)
+	}
+	_ = tr.Close()
+	st := total.stats()
+	tf, dl := ttfb.stats(), dial.stats()
+	st.Extra = map[string]float64{"ttfb_p50_ms": tf.P50, "ttfb_p99_ms": tf.P99, "handshake_p50_ms": dl.P50, "handshake_p99_ms": dl.P99}
+	return st
+}
+
+func (p *prober) h3Large(n int, upload bool) stats {
+	var s sample
+	c, tr := p.h3(nil)
+	defer func() { _ = tr.Close() }()
+	var sum time.Duration
+	for range n {
+		ctx, cancel := opCtx()
+		var t time.Duration
+		var err error
+		if upload {
+			t, err = post(ctx, c, "https://"+p.o.H3+"/upload", largeBody)
+		} else {
+			_, t, err = get(ctx, c, "https://"+p.o.H3+"/large", largeBody)
+		}
+		cancel()
+		s.add(t, err)
+		sum += t
+	}
+	st := s.stats()
+	if st.N > 0 {
+		st.MBps = float64(st.N*largeSize) / sum.Seconds() / 1e6
+	}
+	return st
+}
+
+// udpRTT is a ping-pong: one datagram in flight, a reply later than the
+// timeout counts as lost.
+func (p *prober) udpRTT(n, size int) stats {
+	var s sample
+	ctx, cancel := opCtx()
+	pc, err := listenPacket(ctx, p.socks)
+	cancel()
+	if err != nil {
+		s.add(0, err)
+		return s.stats()
+	}
+	defer func() { _ = pc.Close() }()
+	dst, _ := net.ResolveUDPAddr("udp", p.o.UDPEcho)
+	msg, buf := make([]byte, size), make([]byte, 65535)
+	lost := 0
+	for i := range n {
+		binary.BigEndian.PutUint64(msg, uint64(i))
+		start := time.Now()
+		if _, err := pc.WriteTo(msg, dst); err != nil {
+			s.add(0, err)
+			continue
+		}
+		deadline := start.Add(time.Second)
+		for {
+			_ = pc.SetReadDeadline(deadline)
+			m, _, err := pc.ReadFrom(buf)
+			if err != nil {
+				lost++
+				break
+			}
+			if m == size && binary.BigEndian.Uint64(buf) == uint64(i) {
+				s.add(time.Since(start), nil)
+				break
+			}
+		}
+	}
+	st := s.stats()
+	st.Extra = map[string]float64{"loss_pct": 100 * float64(lost) / float64(n)}
+	return st
+}
+
+// udpStream sends paced datagrams and matches the echoes by sequence number.
+func (p *prober) udpStream(n, size int, mbit float64) stats {
+	var s sample
+	ctx, cancel := opCtx()
+	pc, err := listenPacket(ctx, p.socks)
+	cancel()
+	if err != nil {
+		s.add(0, err)
+		return s.stats()
+	}
+	defer func() { _ = pc.Close() }()
+	dst, _ := net.ResolveUDPAddr("udp", p.o.UDPEcho)
+	gap := time.Duration(float64(size*8) / (mbit * 1e6) * float64(time.Second))
+	sent := make([]int64, n)
+	var got, reordered, dup atomic.Int64
+	seen := make([]bool, n)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 65535)
+		last := -1
+		for {
+			_ = pc.SetReadDeadline(time.Now().Add(2 * time.Second))
+			m, _, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if m != size {
+				continue
+			}
+			seq := int(binary.BigEndian.Uint64(buf))
+			if seq < 0 || seq >= n {
+				continue
+			}
+			if seen[seq] {
+				dup.Add(1)
+				continue
+			}
+			seen[seq] = true
+			got.Add(1)
+			if seq < last {
+				reordered.Add(1)
+			}
+			last = max(last, seq)
+			s.add(time.Duration(time.Now().UnixNano()-atomic.LoadInt64(&sent[seq])), nil)
+		}
+	}()
+	msg := make([]byte, size)
+	start := time.Now()
+	for i := range n {
+		if d := time.Until(start.Add(time.Duration(i) * gap)); d > 0 {
+			time.Sleep(d)
+		}
+		binary.BigEndian.PutUint64(msg, uint64(i))
+		atomic.StoreInt64(&sent[i], time.Now().UnixNano())
+		_, _ = pc.WriteTo(msg, dst)
+	}
+	elapsed := time.Since(start)
+	<-done
+	st := s.stats()
+	st.MBps = float64(got.Load()) * float64(size) / elapsed.Seconds() / 1e6
+	st.Extra = map[string]float64{"loss_pct": 100 * float64(int64(n)-got.Load()) / float64(n), "reordered": float64(reordered.Load()), "duplicates": float64(dup.Load()), "offered_mbit": mbit}
+	return st
+}
+
+// underLoad measures fn while another connection of the given kind downloads
+// without pause.
+func (p *prober) underLoad(kind string, fn func() stats) stats {
+	w := p.web(kind)
+	c := p.client(w, true, 1, nil)
+	defer c.CloseIdleConnections()
+	return p.underLoadOn(c, w.url("/large"), fn)
+}
+
+// underLoadOn measures fn while c downloads url without pause. background_MBps
+// counts completed bodies only, so a run of fn shorter than one body reads 0.
+func (p *prober) underLoadOn(c *http.Client, url string, fn func() stats) stats {
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var bulkErr atomic.Value
+	var bulkBytes atomic.Int64
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			ctx, cancel := opCtx()
+			_, _, err := get(ctx, c, url, largeBody)
+			cancel()
+			if err != nil {
+				bulkErr.Store(err.Error())
+				return
+			}
+			bulkBytes.Add(largeSize)
+		}
+	})
+	time.Sleep(200 * time.Millisecond)
+	start, from := time.Now(), bulkBytes.Load()
+	st := fn()
+	elapsed, moved := time.Since(start), bulkBytes.Load()-from
+	close(stop)
+	wg.Wait()
+	if st.Extra == nil {
+		st.Extra = map[string]float64{}
+	}
+	st.Extra["background_MBps"] = float64(moved) / elapsed.Seconds() / 1e6
+	if e, ok := bulkErr.Load().(string); ok {
+		st.Errors++
+		if st.FirstErr == "" {
+			st.FirstErr = "background: " + e
+		} else {
+			st.FirstErr = errors.Join(errors.New(st.FirstErr), errors.New("background: "+e)).Error()
+		}
+	}
+	return st
+}
