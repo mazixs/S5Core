@@ -156,8 +156,11 @@ class Plans(unittest.TestCase):
         for bad in ({"client_dir": "/opt/tmp"}, {"server_dir": "relative/s5bench"}, {"server_arch": "sparc"}, {"extra": 1}):
             with self.assertRaises(plan.PlanError, msg=bad):
                 plan.resolve(raw_plan(wan=wan | bad, series=[{"name": "w", "network": "wan"}]), ".")
+        # The unit's IP filter keeps a port without a password from being an open proxy.
+        p = plan.resolve(raw_plan(wan=wan, series=[{"name": "w", "network": "wan", "transports": ["plain"], "auth": "none"}]), ".")
+        self.assertEqual({c["transport"] for x in plan.expand(p) for c in x["cells"] if not c["direct"]}, {"plain"})
         with self.assertRaises(plan.PlanError):
-            plan.resolve(raw_plan(wan=wan, series=[{"name": "w", "network": "wan", "transports": ["plain"], "auth": "none"}]), ".")
+            plan.resolve(raw_plan(wan=wan, series=[{"name": "w", "network": "wan", "transports": ["plain"]}]), ".")
 
     def test_wan_cells_run_one_at_a_time_in_alternating_order(self):
         p = plan.resolve(raw_plan(cpus={}, wan={"server": "root@192.0.2.1", "client": "router"},
@@ -186,6 +189,16 @@ class Wan(unittest.TestCase):
         from pipeline import wan
         self.assertEqual(wan.parse_snap("42 250 1000 1200 9 17", 100), {"cpu_s": 2.5, "rss_kb": 1000, "hwm_kb": 1200, "threads": 9, "fds": 17})
         self.assertIsNone(wan.parse_snap("42 gone", 100))
+
+    def test_illegal_transitions_keep_their_names(self):
+        from pipeline import cell
+        body = """s5core_session_transitions_total{from="relay",illegal="false",region="protocol",to="half_closed",transport="plain"} 9
+s5core_session_transitions_total{from="closed",illegal="true",region="protocol",to="half_closed",transport="plain"} 2
+s5core_session_transitions_total{from="accepted",illegal="true",region="protocol",to="relay",transport="obfs"} 1
+"""
+        g = cell.parse_gauges(body)
+        self.assertEqual(g["illegal_transitions"], 3)
+        self.assertEqual(g["illegal_by"], {"protocol:closed->half_closed plain": 2, "protocol:accepted->relay obfs": 1})
 
     def test_ash_times(self):
         from pipeline import wan

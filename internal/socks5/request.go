@@ -445,7 +445,9 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	go func() { results <- relay.Result{ToDestination: true, Err: toDestination.Run()} }()
 	go func() { results <- relay.Result{Err: toClient.Run()} }()
 
+	torn := false
 	closeBoth := func() {
+		torn = true
 		cancel()
 		// Force-close connections to unblock the other goroutine
 		_ = target.Close()
@@ -480,6 +482,9 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 					firstErr = r.Err
 				}
 				closeBoth()
+			case torn:
+				// Both sides and the session are already closed: a half that
+				// ends cleanly now saw the teardown, not a half-close.
 			default:
 				sess.Enter(session.HalfClosed)
 			}

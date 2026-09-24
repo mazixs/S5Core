@@ -130,9 +130,12 @@ type socksPacketConn struct {
 // listenPacket binds to loopback only behind a SOCKS relay: a direct socket on
 // 127.0.0.1 cannot reach a remote origin, and the kernel drops what it sends.
 func listenPacket(ctx context.Context, socks string) (net.PacketConn, error) {
-	bind := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}
-	if socks == "" {
-		bind = nil
+	// A local proxy is answered on loopback only; a remote one needs a route out.
+	var bind *net.UDPAddr
+	if h, _, err := net.SplitHostPort(socks); err == nil {
+		if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+			bind = &net.UDPAddr{IP: ip}
+		}
 	}
 	udp, err := net.ListenUDP("udp", bind)
 	if err != nil {

@@ -8,6 +8,7 @@ always written to run.json, including when the cell is told to stop.
 import base64
 import json
 import os
+import re
 import resource
 import select
 import signal
@@ -137,9 +138,16 @@ def parse_gauges(body):
         if base in GAUGES or (base == "s5core_session_transitions_total" and 'illegal="true"' in name):
             key = "illegal_transitions" if base == "s5core_session_transitions_total" else base
             try:
-                out[key] = out.get(key, 0) + float(value)
+                v = float(value)
             except ValueError:
-                pass
+                continue
+            out[key] = out.get(key, 0) + v
+            if key == "illegal_transitions":
+                # The count alone does not say which driver is wrong; the labels do.
+                lb = dict(re.findall(r'(\w+)="([^"]*)"', name))
+                by = out.setdefault("illegal_by", {})
+                t = f"{lb.get('region', '?')}:{lb.get('from', '?')}->{lb.get('to', '?')} {lb.get('transport', '')}".strip()
+                by[t] = by.get(t, 0) + v
     return out
 
 

@@ -29,6 +29,9 @@ METRICS = [
     ("extra.loss_pct", "потери", "%", -1),
     ("slow_pct", "доля медленных", "%", -1),
     ("extra.background_MBps", "фоновая закачка", "MB/s", 1),
+    ("extra.jitter_ms", "джиттер", "ms", -1),
+    ("extra.spikes_per_hour", "рывки в час", "1/h", -1),
+    ("extra.breaks", "обрывы", "шт", -1),
 ]
 CELL_METRICS = [
     ("cpu_s", "CPU сервера и клиента", "s", -1),
@@ -298,9 +301,12 @@ def problems(p, cells):
         sess = (r.get("gauges_settled") or {}).get("s5core_sessions")
         if sess:
             out.append({"kind": "незакрытые сессии", "where": c["id"], "text": f"s5core_sessions = {sess:g} после паузы"})
-        ill = (r.get("gauges_settled") or {}).get("illegal_transitions", 0) - (r.get("gauges_before") or {}).get("illegal_transitions", 0)
+        after, before = r.get("gauges_settled") or {}, r.get("gauges_before") or {}
+        ill = after.get("illegal_transitions", 0) - before.get("illegal_transitions", 0)
         if ill:
-            out.append({"kind": "недопустимые переходы", "where": c["id"], "text": f"{ill:g} за замер"})
+            new = {t: v - (before.get("illegal_by") or {}).get(t, 0) for t, v in (after.get("illegal_by") or {}).items()}
+            which = ", ".join(f"{t} x{v:g}" for t, v in sorted(new.items()) if v)
+            out.append({"kind": "недопустимые переходы", "where": c["id"], "text": f"{ill:g} за замер" + (f": {which}" if which else "")})
         for proc in ("server", "client"):
             lc = r.get(f"{proc}_log") or {}
             if lc.get("ERROR") or lc.get("WARN"):

@@ -304,7 +304,9 @@ for f in {self.cd}/client.pid {self.cd}/gen.pid {self.cd}/warmup.pid; do kill_ou
         if doc:
             self.srv.put(f"{self.sd}/users.json", data=json.dumps(doc))
         self.srv.put(f"{self.sd}/server.env", data="".join(f"{k}={v}\n" for k, v in srv.items()))
-        self.cli.put(f"{self.cd}/client.env", data="".join(f"{k}={q(v)}\n" for k, v in cli.items()))
+        plain = sp["transport"] == "plain"
+        if not plain:
+            self.cli.put(f"{self.cd}/client.env", data="".join(f"{k}={q(v)}\n" for k, v in cli.items()))
         stage = self.spec["stage"]
         mem = self.w["server_memory_max"]
         self.started_server = True
@@ -323,6 +325,9 @@ echo FAIL; tail -n 1 {self.sd}/server.log""", timeout=PORT_WAIT + 30, check=Fals
             raise SetupFailed(f"server did not open {want} within {PORT_WAIT}s: {' '.join(out[1:]).strip()[:300]}")
         self.server_pid = int(out[0])
         self.check_stop()
+        # Plain SOCKS5 has no client: the generator talks to the server itself.
+        if plain:
+            return
         self.started_client = True
         out = self.cli.sh(LISTENING + NAP + f"""cd {q(self.cd)}
 (set -a; . ./client.env; set +a; exec nohup {self.w['client_dir']}/bin/{sp['variant']}/s5client > client.log 2>&1 < /dev/null) &
@@ -356,7 +361,9 @@ echo $rc > {name}.rc
         a = [f"{self.w['client_dir']}/bin/matrix", "-label", sp["id"], "-origin", f"{self.w['client_dir']}/origin.json",
              "-scenario-timeout", go_duration(budget or seconds(st["scenario_timeout"])),
              "-hang-grace", go_duration(grace or seconds(st["hang_grace"])), "-max-errors-in-row", str(st["max_errors_in_row"])]
-        if not sp["direct"]:
+        if sp["transport"] == "plain":
+            a += ["-socks", f"{self.w['server_ip']}:{PORTS['plain']}"]
+        elif not sp["direct"]:
             a += ["-socks", f"127.0.0.1:{PORTS['client']}"]
         return a
 
