@@ -22,7 +22,7 @@
 | Implementation decisions | [Session state](design/session-fsm.md), [half-close](design/half-close.md), [decoy](design/decoy.md), [observability](design/observability-policy.md) |
 | Deployment and migration on real paths | [Migration](field/migration.md), [stealth](field/stealth.md), [mihomo](field/mihomo.md) |
 | Acceptance gates | [Gate index](gates/README.md) |
-| Open work | [Known defects](fix-plan.md), [backlog](backlog.md), [MIPS client](plan/mips.md) |
+| Open work | [Known defects](fix-plan.md), [backlog](backlog.md), [MIPS client](plan/mips.md), [game sessions](plan/gaming.md) |
 | Historical investigations | [Reports](reports/), [plans](plan/README.md), [archive](archive/) |
 
 Reports, plans and archives describe the state at their recorded date. They are

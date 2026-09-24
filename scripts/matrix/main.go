@@ -28,6 +28,10 @@ type scenario struct {
 	run  func() stats
 }
 
+// optIn scenarios run only when a filter names them: an hour-long session
+// does not belong in a plan that did not ask for it.
+const optIn = "game/"
+
 func main() {
 	socks := flag.String("socks", "", "SOCKS5 address; empty measures directly")
 	label := flag.String("label", "direct", "name of this run")
@@ -52,6 +56,9 @@ func main() {
 	suite := p.suite(*scale)
 	var chosen []scenario
 	for _, s := range suite {
+		if strings.HasPrefix(s.name, optIn) && *only == "" {
+			continue
+		}
 		if *only == "" || slices.ContainsFunc(strings.Split(*only, ","), func(f string) bool { return matches(s.name, f) }) {
 			chosen = append(chosen, s)
 		}
@@ -159,6 +166,8 @@ func (p *prober) suite(scale float64) []scenario {
 		{"udp/sweep-10mbit", func() stats { return p.udpStream(sweepN(10), 1200, 10) }},
 		{"udp/sweep-20mbit", func() stats { return p.udpStream(sweepN(20), 1200, 20) }},
 		{"udp/sweep-40mbit", func() stats { return p.udpStream(sweepN(40), 1200, 40) }},
+		// An hour at scale 1 of 64 ticks a second, 200 bytes each way (game.go).
+		{"game/64hz-200b", func() stats { return p.game(n(64*3600), 64, 200) }},
 	}
 }
 

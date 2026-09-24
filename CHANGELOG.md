@@ -24,12 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instructions the client picks ChaCha, so three tests failed or hung there
   while passing in CI. They now accept both ciphers like a real server, and a
   new test connects with each one, so the gap shows up on AES hardware too.
+- A relay half that ended cleanly after the other half had failed tried to
+  move the session from `closed` to `half_closed`. The state table refused the
+  move and counted it in `s5core_session_transitions_total{illegal="true"}`.
+  A benchmark hour caught one such refusal among idle connections cut by
+  `READ_TIMEOUT`. Nothing changed on the wire, because the connection was
+  already closed, but the counter reported a driver bug that was real.
 
 ### Tooling
 
 - `scripts/pre-commit.sh` builds every target listed in the release workflow,
   reading them from `.github/workflows/release.yml`, so a build that breaks on
   one of them fails before a tag instead of in the release job.
+- `scripts/matrix` has a game session scenario, `game/64hz-200b`: one hour of
+  64 Hz UDP with a direct stream running at the same time as control. It runs
+  only when named. Plain SOCKS5 now runs in WAN mode too (real UDP through
+  `0x03`, behind the stand's IP filter), and the report names each illegal
+  session transition instead of only counting them.
 
 ## [2.2.0] - 2026-09-24
 

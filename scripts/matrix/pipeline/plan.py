@@ -166,8 +166,6 @@ def resolve(raw, base_dir):
         for t in ts:
             if t not in TRANSPORTS:
                 raise PlanError(f"{where}: transport {t!r} - one of {', '.join(TRANSPORTS)}")
-            if t == "plain" and net == "wan":
-                raise PlanError(f"{where}: plain SOCKS5 does not cross the internet in a benchmark")
             if t == "plain" and st["auth"] != ["none"]:
                 raise PlanError(f"{where}: plain SOCKS5 runs only with auth = 'none' (the generator does not send a password)")
         rounds = int(s.get("rounds", 1))

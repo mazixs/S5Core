@@ -36,6 +36,7 @@ type stats struct {
 	Aborted  string             `json:"aborted,omitempty"`
 	Extra    map[string]float64 `json:"extra,omitempty"`
 	FirstErr string             `json:"first_error,omitempty"`
+	Series   []gameWindow       `json:"series,omitempty"`
 }
 
 // sample collects one metric of a scenario. An operation that fails because
