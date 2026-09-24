@@ -343,7 +343,7 @@ func (p *prober) game(n, hz, size int) stats {
 	g := newGameStream(p, p.socks, n, hz, size)
 	var ctl *gameStream
 	var streams, idle sync.WaitGroup
-	if p.socks != "" {
+	if p.socks != "" && p.control {
 		ctl = newGameStream(p, "", n, hz, size)
 		streams.Go(func() { ctl.run(ctx) })
 	}

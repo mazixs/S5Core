@@ -1,0 +1,103 @@
+# Game session on a lossy client-server leg: how UDP-over-TCP (0x83, obfs and wss)
+# degrades against native UDP (plain SOCKS5, 0x03) and the path without a proxy.
+# RTT 50 ms as on the measured field node, random loss 0-5% and outages in time
+# (a fade drops everything for a spell; loss_pct is then the share of time).
+# Ten minutes per cell. The series form one group: all 32 cells run at once,
+# unpinned, since a 64 Hz stream loads a core by a few percent. About 12 minutes.
+name = "game-loss"
+description = "игровая сессия под потерями: 0x83 против нативного UDP"
+base = "cur"
+candidate = "cur"
+
+[defaults]
+auth = "none"
+scale = 0.16666667
+scenario_timeout = "13m"
+hang_grace = "1m"
+settle = "3s"
+retries = 1
+sample_s = 60
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.cur]
+ref = "worktree"
+title = "рабочее дерево"
+
+[guard]
+max_foreign_cores = 4.0
+load_wait = "120s"
+
+[[series]]
+name = "clean"
+title = "RTT 50 мс, без потерь"
+network = { rtt_ms = 50, loss_pct = 0 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss05"
+title = "RTT 50 мс, потери 0,5%"
+network = { rtt_ms = 50, loss_pct = 0.5 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss1"
+title = "RTT 50 мс, потери 1%"
+network = { rtt_ms = 50, loss_pct = 1 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss2"
+title = "RTT 50 мс, потери 2%"
+network = { rtt_ms = 50, loss_pct = 2 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss5"
+title = "RTT 50 мс, потери 5%"
+network = { rtt_ms = 50, loss_pct = 5 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade1"
+title = "RTT 50 мс, провалы по 30 мс, 1% времени"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 30 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade3"
+title = "RTT 50 мс, провалы по 30 мс, 3% времени"
+network = { rtt_ms = 50, loss_pct = 3, loss_outage_ms = 30 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade200"
+title = "RTT 50 мс, провалы по 200 мс, 1% времени"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 200 }
+transports = ["plain", "obfs", "wss"]
+compare = []
+group = "loss"
+only = ["=game/64hz-200b"]

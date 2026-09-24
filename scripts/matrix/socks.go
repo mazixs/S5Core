@@ -77,12 +77,26 @@ func readReply(c net.Conn) (*net.UDPAddr, error) {
 	return &net.UDPAddr{IP: ip, Port: int(binary.BigEndian.Uint16(p[:]))}, nil
 }
 
+// proxySource is the local address of every connection to the proxy, TCP and
+// UDP, so netem can tell the client-proxy leg from the proxy-origin one; nil
+// leaves the choice to the kernel.
+var proxySource net.IP
+
+func proxyDialer() *net.Dialer {
+	d := &net.Dialer{}
+	if proxySource != nil {
+		d.LocalAddr = &net.TCPAddr{IP: proxySource}
+	}
+	return d
+}
+
 // dialer returns a TCP dial function: direct when socks is empty.
 func dialer(socks string) func(ctx context.Context, network, addr string) (net.Conn, error) {
-	var d net.Dialer
 	if socks == "" {
+		var d net.Dialer
 		return d.DialContext
 	}
+	d := proxyDialer()
 	return func(ctx context.Context, _, addr string) (net.Conn, error) {
 		c, err := d.DialContext(ctx, "tcp", socks)
 		if err != nil {
@@ -136,6 +150,10 @@ func listenPacket(ctx context.Context, socks string) (net.PacketConn, error) {
 		if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
 			bind = &net.UDPAddr{IP: ip}
 		}
+		// The server takes datagrams only from the address of the control connection.
+		if proxySource != nil {
+			bind = &net.UDPAddr{IP: proxySource}
+		}
 	}
 	udp, err := net.ListenUDP("udp", bind)
 	if err != nil {
@@ -146,8 +164,7 @@ func listenPacket(ctx context.Context, socks string) (net.PacketConn, error) {
 	if socks == "" {
 		return udp, nil
 	}
-	var d net.Dialer
-	ctl, err := d.DialContext(ctx, "tcp", socks)
+	ctl, err := proxyDialer().DialContext(ctx, "tcp", socks)
 	if err != nil {
 		_ = udp.Close()
 		return nil, err

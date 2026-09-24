@@ -46,6 +46,10 @@ def net_title(net):
     if net == "wan":
         return "WAN: сервер и клиент на удаленных машинах"
     parts = [f"RTT {net['rtt_ms']:g} мс", f"потери {net['loss_pct']:g}%"]
+    if net.get("loss_burst", 1) > 1:
+        parts[-1] += f" пачками по {net['loss_burst']:g} пакета"
+    if net.get("loss_outage_ms"):
+        parts[-1] += f" времени, провалы по {net['loss_outage_ms']:g} мс"
     if net["rate_mbit"]:
         parts.append(f"{net['rate_mbit']:g} Мбит/с")
     return "netem: " + ", ".join(parts)

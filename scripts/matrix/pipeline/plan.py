@@ -10,8 +10,11 @@ from .util import cpu_list, seconds
 
 TRANSPORTS = ("plain", "obfs", "wss")
 AUTHS = ("none", "member", "password", "fallback")
-# The server port a transport's client-server leg uses; netem shapes only it.
-TUNNEL_PORT = {"plain": 41080, "obfs": 41443, "wss": 41444}
+# The server port a tunnel's client-server leg uses; netem shapes only it.
+TUNNEL_PORT = {"obfs": 41443, "wss": 41444}
+# Plain SOCKS5 is shaped by the generator's address instead: its UDP relay port
+# is chosen per association, and a port filter would leave the datagrams out.
+CLIENT_IP = "127.0.0.2"
 
 DEFAULTS = {
     "auth": "member",
@@ -42,7 +45,7 @@ WAN = {"server": None, "client": None, "server_ip": None, "server_arch": "amd64"
        "server_dir": "/root/s5bench", "client_dir": "/opt/tmp/s5bench", "server_memory_max": "300M",
        "origin_memory_max": "256M", "max_foreign_cores": 0}
 ARCHES = ("amd64", "arm64", "arm", "386", "mipsle", "mips")
-SERIES_KEYS = {"name", "title", "network", "variants", "transports", "rounds", "only", "kind", "env", "compare"} | set(DEFAULTS)
+SERIES_KEYS = {"name", "title", "network", "variants", "transports", "rounds", "only", "kind", "env", "compare", "group"} | set(DEFAULTS)
 VARIANT_KEYS = {"direct", "ref", "patch", "env", "title"}
 
 
@@ -155,9 +158,20 @@ def resolve(raw, base_dir):
         if net == "wan" and not wan:
             raise PlanError(f"{where}: network = 'wan' needs a [wan] section")
         if net not in ("loopback", "wan"):
-            if not isinstance(net, dict) or set(net) - {"rtt_ms", "loss_pct", "rate_mbit"}:
-                raise PlanError(f"{where}: network is 'loopback', 'wan' or {{rtt_ms, loss_pct, rate_mbit}}")
-            net = {"rtt_ms": float(net.get("rtt_ms", 0)), "loss_pct": float(net.get("loss_pct", 0)), "rate_mbit": float(net.get("rate_mbit", 0))}
+            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms"}
+            if not isinstance(net, dict) or set(net) - keys:
+                raise PlanError(f"{where}: network is 'loopback', 'wan' or {{{', '.join(sorted(keys))}}}")
+            n = {"rtt_ms": float(net.get("rtt_ms", 0)), "loss_pct": float(net.get("loss_pct", 0)), "rate_mbit": float(net.get("rate_mbit", 0))}
+            # Only when set: an absent key keeps the hash of plans written before it.
+            if "loss_burst" in net:
+                n["loss_burst"] = float(net["loss_burst"])
+                if n["loss_burst"] < 1 or not 0 < n["loss_pct"] < 100:
+                    raise PlanError(f"{where}: loss_burst is a mean burst of at least 1 packet and needs 0 < loss_pct < 100")
+            if "loss_outage_ms" in net:
+                n["loss_outage_ms"] = float(net["loss_outage_ms"])
+                if n["loss_outage_ms"] <= 0 or not 0 < n["loss_pct"] < 100 or "loss_burst" in net:
+                    raise PlanError(f"{where}: loss_outage_ms is a mean outage above 0 ms, needs 0 < loss_pct < 100 and excludes loss_burst")
+            net = n
         vs = s.get("variants", list(variants))
         for v in vs:
             if v not in variants:
@@ -178,7 +192,14 @@ def resolve(raw, base_dir):
         if isinstance(only, str):
             only = [x for x in only.split(",") if x]
         tunnel = [v for v in vs if not variants[v]["direct"]]
-        if net not in ("loopback", "wan"):
+        group = s.get("group")
+        if group is not None:
+            if not isinstance(group, str) or not group or "/" in group:
+                raise PlanError(f"{where}: group is a name without '/'")
+            if net in ("loopback", "wan"):
+                raise PlanError(f"{where}: only netem series run as a group")
+        # A group runs unpinned: its cells share the machine, not CPU sets.
+        if net not in ("loopback", "wan") and group is None:
             if any(variants[v]["direct"] for v in vs) and "raw" not in cpus:
                 raise PlanError(f"{where}: a netem series with a direct variant needs cpus.raw")
             for t in ts:
@@ -196,7 +217,18 @@ def resolve(raw, base_dir):
             "name": name, "title": s.get("title", name), "network": net, "variants": vs, "transports": ts,
             "rounds": rounds, "only": only, "kind": kind, "settings": st, "compare": compare,
             "env": _merge_env(env, _env(s.get("env"), where)),
+            # Only when set: an absent key keeps the hash of plans written before it.
+            **({"group": group} if group else {}),
         })
+    groups = {}
+    for s in series:
+        if "group" in s:
+            groups.setdefault(s["group"], set()).add(s["rounds"])
+    for g, rounds in groups.items():
+        if g in names:
+            raise PlanError(f"group {g!r} has the name of a series")
+        if len(rounds) > 1:
+            raise PlanError(f"group {g}: its series need the same number of rounds")
     plan = {
         "name": raw["name"], "description": raw.get("description", ""), "base": raw["base"], "candidate": raw["candidate"],
         "variants": variants, "cpus": cpus, "guard": guard, "series": series,
@@ -245,8 +277,10 @@ def expand(plan, only_series=None):
     """Batches in run order. A batch is the unit that runs at once and is
     retried or resumed whole: a netem round (its cells share the machine) or a
     single loopback cell. A netem round with more tunnel cells than CPU sets
-    runs one auth mode at a time, so the variants it compares stay concurrent."""
-    batches = []
+    runs one auth mode at a time, so the variants it compares stay concurrent.
+    The netem series of one group share a batch per round and run unpinned:
+    for light scenarios, where running them one by one only costs time."""
+    batches, grouped = [], {}
     for s in plan["series"]:
         if only_series and s["name"] not in only_series:
             continue
@@ -254,6 +288,16 @@ def expand(plan, only_series=None):
         direct = [v for v in s["variants"] if plan["variants"][v]["direct"]]
         tunnel = [v for v in s["variants"] if not plan["variants"][v]["direct"]]
         auths = s["settings"]["auth"]
+        if "group" in s:
+            g = s["group"]
+            if g not in grouped:
+                grouped[g] = [{"id": f"{g}/r{r}", "series": g, "round": r, "cells": []} for r in range(1, s["rounds"] + 1)]
+                batches += grouped[g]
+            for b in grouped[g]:
+                r = b["round"]
+                b["cells"] += [_cell(plan, s, v, "direct", "none", r, None) for v in direct]
+                b["cells"] += [_cell(plan, s, v, t, a, r, None) for t in s["transports"] for v in tunnel for a in auths]
+            continue
         for r in range(1, s["rounds"] + 1):
             if not netem:
                 # WAN cells run one at a time too; their CPUs are on the remote hosts.
@@ -295,7 +339,7 @@ def _cell(plan, s, variant, transport, auth, rnd, cpus):
     net = s["network"]
     scope = None
     if net not in ("loopback", "wan"):
-        scope = "all" if direct else TUNNEL_PORT[transport]
+        scope = "all" if direct else CLIENT_IP if transport == "plain" else TUNNEL_PORT[transport]
     return {
         "id": cell_id(s["name"], variant, transport, auth, rnd, direct),
         "series": s["name"], "variant": variant, "transport": transport, "auth": auth if not direct else "none",
