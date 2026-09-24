@@ -60,6 +60,36 @@ the client's default local port 1080. If another service occupies 1080, set
 `CLIENT_LISTEN_ADDR=127.0.0.1:1081` and use port 1081 in the client test.
 Windows and system-wide routing: [client/VPN guide](#windows-full-tunnel-s5vpn-winps1).
 
+### s5client on a router
+
+Pick the binary by the package architecture, not by `uname -m`: a MIPS kernel
+reports `mips` for both byte orders. On Keenetic (Entware) and OpenWrt run
+`opkg print-architecture`:
+
+| Architecture it lists | Binary | Status |
+|---|---|---|
+| `aarch64-*` | `s5client-linux-arm64` | Measured: [ARM router](../benchmarks/arm-router.md) |
+| `mipsel*` (`mipselsf-k3.4`, `mipsel_24kc`) | `s5client-linux-mipsle-softfloat` | Experimental |
+| `mips*` without `el` (`mipssf-k3.4`, `mips_24kc`) | `s5client-linux-mips-softfloat` | Experimental |
+
+The MIPS builds exist for compatibility with routers such as MT7621 and MT7628
+models, which have neither an FPU nor AES instructions; `softfloat` is what
+keeps the client off the kernel's floating-point emulation. They pass the
+client's tests under emulation and interoperate with an amd64 server, but they
+**have not been measured on MIPS hardware**, and nothing about their
+throughput, latency or CPU load is guaranteed. Plan for the worst case: tens
+of Mbit/s rather than hundreds, and the tunnel competing with the router's own
+work for the CPU. Go has no assembly for either cipher on MIPS, so the client
+runs ChaCha20-Poly1305 in pure Go - it picks it by itself, as it does on any
+processor without AES instructions, and the server needs no setting for it.
+Whether a lighter cipher is worth adding is an open question until there are
+numbers from real hardware ([work plan](../plan/mips.md)).
+
+On a router with 128 MB of RAM or less, cap the Go heap so the client gives
+memory back before the router runs short: `GOMEMLIMIT=32MiB GOGC=50` cost
+nothing measurable on the ARM router with 200 connections (22-25 MB RSS), and
+on MIPS it has not been measured either.
+
 ### Timing tests run on a fake clock
 
 Read and write timeouts default to 30 seconds, so checking them the obvious way

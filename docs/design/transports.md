@@ -103,6 +103,16 @@ the frame is the same shape and the same size under either one - which is what
 makes the choice free to make. `OBFS_CIPHER` pins it if you want to measure
 the other one.
 
+MIPS routers are the case neither measurement covers. Their cores have no AES
+instructions, and Go has no assembly for AES, ChaCha20 or Poly1305 on MIPS, so
+the client picks ChaCha20-Poly1305 by the same rule and runs it in pure Go.
+The MIPS builds are experimental: nothing about their speed, latency or CPU
+load has been measured or is promised
+([guide](../guides/testing.md#s5client-on-a-router)). A lighter cipher would
+be a new value in the prologue context, which servers have to learn before
+clients use it, so it waits for numbers from real hardware
+([work plan](../plan/mips.md)).
+
 #### Who is calling, before the first frame
 
 An account can carry a key of its own (`tunnel_key` in `users.json`). A client

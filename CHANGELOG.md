@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Experimental `s5client` builds for MIPS routers (MT7621, MT7628 and
+  similar): `s5client-linux-mipsle-softfloat` and
+  `s5client-linux-mips-softfloat`. They have no FPU and no AES instructions,
+  so the client takes ChaCha20-Poly1305 by itself and runs it in pure Go. The
+  builds pass the client's tests under emulation and talk to an amd64 server,
+  but speed, latency and CPU load have not been measured on MIPS hardware and
+  are not guaranteed. No server setting is needed. How to pick the binary:
+  [router guide](docs/guides/testing.md#s5client-on-a-router).
+
+### Fixed
+
+- The client's test servers accepted AES only. On a processor without AES
+  instructions the client picks ChaCha, so three tests failed or hung there
+  while passing in CI. They now accept both ciphers like a real server, and a
+  new test connects with each one, so the gap shows up on AES hardware too.
+
+### Tooling
+
+- `scripts/pre-commit.sh` builds every target listed in the release workflow,
+  reading them from `.github/workflows/release.yml`, so a build that breaks on
+  one of them fails before a tag instead of in the release job.
+
 ## [2.2.0] - 2026-09-24
 
 ### Upgrade notes

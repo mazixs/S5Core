@@ -57,7 +57,7 @@ func TestMemberOnlySavesOneGreetingRTT(t *testing.T) {
 						if e != nil {
 							t.Fatal(e)
 						}
-						server, e := obfs.NewServerConn(&greetingDelayConn{Conn: remote, delay: rtt}, obfs.Config{PSK: []byte(cfg.PSK), Scheme: &veil.Roster{Members: directory}})
+						server, e := obfs.NewServerConn(&greetingDelayConn{Conn: remote, delay: rtt}, obfs.Config{PSK: []byte(cfg.PSK), Scheme: &veil.Roster{Clocked: veil.Clocked{Accepts: everyCipher()}, Members: directory}})
 						if e != nil {
 							t.Fatal(e)
 						}
@@ -132,7 +132,7 @@ func TestMemberOnlyRejectsUnusableServer(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				server, e := obfs.NewServerConn(remote, obfs.Config{PSK: []byte(cfg.PSK), Scheme: &veil.Roster{Members: directory}})
+				server, e := obfs.NewServerConn(remote, obfs.Config{PSK: []byte(cfg.PSK), Scheme: &veil.Roster{Clocked: veil.Clocked{Accepts: everyCipher()}, Members: directory}})
 				if e != nil {
 					t.Fatal(e)
 				}

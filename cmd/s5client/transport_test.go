@@ -13,6 +13,7 @@ import (
 	"github.com/mazixs/S5Core/internal/buildinfo"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
+	"github.com/mazixs/S5Core/pkg/veil"
 )
 
 // Plan task Ф5-7, the client's half: "the transport profile of a client in
@@ -297,6 +298,9 @@ func startAdvisingServer(t *testing.T, psk string, serverCfg obfs.Config) string
 
 	serverCfg.PSK = []byte(psk)
 	serverCfg.MTU = 1400
+	if serverCfg.Scheme == nil {
+		serverCfg.Scheme = &veil.Clocked{Accepts: everyCipher()}
+	}
 	go func() {
 		for {
 			raw, err := ln.Accept()

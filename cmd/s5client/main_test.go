@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mazixs/S5Core/pkg/obfs"
+	"github.com/mazixs/S5Core/pkg/veil"
 )
 
 func TestMatchDomain(t *testing.T) {
@@ -262,8 +263,9 @@ func startTestObfsServer(t *testing.T, psk string, handler func(t *testing.T, co
 		defer rawConn.Close()
 
 		conn, err := obfs.NewServerConn(rawConn, obfs.Config{
-			PSK: []byte(psk),
-			MTU: 1400,
+			PSK:    []byte(psk),
+			MTU:    1400,
+			Scheme: &veil.Clocked{Accepts: everyCipher()},
 		})
 		if err != nil {
 			t.Errorf("obfs.NewConn: %v", err)
@@ -380,5 +382,52 @@ func TestSocks5Handshake_EveryFragmentation(t *testing.T) {
 			t.Fatalf("split after byte %d: parsed cmd=%d fqdn=%q req=%v",
 				at, cmd, fqdn, req)
 		}
+	}
+}
+
+// everyCipher is what a real server accepts (obfsScheme in pkg/s5server). A
+// test server without it takes AES only, and on a machine without AES
+// instructions - MIPS, ARM without the crypto extensions - the client picks
+// ChaCha and the test fails or hangs.
+func everyCipher() []veil.Context {
+	var accepts []veil.Context
+	for _, c := range veil.Ciphers() {
+		accepts = append(accepts, veil.Context{Cipher: c})
+	}
+	return accepts
+}
+
+// CI runs on AES hardware, so without this a test server that went back to
+// AES only would pass there and fail on every router the client is built for.
+func TestTheClientConnectsWithEitherCipher(t *testing.T) {
+	const psk = "01234567890123456789012345678901"
+	connectReq := []byte{0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0x01, 0xbb}
+
+	for _, cipher := range veil.Ciphers() {
+		t.Run(string(cipher), func(t *testing.T) {
+			addr, done := startTestObfsServer(t, psk, func(t *testing.T, conn net.Conn) {
+				if _, err := io.ReadFull(conn, make([]byte, 3+len(connectReq))); err != nil {
+					t.Errorf("read greeting and CONNECT: %v", err)
+					return
+				}
+				if _, err := conn.Write([]byte{0x05, 0x00, 0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0}); err != nil {
+					t.Errorf("write replies: %v", err)
+				}
+			})
+			defer done()
+
+			obfsConn, err := dialObfsTunnel(clientParams{
+				ServerAddr:       addr,
+				PSK:              psk,
+				MTU:              1400,
+				Cipher:           string(cipher),
+				DialTimeout:      5 * time.Second,
+				HandshakeTimeout: 5 * time.Second,
+			}, connectReq)
+			if err != nil {
+				t.Fatalf("dialObfsTunnel: %v", err)
+			}
+			_ = obfsConn.Close()
+		})
 	}
 }
