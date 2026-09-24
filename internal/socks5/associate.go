@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -142,8 +143,9 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		defer workers.Done()
 		buf := make([]byte, 65535)
 		meter := newUDPMeter(acct)
-		dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest *net.UDPAddr) bool {
-			nw, err := targetConn.WriteToUDP(payload, dest)
+		question := newDatagramQuestion(req)
+		dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+			nw, err := targetConn.WriteToUDPAddrPort(payload, dest)
 			if err != nil || nw <= 0 {
 				return true
 			}
@@ -186,15 +188,15 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 
 			// Parse SOCKS5 UDP header
 			// IMPORTANT: copy the IP out of buf before reuse
-			hdrLen, dstAddr, err := ParseUDPHeader(buf[:n])
+			hdrLen, err := parseUDPHeaderInto(buf[:n], &question.dest)
 			if err != nil {
 				s.config.Logger.Warn("socks: invalid UDP header from client", "error", err)
 				continue
 			}
 
-			if !s.allowDatagram(ctx, req, dstAddr) {
+			if !s.allowDatagram(ctx, question) {
 				s.config.Logger.Debug("socks: udp datagram blocked by rules",
-					"destination", dstAddr.String())
+					"destination", question.dest.String())
 				continue
 			}
 
@@ -207,7 +209,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 			copy(addrCopy.IP, rAddr.IP)
 			clientUDPAddrPtr.Store(addrCopy)
 
-			dispatcher.submit(dstAddr, buf[hdrLen:n])
+			dispatcher.submit(&question.dest, buf[hdrLen:n])
 		}
 	}()
 
@@ -298,17 +300,33 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 // The context the rules return is dropped. A rule set may thread values
 // through a connection's context; a datagram is not a connection, and
 // carrying that forward would accumulate one layer per packet.
-func (s *Server) allowDatagram(ctx context.Context, req *Request, dst *AddrSpec) bool {
-	probe := &Request{
+func (s *Server) allowDatagram(ctx context.Context, q *datagramQuestion) bool {
+	_, allowed := s.config.Rules.Allow(ctx, &q.req)
+	return allowed
+}
+
+// datagramQuestion is the Request allowDatagram puts to the rules, made once
+// per association. A RuleSet is an interface, so whatever it is handed escapes,
+// and a Request built per datagram was an allocation per packet. Only the
+// destination changes from one datagram to the next, and the header is parsed
+// straight into it. It belongs to the one goroutine that reads the
+// association's datagrams, and the rules are asked synchronously, so nothing
+// sees it change.
+type datagramQuestion struct {
+	req  Request
+	dest AddrSpec
+}
+
+func newDatagramQuestion(req *Request) *datagramQuestion {
+	q := &datagramQuestion{req: Request{
 		Version:     Socks5Version,
 		Command:     req.Command,
 		AuthContext: req.AuthContext,
 		RemoteAddr:  req.RemoteAddr,
-		DestAddr:    dst,
 		Datagram:    true,
-	}
-	_, allowed := s.config.Rules.Allow(ctx, probe)
-	return allowed
+	}}
+	q.req.DestAddr = &q.dest
+	return q
 }
 
 // udpPollInterval is how long a UDP read waits before looking at done. It is
@@ -491,6 +509,10 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		return err
 	}
 
+	if s.config.OnUDPTunnel != nil {
+		s.config.OnUDPTunnel(tcpConn)
+	}
+
 	// The same accounting the RFC 1928 path gets. It used to have none at
 	// all: a client that asked for 0x83 transferred for free, and the
 	// account's quota and expiry never touched the association (F03).
@@ -569,7 +591,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			default:
 			}
 
-			n, rAddr, err := udpConn.ReadFromUDP(buf)
+			n, rAddr, err := udpConn.ReadFromUDPAddrPort(buf)
 			if err != nil {
 				if isTimeout(err) {
 					continue
@@ -583,7 +605,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			// then copied in here, which is an allocation and a copy of the
 			// whole datagram per packet (plan task Ф6-5).
 			framePtr := udpBufPool.Get().(*[]byte)
-			frame := AppendUDPHeaderFromAddr((*framePtr)[:2], rAddr)
+			frame := AppendUDPHeaderFromAddrPort((*framePtr)[:2], rAddr)
 			frame = append(frame, buf[:n]...)
 			binary.BigEndian.PutUint16(frame[0:2], uint16(len(frame)-2))
 
@@ -606,8 +628,9 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	go func() {
 		defer halves.Done()
 		meter := newUDPMeter(acct)
-		dispatcher := newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest *net.UDPAddr) bool {
-			nw, err := udpConn.WriteToUDP(payload, dest)
+		question := newDatagramQuestion(req)
+		dispatcher := newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+			nw, err := udpConn.WriteToUDPAddrPort(payload, dest)
 			if err != nil {
 				return true
 			}
@@ -650,21 +673,21 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 				return
 			}
 
-			hdrLen, dstAddr, err := ParseUDPHeader(frameBuf)
+			hdrLen, err := parseUDPHeaderInto(frameBuf, &question.dest)
 			if err != nil {
 				udpBufPool.Put(framePtr)
 				s.config.Logger.Warn("socks: invalid udp-tcpmux header", "error", err)
 				continue
 			}
 
-			if !s.allowDatagram(ctx, req, dstAddr) {
+			if !s.allowDatagram(ctx, question) {
 				udpBufPool.Put(framePtr)
 				s.config.Logger.Debug("socks: udp-tcpmux datagram blocked by rules",
-					"destination", dstAddr.String())
+					"destination", question.dest.String())
 				continue
 			}
 
-			dispatcher.submit(dstAddr, frameBuf[hdrLen:])
+			dispatcher.submit(&question.dest, frameBuf[hdrLen:])
 			udpBufPool.Put(framePtr)
 		}
 	}()

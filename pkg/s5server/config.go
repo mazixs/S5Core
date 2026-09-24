@@ -123,6 +123,13 @@ type Config struct {
 	WSMaxFrame  int           // maximum WS frame payload size
 	WSMaxJitter time.Duration // max per-frame jitter (default 0)
 
+	// UDPTunnelTCPTuningOff keeps the kernel's own retransmission timer on
+	// the connections of UDP-over-TCP tunnels (command 0x83). By default
+	// those sockets retransmit sooner and do not double the wait on repeated
+	// loss (internal/tcptune), because every datagram behind a lost segment
+	// waits for that timer. The switch is for a path where it turns out worse.
+	UDPTunnelTCPTuningOff bool
+
 	// Multi-account settings
 	UsersFile            string        // Path to JSON file with user accounts
 	TrafficFlushInterval time.Duration // Interval for flushing traffic counters to disk

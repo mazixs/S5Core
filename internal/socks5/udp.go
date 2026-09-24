@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"net/netip"
 )
 
 // errFragmentedDatagram is what a datagram gets for asking to be reassembled.
@@ -22,13 +23,26 @@ var errFragmentedDatagram = fmt.Errorf("fragmented datagrams are not supported")
 //	| 2  |  1   |  1   | Variable |    2     | Variable |
 //	+----+------+------+----------+----------+----------+
 func ParseUDPHeader(payload []byte) (headerLen int, dstAddr *AddrSpec, err error) {
+	addr := &AddrSpec{}
+	if headerLen, err = parseUDPHeaderInto(payload, addr); err != nil {
+		return 0, nil, err
+	}
+	return headerLen, addr, nil
+}
+
+// parseUDPHeaderInto is ParseUDPHeader into an AddrSpec the caller holds, which
+// is how the relay parses: one AddrSpec per association instead of one on the
+// heap per datagram. The IP it sets points into payload. A name equal to the
+// one addr already holds is kept rather than copied again, so a stream of
+// datagrams to one name costs no allocation either.
+func parseUDPHeaderInto(payload []byte, addr *AddrSpec) (int, error) {
 	if len(payload) < 4 {
-		return 0, nil, fmt.Errorf("udp payload too short")
+		return 0, fmt.Errorf("udp payload too short")
 	}
 
 	// Reserved MUST be 0x0000
 	if payload[0] != 0x00 || payload[1] != 0x00 {
-		return 0, nil, fmt.Errorf("invalid reserved bytes in udp header")
+		return 0, fmt.Errorf("invalid reserved bytes in udp header")
 	}
 
 	// FRAG is refused rather than ignored (audit finding F18). RFC 1928,
@@ -43,45 +57,50 @@ func ParseUDPHeader(payload []byte) (headerLen int, dstAddr *AddrSpec, err error
 	// being sloppy - it asks for reassembly this server will never do.
 	// Dropping it makes the client's own timeout report the truth.
 	if payload[2] != 0x00 {
-		return 0, nil, fmt.Errorf("%w: FRAG is %#x", errFragmentedDatagram, payload[2])
+		return 0, fmt.Errorf("%w: FRAG is %#x", errFragmentedDatagram, payload[2])
 	}
 
 	atyp := payload[3]
-	addr := &AddrSpec{}
-	headerLen = 4 // RSV(2) + FRAG(1) + ATYP(1)
+	lastName := addr.FQDN
+	*addr = AddrSpec{}
+	headerLen := 4 // RSV(2) + FRAG(1) + ATYP(1)
 
 	switch atyp {
 	case ipv4Address:
 		if len(payload) < headerLen+4+2 {
-			return 0, nil, fmt.Errorf("udp payload too short for ipv4")
+			return 0, fmt.Errorf("udp payload too short for ipv4")
 		}
 		addr.IP = net.IP(payload[headerLen : headerLen+4])
 		headerLen += 4
 	case ipv6Address:
 		if len(payload) < headerLen+16+2 {
-			return 0, nil, fmt.Errorf("udp payload too short for ipv6")
+			return 0, fmt.Errorf("udp payload too short for ipv6")
 		}
 		addr.IP = net.IP(payload[headerLen : headerLen+16])
 		headerLen += 16
 	case fqdnAddress:
 		if len(payload) < headerLen+1 {
-			return 0, nil, fmt.Errorf("udp payload too short for domain length")
+			return 0, fmt.Errorf("udp payload too short for domain length")
 		}
 		domainLen := int(payload[headerLen])
 		if len(payload) < headerLen+1+domainLen+2 {
-			return 0, nil, fmt.Errorf("udp payload too short for domain")
+			return 0, fmt.Errorf("udp payload too short for domain")
 		}
-		addr.FQDN = string(payload[headerLen+1 : headerLen+1+domainLen])
+		if name := payload[headerLen+1 : headerLen+1+domainLen]; string(name) == lastName {
+			addr.FQDN = lastName
+		} else {
+			addr.FQDN = string(name)
+		}
 		headerLen += 1 + domainLen
 	default:
-		return 0, nil, errUnrecognizedAddrType
+		return 0, errUnrecognizedAddrType
 	}
 
 	// Port
 	addr.Port = int(binary.BigEndian.Uint16(payload[headerLen : headerLen+2]))
 	headerLen += 2
 
-	return headerLen, addr, nil
+	return headerLen, nil
 }
 
 // udpHeaderLen is how many bytes the header for src takes: RSV(2) + FRAG(1)
@@ -122,20 +141,33 @@ func AppendAddr(dst []byte, a *AddrSpec) []byte {
 	if a == nil {
 		return append(dst, ipv4Address, 0, 0, 0, 0, 0, 0)
 	}
-	switch {
-	case a.FQDN != "":
+	if a.FQDN != "" {
 		dst = append(dst, fqdnAddress, byte(len(a.FQDN)))
 		dst = append(dst, a.FQDN...)
-	case a.IP.To4() != nil:
+		return binary.BigEndian.AppendUint16(dst, uint16(a.Port))
+	}
+	ip, _ := netip.AddrFromSlice(a.IP)
+	return appendIP(dst, ip, uint16(a.Port))
+}
+
+// appendIP is the address half of AppendAddr, for both the forms an address
+// arrives in here. An IPv4 address in IPv6 form is written as IPv4, which is
+// what a dual-stack socket reports an IPv4 sender as.
+func appendIP(dst []byte, ip netip.Addr, port uint16) []byte {
+	ip = ip.Unmap()
+	switch {
+	case ip.Is4():
+		b := ip.As4()
 		dst = append(dst, ipv4Address)
-		dst = append(dst, a.IP.To4()...)
-	case a.IP.To16() != nil:
+		dst = append(dst, b[:]...)
+	case ip.Is6():
+		b := ip.As16()
 		dst = append(dst, ipv6Address)
-		dst = append(dst, a.IP.To16()...)
+		dst = append(dst, b[:]...)
 	default:
 		dst = append(dst, ipv4Address, 0, 0, 0, 0)
 	}
-	return binary.BigEndian.AppendUint16(dst, uint16(a.Port))
+	return binary.BigEndian.AppendUint16(dst, port)
 }
 
 // AppendUDPHeaderFromAddr is AppendUDPHeader for a *net.UDPAddr, which is what
@@ -145,6 +177,14 @@ func AppendAddr(dst []byte, a *AddrSpec) []byte {
 func AppendUDPHeaderFromAddr(dst []byte, addr *net.UDPAddr) []byte {
 	spec := AddrSpec{IP: addr.IP, Port: addr.Port}
 	return AppendUDPHeader(dst, &spec)
+}
+
+// AppendUDPHeaderFromAddrPort is AppendUDPHeader for the sender that
+// ReadFromUDPAddrPort reports. ReadFromUDP copies the sender's IP to the heap
+// for every datagram, and the netip form is a value.
+func AppendUDPHeaderFromAddrPort(dst []byte, addr netip.AddrPort) []byte {
+	dst = append(dst, 0x00, 0x00, 0x00)
+	return appendIP(dst, addr.Addr(), addr.Port())
 }
 
 // BuildUDPHeader constructs a SOCKS5 UDP header (RFC 1928, Section 7)

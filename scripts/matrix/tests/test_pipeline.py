@@ -155,6 +155,45 @@ class Plans(unittest.TestCase):
         self.assertAlmostEqual(out, 0.030, delta=0.001)
         self.assertAlmostEqual(out / (up + out), 0.02, delta=0.001)
 
+    def test_delay_jitter_and_spikes_keep_the_packet_order(self):
+        def net(**kw):
+            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 40, **kw}}]), ".")["series"][0]["network"]
+        self.assertEqual(set(net(loss_pct=1)), {"rtt_ms", "loss_pct", "rate_mbit"})
+        for bad in ({"delay_jitter_ms": 0}, {"delay_jitter_ms": 25}, {"delay_spike_ms": 100},
+                    {"delay_spike_ms": 100, "delay_spike_len_ms": 200, "delay_spike_pct": 0},
+                    {"loss_pct": 1, "loss_outage_ms": 30, "delay_spike_ms": 100, "delay_spike_len_ms": 200, "delay_spike_pct": 1}):
+            with self.assertRaises(plan.PlanError):
+                net(**bad)
+        # A varying delay without a rate reorders packets; the rate keeps the queue in order.
+        self.assertEqual(cell.netem_args(net(delay_jitter_ms=5)),
+                         ["netem", "delay", "20ms", "5ms", "loss", "0%", "rate", "10gbit", "limit", "100000"])
+        self.assertEqual(cell.netem_args(net(delay_jitter_ms=5, rate_mbit=200))[-4:], ["rate", "200mbit", "limit", "100000"])
+        n = net(loss_pct=0.5, delay_spike_ms=150, delay_spike_len_ms=300, delay_spike_pct=2)
+        self.assertEqual(cell.netem_args(n), ["netem", "delay", "20ms", "loss", "0.5%", "rate", "10gbit", "limit", "100000"])
+        self.assertEqual(cell.netem_args(n, out=True)[:3], ["netem", "delay", "170ms"])
+        self.assertIn("всплески +150 мс по 300 мс, 2% времени", report.net_title(n))
+
+    def test_tcp_info_is_read_per_connection(self):
+        out = ("0 0 127.0.0.1:41443 127.0.0.1:50000 \n"
+               "\t cubic rto:252 backoff:2 rtt:50.1/3.2 bytes_sent:900 bytes_retrans:300 segs_out:40 data_segs_out:30"
+               " retrans:1/7 lost:1 dsack_dups:2 reordering:4\n"
+               "0 0 127.0.0.1:50000 127.0.0.1:41443 \n"
+               "\t cubic rto:251 rtt:50.0/2.9 bytes_sent:500 segs_out:20 data_segs_out:10\n")
+        socks = cell.parse_ss(out)
+        self.assertEqual(socks[("127.0.0.1:41443", "127.0.0.1:50000")],
+                         {"rto": 252, "backoff": 2, "bytes_sent": 900, "bytes_retrans": 300, "segs_out": 40,
+                          "data_segs_out": 30, "retrans": 7, "lost": 1, "dsack_dups": 2, "reordering": 4})
+        self.assertNotIn("retrans", socks[("127.0.0.1:50000", "127.0.0.1:41443")])
+        t = cell.TCPStats(41443)
+        t.poll = lambda: None
+        for k, v in socks.items():
+            t.conns[k] = v
+        t.start()
+        sides = t.stop()
+        self.assertEqual(sides["server"]["retrans"], 7)
+        self.assertEqual(sides["client"]["data_segs_out"], 10)
+        self.assertEqual(sides["client"]["retrans"], 0)
+
     def test_a_group_runs_its_series_as_one_unpinned_batch(self):
         p = raw_plan(cpus={}, series=[{"name": "lo", "rounds": 1},
                                       {"name": "a", "network": {"rtt_ms": 40}, "group": "g", "rounds": 2},
@@ -255,6 +294,18 @@ s5core_session_transitions_total{from="accepted",illegal="true",region="protocol
         g = cell.parse_gauges(body)
         self.assertEqual(g["illegal_transitions"], 3)
         self.assertEqual(g["illegal_by"], {"protocol:closed->half_closed plain": 2, "protocol:accepted->relay obfs": 1})
+
+    def test_runs_on_other_nodes_do_not_hold_each_other(self):
+        from pipeline import run
+        w = {"server": "root@a", "client": "root@r", "client_dir": "/opt/tmp/s5bench-a", "client_port": 41081}
+        wan_a = {"series": [{"network": "wan"}], "wan": w}
+        wan_b = {"series": [{"network": "wan"}], "wan": {**w, "server": "root@b", "client_dir": "/opt/tmp/s5bench-b", "client_port": 41082}}
+        local = {"series": [{"network": {"rtt_ms": 50}}, {"network": "loopback"}]}
+        a, b = {n for n, _ in run.machine_locks(wan_a)}, {n for n, _ in run.machine_locks(wan_b)}
+        self.assertFalse(a & b)
+        self.assertNotIn(".machine.lock", a)
+        self.assertEqual([n for n, _ in run.machine_locks(local)], [".machine.lock"])
+        self.assertNotEqual(a, {n for n, _ in run.machine_locks({**wan_a, "wan": {**w, "client_port": 41082}})})
 
     def test_ash_times(self):
         from pipeline import wan

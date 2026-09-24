@@ -1,6 +1,7 @@
 """Orchestrator: builds the variants, runs the batches, keeps the manifest."""
 
 import fcntl
+import hashlib
 import json
 import os
 import shutil
@@ -17,6 +18,22 @@ RETRY = {"setup_failed", "cell_error"}
 KILL_WAIT = 15
 RUNS = os.path.join(REPO, "bench", "runs")
 
+
+
+def machine_locks(plan):
+    # Local cells share this machine's cores, so they take all of it. A WAN
+    # run loads only its remote hosts: it holds its server and its client
+    # stand (directory and port), and runs on other nodes go in parallel.
+    locks = []
+    series = plan.get("series", [])
+    if any(s["network"] != "wan" for s in series):
+        locks.append((".machine.lock", "the machine"))
+    w = plan.get("wan")
+    if w and any(s["network"] == "wan" for s in series):
+        tag = lambda *xs: hashlib.sha256(" ".join(map(str, xs)).encode()).hexdigest()[:12]
+        locks.append((f".wan-server-{tag(w['server'])}.lock", "the WAN server"))
+        locks.append((f".wan-client-{tag(w['client'], w['client_dir'], w.get('client_port'))}.lock", "the WAN client stand"))
+    return locks
 
 class RunError(Exception):
     pass
@@ -103,7 +120,8 @@ class Runner:
         os.makedirs(RUNS, exist_ok=True)
         self._lock(os.path.join(self.out, ".lock"), "this run directory")
         if not dry:
-            self._lock(os.path.join(RUNS, ".machine.lock"), "the machine")
+            for name, what in machine_locks(self.plan):
+                self._lock(os.path.join(RUNS, name), what)
         self.manifest = self.load_manifest()
         kept = set(self.manifest.get("series_filter") or [])
         if self.only_series is None:

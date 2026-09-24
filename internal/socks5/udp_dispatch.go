@@ -3,6 +3,7 @@ package socks5
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -30,7 +31,7 @@ type udpResolution struct {
 }
 
 type udpCachedName struct {
-	ip    net.IP
+	ip    netip.Addr
 	until time.Time
 }
 
@@ -45,10 +46,10 @@ type udpDispatcher struct {
 	slots      chan struct{}
 	done       chan struct{}
 	sendMu     sync.Mutex
-	sendPacket func([]byte, *net.UDPAddr) bool
+	sendPacket func([]byte, netip.AddrPort) bool
 }
 
-func newUDPDispatcher(ctx context.Context, resolve func(context.Context, string) (net.IP, error), send func([]byte, *net.UDPAddr) bool, flush func()) *udpDispatcher {
+func newUDPDispatcher(ctx context.Context, resolve func(context.Context, string) (net.IP, error), send func([]byte, netip.AddrPort) bool, flush func()) *udpDispatcher {
 	ctx, cancel := context.WithCancel(ctx)
 	d := &udpDispatcher{ctx: ctx, cancel: cancel, input: make(chan udpDelivery, udpPendingLimit), slots: make(chan struct{}, udpPendingLimit), done: make(chan struct{}), sendPacket: send}
 	go d.run(resolve, flush)
@@ -65,7 +66,14 @@ func (d *udpDispatcher) submit(addr *AddrSpec, payload []byte) bool {
 	// No copy, queue or DNS scheduling on the IP path. A burst of IP
 	// datagrams must not be dropped because the DNS backlog is full.
 	if addr.FQDN == "" {
-		return d.send(payload, &net.UDPAddr{IP: addr.IP, Port: addr.Port})
+		ip, ok := netip.AddrFromSlice(addr.IP)
+		if !ok {
+			// Neither a name nor an address, which a header spells as a name
+			// of length zero. Sent as it was, the kernel read the
+			// unspecified address as this host.
+			return false
+		}
+		return d.send(payload, netip.AddrPortFrom(ip.Unmap(), uint16(addr.Port)))
 	}
 	select {
 	case d.slots <- struct{}{}:
@@ -122,12 +130,12 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 	// A fixed ring gives bounded eviction work; no cache-size scan per packet.
 	var names [udpDNSCacheLimit]string
 	next := 0
-	deliver := func(job udpDelivery, ip net.IP) bool {
+	deliver := func(job udpDelivery, ip netip.Addr) bool {
 		defer d.release(job)
 		if d.ctx.Err() != nil {
 			return false
 		}
-		return d.send((*job.buf)[:job.size], &net.UDPAddr{IP: ip, Port: job.port})
+		return d.send((*job.buf)[:job.size], netip.AddrPortFrom(ip, uint16(job.port)))
 	}
 	for {
 		select {
@@ -160,20 +168,23 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 		case result := <-results:
 			jobs := pending[result.name]
 			delete(pending, result.name)
-			if result.err == nil && len(result.ip) != 0 {
+			ip, resolved := netip.AddrFromSlice(result.ip)
+			resolved = resolved && result.err == nil
+			if resolved {
+				ip = ip.Unmap()
 				if _, ok := cache[result.name]; !ok {
 					delete(cache, names[next])
 					names[next] = result.name
 					next = (next + 1) % len(names)
 				}
-				cache[result.name] = udpCachedName{ip: append(net.IP(nil), result.ip...), until: time.Now().Add(udpDNSReuse)}
+				cache[result.name] = udpCachedName{ip: ip, until: time.Now().Add(udpDNSReuse)}
 			}
 			for i, job := range jobs {
-				if result.err != nil || len(result.ip) == 0 {
+				if !resolved {
 					d.release(job)
 					continue
 				}
-				if !deliver(job, result.ip) {
+				if !deliver(job, ip) {
 					for _, rest := range jobs[i+1:] {
 						d.release(rest)
 					}
@@ -186,7 +197,7 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 
 // The DNS dispatcher and the IP reader share the same meter. Keep that
 // accounting serialized and never forward packets after quota cancellation.
-func (d *udpDispatcher) send(payload []byte, addr *net.UDPAddr) bool {
+func (d *udpDispatcher) send(payload []byte, addr netip.AddrPort) bool {
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
 	if d.ctx.Err() != nil {

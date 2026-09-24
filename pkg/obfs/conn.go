@@ -496,6 +496,11 @@ func (c *conn) Identity() string {
 	return c.identity
 }
 
+// NetConn returns the transport under the framing, so that a UDP tunnel
+// can reach its socket (internal/tcptune). Bytes read or written on it
+// bypass the obfuscation.
+func (c *conn) NetConn() net.Conn { return c.Conn }
+
 // resolve asks the scheme what this connection's prologue means: the secret
 // to derive from, and the context to derive under. A client already got the
 // answer when it drew the prologue.

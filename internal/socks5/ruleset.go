@@ -13,7 +13,9 @@ import (
 // Request.Datagram set and DestAddr naming that datagram's destination. The
 // second question is the one about destinations - see Request.Datagram - and
 // it is asked before the name is resolved and before anything is sent, so a
-// refusal leaves no trace outside this process.
+// refusal leaves no trace outside this process. A datagram's Request is valid
+// only for the duration of the call: the association asks about its next
+// datagram with the same one.
 type RuleSet interface {
 	Allow(ctx context.Context, req *Request) (context.Context, bool)
 }

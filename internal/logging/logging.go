@@ -67,7 +67,7 @@ func Level() slog.Level { return levelVar.Level() }
 func SetLevelFromEnv() (slog.Level, error) {
 	raw := os.Getenv(EnvVar)
 	if path := os.Getenv(FileEnvVar); path != "" {
-		b, err := os.ReadFile(path)
+		b, err := readLevelFile(path)
 		if err != nil {
 			return levelVar.Level(), fmt.Errorf("read %s=%s: %w", FileEnvVar, path, err)
 		}
@@ -79,6 +79,28 @@ func SetLevelFromEnv() (slog.Level, error) {
 	}
 	levelVar.Set(l)
 	return l, nil
+}
+
+// maxLevelFileBytes bounds the read of LOG_LEVEL_FILE for the reason
+// cmd/s5core/advice_file.go gives: the reload runs on the signal goroutine,
+// and a path that never ends (/dev/zero, a file still being written) would
+// stop every later SIGHUP from being handled.
+const maxLevelFileBytes = 4 << 10
+
+func readLevelFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, maxLevelFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxLevelFileBytes {
+		return nil, fmt.Errorf("larger than %d bytes, which no level is", maxLevelFileBytes)
+	}
+	return b, nil
 }
 
 // ToggleDebug switches between debug and info and reports the new level.

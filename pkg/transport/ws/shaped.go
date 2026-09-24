@@ -44,6 +44,7 @@ type ShapedConn struct {
 	minFrame  int
 	maxFrame  int
 	maxJitter time.Duration
+	pieceMin  int // minPiece, or less when the band is narrower than two of them
 	rng       *rand.Rand
 	writeMu   sync.Mutex
 	sizes     []int // reusable cut plan, held under writeMu
@@ -78,11 +79,18 @@ func NewShapedConn(c *Conn, minFrame, maxFrame int, maxJitter time.Duration) *Sh
 	if maxFrame < minFrame {
 		maxFrame = minFrame * 4
 	}
+	// A band below two minimum pieces passes the configuration checks, and
+	// the server can push one in TRANSPORT_ADVICE. Holding its pieces to
+	// minPiece anyway made the bounds in plan contradict each other, and the
+	// last piece came out negative: a panic in Write on the first write over
+	// 128 bytes (FuzzShaperPlan). Half the maximum keeps every cut feasible.
+	pieceMin := max(1, min(minPiece, maxFrame/2))
 	return &ShapedConn{
 		Conn:      c,
 		minFrame:  minFrame,
 		maxFrame:  maxFrame,
 		maxJitter: maxJitter,
+		pieceMin:  pieceMin,
 		// Seeded from crypto/rand: where the cuts fall must not be predictable
 		// from the time the connection was made.
 		rng:   rand.New(rand.NewSource(seed())),
@@ -180,11 +188,11 @@ func (c *ShapedConn) plan(n int) []int {
 		if floor := rest - left*c.maxFrame; size < floor {
 			size = floor
 		}
-		if ceil := rest - left*minPiece; size > ceil {
+		if ceil := rest - left*c.pieceMin; size > ceil {
 			size = ceil
 		}
-		if size < minPiece {
-			size = minPiece
+		if size < c.pieceMin {
+			size = c.pieceMin
 		}
 		c.sizes = append(c.sizes, size)
 		rest -= size
@@ -204,7 +212,7 @@ func (c *ShapedConn) cutCount(n int) int {
 	if hi > lo+maxExtraCuts {
 		hi = lo + maxExtraCuts
 	}
-	if limit := n / minPiece; hi > limit {
+	if limit := n / c.pieceMin; hi > limit {
 		hi = limit
 	}
 	if hi < lo {

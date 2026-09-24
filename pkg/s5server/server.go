@@ -15,6 +15,7 @@ import (
 	"github.com/mazixs/S5Core/internal/s5core"
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/internal/userstore"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/tlsdecoy"
@@ -71,6 +72,10 @@ type Server struct {
 	wg           sync.WaitGroup
 }
 
+// udpTunnelTuner builds the hook that tunes the socket of a 0x83 tunnel. A
+// test replaces it to see the connection the hook is given.
+var udpTunnelTuner = tcptune.Tuner
+
 // NewServer initializes a new SOCKS5 server with the given configuration.
 func NewServer(cfg Config) (*Server, error) {
 	if err := ValidateConfig(cfg); err != nil {
@@ -109,6 +114,9 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	socks5conf.ObservePhase, socks5conf.CountPhase = phaseHooks(cfg.Telemetry)
 	socks5conf.ObserveHalfClose = halfCloseHook(cfg.Telemetry)
+	if !cfg.UDPTunnelTCPTuningOff {
+		socks5conf.OnUDPTunnel = udpTunnelTuner(logger)
+	}
 
 	var credStore *identity.Guard
 	var uStore *userstore.Store

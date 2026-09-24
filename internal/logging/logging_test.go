@@ -180,6 +180,18 @@ func TestSetLevelFromFile(t *testing.T) {
 	if got != slog.LevelWarn || Level() != slog.LevelWarn {
 		t.Fatalf("уровень изменился после ошибки чтения: %v", Level())
 	}
+
+	// Бесконечный источник не должен останавливать обработчик сигнала:
+	// чтение ограничено, уровень остается прежним.
+	if _, err := os.Stat("/dev/zero"); err == nil {
+		t.Setenv(FileEnvVar, "/dev/zero")
+		if _, err := SetLevelFromEnv(); err == nil {
+			t.Fatal("ожидалась ошибка на /dev/zero")
+		}
+		if Level() != slog.LevelWarn {
+			t.Fatalf("уровень изменился после /dev/zero: %v", Level())
+		}
+	}
 }
 
 func TestToggleDebug(t *testing.T) {

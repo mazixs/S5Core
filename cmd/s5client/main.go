@@ -93,6 +93,11 @@ type clientParams struct {
 	// 10, so this range is where the rest of the field sits too.
 	KeepaliveMin time.Duration `env:"KEEPALIVE_MIN" envDefault:"10s"`
 	KeepaliveMax time.Duration `env:"KEEPALIVE_MAX" envDefault:"20s"`
+	// UDPTunnelTCPTuning lets the connection of a UDP association retransmit
+	// sooner than the kernel's default (internal/tcptune): every datagram
+	// behind a lost segment waits for the retransmission timer. Off keeps the
+	// kernel's timer, for a path where that turns out better.
+	UDPTunnelTCPTuning bool `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
 
 	// How long a shutdown waits for connections that are still carrying
 	// traffic before it stops waiting.

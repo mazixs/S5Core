@@ -10,6 +10,7 @@ reach the hosts only in files with mode 600 inside directories with mode 700;
 the cell directories are removed when the cell ends.
 """
 
+import hashlib
 import json
 import os
 import shlex
@@ -45,10 +46,10 @@ def q(s):
 class Host:
     """One ssh target; the connection is shared through a control master."""
 
-    def __init__(self, target):
-        self.target = target
+    def __init__(self, target, control=CONTROL):
+        self.target, self.control = target, control
         self.opts = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
-                     "-o", "ControlMaster=auto", "-o", f"ControlPath={CONTROL}", "-o", "ControlPersist=120"]
+                     "-o", "ControlMaster=auto", "-o", f"ControlPath={control}", "-o", "ControlPersist=120"]
 
     def sh(self, script, timeout=60, check=True):
         try:
@@ -81,8 +82,16 @@ class Host:
         return True
 
 
+def client_port(w):
+    return w.get("client_port") or PORTS["client"]
+
+
 def hosts(w):
-    return Host(w["server"]), Host(w["client"])
+    # A master per stand: two runs through one client host would otherwise
+    # share it, and the first to finish would close the other's sessions.
+    tag = hashlib.sha256(f"{w['server']} {w['server_dir']} {w['client_dir']}".encode()).hexdigest()[:8]
+    control = CONTROL.replace("%C", f"{tag}-%C")
+    return Host(w["server"], control), Host(w["client"], control)
 
 
 # Shell pieces shared by the scripts below; the client is BusyBox ash.
@@ -144,7 +153,7 @@ class Stage:
         self.cli.sh("for c in awk nc sha256sum nohup readlink; do command -v $c >/dev/null || { echo missing $c; exit 1; }; done")
         self.down(quiet=True)
         busy = self.srv.sh(LISTENING + "".join(f"listening {p} && echo {p}\n" for p in (PORTS["plain"], PORTS["obfs"], PORTS["wss"], PORTS["metrics"])), check=False).split()
-        busy += self.cli.sh(LISTENING + f"listening {PORTS['client']} && echo {PORTS['client']}\n", check=False).split()
+        busy += self.cli.sh(LISTENING + f"listening {client_port(w)} && echo {client_port(w)}\n", check=False).split()
         if busy:
             raise WanError(f"ports already taken on the hosts: {' '.join(busy)}")
         clk = self.srv.sh("getconf CLK_TCK 2>/dev/null || echo 100").strip() or "100"
@@ -225,8 +234,8 @@ rm -rf {q(cd)}; exit 0""", check=False)
         if not quiet:
             clean = left[:1] == ["0"] and "dir" not in left and left[-1:] == ["0"]
             self.emit("wan: hosts cleaned" if clean else f"wan: cleanup left something behind: {left}")
-            subprocess.run(["ssh", "-O", "exit", "-o", f"ControlPath={CONTROL}", self.w["server"]], capture_output=True, timeout=10)
-            subprocess.run(["ssh", "-O", "exit", "-o", f"ControlPath={CONTROL}", self.w["client"]], capture_output=True, timeout=10)
+            for h in (self.srv, self.cli):
+                subprocess.run(["ssh", "-O", "exit", "-o", f"ControlPath={h.control}", h.target], capture_output=True, timeout=10)
 
 
 class _Stop(Exception):
@@ -301,6 +310,7 @@ for f in {self.cd}/client.pid {self.cd}/gen.pid {self.cd}/warmup.pid; do kill_ou
         tls_s, tls_c = f"{self.w['server_dir']}/tls", f"{self.w['client_dir']}/tls"
         srv, cli, doc = environments(sp, os.urandom(16).hex(), f"{self.sd}/users.json", f"{tls_s}/cert.pem", f"{tls_s}/key.pem",
                                      client_cert=f"{tls_c}/cert.pem", host=sip, listen=sip)
+        cli["CLIENT_LISTEN_ADDR"] = f"127.0.0.1:{client_port(self.w)}"
         if doc:
             self.srv.put(f"{self.sd}/users.json", data=json.dumps(doc))
         self.srv.put(f"{self.sd}/server.env", data="".join(f"{k}={v}\n" for k, v in srv.items()))
@@ -334,13 +344,13 @@ echo FAIL; tail -n 1 {self.sd}/server.log""", timeout=PORT_WAIT + 30, check=Fals
 echo $! > client.pid
 i=0
 while [ $i -lt {PORT_WAIT * 10} ]; do
-  listening {PORTS['client']} && {{ cat client.pid; exit 0; }}
+  listening {client_port(self.w)} && {{ cat client.pid; exit 0; }}
   kill -0 $(cat client.pid) 2>/dev/null || break
   nap; i=$((i+1))
 done
 echo FAIL; tail -n 1 client.log""", timeout=PORT_WAIT + 30, check=False).split("\n")
         if out[0].strip() == "FAIL" or not out[0].strip().isdigit():
-            raise SetupFailed(f"client did not open {PORTS['client']} within {PORT_WAIT}s: {' '.join(out[1:]).strip()[:300]}")
+            raise SetupFailed(f"client did not open {client_port(self.w)} within {PORT_WAIT}s: {' '.join(out[1:]).strip()[:300]}")
         self.client_pid = int(out[0])
 
     def _gen(self, name, args):
@@ -364,7 +374,7 @@ echo $rc > {name}.rc
         if sp["transport"] == "plain":
             a += ["-socks", f"{self.w['server_ip']}:{PORTS['plain']}"]
         elif not sp["direct"]:
-            a += ["-socks", f"127.0.0.1:{PORTS['client']}"]
+            a += ["-socks", f"127.0.0.1:{client_port(self.w)}"]
         return a
 
     def _env_prefix(self):

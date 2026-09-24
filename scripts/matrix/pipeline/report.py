@@ -50,6 +50,10 @@ def net_title(net):
         parts[-1] += f" пачками по {net['loss_burst']:g} пакета"
     if net.get("loss_outage_ms"):
         parts[-1] += f" времени, провалы по {net['loss_outage_ms']:g} мс"
+    if net.get("delay_jitter_ms"):
+        parts.append(f"разброс задержки {net['delay_jitter_ms']:g} мс на проход без перестановки")
+    if net.get("delay_spike_ms"):
+        parts.append(f"всплески +{net['delay_spike_ms']:g} мс по {net['delay_spike_len_ms']:g} мс, {net['delay_spike_pct']:g}% времени")
     if net["rate_mbit"]:
         parts.append(f"{net['rate_mbit']:g} Мбит/с")
     return "netem: " + ", ".join(parts)

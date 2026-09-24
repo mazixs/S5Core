@@ -98,6 +98,14 @@ type Config struct {
 	// it is still transferring.
 	SessionStatus func(username string) SessionStatus
 
+	// OnUDPTunnel, when set, is given the client's connection once it
+	// becomes a UDP-over-TCP tunnel (0x83), before the reply that opens it.
+	// From then on the connection carries the datagrams of a game or a call
+	// rather than a transfer, and the socket under it may want to retransmit
+	// sooner (internal/tcptune). This package does not know what the
+	// connection is made of, so it only says when.
+	OnUDPTunnel func(conn net.Conn)
+
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 

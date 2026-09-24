@@ -1,0 +1,300 @@
+# Which timer settings the UDP tunnel's TCP socket should get (UDP_TUNNEL_TCP_TUNING,
+# internal/tcptune): the kernel default, each option alone and the shipped set,
+# against native UDP and the path without a proxy. RTT 50 ms as on the measured
+# field node; random loss, outages in time, delay jitter without reordering and
+# delay spikes without loss (a spurious retransmission shows up in dsack_dups).
+# Five minutes per cell; every series is one group, so the cells of a round run
+# at once (a 64 Hz stream loads a core by a few percent) and see the same
+# outages and spikes. Where the timer moves anything (outages, jitter, spikes)
+# the set also runs on one end at a time: each end's timer covers the
+# direction it sends. Three rounds, about 20 minutes. A floor of 5 ms was tried
+# on 24.09.2026 and dropped: no gain over 20 ms, twenty times the spurious
+# retransmissions. A cap of 1 s (TCP_RTO_MAX_MS) was dropped the same day: the
+# kernel derives from it when to give up, and tunnels died with ETIMEDOUT on
+# 200 ms outages; cap keeps it there (docs/benchmarks/game-tuning.md).
+name = "game-tuning"
+description = "таймеры TCP под 0x83: ядро по умолчанию, каждая опция отдельно и набор"
+base = "off"
+candidate = "t20"
+
+[defaults]
+auth = "none"
+scale = 0.08333333
+scenario_timeout = "8m"
+hang_grace = "1m"
+settle = "3s"
+retries = 1
+sample_s = 60
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.off]
+ref = "worktree"
+title = "без настройки"
+env = { server = { UDP_TUNNEL_TCP_TUNING = "false" }, client = { UDP_TUNNEL_TCP_TUNING = "false" } }
+
+[variants.thin]
+ref = "worktree"
+patch = "../patches/tcptune-thin-only.patch"
+title = "только thin"
+
+[variants.t20]
+ref = "worktree"
+title = "thin + RTO_MIN 20 мс"
+
+[variants.t50]
+ref = "worktree"
+patch = "../patches/tcptune-floor-50ms.patch"
+title = "thin + RTO_MIN 50 мс"
+
+[variants.cap]
+ref = "worktree"
+patch = "../patches/tcptune-cap-1s.patch"
+title = "thin + RTO_MIN 20 мс + RTO_MAX 1 с"
+
+[variants.srv]
+ref = "worktree"
+title = "только сервер"
+env = { client = { UDP_TUNNEL_TCP_TUNING = "false" } }
+
+[variants.cli]
+ref = "worktree"
+title = "только клиент"
+env = { server = { UDP_TUNNEL_TCP_TUNING = "false" } }
+
+[guard]
+max_foreign_cores = 4.0
+load_wait = "120s"
+
+[[series]]
+name = "clean"
+title = "RTT 50 мс, без потерь"
+network = { rtt_ms = 50, loss_pct = 0 }
+variants = ["raw", "off", "thin", "t20", "t50"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "clean-wss"
+title = "RTT 50 мс, без потерь, wss"
+network = { rtt_ms = 50, loss_pct = 0 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "clean-plain"
+title = "RTT 50 мс, без потерь, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 0 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss05"
+title = "RTT 50 мс, потери 0,5%"
+network = { rtt_ms = 50, loss_pct = 0.5 }
+variants = ["raw", "off", "thin", "t20", "t50"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss05-wss"
+title = "RTT 50 мс, потери 0,5%, wss"
+network = { rtt_ms = 50, loss_pct = 0.5 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss05-plain"
+title = "RTT 50 мс, потери 0,5%, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 0.5 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss2"
+title = "RTT 50 мс, потери 2%"
+network = { rtt_ms = 50, loss_pct = 2 }
+variants = ["raw", "off", "thin", "t20", "t50"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss2-wss"
+title = "RTT 50 мс, потери 2%, wss"
+network = { rtt_ms = 50, loss_pct = 2 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "loss2-plain"
+title = "RTT 50 мс, потери 2%, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 2 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade1"
+title = "RTT 50 мс, провалы по 30 мс, 1% времени"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 30 }
+variants = ["raw", "off", "thin", "t20", "t50", "srv", "cli"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade1-wss"
+title = "RTT 50 мс, провалы по 30 мс, 1% времени, wss"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 30 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade1-plain"
+title = "RTT 50 мс, провалы по 30 мс, 1% времени, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 30 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade200"
+title = "RTT 50 мс, провалы по 200 мс, 1% времени"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 200 }
+variants = ["raw", "off", "thin", "t20", "t50", "srv", "cli", "cap"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade200-wss"
+title = "RTT 50 мс, провалы по 200 мс, 1% времени, wss"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 200 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "fade200-plain"
+title = "RTT 50 мс, провалы по 200 мс, 1% времени, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 1, loss_outage_ms = 200 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "jitter"
+title = "RTT 50 мс, потери 1%, разброс задержки 8 мс на проход"
+network = { rtt_ms = 50, loss_pct = 1, delay_jitter_ms = 8 }
+variants = ["raw", "off", "thin", "t20", "t50", "srv", "cli"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "jitter-wss"
+title = "RTT 50 мс, потери 1%, разброс задержки 8 мс на проход, wss"
+network = { rtt_ms = 50, loss_pct = 1, delay_jitter_ms = 8 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "jitter-plain"
+title = "RTT 50 мс, потери 1%, разброс задержки 8 мс на проход, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 1, delay_jitter_ms = 8 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "spike"
+title = "RTT 50 мс, всплески +100 мс по 500 мс, 3% времени"
+network = { rtt_ms = 50, loss_pct = 0, delay_spike_ms = 100, delay_spike_len_ms = 500, delay_spike_pct = 3 }
+variants = ["raw", "off", "thin", "t20", "t50", "srv", "cli"]
+transports = ["obfs"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "spike-wss"
+title = "RTT 50 мс, всплески +100 мс по 500 мс, 3% времени, wss"
+network = { rtt_ms = 50, loss_pct = 0, delay_spike_ms = 100, delay_spike_len_ms = 500, delay_spike_pct = 3 }
+variants = ["off", "t20"]
+transports = ["wss"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "spike-plain"
+title = "RTT 50 мс, всплески +100 мс по 500 мс, 3% времени, нативный UDP"
+network = { rtt_ms = 50, loss_pct = 0, delay_spike_ms = 100, delay_spike_len_ms = 500, delay_spike_pct = 3 }
+variants = ["t20"]
+transports = ["plain"]
+rounds = 3
+compare = []
+group = "tuning"
+only = ["=game/64hz-200b"]

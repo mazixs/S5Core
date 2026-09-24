@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -23,7 +24,7 @@ func TestDatagramDNSIsCoalescedCachedAndDoesNotBlockIP(t *testing.T) {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
-		}, func(p []byte, _ *net.UDPAddr) bool { sent <- string(p); return true }, func() {})
+		}, func(p []byte, _ netip.AddrPort) bool { sent <- string(p); return true }, func() {})
 		defer d.close()
 		addr := &AddrSpec{FQDN: "slow.example", Port: 53}
 		for i := range 10 {
@@ -87,7 +88,7 @@ func TestDatagramDNSQueueAndConcurrencyAreBoundedAndCancelled(t *testing.T) {
 			defer active.Add(-1)
 			<-ctx.Done()
 			return nil, ctx.Err()
-		}, func([]byte, *net.UDPAddr) bool { t.Error("unresolved datagram delivered"); return false }, func() { flushed = true })
+		}, func([]byte, netip.AddrPort) bool { t.Error("unresolved datagram delivered"); return false }, func() { flushed = true })
 		for i := range 1000 {
 			d.submit(&AddrSpec{FQDN: fmt.Sprintf("name%d", i%10), Port: 53}, []byte("payload"))
 		}
@@ -123,7 +124,7 @@ func TestDatagramSendFailureReleasesPendingBuffers(t *testing.T) {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
-		}, func([]byte, *net.UDPAddr) bool { calls++; return false }, func() {})
+		}, func([]byte, netip.AddrPort) bool { calls++; return false }, func() {})
 		for range 20 {
 			d.submit(&AddrSpec{FQDN: "one.example", Port: 53}, []byte("payload"))
 		}
@@ -143,7 +144,7 @@ func TestFullDNSQueueDoesNotDropIPDatagrams(t *testing.T) {
 		d := newUDPDispatcher(context.Background(), func(ctx context.Context, _ string) (net.IP, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
-		}, func(p []byte, _ *net.UDPAddr) bool {
+		}, func(p []byte, _ netip.AddrPort) bool {
 			if string(p) != "ip" {
 				t.Error("unresolved name delivered")
 			}
@@ -165,5 +166,30 @@ func TestFullDNSQueueDoesNotDropIPDatagrams(t *testing.T) {
 		if sent != 100 {
 			t.Fatalf("delivered %d IP packets", sent)
 		}
+	})
+}
+
+// A header can name no destination at all: a name of length zero. It used to
+// be sent to the unspecified address, which the kernel delivers to this host,
+// so a datagram that named nothing reached the server's own loopback.
+func TestADatagramThatNamesNothingIsNotSent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d := newUDPDispatcher(context.Background(), func(context.Context, string) (net.IP, error) {
+			t.Error("a datagram with no name was looked up")
+			return nil, nil
+		}, func(_ []byte, to netip.AddrPort) bool {
+			t.Errorf("a datagram that names nothing was sent to %v", to)
+			return true
+		}, func() {})
+		defer d.close()
+
+		_, nothing, err := ParseUDPHeader([]byte{0, 0, 0, fqdnAddress, 0, 0, 53, 'q'})
+		if err != nil {
+			t.Fatalf("the header does parse: %v", err)
+		}
+		if d.submit(nothing, []byte("q")) {
+			t.Fatal("the dispatcher took a datagram that names no destination")
+		}
+		synctest.Wait()
 	})
 }

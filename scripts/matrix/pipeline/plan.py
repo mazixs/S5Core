@@ -158,7 +158,7 @@ def resolve(raw, base_dir):
         if net == "wan" and not wan:
             raise PlanError(f"{where}: network = 'wan' needs a [wan] section")
         if net not in ("loopback", "wan"):
-            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms"}
+            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct"}
             if not isinstance(net, dict) or set(net) - keys:
                 raise PlanError(f"{where}: network is 'loopback', 'wan' or {{{', '.join(sorted(keys))}}}")
             n = {"rtt_ms": float(net.get("rtt_ms", 0)), "loss_pct": float(net.get("loss_pct", 0)), "rate_mbit": float(net.get("rate_mbit", 0))}
@@ -171,6 +171,17 @@ def resolve(raw, base_dir):
                 n["loss_outage_ms"] = float(net["loss_outage_ms"])
                 if n["loss_outage_ms"] <= 0 or not 0 < n["loss_pct"] < 100 or "loss_burst" in net:
                     raise PlanError(f"{where}: loss_outage_ms is a mean outage above 0 ms, needs 0 < loss_pct < 100 and excludes loss_burst")
+            if "delay_jitter_ms" in net:
+                n["delay_jitter_ms"] = float(net["delay_jitter_ms"])
+                if not 0 < n["delay_jitter_ms"] <= n["rtt_ms"] / 2:
+                    raise PlanError(f"{where}: delay_jitter_ms is above 0 and at most half of rtt_ms (one pass through lo)")
+            spike = {k for k in ("delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct") if k in net}
+            if spike:
+                n |= {k: float(net.get(k, 0)) for k in ("delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct")}
+                if spike != {"delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct"} or n["delay_spike_ms"] <= 0 or n["delay_spike_len_ms"] <= 0 or not 0 < n["delay_spike_pct"] < 100:
+                    raise PlanError(f"{where}: a spike needs delay_spike_ms and delay_spike_len_ms above 0 and 0 < delay_spike_pct < 100")
+                if "loss_outage_ms" in net:
+                    raise PlanError(f"{where}: spikes and loss_outage_ms both change the leg in time; set one")
             net = n
         vs = s.get("variants", list(variants))
         for v in vs:
@@ -244,9 +255,13 @@ def _wan(raw):
     if raw is None:
         return None
     for k in raw:
-        if k not in WAN:
+        if k not in WAN and k != "client_port":
             raise PlanError(f"wan: unknown key {k!r}")
     w = dict(WAN) | raw
+    # Only when set, like the netem keys: two runs sharing one client host need
+    # two ports, and an absent key keeps the hash of plans written before it.
+    if "client_port" in w and not (isinstance(w["client_port"], int) and 1024 <= w["client_port"] <= 65535):
+        raise PlanError("wan: client_port is a port number from 1024 to 65535")
     for k in ("server", "client"):
         if not w[k]:
             raise PlanError(f"wan: {k} (an ssh target) is required")

@@ -174,6 +174,11 @@ func (c *Conn) Close() error {
 	return c.ws.Close()
 }
 
+// NetConn returns the TLS connection under the WebSocket, so that a UDP
+// tunnel can reach its socket (internal/tcptune). Bytes read or written on
+// it bypass the framing.
+func (c *Conn) NetConn() net.Conn { return c.ws.NetConn() }
+
 // LocalAddr implements net.Conn.LocalAddr.
 func (c *Conn) LocalAddr() net.Addr {
 	if uc := c.ws.UnderlyingConn(); uc != nil {

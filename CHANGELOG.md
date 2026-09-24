@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but speed, latency and CPU load have not been measured on MIPS hardware and
   are not guaranteed. No server setting is needed. How to pick the binary:
   [router guide](docs/guides/testing.md#s5client-on-a-router).
+- `UDP_TUNNEL_TCP_TUNING` on the server and the client, on by default: the TCP
+  socket of a `0x83` UDP tunnel, and no other, gets thin-stream linear
+  timeouts and, on Linux 6.15 and later, a 20 ms floor for its retransmission
+  timer. The cap of the timer is left to the kernel on purpose: Linux derives
+  from it when a connection that keeps retransmitting is closed, and a lower
+  cap closed tunnels during short outages. Each end tunes the direction it
+  sends. An option the
+  kernel does not have is skipped with one debug line, so an older kernel,
+  as on most routers, keeps its UDP with the linear timeouts alone. `false`
+  keeps the kernel's timer
+  ([what it buys and what it costs](docs/benchmarks/game-tuning.md)).
+
+### Performance
+
+- The server's `0x83` path no longer allocates per datagram, as the client's
+  already did not: 4 allocations and 240 bytes per round trip went to 0 for an
+  IP destination, 5 to 0 for a name. The datagram is read and sent through
+  `netip`, the header is parsed into one address per association, and the
+  rules are asked with one request per association
+  ([measurements](docs/benchmarks/udp-over-tcp.md)).
 
 ### Fixed
 
@@ -30,6 +50,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A benchmark hour caught one such refusal among idle connections cut by
   `READ_TIMEOUT`. Nothing changed on the wire, because the connection was
   already closed, but the counter reported a driver bug that was real.
+- A UDP datagram whose SOCKS5 header named a zero-length name was sent to the
+  unspecified address, which the kernel delivers to the server itself. It is
+  now dropped. Under `ALLOWED_DEST_FQDN` the rules already refused it.
+- A WebSocket frame band narrower than two 64-byte pieces (`WS_MAX_FRAME`
+  under 128, or the same band pushed in `TRANSPORT_ADVICE`) passed the
+  configuration checks and panicked the shaper on the first write over 128
+  bytes: the pieces were held to 64 bytes regardless, and the last one came
+  out negative. On the server the panic took the whole process down. Such a
+  band now cuts to pieces of at least half its maximum; the default band
+  shapes exactly as before. Found by `FuzzShaperPlan`.
+- JA4 in `internal/stealth` now follows its specification for an ALPN whose
+  first or last byte is not a letter or a digit: the first and last character
+  of the value's hex (`0xAB 0xCD` is `ad`), where it took the high nibble of
+  both ends and let any printable byte through, so an ALPN such as `_x` put a
+  `_` into JA4_a. Browser profiles, whose ALPN is `h2`, are unaffected.
+- `LOG_LEVEL_FILE` is read with a 4 KiB bound, as `TRANSPORT_ADVICE_FILE`
+  already was: the reload runs on the signal goroutine, and a path that never
+  ends, such as `/dev/zero`, stopped every later `SIGHUP` from being handled.
 
 ### Tooling
 
@@ -50,6 +88,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the same `group` run as one unpinned batch per round, and
   `plans/game-loss.toml` measures a game session under 0-5% loss and outages
   for native UDP against `0x83` ([results](docs/benchmarks/game-loss.md)).
+- Coverage-guided fuzz targets on every parser of untrusted input, each with
+  an invariant beyond "does not panic": SOCKS5 addresses and UDP headers, the
+  `0x83` frames and the client's reading of the reply, hello and advice, the
+  obfs opening and frames (delivered whole under any split of the stream,
+  tampering never delivers more than a prefix), `veil` schemes, PHC strings,
+  the accounts file, `TRANSPORT_ADVICE`, the version label fence, the wss cut
+  plan and the `ClientHello` parser. `scripts/fuzz.sh` runs them in parallel
+  with a time budget per target; a failing input stays in `testdata/fuzz/`
+  and becomes a regression test for plain `go test`.
+- `scripts/matrix` networks take `delay_jitter_ms` and delay spikes
+  (`delay_spike_ms`, `delay_spike_len_ms`, `delay_spike_pct`), outages and
+  spikes follow one schedule per network and round so that every variant of
+  a round meets the same ones, and `run.json` carries the tunnel's `TCP_INFO`
+  from both ends (retransmissions, DSACK, segments in flight, the RTO of the
+  connection that carried the traffic). `cmd/udpshape` measures which UDP
+  datagram shapes cross a path, each direction on its own
+  ([results](docs/field/udp-shapes.md)).
 
 ## [2.2.0] - 2026-09-24
 
