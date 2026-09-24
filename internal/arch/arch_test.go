@@ -101,6 +101,15 @@ var rules = []rule{
 		},
 	},
 	{
+		pkg: module + "/internal/tcptune",
+		why: "socket tuning is reached through wrappers it knows only by " +
+			"NetConn and Unwrap, so it may depend on nothing of ours",
+		forbidden: []string{
+			module + "/internal/",
+			module + "/pkg/",
+		},
+	},
+	{
 		pkg: module + "/pkg/obfs",
 		why: "the obfuscation format carries bytes over any transport and " +
 			"knows nothing about what they mean",

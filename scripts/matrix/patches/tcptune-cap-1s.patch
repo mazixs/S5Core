@@ -1,0 +1,10 @@
+--- a/internal/tcptune/tcptune_linux.go
++++ b/internal/tcptune/tcptune_linux.go
+@@ -31,6 +31,7 @@ type option struct {
+ var options = []option{
+ 	{"TCP_THIN_LINEAR_TIMEOUTS", unix.TCP_THIN_LINEAR_TIMEOUTS, 1},
+ 	{"TCP_RTO_MIN_US", tcpRTOMinUS, 20_000},
++	{"TCP_RTO_MAX_MS", tcpRTOMaxMS, 1_000},
+ }
+ 
+ func apply(fd uintptr, skipped Skipped) {

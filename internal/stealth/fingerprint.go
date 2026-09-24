@@ -390,17 +390,25 @@ func ja4Version(v uint16) string {
 }
 
 // ja4ALPN takes the first and last character of the first offered protocol:
-// "h2" stays "h2", "http/1.1" becomes "h1". No ALPN at all is "00".
+// "h2" stays "h2", "http/1.1" becomes "h1". No ALPN at all is "00". When
+// either end is not a letter or a digit, the JA4 specification takes the
+// first and the last character of the value's hex instead: 0xAB 0xCD is
+// "ad", 0x30 0xAB is "3b". A printable end such as "_" would otherwise land
+// in JA4_a, whose parts are split on "_".
 func ja4ALPN(alpn []string) string {
 	if len(alpn) == 0 || alpn[0] == "" {
 		return "00"
 	}
 	first := alpn[0]
 	a, b := first[0], first[len(first)-1]
-	if a < 0x20 || a > 0x7e || b < 0x20 || b > 0x7e {
-		return hex.EncodeToString([]byte{a})[:1] + hex.EncodeToString([]byte{b})[:1]
+	if !isAlnum(a) || !isAlnum(b) {
+		return hex.EncodeToString([]byte{a})[:1] + hex.EncodeToString([]byte{b})[1:]
 	}
 	return string([]byte{a, b})
+}
+
+func isAlnum(c byte) bool {
+	return '0' <= c && c <= '9' || 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z'
 }
 
 func twoDigits(n int) string {

@@ -304,6 +304,11 @@ func (c *limitedConn) Close() error {
 	return c.Conn.Close()
 }
 
+// NetConn lets tcptune reach the socket. Without it a server with a
+// connection limit, which cmd/s5core always has, left every 0x83 tunnel on
+// the kernel's timer.
+func (c *limitedConn) NetConn() net.Conn { return c.Conn }
+
 // CloseWrite keeps the half-close path intact: every wrapper between socks5
 // and the socket has to pass it down, or the shutdown turns into a full close.
 func (c *limitedConn) CloseWrite() error {

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
 )
 
 var (
@@ -129,6 +130,10 @@ func socksUDPHeader(d []byte) bool {
 	return false
 }
 
+// tuneUDPTunnel is shared by all associations, so that an option the kernel
+// refuses is logged once rather than per association.
+var tuneUDPTunnel = tcptune.Tuner(nil)
+
 // handleUDPAssociate handles the client side of UDP Associate.
 // It opens a local UDP socket, tells the application its address,
 // and then multiplexes UDP packets over the obfuscated TCP tunnel.
@@ -151,6 +156,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		slog.Error("Server rejected UDP-over-TCP tunnel", "status", serverReply[1])
 		_, _ = clientConn.Write(serverReply)
 		return
+	}
+	if cfg.UDPTunnelTCPTuning {
+		tuneUDPTunnel(obfsConn)
 	}
 
 	// 2. Open a local UDP socket for the application to send packets to

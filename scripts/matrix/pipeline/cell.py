@@ -60,10 +60,10 @@ def _sh(cmd, timeout=10):
 
 
 def netem_args(net, out=False):
-    """One pass through lo: half the RTT, the loss and the rate."""
+    """One pass through lo: half the RTT, the loss and the rate. out is the
+    state a spell (Spells) switches to: an outage or a delay spike."""
     loss = ["loss", f"{net['loss_pct']:g}%"]
     if net.get("loss_outage_ms"):
-        # The loss is laid on in time by Outages; out is the state it switches to.
         loss = ["loss", "100%" if out else "0%"]
     elif net.get("loss_burst", 1) > 1:
         # Gilbert-Elliott: the bad state loses every packet, the good one none;
@@ -71,12 +71,19 @@ def netem_args(net, out=False):
         r = 1 / net["loss_burst"]
         p = net["loss_pct"] / 100 * r / (1 - net["loss_pct"] / 100)
         loss = ["loss", "gemodel", f"{100 * p:.6g}%", f"{100 * r:.6g}%", "100%", "0%"]
+    delay = ["delay", f"{net['rtt_ms'] / 2 + (net.get('delay_spike_ms', 0) if out else 0):g}ms"]
+    if net.get("delay_jitter_ms"):
+        delay.append(f"{net['delay_jitter_ms']:g}ms")
     rate = ["rate", f"{net['rate_mbit']:g}mbit"] if net["rate_mbit"] > 0 else []
-    return ["netem", "delay", f"{net['rtt_ms'] / 2:g}ms", *loss, *rate, "limit", "100000"]
+    if not rate and (net.get("delay_jitter_ms") or net.get("delay_spike_ms")):
+        # With a rate netem queues in order: a varying delay then does not
+        # reorder packets, as it would without one (tc-netem(8)).
+        rate = ["rate", "10gbit"]
+    return ["netem", *delay, *loss, *rate, "limit", "100000"]
 
 
 def netem(spec):
-    """Shapes lo; returns the running Outages when the loss is laid on in time."""
+    """Shapes lo; returns the running Spells when outages or spikes are laid on in time."""
     net, shape = spec["network"], spec["shape"]
     _sh(["ip", "link", "set", "lo", "up"])
     if net == "loopback":
@@ -97,9 +104,11 @@ def netem(spec):
         else:
             for d in ("sport", "dport"):
                 _sh([*u32, "match", "ip", "protocol", "6", "0xff", "match", "ip", d, str(shape), "0xffff", "flowid", "1:3"])
-    if not net.get("loss_outage_ms"):
+    if not (net.get("loss_outage_ms") or net.get("delay_spike_ms")):
         return None
-    o = Outages(net, target)
+    # One schedule per network and round: the cells of a group see the same
+    # spells, so a difference between them is not a difference of draws.
+    o = Spells(net, target, f"{json.dumps(net, sort_keys=True)}/{spec['round']}")
     o.start()
     return o
 
@@ -112,20 +121,22 @@ def spells(loss_pct, mean_ms, rng):
         yield rng.expovariate(1 / up), rng.expovariate(1 / out)
 
 
-class Outages(threading.Thread):
-    """Loss in time rather than per packet: the leg drops everything for a spell.
+class Spells(threading.Thread):
+    """Changes the leg for a spell and back, in time rather than per packet: an
+    outage drops everything (loss_outage_ms), a spike adds delay (delay_spike_ms).
     netem's Gilbert-Elliott moves on per packet, so a TCP sender backing off its
     RTO sends little and keeps a burst going for seconds; a fade does not wait."""
 
-    def __init__(self, net, target):
+    def __init__(self, net, target, seed=None):
         super().__init__(daemon=True)
-        self.net, self.target = net, target
+        self.net, self.target, self.seed = net, target, seed
         self.halt = threading.Event()
         self.count, self.out_s, self.error = 0, 0.0, ""
 
     def run(self):
+        pct, mean = (self.net["loss_pct"], self.net["loss_outage_ms"]) if self.net.get("loss_outage_ms") else (self.net["delay_spike_pct"], self.net["delay_spike_len_ms"])
         try:
-            for up, out in spells(self.net["loss_pct"], self.net["loss_outage_ms"], random.Random()):
+            for up, out in spells(pct, mean, random.Random(self.seed)):
                 if self.halt.wait(up):
                     return
                 self._switch(True)
@@ -144,6 +155,95 @@ class Outages(threading.Thread):
         self.halt.set()
         self.join(timeout=15)
         return {"count": self.count, "out_s": round(self.out_s, 3), **({"error": self.error} if self.error else {})}
+
+
+TCP_SUMS = ("segs_out", "data_segs_out", "retrans", "bytes_retrans", "dsack_dups", "bytes_sent")
+
+
+def parse_ss(text):
+    """`ss -tinH` output as {(local, peer): {field: int}}: the address line and
+    the tab-indented tcp_info line after it. retrans is the total of X/Y."""
+    socks, key = {}, None
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if not line.startswith(("\t", " ")):
+            f = line.split()
+            key = (f[-2], f[-1]) if len(f) >= 2 else None
+            continue
+        if key is None:
+            continue
+        info = {}
+        for m in re.finditer(r"\b([a-z_]+):([0-9./]+)", line):
+            k, v = m.groups()
+            if k == "retrans":
+                info[k] = int(v.split("/")[-1])
+            elif k in ("rto", "backoff", "lost", "reordering", "unacked") or k in TCP_SUMS:
+                info[k] = int(float(v))
+        socks[key] = info
+        key = None
+    return socks
+
+
+class TCPStats(threading.Thread):
+    """Retransmissions on the tunnel's TCP leg, both ends: the last tcp_info of
+    every connection on the tunnel port, summed by side when the cell ends. A
+    connection that closes between two polls loses at most one poll of counts."""
+
+    def __init__(self, port, every=1.0):
+        super().__init__(daemon=True)
+        self.port, self.every = port, every
+        self.halt = threading.Event()
+        self.conns, self.peak, self.rtos, self.conn_rtos, self.error = {}, {}, {}, {}, ""
+
+    def poll(self):
+        out = _sh(["ss", "-tinH", "state", "established", f"( sport = :{self.port} or dport = :{self.port} )"], timeout=5)
+        for key, info in parse_ss(out).items():
+            self.conns[key] = info
+            side = "server" if key[0].rsplit(":", 1)[-1] == str(self.port) else "client"
+            pk = self.peak.setdefault(side, {"polls": 0, "thick_polls": 0})
+            self.rtos.setdefault(side, []).append(info.get("rto", 0))
+            self.conn_rtos.setdefault(key, []).append(info.get("rto", 0))
+            for k in ("rto", "backoff", "unacked"):
+                pk[k] = max(pk.get(k, 0), info.get(k, 0))
+            # Thin-stream timeouts apply below four segments in flight (tcp_stream_is_thin).
+            pk["polls"] += 1
+            pk["thick_polls"] += info.get("unacked", 0) >= 4
+
+    def run(self):
+        while not self.halt.wait(self.every):
+            try:
+                self.poll()
+            except (SetupFailed, subprocess.TimeoutExpired, OSError) as e:
+                self.error = str(e)
+
+    def stop(self):
+        self.halt.set()
+        self.join(timeout=10)
+        try:
+            self.poll()
+        except (SetupFailed, subprocess.TimeoutExpired, OSError) as e:
+            self.error = str(e)
+        sides = {}
+        for key, info in self.conns.items():
+            side = "server" if key[0].rsplit(":", 1)[-1] == str(self.port) else "client"
+            d = sides.setdefault(side, {"conns": 0, **{k: 0 for k in TCP_SUMS}})
+            d["conns"] += 1
+            for k in TCP_SUMS:
+                d[k] += info.get(k, 0)
+        for side, d in sides.items():
+            d |= {k if k.endswith("polls") else f"max_{k}": v for k, v in self.peak.get(side, {}).items()}
+            # The peak is the timer before the first samples; the median is the one the stream lived with.
+            if self.rtos.get(side):
+                d["rto_p50"] = sorted(self.rtos[side])[len(self.rtos[side]) // 2]
+            # The side's median mixes its connections; the one that carried the
+            # most segments is the tunnel being measured.
+            mine = [k for k in self.conns if ("server" if k[0].rsplit(":", 1)[-1] == str(self.port) else "client") == side]
+            main = max(mine, key=lambda k: self.conns[k].get("data_segs_out", 0), default=None)
+            if main is not None and self.conn_rtos.get(main):
+                r = sorted(self.conn_rtos[main])
+                d["main_rto_p50"] = r[len(r) // 2]
+        return sides | ({"error": self.error} if self.error else {})
 
 
 def exited(p):
@@ -307,12 +407,12 @@ def main(spec_path):
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
     run = {"id": spec["id"], "status": "setup_failed", "reason": "", "started": time.time()}
-    procs, cap, outages = {}, None, None
+    procs, cap, spells = {}, None, None
     secret = os.path.join(spec["tmp"], "secret")
     try:
         if netns_inode() == spec["parent_netns"]:
             raise SetupFailed("refusing to run outside a fresh network namespace")
-        outages = netem(spec)
+        spells = netem(spec)
         os.makedirs(secret, mode=0o700, exist_ok=True)
         socks = start(spec, secret, procs, run)
         if spec["settings"]["capture"] and not spec["direct"]:
@@ -325,8 +425,8 @@ def main(spec_path):
     except Exception as e:
         run["status"], run["reason"] = "cell_error", f"{type(e).__name__}: {e}"
     finally:
-        if outages:
-            run["outages"] = outages.stop()
+        if spells:
+            run["outages" if spec["network"].get("loss_outage_ms") else "spikes"] = spells.stop()
         finish(spec, procs, run, cap)
         for f in os.listdir(secret) if os.path.isdir(secret) else []:
             os.remove(os.path.join(secret, f))
@@ -454,6 +554,10 @@ def measure(spec, socks, procs, run, cap):
     t0 = time.monotonic()
     run["measure_started"] = time.time()
     procs["generator"] = gen = _spawn(args, genv, glog)
+    tcp = None
+    if spec["transport"] in ("obfs", "wss") and not spec["direct"]:
+        tcp = TCPStats(PORTS[spec["transport"]])
+        tcp.start()
     stall = seconds(st["scenario_timeout"]) + seconds(st["hang_grace"]) + 30
     if spec["kind"] == "soak":
         stall += max(seconds(st["soak"]), seconds(st["idle"]))
@@ -495,6 +599,8 @@ def measure(spec, socks, procs, run, cap):
         else:
             time.sleep(0.2)
     run["seconds"] = round(time.monotonic() - t0, 3)
+    if tcp:
+        run["tcp"] = tcp.stop()
     run["generator_rc"] = gen.returncode
     run["after"] = snapshot(procs, "after", run)
     if "server" in procs:

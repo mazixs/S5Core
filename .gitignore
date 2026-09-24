@@ -9,6 +9,7 @@
 /idleprobe
 /httpsprobe
 /udpprobe
+/udpshape
 /connlat
 /stealthcheck
 /fpprobe

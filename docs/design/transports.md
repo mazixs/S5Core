@@ -421,7 +421,7 @@ flight for duplicate ACKs to trigger a fast retransmit, so a loss costs about
 one round trip: p99 of 75.5 ms against 50.9 ms, worst case 96.6 ms. A sparse
 flow has no such luck. One DNS query every 200 ms never produces three
 duplicate ACKs, so the lost segment waits for the retransmission timeout, and
-Linux will not set that below 200 ms. 200 ms of `TCP_RTO_MIN` plus the round
+by default Linux will not set that below 200 ms. 200 ms of `TCP_RTO_MIN` plus the round
 trip is the 275.8 ms in the table - 5.4 times the direct path. A smaller run
 (40 packets) put the same outlier at p99 rather than at max; the number is the
 same, its frequency is what the sample size changes.
@@ -430,11 +430,12 @@ same, its frequency is what the sample size changes.
 > times a single round trip will occasionally see a 200+ ms outlier through
 > the tunnel that it would not see without one: a DNS resolver with a 100 ms
 > timeout will retry, a voice codec with a short jitter buffer will drop a
-> frame. This is inherent to carrying UDP over TCP and is not tuned away by
-> configuration. There is no bypass mode by design - a UDP flow outside the
-> tunnel is exactly the leak `0x83` exists to close. What *can* be adjusted is
-> on the application side: give the resolver a timeout above 300 ms, and give a
-> jitter buffer room for one retransmission.
+> frame. This is inherent to carrying UDP over TCP: the socket tuning below
+> shortens the wait, it does not remove it. There is no bypass mode by
+> design - a UDP flow outside the tunnel is exactly the leak `0x83` exists to
+> close. What *can* be adjusted is on the application side: give the resolver
+> a timeout above 300 ms, and give a jitter buffer room for one
+> retransmission.
 
 The plan's threshold for "this needs its own mode" was p95 doubling at 1% loss.
 It does not: 50.5 ms against 51.3 ms, 1.02x. The tail crosses it and the median
@@ -445,5 +446,42 @@ does not, which is why this is a documented warning and not a second transport.
 DNS_PACKETS=120 DNS_INTERVAL=200ms PACKETS=1500 INTERVAL=20ms \
   ./scripts/udp_loss_matrix.sh                                  # the table above, ~12 min
 ```
+
+#### Tuning the tunnel socket
+
+Both ends tune the TCP socket that carries a `0x83` association, and no other
+(`UDP_TUNNEL_TCP_TUNING`, on by default, `internal/tcptune`): thin-stream
+linear timeouts and, on Linux 6.15 and later, a 20 ms floor for the
+retransmission timer. Each end tunes the direction it sends. Measured on a
+64 Hz game flow at a 50 ms round trip
+([`game-tuning.md`](../benchmarks/game-tuning.md)):
+
+- during 30 ms outages p99 drops from 217 to 140 ms, the longest pause from
+  471 to 295 ms and the number of freezes from 65 to 47; during 200 ms
+  outages p99 drops from 330 to 153 ms and p99.9 from 892 to 516 ms;
+- on a clean path and under random loss nothing changes beyond the spread
+  between rounds;
+- the cost is on delay spikes longer than the timer: the ends retransmit
+  segments that were not lost (0.2% of their segments), and p99.9 grows from
+  250 to 322 ms while p99 stays put. The client's half pays it;
+- the gain needs both ends: a tick comes back only when both directions have
+  arrived, and one tuned end gives almost nothing during 200 ms outages.
+
+A freeze still happens: on a 50 ms path one retransmission costs more than a
+round trip, so the tuning shortens freezes and prevents only some of them.
+
+The cap of the timer is left to the kernel. Linux derives from the cap how
+long a connection may keep retransmitting before it closes it with
+`ETIMEDOUT`, and counts that time from a stamp it does not always clear once
+a loss episode is over. A cap of 1 s made that 14.4 s instead of 924.6 s, and
+tunnels died on the second retransmission of a 200 ms outage. Without a cap,
+a series of outages longer than a second waits longer between
+retransmissions than an untuned socket would; the same document records
+that cost.
+
+On older kernels - 6.12 on Debian 13, 4.9 on routers - only the linear
+timeouts apply: equal to no tuning during 30 ms outages, part of the tail
+during 200 ms ones. The deployment levers for those kernels, and what they
+cost, are in the same document.
 
 [Documentation index](../README.md) · [Project home](../../README.md)

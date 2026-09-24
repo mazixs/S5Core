@@ -1,0 +1,43 @@
+# What the proxy itself adds to a game datagram: a 64 Hz stream on loopback,
+# no netem, so every microsecond above raw is processing on the two ends.
+# HEAD against the working tree, plain (native UDP, 0x03), obfs and wss
+# (0x83). One minute per cell, cells one at a time on pinned cores, three
+# rounds. About 25 minutes.
+name = "game-loopback"
+description = "добавка прокси к игровой датаграмме на петле"
+base = "head"
+candidate = "wt"
+
+[defaults]
+auth = "none"
+scale = 0.01666667
+scenario_timeout = "3m"
+hang_grace = "30s"
+settle = "3s"
+retries = 1
+sample_s = 10
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.head]
+ref = "HEAD"
+
+[variants.wt]
+ref = "worktree"
+title = "рабочее дерево"
+
+[cpus]
+loopback = "0-5,8-13"
+
+[guard]
+max_foreign_cores = 3.0
+load_wait = "120s"
+
+[[series]]
+name = "lo"
+title = "loopback, игровой поток 64 Гц"
+rounds = 3
+transports = ["plain", "obfs", "wss"]
+only = ["=game/64hz-200b"]
