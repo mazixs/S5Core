@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mazixs/S5Core/pkg/obfs"
+	"github.com/mazixs/S5Core/pkg/veil"
 )
 
 // Plan task Ф3-1. The field report said: "no answer, ever, and not one WARN in
@@ -260,5 +261,6 @@ func newObfsConnForTest(raw net.Conn, cfg clientParams) (net.Conn, error) {
 		PSK:        []byte(cfg.PSK),
 		MaxPadding: cfg.MaxPadding,
 		MTU:        cfg.MTU,
+		Scheme:     &veil.Clocked{Accepts: everyCipher()},
 	})
 }

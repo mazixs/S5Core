@@ -163,11 +163,23 @@ else
 		bad "бенчмарки"
 	fi
 
-	step "Сборка бинарей"
-	if go build -o /dev/null ./cmd/s5core && go build -o /dev/null ./cmd/s5client; then
-		ok "s5core и s5client собираются"
+	# Цели берутся из release.yml, а не перечисляются здесь: иначе поломка
+	# сборки под одну из них (32-битный MIPS) всплыла бы в job релиза уже
+	# после публикации Docker-образов.
+	step "Сборка бинарей под цели релиза"
+	release_builds="$(sed -n 's/^ *\(GOOS=[^ ]*\( GO[A-Z]*=[^ ]*\)*\) go build .* \(\.\/cmd\/[a-z0-9]*\)$/\1 \3/p' .github/workflows/release.yml)"
+	if [ -z "$release_builds" ]; then
+		bad "в .github/workflows/release.yml не найдено ни одной строки go build"
 	else
-		bad "сборка"
+		build_failed=0
+		while read -r build; do
+			# shellcheck disable=SC2086 # переменные цели разбиваются на слова намеренно
+			if ! env ${build% *} go build -o /dev/null "${build##* }"; then
+				bad "сборка: $build"
+				build_failed=1
+			fi
+		done <<< "$release_builds"
+		[ "$build_failed" -eq 0 ] && ok "$(wc -l <<< "$release_builds") целей из release.yml собираются"
 	fi
 fi
 

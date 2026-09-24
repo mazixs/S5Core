@@ -102,6 +102,8 @@ jobs:
           GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5client-darwin-amd64 ./cmd/s5client
           GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/s5client-darwin-arm64 ./cmd/s5client
           GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5client-windows-amd64.exe ./cmd/s5client
+          GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="$LDFLAGS" -o dist/s5client-linux-mipsle-softfloat ./cmd/s5client
+          GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="$LDFLAGS" -o dist/s5client-linux-mips-softfloat ./cmd/s5client
 
       - name: Release
         uses: softprops/action-gh-release@v3
