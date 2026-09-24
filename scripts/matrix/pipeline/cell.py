@@ -8,6 +8,7 @@ always written to run.json, including when the cell is told to stop.
 import base64
 import json
 import os
+import random
 import re
 import resource
 import select
@@ -16,9 +17,11 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
+from .plan import CLIENT_IP
 from .util import go_duration, netns_inode, proc_stat, read_json, seconds, set_pdeathsig, write_json
 
 PORTS = {"plain": 41080, "obfs": 41443, "wss": 41444, "metrics": 41090, "client": 41081}
@@ -56,22 +59,91 @@ def _sh(cmd, timeout=10):
     return r.stdout
 
 
+def netem_args(net, out=False):
+    """One pass through lo: half the RTT, the loss and the rate."""
+    loss = ["loss", f"{net['loss_pct']:g}%"]
+    if net.get("loss_outage_ms"):
+        # The loss is laid on in time by Outages; out is the state it switches to.
+        loss = ["loss", "100%" if out else "0%"]
+    elif net.get("loss_burst", 1) > 1:
+        # Gilbert-Elliott: the bad state loses every packet, the good one none;
+        # a burst lasts 1/r packets on average and the loss is p/(p+r).
+        r = 1 / net["loss_burst"]
+        p = net["loss_pct"] / 100 * r / (1 - net["loss_pct"] / 100)
+        loss = ["loss", "gemodel", f"{100 * p:.6g}%", f"{100 * r:.6g}%", "100%", "0%"]
+    rate = ["rate", f"{net['rate_mbit']:g}mbit"] if net["rate_mbit"] > 0 else []
+    return ["netem", "delay", f"{net['rtt_ms'] / 2:g}ms", *loss, *rate, "limit", "100000"]
+
+
 def netem(spec):
+    """Shapes lo; returns the running Outages when the loss is laid on in time."""
     net, shape = spec["network"], spec["shape"]
     _sh(["ip", "link", "set", "lo", "up"])
     if net == "loopback":
-        return
-    args = ["netem", "delay", f"{net['rtt_ms'] / 2:g}ms", "loss", f"{net['loss_pct']:g}%", "limit", "100000"]
-    if net["rate_mbit"] > 0:
-        args[5:5] = ["rate", f"{net['rate_mbit']:g}mbit"]
+        return None
+    args = netem_args(net)
+    target = ["root", "handle", "1:"]
     if shape == "all":
-        _sh(["tc", "qdisc", "add", "dev", "lo", "root", "handle", "1:", *args])
-        return
-    _sh(["tc", "qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio", "bands", "3", "priomap", *["0"] * 16])
-    _sh(["tc", "qdisc", "add", "dev", "lo", "parent", "1:3", "handle", "30:", *args])
-    for d in ("sport", "dport"):
-        _sh(["tc", "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "1", "u32",
-             "match", "ip", "protocol", "6", "0xff", "match", "ip", d, str(shape), "0xffff", "flowid", "1:3"])
+        _sh(["tc", "qdisc", "add", "dev", "lo", *target, *args])
+    else:
+        _sh(["tc", "qdisc", "add", "dev", "lo", *target, "prio", "bands", "3", "priomap", *["0"] * 16])
+        target = ["parent", "1:3", "handle", "30:"]
+        _sh(["tc", "qdisc", "add", "dev", "lo", *target, *args])
+        u32 = ["tc", "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "1", "u32"]
+        if shape == CLIENT_IP:
+            # TCP and UDP to and from the generator; the server reaches the origins from 127.0.0.1.
+            for d in ("src", "dst"):
+                _sh([*u32, "match", "ip", d, f"{shape}/32", "flowid", "1:3"])
+        else:
+            for d in ("sport", "dport"):
+                _sh([*u32, "match", "ip", "protocol", "6", "0xff", "match", "ip", d, str(shape), "0xffff", "flowid", "1:3"])
+    if not net.get("loss_outage_ms"):
+        return None
+    o = Outages(net, target)
+    o.start()
+    return o
+
+
+def spells(loss_pct, mean_ms, rng):
+    """(up, out) seconds, both exponential: out has mean mean_ms and takes loss_pct of the time."""
+    out = mean_ms / 1000
+    up = out * (100 - loss_pct) / loss_pct
+    while True:
+        yield rng.expovariate(1 / up), rng.expovariate(1 / out)
+
+
+class Outages(threading.Thread):
+    """Loss in time rather than per packet: the leg drops everything for a spell.
+    netem's Gilbert-Elliott moves on per packet, so a TCP sender backing off its
+    RTO sends little and keeps a burst going for seconds; a fade does not wait."""
+
+    def __init__(self, net, target):
+        super().__init__(daemon=True)
+        self.net, self.target = net, target
+        self.halt = threading.Event()
+        self.count, self.out_s, self.error = 0, 0.0, ""
+
+    def run(self):
+        try:
+            for up, out in spells(self.net["loss_pct"], self.net["loss_outage_ms"], random.Random()):
+                if self.halt.wait(up):
+                    return
+                self._switch(True)
+                t = time.monotonic()
+                self.halt.wait(out)
+                self._switch(False)
+                self.count += 1
+                self.out_s += time.monotonic() - t
+        except (SetupFailed, subprocess.TimeoutExpired, OSError) as e:
+            self.error = str(e)
+
+    def _switch(self, out):
+        _sh(["tc", "qdisc", "change", "dev", "lo", *self.target, *netem_args(self.net, out)])
+
+    def stop(self):
+        self.halt.set()
+        self.join(timeout=15)
+        return {"count": self.count, "out_s": round(self.out_s, 3), **({"error": self.error} if self.error else {})}
 
 
 def exited(p):
@@ -235,12 +307,12 @@ def main(spec_path):
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
     run = {"id": spec["id"], "status": "setup_failed", "reason": "", "started": time.time()}
-    procs, cap = {}, None
+    procs, cap, outages = {}, None, None
     secret = os.path.join(spec["tmp"], "secret")
     try:
         if netns_inode() == spec["parent_netns"]:
             raise SetupFailed("refusing to run outside a fresh network namespace")
-        netem(spec)
+        outages = netem(spec)
         os.makedirs(secret, mode=0o700, exist_ok=True)
         socks = start(spec, secret, procs, run)
         if spec["settings"]["capture"] and not spec["direct"]:
@@ -253,6 +325,8 @@ def main(spec_path):
     except Exception as e:
         run["status"], run["reason"] = "cell_error", f"{type(e).__name__}: {e}"
     finally:
+        if outages:
+            run["outages"] = outages.stop()
         finish(spec, procs, run, cap)
         for f in os.listdir(secret) if os.path.isdir(secret) else []:
             os.remove(os.path.join(secret, f))
@@ -326,6 +400,11 @@ def _gen_args(spec, socks, budget=None, grace=None):
          "-hang-grace", go_duration(grace or seconds(st["hang_grace"])), "-max-errors-in-row", str(st["max_errors_in_row"])]
     if socks:
         a += ["-socks", socks]
+        if spec["shape"] == CLIENT_IP:
+            a += ["-source", CLIENT_IP]
+        if isinstance(spec["network"], dict):
+            # The generator's own control would bypass netem; the raw cell is the control.
+            a += ["-control=false"]
     return a
 
 

@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only when named. Plain SOCKS5 now runs in WAN mode too (real UDP through
   `0x03`, behind the stand's IP filter), and the report names each illegal
   session transition instead of only counting them.
+- Under netem, plain SOCKS5 is shaped on the generator's address, so UDP
+  ASSOCIATE datagrams cross the lossy leg as well as TCP; before, only the
+  control connection did. Plans can ask for bursty loss: `loss_outage_ms`
+  drops everything for spells in time, `loss_burst` is netem's per-packet
+  Gilbert-Elliott model, fit only for a constant-rate stream (a TCP sender
+  backing off sends little and stretches its burst to seconds). netem series
+  with the same `group` run as one unpinned batch per round, and
+  `plans/game-loss.toml` measures a game session under 0-5% loss and outages
+  for native UDP against `0x83` ([results](docs/benchmarks/game-loss.md)).
 
 ## [2.2.0] - 2026-09-24
 

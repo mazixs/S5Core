@@ -124,6 +124,7 @@ type prober struct {
 	dial     func(ctx context.Context, network, addr string) (net.Conn, error)
 	maxInRow int
 	slow     time.Duration
+	control  bool
 
 	ctx    context.Context
 	cancel context.CancelFunc

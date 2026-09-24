@@ -50,9 +50,16 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1", "origin listen IP with -serve")
 	allow := flag.String("allow", "", "comma-separated source prefixes the origins answer besides loopback")
 	originFile := flag.String("origin", "", "use remote origins described by this file instead of local ones")
+	source := flag.String("source", "", "local IP of every connection to the SOCKS5 proxy, TCP and UDP")
+	control := flag.Bool("control", true, "run a direct control stream beside a proxied game session")
 	flag.Parse()
 
-	p := &prober{socks: *socks, dial: dialer(*socks), maxInRow: *inRow, slow: time.Duration(*slowMs) * time.Millisecond}
+	if *source != "" {
+		if proxySource = net.ParseIP(*source); proxySource == nil {
+			must(fmt.Errorf("-source %q is not an IP", *source))
+		}
+	}
+	p := &prober{socks: *socks, dial: dialer(*socks), maxInRow: *inRow, slow: time.Duration(*slowMs) * time.Millisecond, control: *control}
 	suite := p.suite(*scale)
 	var chosen []scenario
 	for _, s := range suite {

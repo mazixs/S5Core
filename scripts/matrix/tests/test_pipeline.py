@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import tempfile
 import tomllib
@@ -6,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from pipeline import analysis, plan, report  # noqa: E402
+from pipeline import analysis, cell, plan, report  # noqa: E402
 from pipeline.util import cpu_list, go_duration, seconds  # noqa: E402
 
 PLANS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plans")
@@ -118,6 +119,62 @@ class Plans(unittest.TestCase):
             self.assertEqual(len(cpus), len(set(cpus)))
         self.assertEqual({c["shape"] for c in b[0]["cells"]}, {"all", 41443, 41444})
 
+    def test_plain_under_netem_is_shaped_by_the_client_address(self):
+        p = raw_plan(cpus={"raw": "0", "plain": ["1", "6"], "obfs": ["2", "3"], "wss": ["4", "5"]},
+                     series=[{"name": "n", "network": {"rtt_ms": 40}, "transports": ["plain", "obfs"], "auth": "none"}])
+        shapes = {c["transport"]: c["shape"] for c in plan.expand(plan.resolve(p, "."))[0]["cells"] if not c["direct"]}
+        self.assertEqual(shapes, {"plain": plan.CLIENT_IP, "obfs": 41443})
+
+    def test_loss_burst(self):
+        def net(**kw):
+            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 40, **kw}}]), ".")["series"][0]["network"]
+        self.assertNotIn("loss_burst", net(loss_pct=1))
+        for bad in ({"loss_burst": 4}, {"loss_pct": 1, "loss_burst": 0.5}):
+            with self.assertRaises(plan.PlanError):
+                net(**bad)
+        args = cell.netem_args(net(loss_pct=2, loss_burst=4))
+        i = args.index("gemodel")
+        p, r = (float(x.rstrip("%")) / 100 for x in args[i + 1:i + 3])
+        self.assertAlmostEqual(p / (p + r), 0.02)
+        self.assertAlmostEqual(1 / r, 4)
+        self.assertEqual(cell.netem_args(net(loss_pct=0.5, rate_mbit=200)),
+                         ["netem", "delay", "20ms", "loss", "0.5%", "rate", "200mbit", "limit", "100000"])
+
+    def test_loss_outage(self):
+        def net(**kw):
+            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 40, **kw}}]), ".")["series"][0]["network"]
+        self.assertNotIn("loss_outage_ms", net(loss_pct=1))
+        for bad in ({"loss_outage_ms": 30}, {"loss_pct": 1, "loss_outage_ms": 0}, {"loss_pct": 1, "loss_outage_ms": 30, "loss_burst": 4}):
+            with self.assertRaises(plan.PlanError):
+                net(**bad)
+        n = net(loss_pct=2, loss_outage_ms=30)
+        self.assertEqual(cell.netem_args(n), ["netem", "delay", "20ms", "loss", "0%", "limit", "100000"])
+        self.assertEqual(cell.netem_args(n, out=True), ["netem", "delay", "20ms", "loss", "100%", "limit", "100000"])
+        draws = [d for d, _ in zip(cell.spells(2, 30, random.Random(1)), range(20000))]
+        up, out = (sum(x) / len(draws) for x in zip(*draws))
+        self.assertAlmostEqual(out, 0.030, delta=0.001)
+        self.assertAlmostEqual(out / (up + out), 0.02, delta=0.001)
+
+    def test_a_group_runs_its_series_as_one_unpinned_batch(self):
+        p = raw_plan(cpus={}, series=[{"name": "lo", "rounds": 1},
+                                      {"name": "a", "network": {"rtt_ms": 40}, "group": "g", "rounds": 2},
+                                      {"name": "b", "network": {"rtt_ms": 40, "loss_pct": 1}, "group": "g", "rounds": 2}])
+        b = plan.expand(plan.resolve(p, "."))
+        self.assertEqual([x["id"] for x in b][-2:], ["g/r1", "g/r2"])
+        cells = b[-2]["cells"]
+        self.assertEqual({c["series"] for c in cells}, {"a", "b"})
+        self.assertEqual(len(cells), 10)
+        self.assertTrue(all(c["cpus"] is None for c in cells))
+        self.assertEqual([x["id"] for x in plan.expand(plan.resolve(p, "."), {"b"})], ["g/r1", "g/r2"])
+        bad = [
+            [{"name": "a", "group": "g"}],
+            [{"name": "a", "network": {"rtt_ms": 40}, "group": "a"}],
+            [{"name": "a", "network": {"rtt_ms": 40}, "group": "g"}, {"name": "b", "network": {"rtt_ms": 40}, "group": "g", "rounds": 2}],
+        ]
+        for series in bad:
+            with self.assertRaises(plan.PlanError):
+                plan.resolve(raw_plan(series=series), ".")
+
     def test_oversized_netem_round_splits_by_auth(self):
         p = raw_plan(cpus={"obfs": ["1", "2"], "wss": ["4", "5"]},
                      series=[{"name": "auth", "network": {"rtt_ms": 40}, "variants": ["a", "b"], "rounds": 2,
@@ -191,7 +248,6 @@ class Wan(unittest.TestCase):
         self.assertIsNone(wan.parse_snap("42 gone", 100))
 
     def test_illegal_transitions_keep_their_names(self):
-        from pipeline import cell
         body = """s5core_session_transitions_total{from="relay",illegal="false",region="protocol",to="half_closed",transport="plain"} 9
 s5core_session_transitions_total{from="closed",illegal="true",region="protocol",to="half_closed",transport="plain"} 2
 s5core_session_transitions_total{from="accepted",illegal="true",region="protocol",to="relay",transport="obfs"} 1
