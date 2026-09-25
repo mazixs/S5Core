@@ -107,6 +107,10 @@ type Telemetry struct {
 	// guessed at. Every label comes from a closed enum in the code; see
 	// docs/design/observability-policy.md.
 	SessionTransitions metric.Int64Counter
+	// NativeUDPPackets has only four fixed outcome labels: accepted, tag,
+	// replay and auth. NativeUDPSessions counts live associations.
+	NativeUDPPackets  metric.Int64ObservableCounter
+	NativeUDPSessions metric.Int64ObservableGauge
 
 	// meter is kept so that the session gauge can be registered once the
 	// registry that answers it exists, which is in NewServer.
@@ -231,6 +235,16 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 	if err != nil {
 		return nil, err
 	}
+	nativePackets, err := meter.Int64ObservableCounter("s5core_native_udp_packets_total",
+		metric.WithDescription("Native UDP datagrams accepted or dropped, by fixed outcome"))
+	if err != nil {
+		return nil, err
+	}
+	nativeSessions, err := meter.Int64ObservableGauge("s5core_native_udp_sessions",
+		metric.WithDescription("Active native UDP associations"))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Telemetry{
 		ActiveConnections: activeConns,
@@ -255,6 +269,8 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 
 		Sessions:           sessions,
 		SessionTransitions: sessionTransitions,
+		NativeUDPPackets:   nativePackets,
+		NativeUDPSessions:  nativeSessions,
 		meter:              meter,
 	}, nil
 }

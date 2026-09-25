@@ -98,6 +98,7 @@ type clientParams struct {
 	// behind a lost segment waits for the retransmission timer. Off keeps the
 	// kernel's timer, for a path where that turns out better.
 	UDPTunnelTCPTuning bool `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
+	UDPNative          bool `env:"UDP_NATIVE" envDefault:"false"`
 
 	// How long a shutdown waits for connections that are still carrying
 	// traffic before it stops waiting.
@@ -440,6 +441,9 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	copy(wireReq, connectReq)
 	if cmd == socks5.AssociateCommand {
 		wireReq[1] = socks5.UDPTunnelCommand
+		if cfg.UDPNative {
+			wireReq[1] = socks5.UDPNativeCommand
+		}
 	}
 
 	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request. The
@@ -459,7 +463,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Handle based on command
 	if cmd == socks5.AssociateCommand {
-		handleUDPAssociate(clientConn, obfsConn, destFQDN, cfg)
+		handleUDPAssociate(clientConn, obfsConn, destFQDN, cfg, wireReq)
 		return
 	}
 

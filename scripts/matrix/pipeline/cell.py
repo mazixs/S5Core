@@ -26,7 +26,8 @@ from .util import go_duration, netns_inode, proc_stat, read_json, seconds, set_p
 
 PORTS = {"plain": 41080, "obfs": 41443, "wss": 41444, "metrics": 41090, "client": 41081}
 GAUGES = ("s5core_sessions", "s5core_connections_active", "s5core_obfs_handshake_failures_total",
-          "s5core_half_close_failures_total", "s5core_connections_rejected_total")
+          "s5core_half_close_failures_total", "s5core_connections_rejected_total",
+          "s5core_native_udp_packets_total", "s5core_native_udp_sessions")
 PORT_WAIT = 10
 WARMUP_TIMEOUT = 60
 STOP_WAIT = 5
@@ -86,6 +87,11 @@ def netem(spec):
     """Shapes lo; returns the running Spells when outages or spikes are laid on in time."""
     net, shape = spec["network"], spec["shape"]
     _sh(["ip", "link", "set", "lo", "up"])
+    if spec.get("settings", {}).get("capture"):
+        # lo defaults to a 64 KiB MTU and may expose GSO super-packets to
+        # AF_PACKET. Neither is the packet length on a normal 1500-byte leg.
+        _sh(["ip", "link", "set", "lo", "mtu", "1500"])
+        _sh(["ethtool", "-K", "lo", "gso", "off", "gro", "off", "tso", "off"])
     if net == "loopback":
         return None
     args = netem_args(net)
@@ -96,7 +102,7 @@ def netem(spec):
         _sh(["tc", "qdisc", "add", "dev", "lo", *target, "prio", "bands", "3", "priomap", *["0"] * 16])
         target = ["parent", "1:3", "handle", "30:"]
         _sh(["tc", "qdisc", "add", "dev", "lo", *target, *args])
-        u32 = ["tc", "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "1", "u32"]
+        u32 = ["tc", "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "10", "u32"]
         if shape == CLIENT_IP:
             # TCP and UDP to and from the generator; the server reaches the origins from 127.0.0.1.
             for d in ("src", "dst"):
@@ -104,6 +110,13 @@ def netem(spec):
         else:
             for d in ("sport", "dport"):
                 _sh([*u32, "match", "ip", "protocol", "6", "0xff", "match", "ip", d, str(shape), "0xffff", "flowid", "1:3"])
+            # A native UDP association uses a second socket on the same
+            # client-server leg. Shape it with the TCP control connection;
+            # otherwise a game-loss cell would report an unshaped UDP path.
+            udp_port = spec["env"]["server"].get("UDP_PORT")
+            if udp_port:
+                for d in ("sport", "dport"):
+                    _sh([*u32, "match", "ip", "protocol", "17", "0xff", "match", "ip", d, str(udp_port), "0xffff", "flowid", "1:3"])
     if not (net.get("loss_outage_ms") or net.get("delay_spike_ms")):
         return None
     # One schedule per network and round: the cells of a group see the same
@@ -155,6 +168,42 @@ class Spells(threading.Thread):
         self.halt.set()
         self.join(timeout=15)
         return {"count": self.count, "out_s": round(self.out_s, 3), **({"error": self.error} if self.error else {})}
+
+
+class UDPBlackout(threading.Thread):
+    """Drop only the native UDP leg, leaving the 0x83 TCP fallback usable."""
+
+    def __init__(self, port, after_s, for_s):
+        super().__init__(daemon=True)
+        self.port, self.after_s, self.for_s = port, after_s, for_s
+        self.halt = threading.Event()
+        self.started_at = self.ended_at = None
+        self.error = ""
+
+    def run(self):
+        if self.halt.wait(self.after_s):
+            return
+        try:
+            base = ["tc", "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "1", "u32", "match", "ip", "protocol", "17", "0xff"]
+            for direction in ("sport", "dport"):
+                _sh([*base, "match", "ip", direction, str(self.port), "0xffff", "action", "drop"])
+            self.started_at = time.monotonic()
+            self.halt.wait(self.for_s)
+        except (SetupFailed, subprocess.TimeoutExpired, OSError) as e:
+            self.error = str(e)
+        finally:
+            try:
+                _sh(["tc", "filter", "del", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "1"])
+            except (SetupFailed, subprocess.TimeoutExpired, OSError) as e:
+                self.error = self.error or str(e)
+            self.ended_at = time.monotonic()
+
+    def stop(self):
+        self.halt.set()
+        self.join(timeout=15)
+        return {"applied": self.started_at is not None,
+                "duration_s": round(self.ended_at - self.started_at, 3) if self.started_at and self.ended_at else 0,
+                **({"error": self.error} if self.error else {})}
 
 
 TCP_SUMS = ("segs_out", "data_segs_out", "retrans", "bytes_retrans", "dsack_dups", "bytes_sent")
@@ -314,6 +363,11 @@ def parse_gauges(body):
             except ValueError:
                 continue
             out[key] = out.get(key, 0) + v
+            if base == "s5core_native_udp_packets_total":
+                labels = dict(re.findall(r'(\w+)="([^"]*)"', name))
+                outcome = labels.get("outcome")
+                if outcome in ("accepted", "tag", "replay", "auth"):
+                    out[f"native_udp_{outcome}"] = v
             if key == "illegal_transitions":
                 # The count alone does not say which driver is wrong; the labels do.
                 lb = dict(re.findall(r'(\w+)="([^"]*)"', name))
@@ -554,6 +608,13 @@ def measure(spec, socks, procs, run, cap):
     t0 = time.monotonic()
     run["measure_started"] = time.time()
     procs["generator"] = gen = _spawn(args, genv, glog)
+    blackout = None
+    if isinstance(spec["network"], dict) and "udp_blackout_after_s" in spec["network"]:
+        port = spec["env"]["server"].get("UDP_PORT")
+        if not port or spec["direct"]:
+            raise SetupFailed("UDP blackout requires a native UDP tunnel cell")
+        blackout = UDPBlackout(port, spec["network"]["udp_blackout_after_s"], spec["network"]["udp_blackout_for_s"])
+        blackout.start()
     tcp = None
     if spec["transport"] in ("obfs", "wss") and not spec["direct"]:
         tcp = TCPStats(PORTS[spec["transport"]])
@@ -627,6 +688,10 @@ def measure(spec, socks, procs, run, cap):
             time.sleep(0.2)
         run["settled"] = snapshot(procs, "settled", run)
         run["gauges_settled"] = gauges()
+    if blackout:
+        run["udp_blackout"] = blackout.stop()
+        if run["status"] == "ok" and (not run["udp_blackout"]["applied"] or run["udp_blackout"].get("error")):
+            run["status"], run["reason"] = "cell_error", "native UDP blackout was not applied cleanly"
 
 
 def finish(spec, procs, run, cap):

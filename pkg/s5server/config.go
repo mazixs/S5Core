@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/mazixs/S5Core/pkg/obfs"
@@ -56,6 +57,7 @@ type Config struct {
 	// Obfuscation settings
 	ObfsEnabled    bool
 	ObfsPort       string // Separate port for obfuscated connections
+	UDPPort        string // Native UDP endpoint; empty disables it
 	ObfsPSK        string
 	ObfsMaxPadding int
 	ObfsMTU        int
@@ -165,6 +167,15 @@ func DefaultConfig() Config {
 
 // ValidateConfig checks that the configuration is valid before starting the server.
 func ValidateConfig(cfg Config) error {
+	if cfg.UDPPort != "" {
+		port, err := strconv.Atoi(cfg.UDPPort)
+		if err != nil || port < 0 || port > 65535 {
+			return fmt.Errorf("UDP_PORT must be a port from 0 to 65535")
+		}
+		if !cfg.ObfsEnabled && !cfg.WSEnabled {
+			return fmt.Errorf("UDP_PORT requires an obfs or ws listener")
+		}
+	}
 	// The client whitelist is read here so that a list that cannot be read
 	// stops NewServer, rather than being read leniently at Start and leaving
 	// an open server behind. One parser, one verdict; see parseWhitelist.

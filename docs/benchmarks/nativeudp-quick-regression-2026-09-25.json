@@ -1,0 +1,37 @@
+{
+  "date": "2026-09-25",
+  "scope": "local loopback and netem; working tree against HEAD; no WAN or production claim",
+  "runs": [
+    {
+      "source_run": "quick-20260925-103342",
+      "client_udp_native_default": true,
+      "cells_ok": 20,
+      "problems": 0,
+      "worse_flags": 7
+    },
+    {
+      "source_run": "quick-recheck-20260925-103723",
+      "rounds": 10,
+      "cells_ok": 40,
+      "problems": 0,
+      "worse_flags": 1,
+      "remaining": "obfs h3/small-reuse setup p50: 1.53 to 1.73 ms, 10/10 paired rounds"
+    },
+    {
+      "source_run": "quick-20260925-104232",
+      "client_udp_native_default": false,
+      "cells_ok": 20,
+      "problems": 0,
+      "worse_flags": 1,
+      "remaining": "wss http/small-reuse p99: 0.108 to 0.134 ms, 3/3 short rounds"
+    },
+    {
+      "source_run": "quick-recheck-20260925-104543",
+      "rounds": 10,
+      "cells_ok": 20,
+      "problems": 0,
+      "worse_flags": 0
+    }
+  ],
+  "conclusion": "The 0x84 trial on servers without UDP_PORT caused a repeatable H3 association setup delay. Native UDP now requires explicit UDP_NATIVE=true on the client; the final 10-round recheck has no worse flags."
+}

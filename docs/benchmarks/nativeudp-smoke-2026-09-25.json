@@ -1,0 +1,213 @@
+{
+  "environment": "local linux amd64; netem 50 ms RTT, 0.5% loss; 64 Hz, 200 B, 30 s",
+  "runs": [
+    {
+      "run": "game-native-smoke-20260925-010524",
+      "results": {
+        "raw-r1": {
+          "n": 1901,
+          "errors": 0,
+          "p50_ms": 50.075,
+          "p90_ms": 50.114,
+          "p99_ms": 50.204,
+          "max_ms": 55.305,
+          "bytes": 760400,
+          "seconds": 31.986577395,
+          "extra": {
+            "breaks": 0,
+            "breaks_closed": 0,
+            "downtime_s": 0,
+            "freezes": 0,
+            "idle_tcp_failed": 0,
+            "idle_tcp_ok": 0,
+            "jitter_ms": 0.039,
+            "longest_gap_ms": 32.164,
+            "loss_pct": 0.9895833333333334,
+            "p999_ms": 52.887,
+            "spike_pct": 0,
+            "spikes_per_hour": 0
+          },
+          "series": [
+            {
+              "minute": 0,
+              "p50_ms": 50.075,
+              "p99_ms": 50.204,
+              "max_ms": 55.305,
+              "loss_pct": 0.9895833333333334
+            }
+          ]
+        },
+        "tcp-obfs-none-r1": {
+          "n": 1920,
+          "errors": 0,
+          "p50_ms": 50.272,
+          "p90_ms": 52.638,
+          "p99_ms": 103.935,
+          "max_ms": 119.443,
+          "bytes": 768000,
+          "seconds": 32.340446205,
+          "extra": {
+            "breaks": 0,
+            "breaks_closed": 0,
+            "downtime_s": 0,
+            "freezes": 0,
+            "idle_tcp_failed": 0,
+            "idle_tcp_ok": 0,
+            "jitter_ms": 2.01,
+            "longest_gap_ms": 82.429,
+            "loss_pct": 0,
+            "p999_ms": 116.739,
+            "spike_pct": 1.9270833333333333,
+            "spikes_per_hour": 2400
+          },
+          "series": [
+            {
+              "minute": 0,
+              "p50_ms": 50.272,
+              "p99_ms": 103.935,
+              "max_ms": 119.443,
+              "loss_pct": 0
+            }
+          ]
+        },
+        "native-obfs-none-r1": {
+          "n": 1897,
+          "errors": 0,
+          "p50_ms": 50.254,
+          "p90_ms": 50.321,
+          "p99_ms": 50.425,
+          "max_ms": 54.93,
+          "bytes": 758800,
+          "seconds": 32.087393064,
+          "extra": {
+            "breaks": 0,
+            "breaks_closed": 0,
+            "downtime_s": 0,
+            "freezes": 0,
+            "idle_tcp_failed": 0,
+            "idle_tcp_ok": 0,
+            "jitter_ms": 0.049,
+            "longest_gap_ms": 33.776,
+            "loss_pct": 1.1979166666666667,
+            "p999_ms": 52.621,
+            "spike_pct": 0,
+            "spikes_per_hour": 0
+          },
+          "series": [
+            {
+              "minute": 0,
+              "p50_ms": 50.254,
+              "p99_ms": 50.425,
+              "max_ms": 54.93,
+              "loss_pct": 1.1979166666666667
+            }
+          ]
+        }
+      }
+    },
+    {
+      "run": "game-native-smoke-20260925-010728",
+      "results": {
+        "raw-r1": {
+          "n": 1907,
+          "errors": 0,
+          "p50_ms": 50.07,
+          "p90_ms": 50.112,
+          "p99_ms": 50.147,
+          "max_ms": 50.24,
+          "bytes": 762800,
+          "seconds": 31.986215189,
+          "extra": {
+            "breaks": 0,
+            "breaks_closed": 0,
+            "downtime_s": 0,
+            "freezes": 0,
+            "idle_tcp_failed": 0,
+            "idle_tcp_ok": 0,
+            "jitter_ms": 0.024,
+            "longest_gap_ms": 32.17,
+            "loss_pct": 0.6770833333333334,
+            "p999_ms": 50.185,
+            "spike_pct": 0,
+            "spikes_per_hour": 0
+          },
+          "series": [
+            {
+              "minute": 0,
+              "p50_ms": 50.07,
+              "p99_ms": 50.147,
+              "max_ms": 50.24,
+              "loss_pct": 0.6770833333333334
+            }
+          ]
+        },
+        "tcp-obfs-none-r1": {
+          "n": 1920,
+          "errors": 0,
+          "p50_ms": 50.259,
+          "p90_ms": 53.026,
+          "p99_ms": 102.685,
+          "max_ms": 116.912,
+          "bytes": 768000,
+          "seconds": 33.143747411,
+          "extra": {
+            "breaks": 0,
+            "breaks_closed": 0,
+            "downtime_s": 0,
+            "freezes": 0,
+            "idle_tcp_failed": 0,
+            "idle_tcp_ok": 0,
+            "jitter_ms": 1.937,
+            "longest_gap_ms": 81.415,
+            "loss_pct": 0,
+            "p999_ms": 116.652,
+            "spike_pct": 2.0833333333333335,
+            "spikes_per_hour": 2520
+          },
+          "series": [
+            {
+              "minute": 0,
+              "p50_ms": 50.259,
+              "p99_ms": 102.685,
+              "max_ms": 116.912,
+              "loss_pct": 0
+            }
+          ]
+        },
+        "native-obfs-none-r1": {
+          "n": 1899,
+          "errors": 0,
+          "p50_ms": 50.251,
+          "p90_ms": 50.318,
+          "p99_ms": 50.393,
+          "max_ms": 50.61,
+          "bytes": 759600,
+          "seconds": 32.086630102,
+          "extra": {
+            "breaks": 0,
+            "breaks_closed": 0,
+            "downtime_s": 0,
+            "freezes": 0,
+            "idle_tcp_failed": 0,
+            "idle_tcp_ok": 0,
+            "jitter_ms": 0.045,
+            "longest_gap_ms": 32.34,
+            "loss_pct": 1.09375,
+            "p999_ms": 50.441,
+            "spike_pct": 0,
+            "spikes_per_hour": 0
+          },
+          "series": [
+            {
+              "minute": 0,
+              "p50_ms": 50.251,
+              "p99_ms": 50.393,
+              "max_ms": 50.61,
+              "loss_pct": 1.09375
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

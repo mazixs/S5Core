@@ -158,7 +158,7 @@ def resolve(raw, base_dir):
         if net == "wan" and not wan:
             raise PlanError(f"{where}: network = 'wan' needs a [wan] section")
         if net not in ("loopback", "wan"):
-            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct"}
+            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct", "udp_blackout_after_s", "udp_blackout_for_s"}
             if not isinstance(net, dict) or set(net) - keys:
                 raise PlanError(f"{where}: network is 'loopback', 'wan' or {{{', '.join(sorted(keys))}}}")
             n = {"rtt_ms": float(net.get("rtt_ms", 0)), "loss_pct": float(net.get("loss_pct", 0)), "rate_mbit": float(net.get("rate_mbit", 0))}
@@ -175,6 +175,11 @@ def resolve(raw, base_dir):
                 n["delay_jitter_ms"] = float(net["delay_jitter_ms"])
                 if not 0 < n["delay_jitter_ms"] <= n["rtt_ms"] / 2:
                     raise PlanError(f"{where}: delay_jitter_ms is above 0 and at most half of rtt_ms (one pass through lo)")
+            blackout = {k for k in ("udp_blackout_after_s", "udp_blackout_for_s") if k in net}
+            if blackout:
+                n |= {k: float(net.get(k, 0)) for k in blackout}
+                if blackout != {"udp_blackout_after_s", "udp_blackout_for_s"} or n["udp_blackout_after_s"] < 0 or n["udp_blackout_for_s"] <= 0:
+                    raise PlanError(f"{where}: UDP blackout needs after_s >= 0 and for_s > 0")
             spike = {k for k in ("delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct") if k in net}
             if spike:
                 n |= {k: float(net.get(k, 0)) for k in ("delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct")}

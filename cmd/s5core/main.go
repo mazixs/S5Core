@@ -69,7 +69,8 @@ type params struct {
 	// UDPTunnelTCPTuning lets the connection of a UDP-over-TCP tunnel
 	// retransmit sooner than the kernel's default (internal/tcptune). Off
 	// keeps the kernel's timer, for a path where that turns out better.
-	UDPTunnelTCPTuning bool `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
+	UDPTunnelTCPTuning bool   `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
+	UDPPort            string `env:"UDP_PORT" envDefault:""`
 	// WebSocket-over-TLS stealth transport. Until these were read here, about
 	// 700 lines of working transport code were reachable only from the SDK,
 	// while README and .env.example documented them as if the binary had them.
@@ -250,6 +251,7 @@ func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger)
 		ObfsAcceptNodeIDs:     cfg.ObfsAcceptNodeIDs,
 		ObfsRequireMemberKey:  cfg.ObfsRequireMemberKey,
 		UDPTunnelTCPTuningOff: !cfg.UDPTunnelTCPTuning,
+		UDPPort:               cfg.UDPPort,
 		WSEnabled:             cfg.WSEnabled,
 		WSAddr:                cfg.WSAddr,
 		WSCertFile:            cfg.WSCertFile,

@@ -30,6 +30,7 @@ It is a key-derivation context, not a registration or provisioning step.
 | `FRAME_TIMEOUT` | Duration | `10s` | How long a half-read obfuscation frame may stay half-read. It applies only between a frame header and its body, so it bounds a peer that stops mid-frame without touching a tunnel that is legitimately silent. Ignored on the plain listener, which has no frames. |
 | `QUOTA_GRACE` | Duration | `5s` | How long a session whose account just ran out may keep draining what is already in flight. `0` ends the session where the quota is noticed. Nothing new is sent to the destination either way. |
 | `UDP_TUNNEL_TCP_TUNING` | Boolean | `true` | Retransmit sooner on a connection that has become a UDP tunnel (`0x83`), and only on such a connection: `CONNECT` streams carry bulk traffic and are left as the kernel set them. The socket gets `TCP_THIN_LINEAR_TIMEOUTS` and a retransmission timer floor of 20 ms (`TCP_RTO_MIN_US`). The cap of the timer (`TCP_RTO_MAX_MS`) stays as the kernel set it: Linux derives from the cap how long a connection may retransmit before it is closed, and a cap of 1 s closed tunnels during 200 ms outages. Each side tunes the socket it sends from, so this setting speeds up the server-to-client direction and the client's the other one. An option the kernel lacks is skipped with one debug line: linear timeouts exist since Linux 2.6.34, the floor since 6.15. `false` turns it off without a rebuild. What it buys on a lossy link: [game session tuning](../benchmarks/game-tuning.md). |
+| `UDP_PORT` | Port | *Empty* | Enables the shared native UDP endpoint for authenticated `0x84` associations. Empty disables it. Open the same UDP port in the host firewall and container mapping. It may have the same number as `OBFS_PORT` because the protocols use different sockets. The client probes it and uses `0x83` until a verified UDP reply arrives. |
 | `MAX_CONNECTIONS` | Integer | `10000` | Limit for concurrent connections, shared by all three listeners. A connection that arrives at the ceiling is closed immediately and counted in `s5core_connections_rejected_total`. |
 | `FAIL2BAN_RETRIES` | Integer | `5` | Failed authentication attempts from one source before that source is banned. Set to 0 to disable. |
 | `FAIL2BAN_TIME` | Duration | `5m` | How long a source stays banned, and how long the per-account failure counter remembers. |
@@ -132,6 +133,7 @@ logs or in the traffic of whoever is watching the server.
 | `HANDSHAKE_TIMEOUT` | Duration | `15s` | Separate budgets of this duration cover the local SOCKS5 handshake and remote tunnel setup (transport dial including WSS, greeting, authentication and CONNECT reply). Each deadline is cleared when its phase finishes. A non-positive value still gives the local handshake a 15s limit; established idle tunnels are unaffected. |
 | `SHUTDOWN_TIMEOUT` | Duration | `10s` | How long a shutdown waits for connections that are still carrying traffic. Before this the wait had no end, so a client asked to stop kept running for as long as one tunnel stayed open. |
 | `UDP_TUNNEL_TCP_TUNING` | Boolean | `true` | The client half of the server setting of the same name: the same socket options on the tunnel that carries a UDP association, for the client-to-server direction. On an older kernel, as on many routers, only `TCP_THIN_LINEAR_TIMEOUTS` applies. |
+| `UDP_NATIVE` | Boolean | `false` | Set `true` on clients selected for native UDP game testing when the server has `UDP_PORT`. The client then sends command `0x84`; an old server or a node without `UDP_PORT` rejects it, and the client reconnects with `0x83`. Until the UDP probe succeeds, application datagrams use `0x83`; after UDP goes silent for a second, the next datagram uses `0x83` again. |
 | `KEEPALIVE_MIN` | Duration | `10s` | Lower bound of the idle interval after which the client sends a frame carrying nothing, so that nothing on the path drops the connection for being silent. `0` disables it. See [Keepalive](../design/transports.md#keepalive) for the measurements the range comes from. |
 | `KEEPALIVE_MAX` | Duration | `20s` | Upper bound of the same interval. A fresh draw is made for every frame: a fixed period would identify the protocol without anyone having to decrypt it. Must be at least `KEEPALIVE_MIN`. |
 | `WS_URL` | String | *Empty* | `wss://host/path` of the server's WebSocket endpoint. Setting it makes the client use the stealth transport instead of `SERVER_ADDR`. |
@@ -173,7 +175,14 @@ logs or in the traffic of whoever is watching the server.
 > naming the destination and the phase that expired: `dial`, `greeting`, `auth`,
 > `connect` or `connect-reply`.
 
-> **UDP support:** `s5client` transparently handles UDP Associate requests from applications. When an app sends a SOCKS5 UDP Associate command (`0x03`), `s5client` opens a local UDP socket, multiplexes all UDP packets inside the encrypted TCP tunnel (command `0x83`), and the server relays them to the internet as native UDP. No additional configuration is needed. What that costs on a lossy link is measured in [UDP over TCP: what it costs](../design/transports.md#udp-over-tcp-what-it-costs).
+> **UDP support:** `s5client` handles an application's SOCKS5 UDP Associate
+> (`0x03`) through a local UDP socket. With `UDP_PORT` enabled on the server
+> and `UDP_NATIVE=true` on the client, the client probes command `0x84` and
+> moves application datagrams to
+> authenticated native UDP after a verified response. Until then, and whenever
+> that path stops answering, the same association uses the encrypted TCP
+> tunnel (`0x83`). A server without native UDP is handled by reconnecting with
+> `0x83`. See the [local game-loss results](../benchmarks/nativeudp-game-loss-2026-09-25.md).
 
 > **Domain routing examples:** `example.com` (exact match), `*.google.com` (all subdomains + base domain), `*.youtube.com,*.googlevideo.com` (multiple patterns).
 

@@ -17,6 +17,7 @@ import (
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/internal/userstore"
+	"github.com/mazixs/S5Core/pkg/nativeudp"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/tlsdecoy"
 	"github.com/mazixs/S5Core/pkg/veil"
@@ -25,8 +26,10 @@ import (
 
 // Server represents a controllable SOCKS5 server instance.
 type Server struct {
-	cfg    Config
-	socks5 *socks5.Server
+	cfg           Config
+	socks5        *socks5.Server
+	nativeHub     atomic.Pointer[nativeudp.Hub]
+	nativeMetrics metric.Registration
 
 	// mu защищает поля слушателей: они заполняются в Start, а читаются
 	// из Stop, WSAddr, Addr, UpdateWhitelist и UpdateTimeouts - как правило
@@ -108,9 +111,21 @@ func NewServer(cfg Config) (*Server, error) {
 	// QuotaGrace is deliberately not defaulted: zero means "end the session
 	// where the quota is noticed", which is a choice, not an omission.
 
+	var server *Server
 	socks5conf := &socks5.Config{
 		Logger: cfg.Logger,
 		Dial:   cfg.Dial,
+		NativeUDP: func(conn net.Conn) (socks5.NativeAssociation, error) {
+			hub := server.nativeHub.Load()
+			if hub == nil {
+				return nil, fmt.Errorf("native UDP is disabled")
+			}
+			keys, err := obfs.DatagramKeysOf(conn)
+			if err != nil {
+				return nil, err
+			}
+			return &nativeAssociation{hub: hub, session: hub.Register(keys)}, nil
+		},
 	}
 	socks5conf.ObservePhase, socks5conf.CountPhase = phaseHooks(cfg.Telemetry)
 	socks5conf.ObserveHalfClose = halfCloseHook(cfg.Telemetry)
@@ -227,6 +242,7 @@ func NewServer(cfg Config) (*Server, error) {
 		saltHistory: obfs.NewSaltHistory(cfg.ObfsReplayWindow),
 		sessions:    session.NewRegistry(sessionTransitionObserver(cfg.Telemetry)),
 	}
+	server = s
 	gauge, err := registerSessionGauge(cfg.Telemetry, s.sessions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register the session gauge: %w", err)
@@ -452,6 +468,25 @@ func (s *Server) Start(ctx context.Context) error {
 	// listener is a reason to stop the server, not a reason to keep the
 	// other two running unattended.
 	defer s.shutdownListeners()
+	if s.cfg.UDPPort != "" {
+		addr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.UDPPort)
+		hub, err := nativeudp.Listen(addr)
+		if err != nil {
+			return fmt.Errorf("failed to listen native UDP on %s: %w", addr, err)
+		}
+		s.nativeHub.Store(hub)
+		registration, err := registerNativeMetrics(s.cfg.Telemetry, hub)
+		if err != nil {
+			_ = hub.Close()
+			s.nativeHub.Store(nil)
+			return fmt.Errorf("native UDP metrics: %w", err)
+		}
+		s.mu.Lock()
+		s.nativeMetrics = registration
+		s.mu.Unlock()
+		defer func() { s.nativeHub.Store(nil); _ = hub.Close() }()
+		s.logger.Info("Native UDP enabled", "port", hub.Port())
+	}
 
 	// One counter for the whole server: see connLimiter.
 	limiter := newConnLimiter(s.cfg.MaxConnections)
@@ -773,8 +808,18 @@ func (s *Server) Stop() error {
 // on a drained group returns at once, so Stop and a failed Start may both
 // call it.
 func (s *Server) shutdownListeners() {
+	s.mu.Lock()
+	nativeMetrics := s.nativeMetrics
+	s.nativeMetrics = nil
+	s.mu.Unlock()
+	if nativeMetrics != nil {
+		_ = nativeMetrics.Unregister()
+	}
 	if s.cancelFunc != nil {
 		s.cancelFunc()
+	}
+	if h := s.nativeHub.Load(); h != nil {
+		_ = h.Close()
 	}
 	for _, p := range s.allPipelines() {
 		_ = p.Close()

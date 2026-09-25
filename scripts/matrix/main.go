@@ -175,6 +175,7 @@ func (p *prober) suite(scale float64) []scenario {
 		{"udp/sweep-40mbit", func() stats { return p.udpStream(sweepN(40), 1200, 40) }},
 		// An hour at scale 1 of 64 ticks a second, 200 bytes each way (game.go).
 		{"game/64hz-200b", func() stats { return p.game(n(64*3600), 64, 200) }},
+		{"game/128hz-200b", func() stats { return p.game(n(128*3600), 128, 200) }},
 	}
 }
 

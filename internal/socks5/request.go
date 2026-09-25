@@ -21,6 +21,7 @@ const (
 	BindCommand      = uint8(2)
 	AssociateCommand = uint8(3)
 	UDPTunnelCommand = uint8(0x83) // Custom custom command for UDP-over-TCP tunneling
+	UDPNativeCommand = uint8(0x84) // Native datagrams with the same TCP fallback
 	ipv4Address      = uint8(1)
 	fqdnAddress      = uint8(3)
 	ipv6Address      = uint8(4)
@@ -289,7 +290,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		return s.handleBind(ctx, conn, req)
 	case AssociateCommand:
 		return s.handleAssociate(ctx, conn, req)
-	case UDPTunnelCommand:
+	case UDPTunnelCommand, UDPNativeCommand:
 		return s.handleUDPTcpmux(ctx, conn, req)
 	default:
 		failure := protocolFailure("request", "command", fmt.Errorf("unsupported command: %v", req.Command))

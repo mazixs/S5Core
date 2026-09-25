@@ -105,6 +105,9 @@ type Config struct {
 	// sooner (internal/tcptune). This package does not know what the
 	// connection is made of, so it only says when.
 	OnUDPTunnel func(conn net.Conn)
+	// NativeUDP opens an authenticated datagram path supplied by the server
+	// layer. The SOCKS5 codec does not know the wire transport or its keys.
+	NativeUDP func(net.Conn) (NativeAssociation, error)
 
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
@@ -121,6 +124,14 @@ type Config struct {
 	// ObserveHalfClose, when set, is called with the outcome of every
 	// half-close attempt towards a destination.
 	ObserveHalfClose HalfCloseObserver
+}
+
+type NativeAssociation interface {
+	Port() int
+	MaxPayload() int
+	Receive(context.Context) ([]byte, bool)
+	Send([]byte) error
+	Close()
 }
 
 // Server is responsible for accepting connections and handling

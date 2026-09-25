@@ -121,7 +121,7 @@ func isUDPSetup(req *socks5.Request) bool {
 	if req == nil || req.Datagram {
 		return false
 	}
-	return req.Command == socks5.AssociateCommand || req.Command == socks5.UDPTunnelCommand
+	return req.Command == socks5.AssociateCommand || req.Command == socks5.UDPTunnelCommand || req.Command == socks5.UDPNativeCommand
 }
 
 // destinationString is what the client asked for, in the form it asked for it,

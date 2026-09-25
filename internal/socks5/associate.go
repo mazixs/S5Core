@@ -508,6 +508,20 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		}
 		return err
 	}
+	var nativeSession NativeAssociation
+	if req.Command == UDPNativeCommand {
+		if s.config.NativeUDP == nil {
+			_ = sendReply(conn, commandNotSupported, nil)
+			return fmt.Errorf("native UDP is disabled")
+		}
+		var nativeErr error
+		nativeSession, nativeErr = s.config.NativeUDP(tcpConn)
+		if nativeErr != nil || nativeSession == nil {
+			_ = sendReply(conn, commandNotSupported, nil)
+			return fmt.Errorf("native UDP is unavailable: %w", nativeErr)
+		}
+		defer nativeSession.Close()
+	}
 
 	if s.config.OnUDPTunnel != nil {
 		s.config.OnUDPTunnel(tcpConn)
@@ -530,6 +544,9 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 
 	// Reply success (BND.ADDR/PORT is irrelevant since traffic flows via TCP)
 	bindSpec := AddrSpec{IP: net.IPv4zero, Port: 0}
+	if nativeSession != nil {
+		bindSpec.Port = nativeSession.Port()
+	}
 	if err := sendReply(conn, successReply, &bindSpec); err != nil {
 		return fmt.Errorf("failed to send reply: %w", err)
 	}
@@ -537,12 +554,16 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
+	var nativePath atomic.Bool
 	// Neither half outlives this function: it waits for both before it
 	// returns, so nothing is still reading the handshake buffer or writing
 	// into the connection once the caller starts closing it.
 	var halves sync.WaitGroup
 	halves.Add(2)
+	if nativeSession != nil {
+		halves.Add(1)
+	}
 	// Frames are read through the handshake buffer and written to the socket.
 	// The first frame of a client that does not wait for its reply is already
 	// in that buffer, and reading past it from the socket would drop it (plan
@@ -609,6 +630,17 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			frame = append(frame, buf[:n]...)
 			binary.BigEndian.PutUint16(frame[0:2], uint16(len(frame)-2))
 
+			if nativeSession != nil && nativePath.Load() && len(frame)-2 <= nativeSession.MaxPayload() {
+				if nativeSession.Send(frame[2:]) == nil {
+					udpBufPool.Put(framePtr)
+					if st := meter.outbound(n); st != SessionAllowed {
+						stopTunnel(s.endOfAssociation(req, st))
+						return
+					}
+					continue
+				}
+				nativePath.Store(false)
+			}
 			_, err = tcpConn.Write(frame)
 			udpBufPool.Put(framePtr)
 			if err != nil {
@@ -686,11 +718,44 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 					"destination", question.dest.String())
 				continue
 			}
+			nativePath.Store(false)
 
 			dispatcher.submit(&question.dest, frameBuf[hdrLen:])
 			udpBufPool.Put(framePtr)
 		}
 	}()
+
+	if nativeSession != nil {
+		go func() {
+			defer halves.Done()
+			meter := newUDPMeter(acct)
+			question := newDatagramQuestion(req)
+			dispatcher := newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+				nw, err := udpConn.WriteToUDPAddrPort(payload, dest)
+				if err != nil {
+					return true
+				}
+				if st := meter.inbound(nw); st != SessionAllowed {
+					stopTunnel(s.endOfAssociation(req, st))
+					return false
+				}
+				return true
+			}, meter.flush)
+			defer dispatcher.close()
+			for {
+				packet, ok := nativeSession.Receive(tunnelCtx)
+				if !ok {
+					return
+				}
+				hdrLen, err := parseUDPHeaderInto(packet, &question.dest)
+				if err != nil || !s.allowDatagram(ctx, question) {
+					continue
+				}
+				nativePath.Store(true)
+				dispatcher.submit(&question.dest, packet[hdrLen:])
+			}
+		}()
+	}
 
 	// Wait for a half to fail or for the context to end. The context is
 	// half of this wait, not a refinement of it: both halves return in
