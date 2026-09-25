@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native UDP server metrics count accepted packets, drops by tag, replay and
   authentication, and active associations with fixed label sets. The
   [local game-loss curve](docs/benchmarks/nativeudp-game-loss-2026-09-25.md)
-  and UDP blackout checks passed; WAN and field results are tracked separately.
+  and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/nativeudp-wan-hour-2026-09-25.json)
+  had no disconnects; the final candidate's p99 exceeded its direct-path
+  acceptance limit by 0.085 ms. This is not production deployment evidence.
 - Experimental `s5client` builds for MIPS routers (MT7621, MT7628 and
   similar): `s5client-linux-mipsle-softfloat` and
   `s5client-linux-mips-softfloat`. They have no FPU and no AES instructions,

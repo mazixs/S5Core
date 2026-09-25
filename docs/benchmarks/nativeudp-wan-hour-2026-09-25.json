@@ -53,7 +53,64 @@
         "min": 0.128,
         "median": 2.264,
         "max": 3.946
-      }
+      },
+      "host_cleanup_confirmed": true
+    },
+    {
+      "build": "42d0f48 final game-testing candidate",
+      "source_run": "wan-native-game-hour-20260925-110032",
+      "status": "ok",
+      "duration_s": 3602.236,
+      "ticks": 230386,
+      "loss_pct": 0.006076,
+      "control_loss_pct": 0.054253,
+      "p50_ms": 52.563,
+      "control_p50_ms": 52.333,
+      "p99_ms": 55.489,
+      "control_p99_ms": 54.404,
+      "p99_delta_ms": 1.085,
+      "freezes": 10,
+      "control_freezes": 10,
+      "breaks": 0,
+      "idle_tcp_ok": 89,
+      "idle_tcp_failed": 0,
+      "native_udp_accepted": 230632.0,
+      "native_udp_auth_drops": 0.0,
+      "native_udp_tag_drops": 0.0,
+      "native_udp_replay_drops": 0.0,
+      "native_udp_sessions_after": 0.0,
+      "resources": {
+        "client": {
+          "cpu_s": 39.77,
+          "rss_start_kb": 7716,
+          "rss_end_kb": 12624,
+          "rss_peak_kb": 12624
+        },
+        "server": {
+          "cpu_s": 85.31,
+          "rss_start_kb": 18628,
+          "rss_end_kb": 22228,
+          "rss_peak_kb": 22228
+        }
+      },
+      "minute_count": 60,
+      "minute_p50_delta_ms": {
+        "min": 0.177,
+        "median": 0.227,
+        "max": 0.302
+      },
+      "minute_p99_delta_ms": {
+        "min": 0.282,
+        "median": 1.116,
+        "max": 1.82
+      },
+      "acceptance": {
+        "loss": true,
+        "p99": false,
+        "freezes": true,
+        "breaks": true
+      },
+      "host_cleanup_confirmed": true
     }
   ]
 }
