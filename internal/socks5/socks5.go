@@ -107,6 +107,9 @@ type Config struct {
 	OnUDPTunnel func(conn net.Conn)
 	// NativeUDP opens an authenticated datagram path supplied by the server
 	// layer. The SOCKS5 codec does not know the wire transport or its keys.
+	// No association and no error means the connection has no native path:
+	// the reply carries port 0, and the association goes by 0x83 on the
+	// same connection. Nil NativeUDP answers 0x84 with command not supported.
 	NativeUDP func(net.Conn) (NativeAssociation, error)
 
 	// Optional function for dialing out
@@ -126,11 +129,32 @@ type Config struct {
 	ObserveHalfClose HalfCloseObserver
 }
 
+// ErrNativePathGone is what NativeAssociation.Send returns, alone or wrapped,
+// when the native path can carry no more answers: the association is closed
+// or has no client address yet.
+var ErrNativePathGone = errors.New("socks: native UDP path is gone")
+
 type NativeAssociation interface {
 	Port() int
 	MaxPayload() int
-	Receive(context.Context) ([]byte, bool)
+	// Receive waits for the next datagram of the client and hands it to
+	// datagram, valid only until datagram returns: its buffer is reused. A
+	// probe of a client that hears the server natively calls heard instead.
+	Receive(ctx context.Context, datagram func([]byte), heard func()) bool
+	// Send writes one answer native. A failed answer goes by the control
+	// connection instead. ErrNativePathGone also moves the answers after it
+	// there, until the client's next native datagram or heard probe; any
+	// other error is about this datagram alone (a full socket buffer, one
+	// failed write), and the next answer goes native again: an application
+	// that only listens sends nothing that would bring it back.
 	Send([]byte) error
+	// Resync takes the client's word for the counter of its next native
+	// datagram, which the empty frame carries: past a window of datagrams
+	// lost in a row the server would recognise none again. Next is the
+	// counter of the server's next one, which the answer to that frame
+	// carries for the same reason (docs/veil-spec.md, 10.6).
+	Resync(next uint64)
+	Next() uint64
 	Close()
 }
 

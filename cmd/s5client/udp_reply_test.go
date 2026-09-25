@@ -30,7 +30,7 @@ func startUDPAssociate(t testing.TB) (app, tunnel net.Conn, done chan struct{}) 
 	done = make(chan struct{})
 	go func() {
 		defer close(done)
-		handleUDPAssociate(clientSide, obfsSide, "example.com", clientParams{})
+		handleUDPAssociate(clientSide, obfsSide, "example.com", clientParams{}, nil)
 	}()
 	return app, tunnel, done
 }

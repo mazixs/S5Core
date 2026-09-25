@@ -233,24 +233,9 @@ func (c Context) label(who, purpose string) string {
 // under one PSK therefore share no key, and the two directions of one
 // connection share neither key nor counter space.
 func Derive(psk, secret []byte, ctx Context, role Role) (*Session, error) {
-	if len(psk) != 32 {
-		return nil, fmt.Errorf("veil: PSK must be 32 bytes, got %d", len(psk))
-	}
-	if len(secret) == 0 {
-		return nil, fmt.Errorf("veil: the scheme returned an empty secret")
-	}
-	if role != RoleClient && role != RoleServer {
-		return nil, fmt.Errorf("veil: role must be RoleClient or RoleServer; the two ends share a key and must not share a counter space")
-	}
-
-	prk, err := hkdf.Extract(sha256.New, psk, secret)
+	prk, sendWho, recvWho, err := extract(psk, secret, role)
 	if err != nil {
-		return nil, fmt.Errorf("veil: key derivation failed: %w", err)
-	}
-
-	sendWho, recvWho := "client", "server"
-	if role == RoleServer {
-		sendWho, recvWho = recvWho, sendWho
+		return nil, err
 	}
 
 	var s Session
@@ -270,39 +255,64 @@ type DatagramKeys struct {
 	SendTag, RecvTag [32]byte
 }
 
+// DeriveDatagram is Derive for native UDP: the same input checks and PRK,
+// with labels of its own so that no datagram key is a stream key.
 func DeriveDatagram(psk, secret []byte, ctx Context, role Role) (DatagramKeys, error) {
-	var keys DatagramKeys
-	if len(psk) != 32 || len(secret) == 0 || (role != RoleClient && role != RoleServer) {
-		return keys, fmt.Errorf("veil: invalid datagram key material or role")
-	}
-	prk, err := hkdf.Extract(sha256.New, psk, secret)
-	if err != nil {
-		return keys, err
-	}
-	sendWho, recvWho := "client", "server"
-	if role == RoleServer {
-		sendWho, recvWho = recvWho, sendWho
-	}
-	derive := func(who string) (cipher.AEAD, [32]byte, error) {
-		var tag [32]byte
-		data, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "udp-data"), 32)
-		if err != nil {
-			return nil, tag, err
-		}
-		bytes, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "udp-tag"), 32)
-		if err != nil {
-			return nil, tag, err
-		}
-		copy(tag[:], bytes)
-		aead, err := newAEAD(ctx.Cipher, data)
-		return aead, tag, err
-	}
-	keys.Send, keys.SendTag, err = derive(sendWho)
+	prk, sendWho, recvWho, err := extract(psk, secret, role)
 	if err != nil {
 		return DatagramKeys{}, err
 	}
-	keys.Recv, keys.RecvTag, err = derive(recvWho)
-	return keys, err
+	var keys DatagramKeys
+	if keys.Send, keys.SendTag, err = deriveDatagramDirection(prk, ctx, sendWho); err != nil {
+		return DatagramKeys{}, err
+	}
+	if keys.Recv, keys.RecvTag, err = deriveDatagramDirection(prk, ctx, recvWho); err != nil {
+		return DatagramKeys{}, err
+	}
+	return keys, nil
+}
+
+// extract is what every derivation starts from: the input checks, the PRK,
+// and which label names this end's sending and receiving directions.
+func extract(psk, secret []byte, role Role) (prk []byte, sendWho, recvWho string, err error) {
+	if len(psk) != 32 {
+		return nil, "", "", fmt.Errorf("veil: PSK must be 32 bytes, got %d", len(psk))
+	}
+	if len(secret) == 0 {
+		return nil, "", "", fmt.Errorf("veil: the scheme returned an empty secret")
+	}
+	if role != RoleClient && role != RoleServer {
+		return nil, "", "", fmt.Errorf("veil: role must be RoleClient or RoleServer; the two ends share a key and must not share a counter space")
+	}
+
+	prk, err = hkdf.Extract(sha256.New, psk, secret)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("veil: key derivation failed: %w", err)
+	}
+
+	sendWho, recvWho = "client", "server"
+	if role == RoleServer {
+		sendWho, recvWho = recvWho, sendWho
+	}
+	return prk, sendWho, recvWho, nil
+}
+
+func deriveDatagramDirection(prk []byte, ctx Context, who string) (cipher.AEAD, [32]byte, error) {
+	var tag [32]byte
+	dataKey, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "udp-data"), 32)
+	if err != nil {
+		return nil, tag, fmt.Errorf("veil: key derivation failed: %w", err)
+	}
+	tagKey, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "udp-tag"), 32)
+	if err != nil {
+		return nil, tag, fmt.Errorf("veil: key derivation failed: %w", err)
+	}
+	copy(tag[:], tagKey)
+	aead, err := newAEAD(ctx.Cipher, dataKey)
+	if err != nil {
+		return nil, tag, err
+	}
+	return aead, tag, nil
 }
 
 func deriveDirection(prk []byte, ctx Context, who string) (Keys, error) {

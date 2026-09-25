@@ -435,21 +435,22 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 		return
 	}
 
+	// The policy decides the transport and shape of this attempt (plan task
+	// Ф5-7) before the request is built: the command of an association
+	// depends on what is known of the node behind that transport.
+	attempt := cfg.attempt()
+
 	// For UDP Associate, we need to rewrite the command byte to our custom UDPTunnelCommand (0x83)
 	// before sending it through the tunnel, so the server knows to multiplex it over TCP.
 	wireReq := make([]byte, len(connectReq))
 	copy(wireReq, connectReq)
 	if cmd == socks5.AssociateCommand {
-		wireReq[1] = socks5.UDPTunnelCommand
-		if cfg.UDPNative {
-			wireReq[1] = socks5.UDPNativeCommand
-		}
+		wireReq[1] = udpCommandFor(attempt)
 	}
 
-	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request. The
-	// policy decides the transport and format of this attempt (plan task
-	// Ф5-7); from here on cfg is what was actually used.
-	obfsConn, cfg, err := dialTunnel(cfg, wireReq)
+	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request; from here
+	// on cfg is what was actually used.
+	obfsConn, cfg, err := dialAttempt(attempt, wireReq)
 	if err != nil {
 		// A timeout here used to be invisible: no deadline, no error, no log
 		// line, and an application waiting forever. The phase says which step

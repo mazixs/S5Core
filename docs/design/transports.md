@@ -447,7 +447,7 @@ DNS_PACKETS=120 DNS_INTERVAL=200ms PACKETS=1500 INTERVAL=20ms \
   ./scripts/udp_loss_matrix.sh                                  # the table above, ~12 min
 ```
 
-#### Tuning the tunnel socket
+#### Native UDP for games
 
 Native game UDP is an opt-in data path for a SOCKS5 UDP association. The
 authenticated obfs or wss connection still carries the association and the
@@ -455,8 +455,42 @@ authenticated obfs or wss connection still carries the association and the
 the client probes it before switching. Packets are independent AEAD
 datagrams, so a lost UDP packet does not hold later packets in a TCP queue.
 The exact format and replay policy are in [section 10.6 of the wire
-specification](../veil-spec.md#106-native-udp-команда-0x84). Field game-loss
-acceptance is still pending.
+specification](../veil-spec.md#106-native-udp-команда-0x84).
+
+On a real path, one hour of a 64 Hz game flow from an ARM64 router, native
+UDP added 0.23 ms to the median and 1.09 ms to p99 over a direct flow to the
+same machine in the same minutes, with less loss and the same number of
+freezes. On the local stand its p99 stays within 0.2 ms of the direct path at
+every loss rate, while p99 through `0x83` grows from 50 ms to 102-134 ms at
+0.5-2% loss per hop and to 219 ms at 5%
+([report](../benchmarks/nativeudp-game-loss-2026-09-25.md)). The p99
+threshold of +1 ms was missed by 0.085 ms and no real game has been tested,
+so field acceptance is still pending.
+
+What to know before enabling it:
+
+- **It is off by default.** Without `UDP_PORT` on the server and
+  `UDP_NATIVE=true` on the client, UDP goes by `0x83` as in 2.2.
+- **The association starts on `0x83`.** It moves after the first answered
+  probe, about one round trip.
+- **Losing UDP mid-session costs about a second.** The client stops sending
+  natively after one second without hearing the server and tells the server
+  by the control connection, which then answers by TCP too; once a probe is
+  answered again, the client says it hears the server and the answers come
+  back to native. The notice carries both sides' counters, so a path that
+  lost more than 512 datagrams in a row, a second above 512 Hz, recovers as
+  well. A 12 s UDP block cost one 1.06 s pause, and native came back by
+  itself afterwards.
+- **Large datagrams go by `0x83`.** The native limit is 1374 bytes including
+  the SOCKS5 UDP header.
+- **The measured direct flow ends on the server's machine.** A real game
+  server elsewhere adds the leg from the S5Core node to it, and the tunnel
+  does not change that leg.
+- **On the wire it is a separate UDP flow to the server's port, not TLS.** A
+  network that drops unknown UDP leaves the association on `0x83`, and the
+  client logs one Info line with the address of its probes.
+
+#### Tuning the tunnel socket
 
 Both ends tune the TCP socket that carries a `0x83` association, and no other
 (`UDP_TUNNEL_TCP_TUNING`, on by default, `internal/tcptune`): thin-stream

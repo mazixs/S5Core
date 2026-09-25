@@ -2,7 +2,6 @@ package s5server
 
 import (
 	"crypto/tls"
-	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -64,20 +63,6 @@ func (tc *tunedConns) all() []net.Conn {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	return append([]net.Conn(nil), tc.conns...)
-}
-
-// socksOver runs the no-auth greeting and one request over c and returns the
-// reply code.
-func socksOver(t *testing.T, c net.Conn, command byte, addr []byte) byte {
-	t.Helper()
-	if _, err := c.Write(append([]byte{0x05, 0x01, 0x00, 0x05, command, 0x00}, addr...)); err != nil {
-		t.Fatal(err)
-	}
-	reply := make([]byte, 12)
-	if _, err := io.ReadFull(c, reply); err != nil {
-		t.Fatal(err)
-	}
-	return reply[3]
 }
 
 // The socket under a 0x83 tunnel gets the options on the server, through

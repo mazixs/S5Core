@@ -169,8 +169,10 @@ func DefaultConfig() Config {
 func ValidateConfig(cfg Config) error {
 	if cfg.UDPPort != "" {
 		port, err := strconv.Atoi(cfg.UDPPort)
-		if err != nil || port < 0 || port > 65535 {
-			return fmt.Errorf("UDP_PORT must be a port from 0 to 65535")
+		// Port 0 would announce an ephemeral port that no firewall or
+		// container mapping opens and that changes on every restart.
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("UDP_PORT must be a port from 1 to 65535; leave it empty to disable native UDP")
 		}
 		if !cfg.ObfsEnabled && !cfg.WSEnabled {
 			return fmt.Errorf("UDP_PORT requires an obfs or ws listener")

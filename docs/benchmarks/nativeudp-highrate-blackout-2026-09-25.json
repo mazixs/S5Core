@@ -43,6 +43,58 @@
       "longest_gap_ms": 1055.403,
       "breaks": 0,
       "idle_tcp_failed": 0
+    },
+    {
+      "build": "review 3: client-said answer path, counter resync, probe answers off the reader",
+      "source_run": "bench/runs/review3-highrate",
+      "ticks": 15225,
+      "blackout_s": 12.001,
+      "native_verified_events": 2,
+      "native_recovery_after_unblock_s": 4.56,
+      "loss_pct": 0.8725,
+      "p99_ms": 53.208,
+      "freezes": 1,
+      "longest_gap_ms": 1054.435,
+      "breaks": 0,
+      "idle_tcp_failed": 0,
+      "recovery_note": "approximate: from the start of measurement plus 22 s to the client's 'path restored' line; bounded by the retry schedule 1-2-4-8 s",
+      "commit": "d30b742b09e6dea1b85d851978dbb9b1ca19fd7e",
+      "dirty": true,
+      "note": "first run right after the 64 Hz plan; p99 of minute 0 above the repeats, the stand did not flag the machine"
+    },
+    {
+      "build": "review 3: client-said answer path, counter resync, probe answers off the reader",
+      "source_run": "bench/runs/review3-highrate2",
+      "ticks": 15225,
+      "blackout_s": 12.001,
+      "native_verified_events": 2,
+      "native_recovery_after_unblock_s": 4.39,
+      "loss_pct": 0.8725,
+      "p99_ms": 50.479,
+      "freezes": 1,
+      "longest_gap_ms": 1054.371,
+      "breaks": 0,
+      "idle_tcp_failed": 0,
+      "recovery_note": "approximate: from the start of measurement plus 22 s to the client's 'path restored' line; bounded by the retry schedule 1-2-4-8 s",
+      "commit": "d30b742b09e6dea1b85d851978dbb9b1ca19fd7e",
+      "dirty": true
+    },
+    {
+      "build": "review 3: client-said answer path, counter resync, probe answers off the reader",
+      "source_run": "bench/runs/review3-highrate3",
+      "ticks": 15225,
+      "blackout_s": 12.001,
+      "native_verified_events": 2,
+      "native_recovery_after_unblock_s": 4.73,
+      "loss_pct": 0.8725,
+      "p99_ms": 50.487,
+      "freezes": 1,
+      "longest_gap_ms": 1054.589,
+      "breaks": 0,
+      "idle_tcp_failed": 0,
+      "recovery_note": "approximate: from the start of measurement plus 22 s to the client's 'path restored' line; bounded by the retry schedule 1-2-4-8 s",
+      "commit": "d30b742b09e6dea1b85d851978dbb9b1ca19fd7e",
+      "dirty": true
     }
   ]
 }

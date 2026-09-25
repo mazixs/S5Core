@@ -2,6 +2,7 @@ package s5server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -115,12 +116,18 @@ func NewServer(cfg Config) (*Server, error) {
 	socks5conf := &socks5.Config{
 		Logger: cfg.Logger,
 		Dial:   cfg.Dial,
+		// A node without UDP_PORT, or a listener without obfs keys, answers
+		// 0x84 with port 0: the client then stays on 0x83 without another
+		// connection.
 		NativeUDP: func(conn net.Conn) (socks5.NativeAssociation, error) {
 			hub := server.nativeHub.Load()
 			if hub == nil {
-				return nil, fmt.Errorf("native UDP is disabled")
+				return nil, nil
 			}
 			keys, err := obfs.DatagramKeysOf(conn)
+			if errors.Is(err, obfs.ErrNoDatagramKeys) {
+				return nil, nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -470,7 +477,7 @@ func (s *Server) Start(ctx context.Context) error {
 	defer s.shutdownListeners()
 	if s.cfg.UDPPort != "" {
 		addr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.UDPPort)
-		hub, err := nativeudp.Listen(addr)
+		hub, err := nativeudp.Listen(addr, s.logger)
 		if err != nil {
 			return fmt.Errorf("failed to listen native UDP on %s: %w", addr, err)
 		}

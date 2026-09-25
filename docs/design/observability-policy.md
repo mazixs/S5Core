@@ -94,7 +94,8 @@ SDK и падает, если у точки данных появился лей
 лейбла, версия без символов адреса, потолок различных значений.
 
 Native UDP добавляет `s5core_native_udp_packets_total` с единственным
-лейблом `outcome`: `accepted`, `tag`, `replay` или `auth`, и
+лейблом `outcome`: `accepted`, `tag`, `replay`, `auth` или `read_error`
+(ошибка чтения сокета хаба, после которой он продолжает читать), и
 `s5core_native_udp_sessions` без лейблов. Адреса и содержимое датаграмм
 не сохраняются. `TestNativeUDPMetricsHaveOnlyFixedOutcomes` проверяет набор
 лейблов через реальный сбор OpenTelemetry.

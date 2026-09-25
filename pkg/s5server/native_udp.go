@@ -2,7 +2,11 @@ package s5server
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net"
 
+	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/nativeudp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -16,17 +20,37 @@ type nativeAssociation struct {
 }
 
 func (a *nativeAssociation) Port() int       { return a.hub.Port() }
-func (a *nativeAssociation) MaxPayload() int { return nativeudp.MaxWire - 8 - 2 - 16 }
+func (a *nativeAssociation) MaxPayload() int { return a.session.MaxPayload() }
+
 func (a *nativeAssociation) Send(data []byte) error {
-	return a.hub.Send(a.session, nativeudp.KindData, data)
+	return nativeSendError(a.hub.Send(a.session, nativeudp.KindData, data))
 }
-func (a *nativeAssociation) Close() { a.hub.Remove(a.session) }
-func (a *nativeAssociation) Receive(ctx context.Context) ([]byte, bool) {
+
+// nativeSendError tells the relay which failures end the path. The hub answers
+// ErrPacket for a removed session and for one with no peer yet (an oversized
+// payload is never passed), and a closed socket carries nothing again; any
+// other error is one lost write.
+func nativeSendError(err error) error {
+	if err != nil && (errors.Is(err, nativeudp.ErrPacket) || errors.Is(err, net.ErrClosed)) {
+		return fmt.Errorf("%w: %w", socks5.ErrNativePathGone, err)
+	}
+	return err
+}
+
+func (a *nativeAssociation) Close()             { a.hub.Remove(a.session) }
+func (a *nativeAssociation) Resync(next uint64) { a.hub.Resync(a.session, next) }
+func (a *nativeAssociation) Next() uint64       { return a.session.Next() }
+func (a *nativeAssociation) Receive(ctx context.Context, datagram func([]byte), heard func()) bool {
 	select {
 	case <-ctx.Done():
-		return nil, false
+		return false
+	case <-a.session.Heard():
+		heard()
+		return true
 	case packet := <-a.session.Packets():
-		return packet.Data, true
+		datagram(packet.Data)
+		packet.Release()
+		return true
 	}
 }
 
@@ -42,6 +66,7 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub) (metric.Registratio
 		}{
 			{"accepted", st.Accepted}, {"tag", st.TagDrops},
 			{"replay", st.ReplayDrops}, {"auth", st.AuthDrops},
+			{"read_error", st.ReadErrors},
 		} {
 			o.ObserveInt64(t.NativeUDPPackets, int64(row.count), metric.WithAttributes(attribute.String("outcome", row.outcome)))
 		}

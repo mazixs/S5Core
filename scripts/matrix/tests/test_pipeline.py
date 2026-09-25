@@ -25,6 +25,15 @@ def raw_plan(**over):
     return p
 
 
+def native_plan(**over):
+    native = {"server": {"UDP_PORT": "41443"}, "client": {"UDP_NATIVE": "true"}}
+    return raw_plan(base="n", candidate="n", cpus={"raw": "0", "plain": ["5"], "obfs": ["1", "2"], "wss": ["3", "4"]}, variants={
+        "raw": {"direct": True}, "tcp": {"ref": "HEAD"}, "n": {"ref": "worktree", "env": native},
+        "off": {"ref": "worktree", "env": {"server": native["server"]}},
+        "zero": {"ref": "worktree", "env": {"server": {"UDP_PORT": "0"}, "client": native["client"]}},
+    }, **over)
+
+
 class Units(unittest.TestCase):
     def test_durations(self):
         self.assertEqual(seconds("5m"), 300)
@@ -91,6 +100,19 @@ class Plans(unittest.TestCase):
         self.assertEqual(gauges['native_udp_replay'], 2)
         self.assertEqual(gauges['s5core_native_udp_sessions'], 3)
 
+    def test_native_udp_outcomes_are_not_summed_into_a_volume(self):
+        g = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted",otel_scope_name="a"} 40\n'
+                              's5core_native_udp_packets_total{outcome="accepted",otel_scope_name="b"} 2\n'
+                              's5core_native_udp_packets_total{outcome="tag"} 1\n'
+                              's5core_native_udp_packets_total{outcome="replay"} 2\n'
+                              's5core_native_udp_packets_total{outcome="auth"} 3\n'
+                              's5core_native_udp_packets_total{outcome="read_error"} 4\n')
+        self.assertNotIn("s5core_native_udp_packets_total", g)
+        self.assertEqual({k: v for k, v in g.items() if k.startswith("native_udp_")},
+                         {"native_udp_accepted": 42, "native_udp_tag": 1, "native_udp_replay": 2, "native_udp_auth": 3,
+                          "native_udp_read_error": 4, "native_udp_dropped": 6})
+        self.assertEqual(cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 5\n')["native_udp_dropped"], 0)
+
     def test_udp_blackout_targets_only_native_port(self):
         cmds = []
         blackout = cell.UDPBlackout("41443", 0, 0.001)
@@ -107,13 +129,53 @@ class Plans(unittest.TestCase):
 
     def test_udp_blackout_plan_needs_both_times(self):
         def resolve(**net):
-            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 50, **net}}]), ".")
+            return plan.resolve(native_plan(series=[{"name": "n", "network": {"rtt_ms": 50, **net}, "variants": ["n"]}]), ".")
         for bad in ({"udp_blackout_after_s": 0}, {"udp_blackout_for_s": 1},
                     {"udp_blackout_after_s": -1, "udp_blackout_for_s": 1},
                     {"udp_blackout_after_s": 0, "udp_blackout_for_s": 0}):
             with self.assertRaises(plan.PlanError):
                 resolve(**bad)
         resolve(udp_blackout_after_s=1, udp_blackout_for_s=2)
+
+    def test_udp_blackout_is_refused_before_the_run_where_it_has_no_native_leg(self):
+        blackout = {"rtt_ms": 50, "udp_blackout_after_s": 10, "udp_blackout_for_s": 12}
+
+        def resolve(**series):
+            return plan.resolve(native_plan(series=[{"name": "bm", "network": blackout, **series}]), ".")
+        bad = {
+            "raw": {"variants": ["raw", "n"]},
+            "tcp": {"variants": ["tcp", "n"]},
+            "plain": {"variants": ["n"], "transports": ["plain"], "auth": "none"},
+            "off": {"variants": ["off"]},
+            "zero": {"variants": ["zero"]},
+        }
+        for variant, series in bad.items():
+            with self.assertRaises(plan.PlanError, msg=variant) as e:
+                resolve(**series)
+            self.assertIn("blackout", str(e.exception))
+            self.assertIn(variant, str(e.exception))
+        with self.assertRaises(plan.PlanError):
+            resolve(variants=["raw", "n"], group="g")
+        cells = [c for b in plan.expand(resolve(variants=["n"])) for c in b["cells"]]
+        self.assertEqual({c["transport"] for c in cells}, {"obfs", "wss"})
+        # UDP_PORT from the series env counts as the variant's, as it does in the cell.
+        resolve(variants=["tcp"], env={"server": {"UDP_PORT": "41443"}, "client": {"UDP_NATIVE": "true"}})
+
+    def test_the_cell_refuses_a_blackout_before_it_shapes_lo(self):
+        written = {}
+        with tempfile.TemporaryDirectory() as d:
+            spec = {"id": "bm/raw-r1", "dir": d, "tmp": d, "parent_pid": os.getppid(), "parent_netns": -1,
+                    "network": {"rtt_ms": 50, "udp_blackout_after_s": 0, "udp_blackout_for_s": 1},
+                    "direct": True, "transport": "direct", "shape": "all", "env": {"server": {}, "client": {}}}
+            with patch.object(cell, "read_json", return_value=spec), patch.object(cell, "set_pdeathsig"), \
+                    patch.object(cell.signal, "signal"), patch.object(cell, "netns_inode", return_value=1), \
+                    patch.object(cell, "netem") as shaped, patch.object(cell, "_sh", return_value=""), \
+                    patch.object(cell, "write_json", side_effect=lambda path, run: written.update(run)):
+                with self.assertRaises(SystemExit):
+                    cell.main("spec.json")
+        shaped.assert_not_called()
+        self.assertEqual(written["status"], "setup_failed")
+        self.assertIn("blackout", written["reason"])
 
     def test_native_udp_is_shaped_with_its_tcp_control_leg(self):
         commands = []

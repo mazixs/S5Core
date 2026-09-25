@@ -92,7 +92,7 @@ func (d *udpDispatcher) submit(addr *AddrSpec, payload []byte) bool {
 	}
 }
 
-// Close is called only after the submitting reader has stopped.
+// Close is called only after the submitting readers have stopped.
 func (d *udpDispatcher) close() {
 	d.cancel()
 	<-d.done

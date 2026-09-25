@@ -21,13 +21,17 @@ import threading
 import time
 import urllib.request
 
-from .plan import CLIENT_IP
+from .plan import CLIENT_IP, blackout_problem
 from .util import go_duration, netns_inode, proc_stat, read_json, seconds, set_pdeathsig, write_json
 
 PORTS = {"plain": 41080, "obfs": 41443, "wss": 41444, "metrics": 41090, "client": 41081}
 GAUGES = ("s5core_sessions", "s5core_connections_active", "s5core_obfs_handshake_failures_total",
           "s5core_half_close_failures_total", "s5core_connections_rejected_total",
           "s5core_native_udp_packets_total", "s5core_native_udp_sessions")
+NATIVE_PACKETS = "s5core_native_udp_packets_total"
+# The outcomes pkg/s5server/native_udp.go publishes; read_error is a failed socket read, not a datagram.
+NATIVE_DROPS = ("tag", "replay", "auth")
+NATIVE_OUTCOMES = ("accepted", *NATIVE_DROPS, "read_error")
 PORT_WAIT = 10
 WARMUP_TIMEOUT = 60
 STOP_WAIT = 5
@@ -362,12 +366,16 @@ def parse_gauges(body):
                 v = float(value)
             except ValueError:
                 continue
+            if base == NATIVE_PACKETS:
+                # Accepted and refused datagrams are not one volume: kept apart, drops also as their sum.
+                outcome = dict(re.findall(r'(\w+)="([^"]*)"', name)).get("outcome")
+                out.setdefault("native_udp_dropped", 0)
+                if outcome in NATIVE_OUTCOMES:
+                    out[f"native_udp_{outcome}"] = out.get(f"native_udp_{outcome}", 0) + v
+                if outcome in NATIVE_DROPS:
+                    out["native_udp_dropped"] += v
+                continue
             out[key] = out.get(key, 0) + v
-            if base == "s5core_native_udp_packets_total":
-                labels = dict(re.findall(r'(\w+)="([^"]*)"', name))
-                outcome = labels.get("outcome")
-                if outcome in ("accepted", "tag", "replay", "auth"):
-                    out[f"native_udp_{outcome}"] = v
             if key == "illegal_transitions":
                 # The count alone does not say which driver is wrong; the labels do.
                 lb = dict(re.findall(r'(\w+)="([^"]*)"', name))
@@ -466,6 +474,8 @@ def main(spec_path):
     try:
         if netns_inode() == spec["parent_netns"]:
             raise SetupFailed("refusing to run outside a fresh network namespace")
+        if why := blackout_problem(spec):
+            raise SetupFailed(f"UDP blackout: {why}")
         spells = netem(spec)
         os.makedirs(secret, mode=0o700, exist_ok=True)
         socks = start(spec, secret, procs, run)
@@ -610,10 +620,7 @@ def measure(spec, socks, procs, run, cap):
     procs["generator"] = gen = _spawn(args, genv, glog)
     blackout = None
     if isinstance(spec["network"], dict) and "udp_blackout_after_s" in spec["network"]:
-        port = spec["env"]["server"].get("UDP_PORT")
-        if not port or spec["direct"]:
-            raise SetupFailed("UDP blackout requires a native UDP tunnel cell")
-        blackout = UDPBlackout(port, spec["network"]["udp_blackout_after_s"], spec["network"]["udp_blackout_for_s"])
+        blackout = UDPBlackout(spec["env"]["server"]["UDP_PORT"], spec["network"]["udp_blackout_after_s"], spec["network"]["udp_blackout_for_s"])
         blackout.start()
     tcp = None
     if spec["transport"] in ("obfs", "wss") and not spec["direct"]:
