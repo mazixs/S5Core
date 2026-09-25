@@ -1,0 +1,23 @@
+{
+  "date": "2026-09-25",
+  "scope": "QEMU user-mode MIPS softfloat client to amd64 native UDP server, local 64 Hz UDP echo",
+  "qemu_package": "qemu-user_1%3a10.2.1+ds-1ubuntu3.2_amd64.deb",
+  "pairs": [
+    {
+      "client_arch": "mipsle",
+      "server_arch": "amd64",
+      "ticks": 128,
+      "failed": 0,
+      "native_verified": true,
+      "native_data": true
+    },
+    {
+      "client_arch": "mips",
+      "server_arch": "amd64",
+      "ticks": 128,
+      "failed": 0,
+      "native_verified": true,
+      "native_data": true
+    }
+  ]
+}

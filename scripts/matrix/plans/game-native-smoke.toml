@@ -1,0 +1,46 @@
+# Thirty-second game stream under 50 ms RTT and 0.5% client-server loss.
+# This is a wiring smoke, not the 2.3 game-loss acceptance series.
+name = "game-native-smoke"
+description = "короткая проверка native UDP против 0x83 и прямого пути"
+base = "tcp"
+candidate = "native"
+
+[defaults]
+auth = "none"
+scale = 0.00833334
+scenario_timeout = "90s"
+hang_grace = "15s"
+settle = "2s"
+retries = 1
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.tcp]
+ref = "worktree"
+title = "0x83"
+[variants.tcp.env.client]
+UDP_NATIVE = "false"
+
+[variants.native]
+ref = "worktree"
+title = "native UDP"
+[variants.native.env.server]
+UDP_PORT = "41443"
+[variants.native.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[guard]
+max_foreign_cores = 4.0
+load_wait = "30s"
+
+[[series]]
+name = "loss05"
+title = "50 мс RTT, 0,5% потерь"
+network = { rtt_ms = 50, loss_pct = 0.5 }
+transports = ["obfs"]
+compare = []
+group = "smoke"
+only = ["=game/64hz-200b"]

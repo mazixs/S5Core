@@ -1,0 +1,91 @@
+{
+  "date": "2026-09-25",
+  "scope": "local Linux netns/netem, 60 seconds per cell, 50 ms RTT",
+  "plan_hash": "66df9c6e2f26fbfd",
+  "source_run": "bench/runs/game-native-blackout-20260925-093909",
+  "cells": {
+    "blocked-start": {
+      "status": "ok",
+      "blackout": {
+        "applied": true,
+        "duration_s": 55.001
+      },
+      "ticks": 3840,
+      "loss_pct": 0,
+      "p99_ms": 50.519,
+      "freezes": 0,
+      "longest_gap_ms": 16.835,
+      "breaks": 0,
+      "client_events": [
+        "Native UDP verified for association"
+      ]
+    },
+    "blocked-mid": {
+      "status": "ok",
+      "blackout": {
+        "applied": true,
+        "duration_s": 12.001
+      },
+      "ticks": 3773,
+      "loss_pct": 1.7447916666666667,
+      "p99_ms": 50.51,
+      "freezes": 1,
+      "longest_gap_ms": 1062.652,
+      "breaks": 0,
+      "client_events": [
+        "Native UDP verified for association",
+        "Native UDP carrying application datagrams",
+        "Native UDP timed out; association using 0x83",
+        "Native UDP verified for association"
+      ]
+    }
+  },
+  "build": {
+    "commit": "24ab51e69f1a67c661d2d35364f4be39c3c19fae",
+    "dirty": true,
+    "s5core_sha256": "04552a9e78d46f59bc339444d58ae12ec745854640dc0483bc72cab0db5a1d70",
+    "s5client_sha256": "e9ecf15009c41bcb3d6348c9138ae09276c27ec630936dd79d22d3921a3d50a4"
+  },
+  "final_build_check": {
+    "source_run": "bench/runs/game-native-blackout-20260925-110404",
+    "cells": {
+      "blocked-start": {
+        "status": "ok",
+        "blackout": {
+          "applied": true,
+          "duration_s": 55.001
+        },
+        "ticks": 3840,
+        "loss_pct": 0,
+        "p99_ms": 50.647,
+        "freezes": 0,
+        "longest_gap_ms": 16.944,
+        "breaks": 0,
+        "client_events": [
+          "Native UDP verified for association",
+          "Native UDP carrying application datagrams"
+        ]
+      },
+      "blocked-mid": {
+        "status": "ok",
+        "blackout": {
+          "applied": true,
+          "duration_s": 12.001
+        },
+        "ticks": 3773,
+        "loss_pct": 1.744792,
+        "p99_ms": 50.654,
+        "freezes": 1,
+        "longest_gap_ms": 1062.27,
+        "breaks": 0,
+        "client_events": [
+          "Native UDP verified for association",
+          "Native UDP carrying application datagrams",
+          "Native UDP timed out; association using 0x83",
+          "Native UDP verified for association"
+        ]
+      }
+    },
+    "scope": "after 512-tag window, faster probes, default opt-in and bounded association cleanup"
+  }
+}

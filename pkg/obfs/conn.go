@@ -501,6 +501,36 @@ func (c *conn) Identity() string {
 // bypass the obfuscation.
 func (c *conn) NetConn() net.Conn { return c.Conn }
 
+// DatagramKeys exposes only keys derived for the UDP transport. The server
+// cannot call it until the first authenticated stream frame has been read.
+func (c *conn) DatagramKeys() (veil.DatagramKeys, error) {
+	if !c.sendReady.Load() || !c.recvReady || !c.authenticated {
+		return veil.DatagramKeys{}, errors.New("obfs: datagram keys requested before authentication")
+	}
+	role := veil.RoleClient
+	if c.cfg.Role == RoleServer {
+		role = veil.RoleServer
+	}
+	return veil.DeriveDatagram(c.cfg.PSK, c.resolved.Secret, c.resolved.Context, role)
+}
+
+// DatagramKeysOf finds the authenticated obfs layer through listener wrappers.
+func DatagramKeysOf(c net.Conn) (veil.DatagramKeys, error) {
+	for c != nil {
+		if k, ok := c.(interface {
+			DatagramKeys() (veil.DatagramKeys, error)
+		}); ok {
+			return k.DatagramKeys()
+		}
+		if next, ok := c.(interface{ NetConn() net.Conn }); ok {
+			c = next.NetConn()
+		} else {
+			break
+		}
+	}
+	return veil.DatagramKeys{}, errors.New("obfs: native UDP requires an authenticated obfs connection")
+}
+
 // resolve asks the scheme what this connection's prologue means: the secret
 // to derive from, and the context to derive under. A client already got the
 // answer when it drew the prologue.

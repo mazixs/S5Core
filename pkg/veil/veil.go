@@ -263,6 +263,48 @@ func Derive(psk, secret []byte, ctx Context, role Role) (*Session, error) {
 	return &s, nil
 }
 
+// DatagramKeys are independent of the stream keys and of each other.
+// The tag key is used to find a session without exposing a packet counter.
+type DatagramKeys struct {
+	Send, Recv       cipher.AEAD
+	SendTag, RecvTag [32]byte
+}
+
+func DeriveDatagram(psk, secret []byte, ctx Context, role Role) (DatagramKeys, error) {
+	var keys DatagramKeys
+	if len(psk) != 32 || len(secret) == 0 || (role != RoleClient && role != RoleServer) {
+		return keys, fmt.Errorf("veil: invalid datagram key material or role")
+	}
+	prk, err := hkdf.Extract(sha256.New, psk, secret)
+	if err != nil {
+		return keys, err
+	}
+	sendWho, recvWho := "client", "server"
+	if role == RoleServer {
+		sendWho, recvWho = recvWho, sendWho
+	}
+	derive := func(who string) (cipher.AEAD, [32]byte, error) {
+		var tag [32]byte
+		data, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "udp-data"), 32)
+		if err != nil {
+			return nil, tag, err
+		}
+		bytes, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "udp-tag"), 32)
+		if err != nil {
+			return nil, tag, err
+		}
+		copy(tag[:], bytes)
+		aead, err := newAEAD(ctx.Cipher, data)
+		return aead, tag, err
+	}
+	keys.Send, keys.SendTag, err = derive(sendWho)
+	if err != nil {
+		return DatagramKeys{}, err
+	}
+	keys.Recv, keys.RecvTag, err = derive(recvWho)
+	return keys, err
+}
+
 func deriveDirection(prk []byte, ctx Context, who string) (Keys, error) {
 	dataKey, err := hkdf.Expand(sha256.New, prk, ctx.label(who, "data"), 32)
 	if err != nil {

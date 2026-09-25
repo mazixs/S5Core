@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-25",
+  "scope": "WAN bench, ARM64 router to remote VPS, isolated services, 2 minutes per cell",
+  "plan_hash": "cc812bb563f14a66",
+  "source_run": "bench/runs/wan-native-game-smoke-20260925-094218",
+  "observed_native_udp_accepted_during_candidate": 5791,
+  "cells": {
+    "v220": {
+      "status": "ok",
+      "ticks": 7679,
+      "loss_pct": 0,
+      "p99_ms": 55.669,
+      "freezes": 0,
+      "breaks": 0,
+      "idle_tcp_failed": 0,
+      "direct_control": {
+        "loss_pct": 0.2213829925771585,
+        "p99_ms": 53.351,
+        "freezes": 0
+      }
+    },
+    "native": {
+      "status": "ok",
+      "ticks": 7679,
+      "loss_pct": 0,
+      "p99_ms": 56.363,
+      "freezes": 0,
+      "breaks": 0,
+      "idle_tcp_failed": 0,
+      "direct_control": {
+        "loss_pct": 0.3125406954030473,
+        "p99_ms": 55.746,
+        "freezes": 1
+      }
+    }
+  },
+  "build": {
+    "commit": "24ab51e69f1a67c661d2d35364f4be39c3c19fae",
+    "dirty": true,
+    "s5core_sha256": "758ab0cc61d701e4367e9d8c3a4642c9da9e1ed0c37fe249c629bbb5f837cf9f",
+    "s5client_sha256": "e9ecf15009c41bcb3d6348c9138ae09276c27ec630936dd79d22d3921a3d50a4"
+  }
+}

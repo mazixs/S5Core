@@ -1,0 +1,7 @@
+# Opt-in native UDP endpoint for controlled game testing.
+services:
+  s5core:
+    environment:
+      UDP_PORT: ${UDP_PORT:-28479}
+    ports:
+      - "${UDP_PORT:-28479}:${UDP_PORT:-28479}/udp"

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -82,6 +83,60 @@ class Verdict(unittest.TestCase):
 
 
 class Plans(unittest.TestCase):
+    def test_native_udp_metrics_keep_fixed_outcomes(self):
+        gauges = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 42\n'
+                                   's5core_native_udp_packets_total{outcome="replay"} 2\n'
+                                   's5core_native_udp_sessions 3\n')
+        self.assertEqual(gauges['native_udp_accepted'], 42)
+        self.assertEqual(gauges['native_udp_replay'], 2)
+        self.assertEqual(gauges['s5core_native_udp_sessions'], 3)
+
+    def test_udp_blackout_targets_only_native_port(self):
+        cmds = []
+        blackout = cell.UDPBlackout("41443", 0, 0.001)
+        with patch.object(cell, "_sh", side_effect=lambda cmd: cmds.append(cmd)):
+            blackout.start()
+            blackout.join(timeout=1)
+        self.assertFalse(blackout.is_alive())
+        self.assertTrue(blackout.started_at)
+        adds = [c for c in cmds if c[:3] == ["tc", "filter", "add"]]
+        self.assertEqual(len(adds), 2)
+        self.assertTrue(all("17" in c and "41443" in c and "drop" in c for c in adds))
+        self.assertTrue(all("6" not in c for c in adds))
+        self.assertEqual(cmds[-1][:3], ["tc", "filter", "del"])
+
+    def test_udp_blackout_plan_needs_both_times(self):
+        def resolve(**net):
+            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 50, **net}}]), ".")
+        for bad in ({"udp_blackout_after_s": 0}, {"udp_blackout_for_s": 1},
+                    {"udp_blackout_after_s": -1, "udp_blackout_for_s": 1},
+                    {"udp_blackout_after_s": 0, "udp_blackout_for_s": 0}):
+            with self.assertRaises(plan.PlanError):
+                resolve(**bad)
+        resolve(udp_blackout_after_s=1, udp_blackout_for_s=2)
+
+    def test_native_udp_is_shaped_with_its_tcp_control_leg(self):
+        commands = []
+        spec = {"network": {"rtt_ms": 50, "loss_pct": 0.5, "rate_mbit": 0},
+                "shape": 41444, "env": {"server": {"UDP_PORT": "41443"}}}
+        with patch.object(cell, "_sh", side_effect=lambda command: commands.append(command)):
+            cell.netem(spec)
+        filters = [c for c in commands if c[:3] == ["tc", "filter", "add"]]
+        self.assertEqual(len(filters), 4)
+        def matched(proto, port):
+            return any(any(c[i:i+5] == ["match", "ip", "protocol", proto, "0xff"] for i in range(len(c)-4))
+                       and port in c for c in filters)
+        self.assertTrue(matched("6", "41444"))
+        self.assertTrue(matched("17", "41443"))
+
+    def test_capture_disables_loopback_superpackets(self):
+        commands = []
+        spec = {"network": "loopback", "shape": None, "settings": {"capture": True}}
+        with patch.object(cell, "_sh", side_effect=lambda command: commands.append(command)):
+            cell.netem(spec)
+        self.assertIn(["ip", "link", "set", "lo", "mtu", "1500"], commands)
+        self.assertIn(["ethtool", "-K", "lo", "gso", "off", "gro", "off", "tso", "off"], commands)
+
     def test_shipped_plans_load(self):
         for name in os.listdir(PLANS):
             if name.endswith(".toml"):

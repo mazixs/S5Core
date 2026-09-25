@@ -20,7 +20,7 @@ applications that need a local SOCKS5 endpoint.
 | Capability | What you get |
 | --- | --- |
 | Encrypted transports | AES-256-GCM or ChaCha20-Poly1305, padding, optional WebSocket over TLS |
-| TCP and UDP | SOCKS5 CONNECT and UDP Associate; the client carries UDP inside the tunnel |
+| TCP and UDP | SOCKS5 CONNECT and UDP Associate; opt-in native encrypted UDP with automatic TCP fallback |
 | Access control | Passwords or individual tunnel keys, account quotas, expiry and source restrictions |
 | Operations | Prometheus metrics, structured logs, configuration reload and persistent account usage |
 | Go integration | Embed the server and manage accounts through the [SDK](docs/guides/sdk.md) |

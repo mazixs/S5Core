@@ -1,0 +1,189 @@
+{
+  "date": "2026-09-25",
+  "scope": "local fuzz campaign; no WAN or production claims",
+  "command": "FUZZ_TIME=5m FUZZ_JOBS=4 FUZZ_PARALLEL=1 ./scripts/fuzz.sh",
+  "targets": [
+    {
+      "target": "cmd/s5client.FuzzApplicationHandshake",
+      "result": "ok",
+      "execs": 3319830,
+      "new_interesting": 0
+    },
+    {
+      "target": "cmd/s5client.FuzzReadSOCKSReply",
+      "result": "ok",
+      "execs": 3303454,
+      "new_interesting": 0
+    },
+    {
+      "target": "cmd/s5client.FuzzReadUserPassAuthResponse",
+      "result": "ok",
+      "execs": 3345932,
+      "new_interesting": 0
+    },
+    {
+      "target": "cmd/s5client.FuzzSocksUDPHeader",
+      "result": "ok",
+      "execs": 3443615,
+      "new_interesting": 0
+    },
+    {
+      "target": "cmd/s5core.FuzzAdviceFile",
+      "result": "ok",
+      "execs": 1566460,
+      "new_interesting": 12
+    },
+    {
+      "target": "internal/logging.FuzzParseLevel",
+      "result": "ok",
+      "execs": 12497424,
+      "new_interesting": 4
+    },
+    {
+      "target": "internal/passwordhash.FuzzParsePHC",
+      "result": "ok",
+      "execs": 10464196,
+      "new_interesting": 18
+    },
+    {
+      "target": "internal/socks5.FuzzHandshakeParsing",
+      "result": "ok",
+      "execs": 51446,
+      "new_interesting": 6
+    },
+    {
+      "target": "internal/socks5.FuzzParseUDPHeader",
+      "result": "ok",
+      "execs": 10933853,
+      "new_interesting": 0
+    },
+    {
+      "target": "internal/socks5.FuzzReadAddrSpec",
+      "result": "ok",
+      "execs": 10995606,
+      "new_interesting": 0
+    },
+    {
+      "target": "internal/socks5.FuzzUDPTunnelFrames",
+      "result": "ok",
+      "execs": 3700808,
+      "new_interesting": 6
+    },
+    {
+      "target": "internal/stealth.FuzzClientHelloRoundTrip",
+      "result": "ok",
+      "execs": 8582597,
+      "new_interesting": 10
+    },
+    {
+      "target": "internal/stealth.FuzzParseClientHello",
+      "result": "ok",
+      "execs": 5655938,
+      "new_interesting": 11
+    },
+    {
+      "target": "internal/userstore.FuzzDecodeTunnelKey",
+      "result": "ok",
+      "execs": 13835395,
+      "new_interesting": 4
+    },
+    {
+      "target": "internal/userstore.FuzzLoadUsersFile",
+      "result": "ok",
+      "execs": 2999829,
+      "new_interesting": 66
+    },
+    {
+      "target": "pkg/nativeudp.FuzzOpenPacket",
+      "result": "ok",
+      "execs": 3008740,
+      "new_interesting": 0
+    },
+    {
+      "target": "pkg/obfs.FuzzControlRoundTrip",
+      "result": "ok",
+      "execs": 11813000,
+      "new_interesting": 0
+    },
+    {
+      "target": "pkg/obfs.FuzzDecodeControl",
+      "result": "ok",
+      "execs": 12298712,
+      "new_interesting": 6
+    },
+    {
+      "target": "pkg/obfs.FuzzDecodeWirePrologue",
+      "result": "ok",
+      "execs": 11711894,
+      "new_interesting": 0
+    },
+    {
+      "target": "pkg/obfs.FuzzEncodeWirePrologue",
+      "result": "ok",
+      "execs": 11692489,
+      "new_interesting": 1
+    },
+    {
+      "target": "pkg/obfs.FuzzFrameRoundTrip",
+      "result": "ok",
+      "execs": 1124361,
+      "new_interesting": 18
+    },
+    {
+      "target": "pkg/obfs.FuzzServerReadsArbitraryWire",
+      "result": "ok",
+      "execs": 6886395,
+      "new_interesting": 7
+    },
+    {
+      "target": "pkg/obfs.FuzzTamperedStream",
+      "result": "ok",
+      "execs": 4532156,
+      "new_interesting": 28
+    },
+    {
+      "target": "pkg/s5server.FuzzParseTransportAdvice",
+      "result": "ok",
+      "execs": 2821574,
+      "new_interesting": 13
+    },
+    {
+      "target": "pkg/s5server.FuzzVersionLabels",
+      "result": "ok",
+      "execs": 2839782,
+      "new_interesting": 1
+    },
+    {
+      "target": "pkg/transport/ws.FuzzShaperPlan",
+      "result": "ok",
+      "execs": 2178235,
+      "new_interesting": 12
+    },
+    {
+      "target": "pkg/veil.FuzzSchemeAccept",
+      "result": "ok",
+      "execs": 8105355,
+      "new_interesting": 1
+    },
+    {
+      "target": "pkg/veil.FuzzSchemeRoundTrip",
+      "result": "ok",
+      "execs": 7928601,
+      "new_interesting": 1
+    }
+  ],
+  "summary": {
+    "count": 28,
+    "failures": 0,
+    "executions": 181637677,
+    "new_interesting": 225
+  },
+  "followup_after_window_change": {
+    "command": "FUZZ_TIME=5m FUZZ_JOBS=1 FUZZ_PARALLEL=1 ./scripts/fuzz.sh 'pkg/nativeudp.FuzzOpenPacket'",
+    "target": "pkg/nativeudp.FuzzOpenPacket",
+    "execs": 1068159,
+    "new_interesting": 0,
+    "result": "ok",
+    "source_run": "20260925-105143"
+  }
+}

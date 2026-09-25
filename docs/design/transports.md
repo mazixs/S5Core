@@ -449,6 +449,15 @@ DNS_PACKETS=120 DNS_INTERVAL=200ms PACKETS=1500 INTERVAL=20ms \
 
 #### Tuning the tunnel socket
 
+Native game UDP is an opt-in data path for a SOCKS5 UDP association. The
+authenticated obfs or wss connection still carries the association and the
+`0x83` fallback. `UDP_PORT` binds one shared server socket; `UDP_NATIVE` on
+the client probes it before switching. Packets are independent AEAD
+datagrams, so a lost UDP packet does not hold later packets in a TCP queue.
+The exact format and replay policy are in [section 10.6 of the wire
+specification](../veil-spec.md#106-native-udp-команда-0x84). Field game-loss
+acceptance is still pending.
+
 Both ends tune the TCP socket that carries a `0x83` association, and no other
 (`UDP_TUNNEL_TCP_TUNING`, on by default, `internal/tcptune`): thin-stream
 linear timeouts and, on Linux 6.15 and later, a 20 ms floor for the

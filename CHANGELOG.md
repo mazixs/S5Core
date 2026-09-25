@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in native UDP for SOCKS5 UDP associations: set `UDP_PORT` on the server
+  and `UDP_NATIVE=true` on selected clients. The client verifies the UDP path
+  before using it, falls back to `0x83` when it goes silent, and retries
+  `0x83` after an old server rejects the new command. The wire format and
+  current test scope are in [the specification](docs/veil-spec.md#106-native-udp-команда-0x84).
+- Native UDP server metrics count accepted packets, drops by tag, replay and
+  authentication, and active associations with fixed label sets. The
+  [local game-loss curve](docs/benchmarks/nativeudp-game-loss-2026-09-25.md)
+  and UDP blackout checks passed; WAN and field results are tracked separately.
 - Experimental `s5client` builds for MIPS routers (MT7621, MT7628 and
   similar): `s5client-linux-mipsle-softfloat` and
   `s5client-linux-mips-softfloat`. They have no FPU and no AES instructions,

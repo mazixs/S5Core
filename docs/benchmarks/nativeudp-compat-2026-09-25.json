@@ -1,0 +1,20 @@
+{
+  "date": "2026-09-25",
+  "scope": "local 64 Hz UDP echo, 5 seconds per pair, verified v2.2.0 and worktree binaries",
+  "pairs": [
+    {
+      "server": "v220",
+      "client": "native",
+      "ticks": 320,
+      "failed": 0,
+      "fallback_to_0x83": true
+    },
+    {
+      "server": "native",
+      "client": "v220",
+      "ticks": 320,
+      "failed": 0,
+      "fallback_to_0x83": true
+    }
+  ]
+}

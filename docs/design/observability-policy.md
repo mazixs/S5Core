@@ -93,6 +93,12 @@ SDK и падает, если у точки данных появился лей
 `TestTheVersionLabelIsFenced` (`pkg/s5server/advice_test.go`): ровно два
 лейбла, версия без символов адреса, потолок различных значений.
 
+Native UDP добавляет `s5core_native_udp_packets_total` с единственным
+лейблом `outcome`: `accepted`, `tag`, `replay` или `auth`, и
+`s5core_native_udp_sessions` без лейблов. Адреса и содержимое датаграмм
+не сохраняются. `TestNativeUDPMetricsHaveOnlyFixedOutcomes` проверяет набор
+лейблов через реальный сбор OpenTelemetry.
+
 ## Экспозиция метрик
 
 `METRICS_BIND_ADDR` по умолчанию слушает localhost, и этот дефолт не меняется.

@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-25",
+  "scope": "local netns, RTT 50 ms, 128 Hz, 200 B each way, 12 s native UDP blackout starting at t=10 s; TCP control path remains available",
+  "results": [
+    {
+      "build": "128-tag window",
+      "source_run": "game-native-highrate-blackout-20260925-102330",
+      "ticks": 15225,
+      "blackout_s": 12.001,
+      "native_verified_events": 1,
+      "native_recovery_after_unblock_s": null,
+      "loss_pct": 0.8725,
+      "p99_ms": 50.399,
+      "freezes": 1,
+      "longest_gap_ms": 1054.947,
+      "breaks": 0,
+      "idle_tcp_failed": 0
+    },
+    {
+      "build": "512-tag window",
+      "source_run": "game-native-highrate-blackout-20260925-102743",
+      "ticks": 15225,
+      "blackout_s": 12.001,
+      "native_verified_events": 2,
+      "native_recovery_after_unblock_s": 25.158,
+      "loss_pct": 0.8725,
+      "p99_ms": 50.64,
+      "freezes": 1,
+      "longest_gap_ms": 1054.35,
+      "breaks": 0,
+      "idle_tcp_failed": 0
+    },
+    {
+      "build": "512-tag window and immediate retry",
+      "source_run": "game-native-highrate-blackout-20260925-103104",
+      "ticks": 15225,
+      "blackout_s": 12.001,
+      "native_verified_events": 2,
+      "native_recovery_after_unblock_s": 4.082,
+      "loss_pct": 0.8725,
+      "p99_ms": 50.386,
+      "freezes": 1,
+      "longest_gap_ms": 1055.403,
+      "breaks": 0,
+      "idle_tcp_failed": 0
+    }
+  ]
+}
