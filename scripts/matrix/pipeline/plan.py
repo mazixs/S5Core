@@ -252,8 +252,34 @@ def resolve(raw, base_dir):
     if wan:
         plan["wan"] = wan
     plan["hash"] = digest(plan)
-    expand(plan)
+    for b in expand(plan):
+        for c in b["cells"]:
+            if why := blackout_problem(c):
+                over = "" if c["direct"] else f" over {c['transport']}"
+                raise PlanError(f"series {c['series']}: UDP blackout on variant {c['variant']}{over}: {why}")
     return plan
+
+
+# strconv.ParseBool, which reads the client's UDP_NATIVE.
+GO_TRUE = ("1", "t", "T", "TRUE", "true", "True")
+
+
+def blackout_problem(c):
+    """Why a cell cannot drop its native UDP leg, or None. The plan refuses such
+    a cell before the run; the cell checks again before it shapes lo."""
+    net = c["network"]
+    if not isinstance(net, dict) or "udp_blackout_after_s" not in net:
+        return None
+    if c["direct"] or c["shape"] == "all":
+        return "a direct cell has no native UDP leg, and its lo root is a classless netem that takes no filter; list only native UDP variants"
+    if c["transport"] not in TUNNEL_PORT:
+        return f"{c['transport']} has no native UDP leg: only s5client over obfs or wss sends 0x84"
+    port = c["env"]["server"].get("UDP_PORT", "")
+    if not (port.isascii() and port.isdigit() and 1 <= int(port) <= 65535):
+        return f"env.server.UDP_PORT must be the native UDP port from 1 to 65535, got {port!r}"
+    if c["env"]["client"].get("UDP_NATIVE") not in GO_TRUE:
+        return "env.client.UDP_NATIVE is not true: the client stays on 0x83 and the blackout drops nothing"
+    return None
 
 
 def _wan(raw):

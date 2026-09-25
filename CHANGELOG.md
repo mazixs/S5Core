@@ -9,13 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Opt-in native UDP for SOCKS5 UDP associations: set `UDP_PORT` on the server
-  and `UDP_NATIVE=true` on selected clients. The client verifies the UDP path
-  before using it, falls back to `0x83` when it goes silent, and retries
-  `0x83` after an old server rejects the new command. The wire format and
-  current test scope are in [the specification](docs/veil-spec.md#106-native-udp-команда-0x84).
+- Opt-in native UDP for SOCKS5 UDP associations: set `UDP_PORT` on a server
+  with an obfs or ws listener and `UDP_NATIVE=true` on selected clients. The
+  client verifies the UDP path
+  with probes before using it and keeps probing it: after three unanswered
+  probes, about 2 s, it moves the association to `0x83`. The server picks the
+  way of its answers by what the client says, not by the way of its last
+  datagram: a native datagram or a probe from a client that hears it moves
+  them to native, the client's notice by TCP moves them back, and a datagram
+  by `0x83` moves nothing. The client sends the notice as soon as it stops
+  hearing the server, within a second, from a goroutine of its own so that a
+  full TCP buffer does not hold the probes, and it says it hears the server
+  again with its first probe once the path answers, so an application that
+  only listens gets its answers by the working way in both directions.
+  It repeats the notice with every retry probe until the path is back: a
+  native datagram sent just before the loss can reach the server after it and
+  move the answers back to the dead path. The notice and the server's reply
+  carry the counters of both sides, so more than 512 datagrams lost in a row,
+  a second of a broken path above 512 Hz, no longer leave the association on
+  `0x83` until it ends. The server answers probes through a queue, so a write
+  that waits does not stop the reception of other sessions. An answer the server fails to send
+  by native goes by TCP and leaves native in place; only an association
+  whose native side is gone moves the answers. ICMP errors on the native
+  socket do not end the probes. A path that is never verified is logged once,
+  at Info, with the address the probes go to: behind a front on another
+  host, as with WSS, that is the front's address. A 2.3 node without
+  `UDP_PORT` answers with port 0 and carries the association by `0x83` on the
+  same connection; only a server that predates the command, which refuses
+  it, costs a second connection, by the same transport. The client remembers
+  a server without native UDP for 10 minutes, by transport and address, and
+  asks it for `0x83` directly: `WS_URL` and `SERVER_ADDR` may reach different
+  nodes. A server whose
+  rules refuse UDP answers as a 2.2 one does, so it is remembered only when
+  the retry by `0x83` is accepted. The server moves its answers to
+  a new client address only after two verified datagrams in a row from it,
+  each the newest it has seen, so a copied or held-back datagram sent from
+  elsewhere does not take them. On Linux a server with a
+  wildcard `PROXY_LISTEN_IP` answers from the address the client wrote to,
+  which moves by the same rule; on other systems set a specific one.
+  `UDP_PORT=0` is a configuration error rather than a random port. The wire format and current test scope
+  are in [the specification](docs/veil-spec.md#106-native-udp-команда-0x84).
 - Native UDP server metrics count accepted packets, drops by tag, replay and
-  authentication, and active associations with fixed label sets. The
+  authentication, read errors of the shared socket, after which it keeps
+  reading, and active associations with fixed label sets. The
   [local game-loss curve](docs/benchmarks/nativeudp-game-loss-2026-09-25.md)
   and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/nativeudp-wan-hour-2026-09-25.json)
   had no disconnects; the final candidate's p99 exceeded its direct-path

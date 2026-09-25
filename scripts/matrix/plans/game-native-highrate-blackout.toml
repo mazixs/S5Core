@@ -1,4 +1,4 @@
-# A 128 Hz game stream exposes the forward tag-window limit after a lost UDP leg.
+# A 128 Hz game stream: native UDP comes back after a mid-session UDP blackout.
 name = "game-native-highrate-blackout"
 description = "128 Hz native UDP recovery after a mid-session UDP blackout"
 base = "native"

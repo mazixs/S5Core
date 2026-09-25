@@ -514,21 +514,20 @@ func (c *conn) DatagramKeys() (veil.DatagramKeys, error) {
 	return veil.DeriveDatagram(c.cfg.PSK, c.resolved.Secret, c.resolved.Context, role)
 }
 
-// DatagramKeysOf finds the authenticated obfs layer through listener wrappers.
+// ErrNoDatagramKeys is DatagramKeysOf on a connection with no obfs layer: a
+// plain listener, or a transport that does not carry the tunnel's keys.
+var ErrNoDatagramKeys = errors.New("obfs: native UDP requires an obfs connection")
+
+// DatagramKeysOf finds the obfs layer through the connection's wrappers, the
+// same walk as IdentityOf.
 func DatagramKeysOf(c net.Conn) (veil.DatagramKeys, error) {
-	for c != nil {
-		if k, ok := c.(interface {
-			DatagramKeys() (veil.DatagramKeys, error)
-		}); ok {
-			return k.DatagramKeys()
-		}
-		if next, ok := c.(interface{ NetConn() net.Conn }); ok {
-			c = next.NetConn()
-		} else {
-			break
-		}
+	k, ok := layerOf[interface {
+		DatagramKeys() (veil.DatagramKeys, error)
+	}](c)
+	if !ok {
+		return veil.DatagramKeys{}, ErrNoDatagramKeys
 	}
-	return veil.DatagramKeys{}, errors.New("obfs: native UDP requires an authenticated obfs connection")
+	return k.DatagramKeys()
 }
 
 // resolve asks the scheme what this connection's prologue means: the secret
@@ -1351,25 +1350,34 @@ type Identified interface {
 // The walk is bounded: a wrapper that returns itself, or a cycle of them,
 // would otherwise hang the handshake.
 func IdentityOf(c net.Conn) string {
-	for range maxConnWrappers {
-		if c == nil {
-			return ""
-		}
-		if id, ok := c.(Identified); ok {
-			return id.Identity()
-		}
-		next, ok := c.(interface{ NetConn() net.Conn })
-		if !ok {
-			unwrapper, ok := c.(interface{ Unwrap() net.Conn })
-			if !ok {
-				return ""
-			}
-			c = unwrapper.Unwrap()
-			continue
-		}
-		c = next.NetConn()
+	if id, ok := layerOf[Identified](c); ok {
+		return id.Identity()
 	}
 	return ""
+}
+
+// layerOf is the first layer of c that is a T, looked for through NetConn and
+// Unwrap and no deeper than maxConnWrappers.
+func layerOf[T any](c net.Conn) (T, bool) {
+	for range maxConnWrappers {
+		if c == nil {
+			break
+		}
+		if t, ok := c.(T); ok {
+			return t, true
+		}
+		switch w := c.(type) {
+		case interface{ NetConn() net.Conn }:
+			c = w.NetConn()
+		case interface{ Unwrap() net.Conn }:
+			c = w.Unwrap()
+		default:
+			var zero T
+			return zero, false
+		}
+	}
+	var zero T
+	return zero, false
 }
 
 // maxConnWrappers bounds the unwrapping walk. Three is what the server

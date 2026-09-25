@@ -107,8 +107,8 @@ type Telemetry struct {
 	// guessed at. Every label comes from a closed enum in the code; see
 	// docs/design/observability-policy.md.
 	SessionTransitions metric.Int64Counter
-	// NativeUDPPackets has only four fixed outcome labels: accepted, tag,
-	// replay and auth. NativeUDPSessions counts live associations.
+	// NativeUDPPackets has only five fixed outcome labels: accepted, tag,
+	// replay, auth and read_error. NativeUDPSessions counts live associations.
 	NativeUDPPackets  metric.Int64ObservableCounter
 	NativeUDPSessions metric.Int64ObservableGauge
 

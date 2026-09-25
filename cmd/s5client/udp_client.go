@@ -6,18 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"net"
 	"net/netip"
-	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
-	"github.com/mazixs/S5Core/pkg/nativeudp"
-	"github.com/mazixs/S5Core/pkg/obfs"
 )
 
 var (
@@ -142,17 +137,18 @@ var tuneUDPTunnel = tcptune.Tuner(nil)
 // handleUDPAssociate handles the client side of UDP Associate.
 // It opens a local UDP socket, tells the application its address,
 // and then multiplexes UDP packets over the obfuscated TCP tunnel.
-func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string, cfg clientParams, requests ...[]byte) {
-	var wireReq []byte
-	if len(requests) > 0 {
-		wireReq = requests[0]
-	}
+// wireReq is the request dialTunnel sent, 0x83 or 0x84.
+func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string, cfg clientParams, wireReq []byte) {
 	requestedNative := len(wireReq) > 1 && wireReq[1] == socks5.UDPNativeCommand
-	// 1. Read CONNECT response from server (for the 0x83 UDPTcpMux command).
+	command := socks5.UDPTunnelCommand
+	if requestedNative {
+		command = socks5.UDPNativeCommand
+	}
+	// 1. Read the server's reply to the association.
 	// This read is still covered by the handshake deadline set in
-	// dialObfsTunnel: the custom 0x83 command is the one place where a server
+	// dialObfsTunnel: the custom command is the one place where a server
 	// that does not understand it would simply never answer.
-	slog.Info("UDP Associate: waiting for server reply on 0x83...")
+	slog.Info("UDP Associate: waiting for server reply", "command", fmt.Sprintf("%#x", command))
 	serverReply, err := readSOCKSReply(obfsConn)
 	if err != nil {
 		wrapped := &tunnelError{phase: phaseConnectReply, err: err}
@@ -160,28 +156,40 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		return
 	}
-	if serverReply[1] != 0 && requestedNative {
-		// Old servers reject 0x84. Retry the established 0x83 protocol on a
-		// fresh connection; its first request has already been sent by dialTunnel.
+	if requestedNative && mayPredateNative(serverReply[1]) {
+		// A server that predates 0x84 refuses it: S5Core 2.2 by its command
+		// rule, a plain SOCKS5 server as unsupported. The same answer from a
+		// 2.3 server refuses UDP itself, so the association asks again by
+		// 0x83 on a fresh connection, and the server is remembered only when
+		// that one is accepted. A refusal of 0x83 goes to the application.
+		refusal := serverReply[1]
 		_ = obfsConn.Close()
 		fallback := append([]byte(nil), wireReq...)
 		fallback[1] = socks5.UDPTunnelCommand
-		obfsConn, cfg, err = dialTunnel(cfg, fallback)
-		if err == nil {
-			defer obfsConn.Close()
-			serverReply, err = readSOCKSReply(obfsConn)
-		}
+		requestedNative, command = false, socks5.UDPTunnelCommand
+		obfsConn, cfg, err = dialAttempt(cfg, fallback)
 		if err != nil {
+			// dialTunnel named the phase that failed, and the hint and the
+			// transport policy both depend on it.
+			logTunnelFailure(err, destFQDN, cfg)
+			_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(err), 0, 1, 0, 0, 0, 0, 0, 0})
+			return
+		}
+		defer obfsConn.Close()
+		if serverReply, err = readSOCKSReply(obfsConn); err != nil {
 			wrapped := &tunnelError{phase: phaseConnectReply, err: err}
 			logTunnelFailure(wrapped, destFQDN, cfg)
 			_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0, 1, 0, 0, 0, 0, 0, 0})
 			return
 		}
+		if serverReply[1] == socks5Success {
+			rememberNoNative(cfg, fmt.Sprintf("0x84 refused with %#x", refusal))
+		}
 	}
 	// The tunnel is up; the relay below must not inherit the setup deadline.
 	clearDeadline(obfsConn)
 	if serverReply[1] != 0x00 {
-		slog.Error("Server rejected UDP-over-TCP tunnel", "status", serverReply[1])
+		slog.Error("Server rejected the UDP association", "command", fmt.Sprintf("%#x", command), "status", serverReply[1])
 		_, _ = clientConn.Write(serverReply)
 		return
 	}
@@ -206,18 +214,15 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	}
 	defer func() { _ = udpConn.Close() }()
 	var native *nativeClient
-	if requestedNative && serverReply[1] == 0 && binary.BigEndian.Uint16(serverReply[len(serverReply)-2:]) != 0 {
-		keys, keyErr := obfs.DatagramKeysOf(obfsConn)
-		serverHost, _, hostErr := net.SplitHostPort(obfsConn.RemoteAddr().String())
-		if keyErr == nil && hostErr == nil {
-			port := binary.BigEndian.Uint16(serverReply[len(serverReply)-2:])
-			remote, resolveErr := net.ResolveUDPAddr("udp", net.JoinHostPort(serverHost, strconv.Itoa(int(port))))
-			if resolveErr == nil {
-				if c, dialErr := net.DialUDP("udp", nil, remote); dialErr == nil {
-					native = &nativeClient{conn: c, session: nativeudp.NewSession(keys), probeKick: make(chan struct{}, 1)}
-					defer func() { _ = c.Close() }()
-				}
-			}
+	if requestedNative {
+		if port := binary.BigEndian.Uint16(serverReply[len(serverReply)-2:]); port == 0 {
+			// The server knows 0x84 and has no native path to offer.
+			rememberNoNative(cfg, "no native port")
+		} else if n, c, err := dialNative(obfsConn, port); err != nil {
+			slog.Warn("Native UDP unavailable; association using 0x83", "error", err)
+		} else {
+			native = n
+			defer func() { _ = c.Close() }()
 		}
 	}
 
@@ -237,7 +242,11 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	errCh := make(chan error, 3)
 	var clientUDPAddr atomic.Pointer[netip.AddrPort]
 	if native != nil {
-		go native.run(udpConn, &clientUDPAddr)
+		go native.run(func(d []byte) {
+			if peer := clientUDPAddr.Load(); peer != nil {
+				_, _ = udpConn.WriteToUDPAddrPort(d, *peer)
+			}
+		})
 	}
 
 	// The application may send datagrams from the address it opened the SOCKS5
@@ -294,24 +303,8 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				clientUDPAddr.Store(&stored)
 			}
 
-			if native != nil {
-				if native.ready() {
-					if n+8+2+16 <= nativeudp.MaxWire {
-						if native.send(nativeudp.KindData, buf[:n]) == nil {
-							if !native.usedData.Swap(true) {
-								slog.Info("Native UDP carrying application datagrams")
-							}
-							continue
-						}
-						if native.active.Swap(false) {
-							slog.Warn("Native UDP write failed; association using 0x83")
-							native.kickProbe()
-						}
-					}
-				} else if native.active.Swap(false) {
-					slog.Warn("Native UDP timed out; association using 0x83")
-					native.kickProbe()
-				}
+			if native != nil && native.carry(buf[:n]) {
+				continue
 			}
 
 			// The packet from the application MUST start with a SOCKS5 UDP header
@@ -333,6 +326,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	// Go routine B: Read from obfsConn (TCP) -> write to application (UDP)
 	go func() {
 		lenBuf := make([]byte, 2)
+		var next [8]byte
 		for {
 			// Read 16-bit length prefix
 			if _, err := io.ReadFull(obfsConn, lenBuf); err != nil {
@@ -342,7 +336,17 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 
 			packetLen := binary.BigEndian.Uint16(lenBuf)
 			if packetLen == 0 {
-				continue // keep-alive
+				// On a native association it is the server's answer to the
+				// client's empty frame, with the counter of its next
+				// datagram; otherwise a keepalive.
+				if native != nil {
+					if _, err := io.ReadFull(obfsConn, next[:]); err != nil {
+						errCh <- fmt.Errorf("tunnel read resync failed: %w", err)
+						return
+					}
+					native.session.Resync(binary.BigEndian.Uint64(next[:]))
+				}
+				continue
 			}
 
 			// Read inner SOCKS5 UDP frame
@@ -386,95 +390,4 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	// Wait for any critical failure
 	err = <-errCh
 	slog.Info("UDP Tunnel closed", "reason", err)
-}
-
-// nativeClient probes before switching traffic away from the reliable 0x83
-// path. A blocked UDP port therefore starts on TCP and never stalls setup.
-type nativeClient struct {
-	conn      *net.UDPConn
-	session   *nativeudp.Session
-	probeKick chan struct{}
-	active    atomic.Bool
-	usedData  atomic.Bool
-	lastSeen  atomic.Int64
-}
-
-func (n *nativeClient) kickProbe() {
-	select {
-	case n.probeKick <- struct{}{}:
-	default:
-	}
-}
-
-func (n *nativeClient) ready() bool {
-	return n.active.Load() && time.Since(time.Unix(0, n.lastSeen.Load())) < time.Second
-}
-
-func (n *nativeClient) send(kind byte, payload []byte) error {
-	var b [nativeudp.MaxWire]byte
-	wire, err := n.session.Seal(b[:0], kind, payload)
-	if err != nil {
-		return err
-	}
-	_, err = n.conn.Write(wire)
-	return err
-}
-
-func (n *nativeClient) run(app *net.UDPConn, appPeer *atomic.Pointer[netip.AddrPort]) {
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		// The first probe is immediate. Failed probes back off; a live path
-		// gets a jittered NAT keepalive rather than a fixed one-second pulse.
-		_ = n.send(nativeudp.KindProbe, nil)
-		backoff := time.Second
-		t := time.NewTimer(backoff)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-n.probeKick:
-				// A live path just timed out. Probe at once and restart the
-				// short backoff instead of waiting for its NAT keepalive timer.
-				_ = n.send(nativeudp.KindProbe, nil)
-				backoff = time.Second
-				t.Reset(backoff)
-			case <-t.C:
-				_ = n.send(nativeudp.KindProbe, nil)
-				if n.ready() {
-					backoff = time.Duration(10+rand.IntN(11)) * time.Second
-				} else {
-					backoff *= 2
-					if backoff > 10*time.Second {
-						backoff = 10 * time.Second
-					}
-				}
-				t.Reset(backoff)
-			}
-		}
-	}()
-	var b [nativeudp.MaxWire + 1]byte
-	for {
-		r, err := n.conn.Read(b[:])
-		if err != nil {
-			return
-		}
-		p, err := n.session.Open(b[:r])
-		if err != nil {
-			continue
-		}
-		n.lastSeen.Store(time.Now().UnixNano())
-		if !n.active.Swap(true) {
-			slog.Info("Native UDP verified for association")
-		}
-		if p.Kind != nativeudp.KindData {
-			continue
-		}
-		peer := appPeer.Load()
-		if peer == nil {
-			continue
-		}
-		_, _ = app.WriteToUDPAddrPort(p.Data, *peer)
-	}
 }

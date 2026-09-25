@@ -87,5 +87,78 @@
       }
     },
     "scope": "after 512-tag window, faster probes, default opt-in and bounded association cleanup"
+  },
+  "review3_check": {
+    "scope": "after review 3: answers follow what the client says, counters resync by the empty frame, probe answers off the hub reader",
+    "build": {
+      "commit": "d30b742b09e6dea1b85d851978dbb9b1ca19fd7e",
+      "dirty": true,
+      "s5core_sha256": "97123668bf9435ebd6459df0180deb2d17c9dd99102efb94bb1e0c77653d3c2b",
+      "s5client_sha256": "8f69560940e7caf88c1d119e010e7b3e05b73201b159b12ae330a8aa4b89cb28"
+    },
+    "source_runs": [
+      "bench/runs/review3-blackout",
+      "bench/runs/review3-blackout-start2"
+    ],
+    "cells": {
+      "blocked-start": {
+        "status": "ok",
+        "blackout": {
+          "applied": true,
+          "duration_s": 55.001
+        },
+        "ticks": 3840,
+        "loss_pct": 0,
+        "p99_ms": 50.524,
+        "freezes": 0,
+        "longest_gap_ms": 18.793,
+        "breaks": 0,
+        "client_events": [
+          "Native UDP not answering; association using 0x83",
+          "Native UDP verified for association",
+          "Native UDP carrying application datagrams"
+        ]
+      },
+      "blocked-mid": {
+        "status": "ok",
+        "blackout": {
+          "applied": true,
+          "duration_s": 12.001
+        },
+        "ticks": 3773,
+        "loss_pct": 1.744792,
+        "p99_ms": 51.233,
+        "freezes": 1,
+        "longest_gap_ms": 1063.373,
+        "breaks": 0,
+        "client_events": [
+          "Native UDP verified for association",
+          "Native UDP carrying application datagrams",
+          "Native UDP path lost; association using 0x83",
+          "Native UDP path restored"
+        ]
+      }
+    },
+    "discarded": {
+      "blocked-start": {
+        "status": "ok",
+        "blackout": {
+          "applied": true,
+          "duration_s": 55.002
+        },
+        "ticks": 3840,
+        "loss_pct": 0,
+        "p99_ms": 55.91,
+        "freezes": 0,
+        "longest_gap_ms": 23.887,
+        "breaks": 0,
+        "client_events": [
+          "Native UDP not answering; association using 0x83",
+          "Native UDP verified for association",
+          "Native UDP carrying application datagrams"
+        ],
+        "reason": "the stand flagged 4.35 foreign cores on the machine; the repeat on a quiet machine is the recorded cell"
+      }
+    }
   }
 }

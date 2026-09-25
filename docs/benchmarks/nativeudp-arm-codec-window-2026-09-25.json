@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-25",
+  "scope": "ARMv8 router, paired codec benchmark: receive window by counter against the build of the first WAN run; no network or application relay",
+  "command": "GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c ./pkg/nativeudp; nativeudp.test -test.run ^$ -test.bench BenchmarkCodecRoundTrip -test.benchmem -test.benchtime=2s",
+  "benchmark": "BenchmarkCodecRoundTrip-3",
+  "rounds": 3,
+  "before": {"build": "d30b742", "ns_per_round_trip": [28635, 28636, 28547], "allocs_per_op": 0},
+  "after": {"build": "window by counter", "ns_per_round_trip": [5550, 5588, 5532], "allocs_per_op": 0},
+  "x86_control": {"cpu_threads": 16, "before_ns": [4194, 4046, 4084, 4062, 4107, 4116], "after_ns": [888.8, 888.6, 877.2, 886.1, 883.4, 883.7]}
+}
