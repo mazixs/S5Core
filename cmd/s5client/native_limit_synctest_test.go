@@ -20,6 +20,13 @@ func startSized(t *testing.T, limit int, loseSized func(int) bool) *liveness {
 	})
 }
 
+// searchProbes reports whether n probes are one, two or three whole rounds.
+// One round ends the search on a narrow path too when two of its sizes land
+// within 17 bytes of the path, about one search in sixteen.
+func searchProbes(n uint64) bool {
+	return n == 7 || n == 11 || n == 15
+}
+
 func (l *liveness) announced() []int {
 	l.path.mu.Lock()
 	defer l.path.mu.Unlock()
@@ -44,7 +51,7 @@ func TestTheClientFindsTheLimitOfANarrowPath(t *testing.T) {
 		if l.path.server.Limit() != limit {
 			t.Fatalf("the server keeps to %d, the client found %d", l.path.server.Limit(), limit)
 		}
-		if n := l.client.stats.sizeProbes.Load(); n != 11 && n != 15 {
+		if n := l.client.stats.sizeProbes.Load(); !searchProbes(n) {
 			t.Fatalf("%d size probes on a narrow path", n)
 		}
 		if l.client.carry(make([]byte, l.client.session.MaxPayload())) != byNative {
@@ -77,7 +84,7 @@ func TestAPTBDoesNotCostTheSearchItsControl(t *testing.T) {
 		if l.path.refused.Load() == 0 {
 			t.Fatal("no call failed with EMSGSIZE: the test did not model the PTB")
 		}
-		if n := l.client.stats.sizeProbes.Load(); n != 11 && n != 15 {
+		if n := l.client.stats.sizeProbes.Load(); !searchProbes(n) {
 			t.Fatalf("%d size probes on a narrow path with PTB", n)
 		}
 	})
