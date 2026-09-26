@@ -151,6 +151,17 @@ The sum directly tracks the size of the obfuscated write, undoing the
 shaper's cut for an observer of small packet lengths. TCP may merge or split
 writes on another path, so this remains a local shape argument.
 
+The same stream over a real path (26 September 2026, an ARM router client and
+a node at RTT 52 ms, WSS with `UDP_NATIVE=false`, 2 minutes) keeps the shape.
+The TCP counters of the server socket (`ss -ti`, `data_segs_in` and
+`data_segs_out` over the run) give 2.00 data segments per tick in each
+direction, 211 bytes per segment from the client and 208 to it: the two
+records of a write leave as two segments and arrive as two. The game itself
+lost no ticks (0% against 0.026% for the direct control), with a median of
+51.9 ms against 53.0 ms direct; a lower median than direct on this path is
+the route taken by the flow, not a gain of the tunnel (see
+[`nativeudp-game-loss-2026-09-25.md`](nativeudp-game-loss-2026-09-25.md)).
+
 A separate bulk capture initially showed 40-60 KiB loopback packets because
 the interface used a 64 KiB MTU. With MTU 1500 and GSO/GRO/TSO off, 3,034
 of 3,592 server-to-client bulk packets are exactly 1500 bytes. This is the

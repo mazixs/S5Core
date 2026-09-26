@@ -207,6 +207,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   15 s. A cell can poll the server's metrics and count the packets of every
   tunnel connection and of native UDP on its leg
   ([results](docs/benchmarks/degradation-2026-09-26.md)).
+- `scripts/matrix` has game scenarios with datagrams near the native UDP
+  limit, `game/64hz-1001b`, `-1300b`, `-1364b` and `-1400b`
+  ([field results](docs/field/nodes.md)). The WAN stand dates its
+  certificate an hour back, so a client clock a few seconds behind the server
+  no longer fails the first connections of a wss cell.
 
 ## [2.2.0] - 2026-09-24
 

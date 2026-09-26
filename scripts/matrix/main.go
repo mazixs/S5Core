@@ -197,6 +197,12 @@ func (p *prober) suite(scale float64) []scenario {
 		{"game/64hz-200b-wake", func() stats {
 			return p.game(n(64*3600), 64, 200, gameShape{on: 10 * time.Second, pause: 15 * time.Second})
 		}},
+		// Around the native UDP limit (docs/veil-spec.md, section 10.7) and the
+		// 1001-byte DPI rule of docs/research/path-degradation.md.
+		{"game/64hz-1001b", func() stats { return p.game(n(64*3600), 64, 1001, gameShape{}) }},
+		{"game/64hz-1300b", func() stats { return p.game(n(64*3600), 64, 1300, gameShape{}) }},
+		{"game/64hz-1364b", func() stats { return p.game(n(64*3600), 64, 1364, gameShape{}) }},
+		{"game/64hz-1400b", func() stats { return p.game(n(64*3600), 64, 1400, gameShape{}) }},
 	}
 }
 
