@@ -327,6 +327,49 @@ func TestOnlyAHeardProbeReachesTheAssociation(t *testing.T) {
 	}
 }
 
+// A heard probe and a datagram carry the client's counter to the association,
+// which places its loss signals by them (docs/veil-spec.md, 10.6). Heard
+// probes that coalesce keep the highest.
+func TestTheAssociationLearnsTheCountersOfTheClientsWords(t *testing.T) {
+	client, server := pair(t)
+	hub, err := Listen("127.0.0.1:0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	registered := hub.Register(server.keys)
+	defer hub.Remove(registered)
+	c := dialHub(t, hub)
+	send := func(kind byte, payload []byte) uint64 {
+		t.Helper()
+		counter := client.Next()
+		wire, _ := client.Seal(nil, kind, payload)
+		if _, err := c.Write(wire); err != nil {
+			t.Fatal(err)
+		}
+		return counter
+	}
+	send(KindProbe, []byte{ProbeHeard})
+	second := send(KindProbe, []byte{ProbeHeard})
+	<-registered.Heard()
+	for deadline := time.Now().Add(time.Second); registered.HeardCounter() != second; {
+		if time.Now().After(deadline) {
+			t.Fatalf("heard counter %d, want the later probe's %d", registered.HeardCounter(), second)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	data := send(KindData, []byte("datagram"))
+	select {
+	case p := <-registered.Packets():
+		if p.Counter != data {
+			t.Fatalf("datagram counter %d, want %d", p.Counter, data)
+		}
+		p.Release()
+	case <-time.After(time.Second):
+		t.Fatal("the datagram did not reach the association")
+	}
+}
+
 // waitFor polls the hub until its counters satisfy done.
 func waitFor(t *testing.T, hub *Hub, done func(Stats) bool) {
 	t.Helper()

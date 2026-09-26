@@ -153,3 +153,90 @@ func TestOnlyOneGoroutineWritesToTheTunnel(t *testing.T) {
 	}
 	_ = clientSide.Close()
 }
+
+// On a native association the stream has its own writer, and the answers to
+// the client's loss signals take it too: they used to be written by the
+// reader of the answers, woken by a socket deadline. Datagrams and loss
+// signals go at once here, and -race names a second writer if one appears.
+func TestOnlyOneGoroutineWritesToANativeTunnel(t *testing.T) {
+	echo, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = echo.Close() }()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, addr, err := echo.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			_, _ = echo.WriteToUDP(buf[:n], addr)
+		}
+	}()
+	native := newScriptedNative()
+	go func() {
+		for range native.resynced {
+		}
+	}()
+	server, err := New(&Config{
+		BindIP:    net.ParseIP("127.0.0.1"),
+		Logger:    slog.New(slog.DiscardHandler),
+		NativeUDP: func(net.Conn) (NativeAssociation, error) { return native, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientSide, serverSide := net.Pipe()
+	defer func() { _ = clientSide.Close() }()
+	counted := &exclusiveWriteConn{Conn: serverSide}
+	go func() { _ = server.ServeConnContext(context.Background(), counted) }()
+	_ = clientSide.SetDeadline(time.Now().Add(20 * time.Second))
+	go func() { _, _ = clientSide.Write([]byte{5, 1, 0, 5, UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}) }()
+	if _, err := io.ReadFull(clientSide, make([]byte, 12)); err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+
+	const datagrams = 64
+	dest := &AddrSpec{IP: net.ParseIP("127.0.0.1").To4(), Port: echo.LocalAddr().(*net.UDPAddr).Port}
+	sendErr := make(chan error, 1)
+	go func() {
+		for i := 0; i < datagrams; i++ {
+			payload := BuildUDPHeader(dest, []byte("datagram"))
+			frame := binary.BigEndian.AppendUint16(nil, uint16(len(payload)))
+			frame = append(frame, payload...)
+			frame = binary.BigEndian.AppendUint64(append(frame, 0, 0), uint64(i))
+			if _, err := clientSide.Write(frame); err != nil {
+				sendErr <- err
+				return
+			}
+		}
+		sendErr <- nil
+	}()
+
+	answers, signals := 0, 0
+	deadline := time.Now().Add(10 * time.Second)
+	for (answers < datagrams || signals == 0) && time.Now().Before(deadline) {
+		_ = clientSide.SetReadDeadline(time.Now().Add(2 * time.Second))
+		var length [2]byte
+		if _, err := io.ReadFull(clientSide, length[:]); err != nil {
+			break
+		}
+		n := int(binary.BigEndian.Uint16(length[:]))
+		if n == 0 {
+			n = 8
+			signals++
+		} else {
+			answers++
+		}
+		if _, err := io.ReadFull(clientSide, make([]byte, n)); err != nil {
+			t.Fatalf("read a tunnel frame: %v", err)
+		}
+	}
+	if answers == 0 || signals == 0 {
+		t.Fatalf("%d answers and %d answers to loss signals came back, want both", answers, signals)
+	}
+	if err := <-sendErr; err != nil {
+		t.Fatalf("sending through the tunnel: %v", err)
+	}
+}

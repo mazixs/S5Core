@@ -564,19 +564,43 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 3)
-	var nativePath atomic.Bool
-	// resync is an answer to the client's empty frame waiting for the one
-	// writer of the stream, which the reader wakes by the UDP socket's
-	// deadline.
-	var resync atomic.Bool
-	// Neither half outlives this function: it waits for both before it
-	// returns, so nothing is still reading the handshake buffer or writing
+	errCh := make(chan error, 4)
+	count := s.config.NativeCounters
+	if count == nil {
+		count = new(NativeCounters)
+	}
+	path := answerPath{count: count}
+	// No goroutine outlives this function: it waits for all of them before
+	// it returns, so nothing is still reading the handshake buffer or writing
 	// into the connection once the caller starts closing it.
 	var halves sync.WaitGroup
 	halves.Add(2)
+	// On a native association the stream has one writer of its own, and the
+	// reader of the answers only queues for it (TunnelWriter).
+	var fallback *TunnelWriter
 	if nativeSession != nil {
-		halves.Add(1)
+		halves.Add(2)
+		var answer [10]byte
+		tcpMeter := newUDPMeter(acct)
+		fallback = NewTunnelWriter(tcpConn, func() []byte {
+			binary.BigEndian.PutUint64(answer[2:], nativeSession.Next())
+			return answer[:]
+		}, func(payload int) error {
+			// The length prefix and the header belong to the tunnel, not to
+			// the client's transfer.
+			if st := tcpMeter.outbound(payload); st != SessionAllowed {
+				return s.endOfAssociation(req, st)
+			}
+			return nil
+		})
+		fallback.Count(&count.Drops)
+		defer func() {
+			if n := fallback.Dropped(); n > 0 {
+				s.config.Logger.Debug("socks: native association dropped frames its stream could not take",
+					"frames", n)
+			}
+		}()
+		defer tcpMeter.flush()
 	}
 	// Frames are read through the handshake buffer and written to the socket.
 	// The first frame of a client that does not wait for its reply is already
@@ -597,6 +621,9 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		cancel()
 		_ = tcpConn.SetDeadline(time.Now()) // unblock reads/writes
 		_ = udpConn.Close()
+		if fallback != nil {
+			fallback.Stop()
+		}
 		select {
 		case errCh <- e:
 		default:
@@ -604,14 +631,23 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	}
 
 	// Only one goroutine below writes to the TCP connection - the one
-	// carrying datagrams from the internet - so there is nothing to
-	// serialise. The mutex that used to guard this write was taken and
-	// released once per datagram to protect against a second writer that does
-	// not exist (plan task Ф6-5). The reply to the request was written before
-	// either goroutine started.
+	// carrying datagrams from the internet, or on a native association the
+	// TunnelWriter it queues for - so there is nothing to serialise. The
+	// mutex that used to guard this write was taken and released once per
+	// datagram to protect against a second writer that does not exist (plan
+	// task Ф6-5). The reply to the request was written before either
+	// goroutine started.
 	//
 	// A second writer would need this back. TestOnlyOneGoroutineWritesToTheTunnel
 	// fails under -race if one appears.
+	if fallback != nil {
+		go func() {
+			defer halves.Done()
+			if err := fallback.Run(); err != nil {
+				stopTunnel(err)
+			}
+		}()
+	}
 
 	// Internet -> TCP: read UDP responses and write into TCP stream
 	go func() {
@@ -628,20 +664,6 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 
 			n, rAddr, err := udpConn.ReadFromUDPAddrPort(buf)
 			if err != nil {
-				if isTimeout(err) {
-					// The deadline is cleared before the flag is read, so
-					// a wake that comes after the read is not lost.
-					_ = udpConn.SetReadDeadline(time.Time{})
-					if resync.Swap(false) {
-						var frame [10]byte
-						binary.BigEndian.PutUint64(frame[2:], nativeSession.Next())
-						if _, err := tcpConn.Write(frame[:]); err != nil {
-							stopTunnel(fmt.Errorf("tcp write error: %w", err))
-							return
-						}
-					}
-					continue
-				}
 				stopTunnel(fmt.Errorf("udp socket read error: %w", err))
 				return
 			}
@@ -655,9 +677,16 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			frame = append(frame, buf[:n]...)
 			binary.BigEndian.PutUint16(frame[0:2], uint16(len(frame)-2))
 
-			if nativeSession != nil && nativePath.Load() && len(frame)-2 <= nativeSession.MaxPayload() {
+			switch {
+			case nativeSession == nil:
+			case len(frame)-2 > nativeSession.MaxPayload():
+				count.AnswersOversize.Add(1)
+			case !path.Native():
+				count.AnswersRoute.Add(1)
+			default:
 				err := nativeSession.Send(frame[2:])
 				if err == nil {
+					count.AnswersNative.Add(1)
 					udpBufPool.Put(framePtr)
 					if st := meter.outbound(n); st != SessionAllowed {
 						stopTunnel(s.endOfAssociation(req, st))
@@ -665,11 +694,19 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 					}
 					continue
 				}
+				count.AnswersFailed.Add(1)
 				// This answer goes by TCP either way; only a path that is gone
 				// takes the answers after it there (see NativeAssociation.Send).
 				if errors.Is(err, ErrNativePathGone) {
-					nativePath.Store(false)
+					path.Gone()
 				}
+			}
+			if fallback != nil {
+				// A frame the stream cannot take in time is lost, as the
+				// datagram would be.
+				fallback.Submit(frame, nil, n)
+				udpBufPool.Put(framePtr)
+				continue
 			}
 			_, err = tcpConn.Write(frame)
 			udpBufPool.Put(framePtr)
@@ -728,10 +765,11 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			if packetLen == 0 {
 				// On 0x84 with a native path an empty frame is the client
 				// saying that it does not hear the server natively, followed
-				// by the counter of its next datagram. The answers go back to
-				// this stream until its next native datagram or heard probe,
-				// and the server answers with its own counter. On 0x83 it is
-				// a keepalive (docs/veil-spec.md, 10.6).
+				// by the counter of its next datagram at the time it decided.
+				// The answers go back to this stream unless the client said
+				// the opposite later by UDP, and the server answers with its
+				// own counter either way. On 0x83 it is a keepalive
+				// (docs/veil-spec.md, 10.6).
 				if nativeSession != nil {
 					if _, err := io.ReadFull(tcpReader, next[:]); err != nil {
 						if tunnelCtx.Err() != nil {
@@ -740,10 +778,10 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 						stopTunnel(fmt.Errorf("tcp read resync error: %w", err))
 						return
 					}
-					nativePath.Store(false)
-					nativeSession.Resync(binary.BigEndian.Uint64(next[:]))
-					resync.Store(true)
-					_ = udpConn.SetReadDeadline(time.Now())
+					counter := binary.BigEndian.Uint64(next[:])
+					path.Lost(counter)
+					nativeSession.Resync(counter)
+					fallback.Control()
 				}
 				continue
 			}
@@ -776,6 +814,13 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			// sends by it what is too big for native and what it has while
 			// the path is unproven, and it tells the server by the empty
 			// frame when it stops hearing it.
+			if nativeSession != nil {
+				if int(packetLen) > nativeSession.MaxPayload() {
+					count.ClientOversize.Add(1)
+				} else {
+					count.ClientRoute.Add(1)
+				}
+			}
 
 			dispatcher.submit(&question.dest, frameBuf[hdrLen:])
 			udpBufPool.Put(framePtr)
@@ -786,15 +831,16 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		go func() {
 			defer halves.Done()
 			question := newDatagramQuestion(req)
-			handle := func(packet []byte) {
+			handle := func(counter uint64, packet []byte) {
 				hdrLen, err := parseUDPHeaderInto(packet, &question.dest)
 				if err != nil || !s.allowDatagram(ctx, question) {
 					return
 				}
-				nativePath.Store(true)
+				count.ClientNative.Add(1)
+				path.Heard(counter)
 				dispatcher.submit(&question.dest, packet[hdrLen:])
 			}
-			heard := func() { nativePath.Store(true) }
+			heard := path.Heard
 			for nativeSession.Receive(tunnelCtx, handle, heard) {
 			}
 		}()

@@ -12,6 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/nativeudp"
 	"github.com/mazixs/S5Core/pkg/veil"
 )
@@ -29,6 +30,7 @@ type memPath struct {
 	dropUp   atomic.Bool
 	dropDown atomic.Bool
 	lose     func(probe int64) bool
+	onHeard  func(counter uint64) // a heard probe, with its counter
 	probes   atomic.Int64
 	data     atomic.Int64
 	mu       sync.Mutex
@@ -47,12 +49,16 @@ func (p *memPath) Write(b []byte) (int, error) {
 		case nativeudp.KindProbe:
 			p.mu.Lock()
 			at := time.Since(p.start)
-			if len(pk.Data) == 1 && pk.Data[0] == nativeudp.ProbeHeard {
+			heard := len(pk.Data) == 1 && pk.Data[0] == nativeudp.ProbeHeard
+			if heard {
 				p.heard = append(p.heard, at)
 			} else {
 				p.bare = append(p.bare, at)
 			}
 			p.mu.Unlock()
+			if heard && p.onHeard != nil {
+				p.onHeard(pk.Counter)
+			}
 			if i := p.probes.Add(1); p.lose == nil || !p.lose(i) {
 				p.answer(nativeudp.KindProbeAck, nil)
 			}
@@ -130,6 +136,12 @@ func startLivenessWith(t *testing.T, lose func(int64) bool, jitter float64) *liv
 // signals channel when signal is nil.
 func startLivenessSignalling(t *testing.T, lose func(int64) bool, jitter float64, signal func()) *liveness {
 	t.Helper()
+	return startLivenessOn(t, lose, jitter, signal, nil)
+}
+
+// startLivenessOn lets onHeard see the heard probes from the first.
+func startLivenessOn(t *testing.T, lose func(int64) bool, jitter float64, signal func(), onHeard func(uint64)) *liveness {
+	t.Helper()
 	psk, secret := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40)
 	ck, err := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleClient)
 	if err != nil {
@@ -139,7 +151,7 @@ func startLivenessSignalling(t *testing.T, lose func(int64) bool, jitter float64
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &memPath{server: nativeudp.NewSession(sk), toClient: make(chan []byte, 4096), errs: make(chan error, 16), closed: make(chan struct{}), lose: lose, start: time.Now()}
+	p := &memPath{server: nativeudp.NewSession(sk), toClient: make(chan []byte, 4096), errs: make(chan error, 16), closed: make(chan struct{}), lose: lose, onHeard: onHeard, start: time.Now()}
 	l := &liveness{t: t, start: p.start, path: p, signals: make(chan time.Time, 64)}
 	if signal == nil {
 		signal = func() { l.signals <- time.Now() }
@@ -352,13 +364,16 @@ func TestAVerifiedPathIsNotReportedAsNeverAnswering(t *testing.T) {
 }
 
 // The same break under the application's own traffic, with probes every
-// 500 ms. From 2.1 s every datagram finds the path stale and pokes the
-// watcher, and a poke probes 400 ms after the last probe, before the timer
-// would: the probes at 1.5 and 2.0 s are lost, the poke at 2.4 s sends the
-// third, and the one at 2.8 s finds three unanswered. The rule was checked
-// only when the timer fired, and under traffic it never did. The first of
-// those datagrams, at 2.1 s, tells the server too: its answers go by TCP from
-// the moment the client stops hearing it, as its own datagrams do.
+// 500 ms. The probes at 1.5 and 2.0 s are lost, and the second of them is
+// overdue at 2.25 s: from there every datagram finds the client deaf and
+// pokes the watcher, and a poke probes 400 ms after the last probe, before
+// the timer would. The poke at 2.4 s sends the third, and the one at 2.8 s
+// finds three unanswered. The rule was checked only when the timer fired,
+// and under traffic it never did. The first of those datagrams, at 2.25 s,
+// tells the server too: its answers go by TCP from the moment the client
+// stops hearing it, as its own datagrams do. It used to be 2.1 s, a second
+// after the last packet, which one lost answer reaches as well (finding F3
+// of docs/reports/v2.3-rc1-audit-2026-09-26.md).
 func TestAPathThatBreaksUnderTrafficIsDown(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := startLivenessWith(t, nil, 0.5)
@@ -373,7 +388,7 @@ func TestAPathThatBreaksUnderTrafficIsDown(t *testing.T) {
 			t.Fatal("down before the third unanswered probe")
 		}
 		l.at(2800 * time.Millisecond)
-		if got, want := l.signalled(), []time.Duration{2100 * time.Millisecond, 2800 * time.Millisecond}; !slices.Equal(got, want) {
+		if got, want := l.signalled(), []time.Duration{2250 * time.Millisecond, 2800 * time.Millisecond}; !slices.Equal(got, want) {
 			t.Fatalf("the server was told at %v, want %v", got, want)
 		}
 		// The retry probe went with the verdict, and the next is 1 s later.
@@ -445,11 +460,13 @@ func TestTrafficAfterAPauseIsProbedAtOnce(t *testing.T) {
 		l.stream(stop)
 		// The stream's first datagram lands at 5.01 s and is probed at once;
 		// the break at 5.1 s loses the probes at 5.41, 5.81 and 6.21 s. The
-		// last of them is 1.11 s after the server was last heard.
+		// second of them is overdue at 6.06 s, and at 6.1 s the server was
+		// last heard a second ago: the watcher wakes then to tell it, and
+		// the verdict at 6.61 s tells it again.
 		l.at(5100 * time.Millisecond)
 		l.path.dropDown.Store(true)
 		l.at(6610 * time.Millisecond)
-		if got, want := l.signalled(), []time.Duration{6210 * time.Millisecond, 6610 * time.Millisecond}; !slices.Equal(got, want) {
+		if got, want := l.signalled(), []time.Duration{6100 * time.Millisecond, 6610 * time.Millisecond}; !slices.Equal(got, want) {
 			t.Fatalf("the server was told at %v, want %v", got, want)
 		}
 	})
@@ -547,17 +564,34 @@ func TestADatagramTooBigForNativeTellsTheServerNothing(t *testing.T) {
 	})
 }
 
+// stuckWriter is a tunnel behind a full send buffer: every write waits until
+// release is closed.
+type stuckWriter struct {
+	release chan struct{}
+	tries   atomic.Int32
+}
+
+func (w *stuckWriter) Write(b []byte) (int, error) {
+	w.tries.Add(1)
+	<-w.release
+	return len(b), nil
+}
+
 // A signal the tunnel cannot take, as behind a full send buffer, does not hold
-// the probes: the path breaks at 1.0 s, the signal at 2.0 s never returns, and
-// the retry at 3.4 s still finds the break healed. The watcher used to write
-// the signal itself and stopped there until the stream drained (finding 5 of
-// the third review).
+// the probes: the path breaks at 1.0 s, the signal at 2.0 s never gets
+// written, and the retry at 3.4 s still finds the break healed. The watcher
+// used to write the signal itself and stopped there until the stream drained
+// (finding 5 of the third review).
 func TestAStuckSignalDoesNotStopTheProbes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		release := make(chan struct{})
-		var tries atomic.Int32
-		l := startLivenessSignalling(t, nil, 0, func() { tries.Add(1); <-release })
-		t.Cleanup(func() { close(release) })
+		stuck := &stuckWriter{release: make(chan struct{})}
+		var writer atomic.Pointer[socks5.TunnelWriter]
+		l := startLivenessSignalling(t, nil, 0, func() { writer.Load().Control() })
+		w := socks5.NewTunnelWriter(stuck, l.client.signalFrame, nil)
+		writer.Store(w)
+		go func() { _ = w.Run() }()
+		t.Cleanup(func() { w.Stop(); close(stuck.release) })
+		tries := &stuck.tries
 		stop := make(chan struct{})
 		defer close(stop)
 		l.stream(stop)

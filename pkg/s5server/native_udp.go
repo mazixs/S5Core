@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync/atomic"
 
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/nativeudp"
@@ -40,23 +41,45 @@ func nativeSendError(err error) error {
 func (a *nativeAssociation) Close()             { a.hub.Remove(a.session) }
 func (a *nativeAssociation) Resync(next uint64) { a.hub.Resync(a.session, next) }
 func (a *nativeAssociation) Next() uint64       { return a.session.Next() }
-func (a *nativeAssociation) Receive(ctx context.Context, datagram func([]byte), heard func()) bool {
+func (a *nativeAssociation) Receive(ctx context.Context, datagram func(uint64, []byte), heard func(uint64)) bool {
 	select {
 	case <-ctx.Done():
 		return false
 	case <-a.session.Heard():
-		heard()
+		heard(a.session.HeardCounter())
 		return true
 	case packet := <-a.session.Packets():
-		datagram(packet.Data)
+		datagram(packet.Counter, packet.Data)
 		packet.Release()
 		return true
 	}
 }
 
-func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub) (metric.Registration, error) {
+func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCounters) (metric.Registration, error) {
 	if t == nil {
 		return nil, nil
+	}
+	datagrams := []struct {
+		direction, path string
+		count           *atomic.Uint64
+	}{
+		{"to_client", "native", &c.AnswersNative}, {"to_client", "tcp_oversize", &c.AnswersOversize},
+		{"to_client", "tcp_route", &c.AnswersRoute}, {"to_client", "tcp_failed", &c.AnswersFailed},
+		{"from_client", "native", &c.ClientNative}, {"from_client", "tcp_oversize", &c.ClientOversize},
+		{"from_client", "tcp_route", &c.ClientRoute},
+	}
+	events := []struct {
+		event string
+		count *atomic.Uint64
+	}{
+		{"to_native", &c.ToNative}, {"to_tcp", &c.ToTCP},
+		{"stale_loss", &c.StaleLoss}, {"stale_heard", &c.StaleHeard},
+	}
+	drops := []struct {
+		reason string
+		count  *atomic.Uint64
+	}{
+		{"queue", &c.Drops.Queue}, {"age", &c.Drops.Age},
 	}
 	return t.meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		st := hub.Stats()
@@ -71,6 +94,16 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub) (metric.Registratio
 			o.ObserveInt64(t.NativeUDPPackets, int64(row.count), metric.WithAttributes(attribute.String("outcome", row.outcome)))
 		}
 		o.ObserveInt64(t.NativeUDPSessions, int64(st.Active))
+		for _, row := range datagrams {
+			o.ObserveInt64(t.NativeUDPDatagrams, int64(row.count.Load()), metric.WithAttributes(
+				attribute.String("direction", row.direction), attribute.String("path", row.path)))
+		}
+		for _, row := range events {
+			o.ObserveInt64(t.NativeUDPRouteEvents, int64(row.count.Load()), metric.WithAttributes(attribute.String("event", row.event)))
+		}
+		for _, row := range drops {
+			o.ObserveInt64(t.NativeUDPStreamDrops, int64(row.count.Load()), metric.WithAttributes(attribute.String("reason", row.reason)))
+		}
 		return nil
-	}, t.NativeUDPPackets, t.NativeUDPSessions)
+	}, t.NativeUDPPackets, t.NativeUDPSessions, t.NativeUDPDatagrams, t.NativeUDPRouteEvents, t.NativeUDPStreamDrops)
 }
