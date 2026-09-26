@@ -17,7 +17,16 @@ import (
 	"github.com/mazixs/S5Core/pkg/veil"
 )
 
-const MaxWire = 1400
+// Sizes on the wire (docs/veil-spec.md, 10.7). MaxWire is the longest
+// datagram either side sends. BaseWire is the size every path is taken to
+// carry, BASE_PLPMTU of RFC 8899. Below FloorWire the smallest QUIC packet
+// with the SOCKS5 header of an IPv6 address does not fit, which the client
+// reports.
+const (
+	MaxWire   = 1400
+	BaseWire  = 1200
+	FloorWire = 1200 + 22 + 8 + 2 + 16
+)
 
 const (
 	KindData     byte = 1
@@ -25,8 +34,9 @@ const (
 	KindProbeAck byte = 3
 )
 
-// ProbeHeard is the payload of a probe from a client that hears the server
-// natively; a probe without it asks only whether the path works.
+// ProbeHeard is the flag of a probe from a client that hears the server
+// natively; a probe without it asks only whether the path works. A client of
+// 2.3.0-rc1 sends it as the whole payload.
 const ProbeHeard byte = 1
 
 const (
@@ -91,6 +101,9 @@ type Session struct {
 	closed   atomic.Bool
 	// resynced is the last resync the hub made, under its lock.
 	resynced time.Time
+	// limit is the longest datagram this side puts on the wire, 0 for
+	// MaxWire until SetLimit.
+	limit atomic.Int32
 }
 
 func NewSession(keys veil.DatagramKeys) *Session {
@@ -144,9 +157,27 @@ func (t *tagger) tag(counter uint64) [8]byte {
 	return result
 }
 
-// MaxPayload is the longest payload Seal takes: the wire adds the tag, the
-// kind, the pad length and the AEAD tag.
-func (s *Session) MaxPayload() int { return MaxWire - 8 - 2 - s.keys.Send.Overhead() }
+// Limit is the longest datagram this side puts on the wire.
+func (s *Session) Limit() int {
+	if l := s.limit.Load(); l != 0 {
+		return int(l)
+	}
+	return MaxWire
+}
+
+// SetLimit bounds what this side puts on the wire to the limit the probes
+// found, brought within BaseWire and MaxWire. The limit is set once: it
+// reports whether this call set it.
+func (s *Session) SetLimit(wire int) bool {
+	return s.limit.CompareAndSwap(0, int32(min(max(wire, BaseWire), MaxWire)))
+}
+
+// overhead is what the wire adds to a payload: the tag, the kind, the pad
+// length and the AEAD tag.
+func (s *Session) overhead() int { return 8 + 2 + s.keys.Send.Overhead() }
+
+// MaxPayload is the longest payload Seal takes.
+func (s *Session) MaxPayload() int { return s.Limit() - s.overhead() }
 
 // Seal appends a whole wire datagram to dst. The caller must not reuse dst
 // while sending it. Oversized payloads must use the TCP fallback.
@@ -154,9 +185,16 @@ func (s *Session) Seal(dst []byte, kind byte, payload []byte) ([]byte, error) {
 	if kind != KindData && kind != KindProbe && kind != KindProbeAck {
 		return nil, ErrPacket
 	}
-	if len(payload) > s.MaxPayload() {
+	limit := s.MaxPayload()
+	if len(payload) > limit {
 		return nil, ErrPacket
 	}
+	return s.seal(dst, kind, payload, 0, min(32, limit-len(payload)))
+}
+
+// seal appends the datagram of kind that carries data, then fill zero bytes,
+// then 1 to space bytes of random padding, or none when space is 0.
+func (s *Session) seal(dst []byte, kind byte, data []byte, fill, space int) ([]byte, error) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 	if s.send == ^uint64(0) {
@@ -167,15 +205,11 @@ func (s *Session) Seal(dst []byte, kind byte, payload []byte) ([]byte, error) {
 	t := s.sendTag.tag(counter)
 	s.sendAAD = t
 	binary.BigEndian.PutUint64(s.sendNonce[4:], counter)
-	var draw [1]byte
-	if _, err := rand.Read(draw[:]); err != nil {
-		return nil, err
-	}
-	space := s.MaxPayload() - len(payload)
 	pad := 0
 	if space > 0 {
-		if space > 32 {
-			space = 32
+		var draw [1]byte
+		if _, err := rand.Read(draw[:]); err != nil {
+			return nil, err
 		}
 		pad = 1 + int(draw[0])%space
 	}
@@ -185,11 +219,12 @@ func (s *Session) Seal(dst []byte, kind byte, payload []byte) ([]byte, error) {
 	}
 	dst = append(dst, t[:]...)
 	dst = append(dst, kind)
-	dst = append(dst, payload...)
+	dst = append(dst, data...)
+	dst = append(dst, make([]byte, fill)...)
 	dst = append(dst, padding[:pad]...)
 	dst = append(dst, byte(pad))
 	// Seal in place: plaintext begins immediately after the tag.
-	plain := dst[len(dst)-len(payload)-pad-2:]
+	plain := dst[len(dst)-len(data)-fill-pad-2:]
 	return s.keys.Send.Seal(dst[:len(dst)-len(plain)], s.sendNonce[:], plain, s.sendAAD[:]), nil
 }
 
@@ -376,10 +411,18 @@ type Hub struct {
 	logger      *slog.Logger
 	// write is writeTo on the hub's socket; a test stalls it.
 	write func(wire, oob []byte, to netip.AddrPort) error
-	// acks are the sessions whose probe waits for its answer. The reader
-	// does not write them itself: a write that waits for the socket would
-	// stop the reception of every session.
-	acks chan *Session
+	// acks are the probes that wait for their answers. The reader does not
+	// write them itself: a write that waits for the socket would stop the
+	// reception of every session.
+	acks chan ackRequest
+}
+
+// ackRequest is a probe to answer, and how long it was on the wire.
+type ackRequest struct {
+	s        *Session
+	probe    Probe
+	extended bool
+	wire     int
 }
 
 // Stats is a cumulative, bounded-label view of the native UDP endpoint.
@@ -406,6 +449,9 @@ func Listen(addr string, logger *slog.Logger) (*Hub, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := DontFragment(c); err != nil && logger != nil {
+		logger.Warn("Native UDP socket may fragment datagrams longer than the path", "error", err)
+	}
 	return serve(c, a.IP == nil || a.IP.IsUnspecified(), logger), nil
 }
 
@@ -421,7 +467,7 @@ func serve(c *net.UDPConn, wildcard bool, logger *slog.Logger) *Hub {
 	}
 	h := &Hub{conn: c, sessions: make(map[*Session]struct{}), index: make(map[[8]byte]*Session), spent: make(map[[8]byte]*Session), logger: logger}
 	h.write = func(wire, oob []byte, to netip.AddrPort) error { return writeTo(c, wire, oob, to) }
-	h.acks = make(chan *Session, ackQueue)
+	h.acks = make(chan ackRequest, ackQueue)
 	if wildcard {
 		h.source = askForDestination(c)
 	}
@@ -436,8 +482,12 @@ func serve(c *net.UDPConn, wildcard bool, logger *slog.Logger) *Hub {
 const ackQueue = 256
 
 func (h *Hub) answer() {
-	for s := range h.acks {
-		_ = h.Send(s, KindProbeAck, nil)
+	for a := range h.acks {
+		r := a.s.answers.Load()
+		if r == nil || a.s.closed.Load() {
+			continue
+		}
+		_ = a.s.SealWriteAnswer(a.probe, a.extended, a.wire, func(wire []byte) error { return h.write(wire, r.oob, r.peer) })
 	}
 }
 
@@ -620,11 +670,15 @@ func (h *Hub) read() {
 			s.follow(h, peer, from)
 		}
 		if p.Kind == KindProbe {
+			probe, extended := ParseProbe(p.Data)
+			if probe.Limit != 0 {
+				s.SetLimit(probe.Limit)
+			}
 			select {
-			case h.acks <- s:
+			case h.acks <- ackRequest{s: s, probe: probe, extended: extended, wire: n}:
 			default:
 			}
-			if len(p.Data) == 1 && p.Data[0] == ProbeHeard {
+			if probe.Heard {
 				s.hear(counter)
 			}
 			continue

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -544,7 +545,7 @@ func TestAnICMPErrorDoesNotEndNativeUDP(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the reader stopped at the error")
 	}
-	if !eventually(func() bool { return client.carry([]byte("back")) }) {
+	if !eventually(func() bool { return client.carry([]byte("back")) == byNative }) {
 		t.Fatal("the client's datagrams did not go native again")
 	}
 	select {
@@ -554,5 +555,39 @@ func TestAnICMPErrorDoesNotEndNativeUDP(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the native datagram did not reach the server")
+	}
+}
+
+// The limit of native end to end (docs/veil-spec.md, 10.7). Loopback carries
+// the whole range, so the limit is at least MaxWire-8: a datagram that fits it
+// goes native both ways, a longer one is dropped rather than sent by the
+// control connection, and from the eighth on the long ones use 0x83.
+func TestADatagramPastTheLimitIsDroppedUntilTheEighth(t *testing.T) {
+	t.Parallel()
+	r := newNativeRig(t)
+	r.verified()
+	// The native tag, counter and AEAD tag, and the SOCKS5 UDP header of an
+	// IPv4 target.
+	const overhead, header = 26, 10
+	payload := func(n int, tag string) string { return strings.Repeat("x", n-len(tag)) + tag }
+
+	fits := payload(nativeudp.MaxWire-8-overhead-header, "fits")
+	rd, wr := r.control.read.Load(), r.control.written.Load()
+	r.send(fits)
+	if !r.await("fits", 3*time.Second) || r.control.read.Load() != rd || r.control.written.Load() != wr {
+		t.Fatal("a datagram within the limit did not go native both ways")
+	}
+
+	long := nativeudp.MaxWire - overhead - header + 1
+	for i := 1; i < nativeOversizeDrops; i++ {
+		r.send(payload(long, "long"+strconv.Itoa(i)))
+	}
+	r.send(payload(long, "last"))
+	if r.await("last", 300*time.Millisecond) || r.control.written.Load() != wr {
+		t.Fatal("a datagram past the limit was not dropped")
+	}
+	r.send(payload(long, "after"))
+	if !r.await("after", 3*time.Second) || r.control.written.Load() == wr || r.control.read.Load() == rd {
+		t.Fatal("the datagram after the eighth did not go by 0x83 both ways")
 	}
 }

@@ -313,16 +313,14 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				clientUDPAddr.Store(&stored)
 			}
 
-			if native != nil && native.carry(buf[:n]) {
-				continue
-			}
-
 			// The packet from the application MUST start with a SOCKS5 UDP header
 			// We just tunnel this entire frame verbatim inside length-prefixed TCP
 			if native != nil {
-				var length [2]byte
-				binary.BigEndian.PutUint16(length[:], uint16(n))
-				native.writer.Submit(length[:], buf[:n], n)
+				if native.carry(buf[:n]) == byTunnel {
+					var length [2]byte
+					binary.BigEndian.PutUint16(length[:], uint16(n))
+					native.writer.Submit(length[:], buf[:n], n)
+				}
 				continue
 			}
 			framePtr := udpFramePool.Get().(*[]byte)
@@ -374,8 +372,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				return
 			}
 
-			if native != nil {
-				native.tcpAnswer(int(packetLen))
+			if native != nil && !native.tcpAnswer(int(packetLen)) {
+				udpFramePool.Put(framePtr)
+				continue
 			}
 			// Must know where the client is to send UDP back
 			addr := clientUDPAddr.Load()

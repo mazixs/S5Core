@@ -39,13 +39,17 @@ DEFAULTS = {
     "capture": False,
     "capture_packets": 200000,
 }
+# Settings kept out of DEFAULTS: only a plan that sets one carries it, so the
+# hash of plans written before them stays the same.
+OPTIONAL = {"gauges_ms": 0, "leg_tap": False}
 GUARD = {"max_foreign_cores": 1.5, "load_wait": "120s", "min_free_mb": 1024}
 # network = "wan": the server and the origins on one remote host, client and generator on another, over ssh.
 WAN = {"server": None, "client": None, "server_ip": None, "server_arch": "amd64", "client_arch": "arm64",
        "server_dir": "/root/s5bench", "client_dir": "/opt/tmp/s5bench", "server_memory_max": "300M",
        "origin_memory_max": "256M", "max_foreign_cores": 0}
 ARCHES = ("amd64", "arm64", "arm", "386", "mipsle", "mips")
-SERIES_KEYS = {"name", "title", "network", "variants", "transports", "rounds", "only", "kind", "env", "compare", "group"} | set(DEFAULTS)
+SERIES_KEYS = {"name", "title", "network", "variants", "transports", "rounds", "only", "kind", "env", "compare", "group"} | set(DEFAULTS) | set(OPTIONAL)
+QUEUES = ("fifo", "fq_codel")
 VARIANT_KEYS = {"direct", "ref", "patch", "env", "title"}
 
 
@@ -73,9 +77,11 @@ def _merge_env(*envs):
 def _settings(base, over, where):
     s = dict(base)
     for k, v in over.items():
-        if k not in DEFAULTS:
+        if k not in DEFAULTS and k not in OPTIONAL:
             continue
         s[k] = v
+    if s.get("gauges_ms", 0) and not 50 <= s["gauges_ms"] <= 60000:
+        raise PlanError(f"{where}: gauges_ms is a scrape interval from 50 to 60000 ms, or 0 for none")
     for k in ("scenario_timeout", "hang_grace", "settle", "flush", "soak", "idle"):
         try:
             seconds(s[k])
@@ -106,7 +112,7 @@ def resolve(raw, base_dir):
         if k not in raw:
             raise PlanError(f"missing {k!r}")
     for k in raw.get("defaults", {}):
-        if k not in DEFAULTS:
+        if k not in DEFAULTS and k not in OPTIONAL:
             raise PlanError(f"defaults: unknown key {k!r}")
     for k in raw.get("guard", {}):
         if k not in GUARD:
@@ -158,7 +164,8 @@ def resolve(raw, base_dir):
         if net == "wan" and not wan:
             raise PlanError(f"{where}: network = 'wan' needs a [wan] section")
         if net not in ("loopback", "wan"):
-            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct", "udp_blackout_after_s", "udp_blackout_for_s"}
+            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct", "udp_blackout_after_s", "udp_blackout_for_s",
+                    "uplink_mbit", "queue_kb", "queue", "wake_delay_ms"}
             if not isinstance(net, dict) or set(net) - keys:
                 raise PlanError(f"{where}: network is 'loopback', 'wan' or {{{', '.join(sorted(keys))}}}")
             n = {"rtt_ms": float(net.get("rtt_ms", 0)), "loss_pct": float(net.get("loss_pct", 0)), "rate_mbit": float(net.get("rate_mbit", 0))}
@@ -187,6 +194,17 @@ def resolve(raw, base_dir):
                     raise PlanError(f"{where}: a spike needs delay_spike_ms and delay_spike_len_ms above 0 and 0 < delay_spike_pct < 100")
                 if "loss_outage_ms" in net:
                     raise PlanError(f"{where}: spikes and loss_outage_ms both change the leg in time; set one")
+            uplink = {k for k in ("uplink_mbit", "queue_kb", "queue") if k in net}
+            if uplink:
+                n |= {"uplink_mbit": float(net.get("uplink_mbit", 0)), "queue_kb": float(net.get("queue_kb", 0)), "queue": net.get("queue", "fifo")}
+                if n["uplink_mbit"] <= 0 or n["queue_kb"] <= 0 or n["queue"] not in QUEUES:
+                    raise PlanError(f"{where}: an uplink bottleneck needs uplink_mbit and queue_kb above 0, queue one of {', '.join(QUEUES)}")
+                if n["rate_mbit"] or n.keys() & {"loss_outage_ms", "delay_spike_ms"}:
+                    raise PlanError(f"{where}: uplink_mbit shapes one direction; it excludes rate_mbit, loss_outage_ms and spikes")
+            if "wake_delay_ms" in net:
+                n["wake_delay_ms"] = float(net["wake_delay_ms"])
+                if n["wake_delay_ms"] <= 0 or n.keys() & {"loss_outage_ms", "delay_spike_ms", "uplink_mbit"}:
+                    raise PlanError(f"{where}: wake_delay_ms is above 0 and excludes loss_outage_ms, spikes and uplink_mbit, which change the same netem")
             net = n
         vs = s.get("variants", list(variants))
         for v in vs:

@@ -1,0 +1,80 @@
+# Bufferbloat on a narrow uplink (plan stage D-1): a 64 Hz game and a bulk
+# upload through the same client, the upload on for 40 s out of every 60.
+# The queue sits only upstream, behind half the RTT each way, FIFO or
+# fq_codel, 128 and 256 KB. native-before is the release before finding F3
+# (3ed23e9); the direct path is the control for every number. Twelve cells
+# at once, about three minutes. Results: docs/benchmarks/degradation-2026-09-26.md.
+name = "degradation-bloat-3mbit"
+description = "игра и объемная отдача на узком аплинке 3 Мбит/с: native, 0x83 и прямой UDP"
+base = "native-before"
+candidate = "native"
+
+[defaults]
+auth = "none"
+scale = 0.041666667
+scenario_timeout = "4m"
+hang_grace = "20s"
+settle = "2s"
+retries = 0
+gauges_ms = 200
+leg_tap = true
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.native]
+ref = "worktree"
+title = "native UDP"
+[variants.native.env.server]
+UDP_PORT = "41443"
+[variants.native.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[variants.native-before]
+ref = "3ed23e9"
+title = "native UDP до F3"
+[variants.native-before.env.server]
+UDP_PORT = "41443"
+[variants.native-before.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[variants.tcp]
+ref = "worktree"
+title = "0x83"
+[variants.tcp.env.client]
+UDP_NATIVE = "false"
+LOG_LEVEL = "info"
+
+[guard]
+max_foreign_cores = 6.0
+load_wait = "120s"
+
+[[series]]
+name = "fifo128"
+title = "аплинк 3 Мбит/с, FIFO 128 КБ"
+network = { rtt_ms = 50, uplink_mbit = 3, queue_kb = 128, queue = "fifo" }
+transports = ["obfs"]
+compare = []
+group = "bloat"
+only = ["=game/64hz-200b-upload"]
+
+[[series]]
+name = "fifo256"
+title = "аплинк 3 Мбит/с, FIFO 256 КБ"
+network = { rtt_ms = 50, uplink_mbit = 3, queue_kb = 256, queue = "fifo" }
+transports = ["obfs"]
+compare = []
+group = "bloat"
+only = ["=game/64hz-200b-upload"]
+
+[[series]]
+name = "fqcodel256"
+title = "аплинк 3 Мбит/с, fq_codel 256 КБ"
+network = { rtt_ms = 50, uplink_mbit = 3, queue_kb = 256, queue = "fq_codel" }
+transports = ["obfs"]
+compare = []
+group = "bloat"
+only = ["=game/64hz-200b-upload"]

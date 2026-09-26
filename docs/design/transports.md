@@ -1,6 +1,6 @@
 # Traffic Obfuscation
 
-S5Core implements a custom obfuscation layer inspired by [AmneziaWG](https://amnezia.org/), [XTLS Vision](https://github.com/XTLS/Xray-core), and [Hysteria v2 Salamander](https://hysteria.network/). The obfuscation wraps every TCP frame with AES-256-GCM encryption and random-length padding, so nothing on the wire names the protocol being carried. A write is cut into equal parts that each fit `OBFS_MTU`, so the frame size follows the configured MTU rather than the size of whatever buffer handed the data over.
+S5Core implements a custom obfuscation layer inspired by [AmneziaWG](https://amnezia.org/), [XTLS Vision](https://github.com/XTLS/Xray-core), and [Hysteria v2 Salamander](https://hysteria.network/). The obfuscation wraps every TCP frame with AES-256-GCM encryption and random-length padding, so nothing on the wire names the protocol being carried. A write is cut into equal parts that each fit `OBFS_MTU`, so the frame size follows the configured MTU rather than the size of whatever buffer handed the data over. `OBFS_MTU` is a frame limit inside the TCP stream, not the IP MTU: the kernel cuts the stream into packets by the MSS, and a frame may span several of them.
 
 ### How It Works
 
@@ -473,16 +473,60 @@ What to know before enabling it:
   `UDP_NATIVE=true` on the client, UDP goes by `0x83` as in 2.2.
 - **The association starts on `0x83`.** It moves after the first answered
   probe, about one round trip.
-- **Losing UDP mid-session costs about a second.** The client stops sending
-  natively after one second without hearing the server and tells the server
-  by the control connection, which then answers by TCP too; once a probe is
-  answered again, the client says it hears the server and the answers come
-  back to native. The notice carries both sides' counters, so a path that
-  lost more than 512 datagrams in a row, a second above 512 Hz, recovers as
-  well. A 12 s UDP block cost one 1.06 s pause, and native came back by
-  itself afterwards.
-- **Large datagrams go by `0x83`.** The native limit is 1374 bytes including
-  the SOCKS5 UDP header.
+- **Losing UDP mid-session costs about a second.** The client sends
+  natively while it hears the server: a server packet came less than a
+  second ago, or fewer than two probes in a row are unanswered. Once it stops
+  hearing, it tells the server by the control connection, which then answers
+  by TCP too; once a probe is answered again, the client says it hears the
+  server and the answers come back to native. The server places these words
+  by the client's datagram counter, so a notice and a native datagram that
+  overtake each other do not undo the later one. The notice carries both
+  sides' counters, so a path that lost more than 512 datagrams in a row, a
+  second above 512 Hz, recovers as well. On 2.3.0-rc1, whose rule was the
+  second alone, a 12 s UDP block cost one 1.06 s pause, and native came back
+  by itself afterwards. The probe condition can only lengthen that pause:
+  the switch then waits for the second unanswered probe to be overdue, when
+  that comes later than the one second.
+- **What does not go natively has one TCP writer.** It queues up to 64
+  frames and 256 KB per association and drops a frame that waited 250 ms, as
+  UDP would, so a large datagram waiting for the send buffer holds up
+  neither probes nor native datagrams. The client's `UDP Tunnel closed` line
+  and the server's `s5core_native_udp_*` metrics say which path each
+  datagram took.
+- **Native carries datagrams up to the limit of the path.** At the start of
+  each association the client probes the path with 7-15 datagrams of chosen
+  sizes, about 8 KB each way on a 1500-byte path, and both ends then keep
+  every native datagram, padding included, within the limit it found. The
+  limit is at most 1400 bytes on the wire, that is 1374 bytes of SOCKS5 UDP
+  datagram. On a 1500-byte path it falls in 1392-1400, so a QUIC packet to
+  an IPv4 address fits up to 1356-1364 bytes; on a narrower path it lies
+  0-14 bytes below what the path carries. On Linux the native sockets set
+  DF and ignore the PMTU cache, so a native datagram is never fragmented
+  ([narrow link bench](../benchmarks/mtu-native-2026-09-26.md#после-м-2),
+  [section 10.7](../veil-spec.md#107-предел-размера-native)).
+- **A datagram longer than the limit is dropped, not sent by `0x83`.** A QUIC
+  stack that searches for its packet size then sees the drop as the path's
+  and settles below the limit, instead of taking the reliable stream for the
+  path. On the narrow link bench quic-go sends 99.7-100% of its packets
+  natively and uploads at 38-45 MB/s; when long packets went by `0x83`, it
+  settled above the limit and uploaded at 1.1-1.6 MB/s. The eighth long
+  datagram dropped in one direction moves long datagrams to `0x83` for the
+  rest of the association, with one Info line, so an application that keeps
+  sending them, such as a VPN over SOCKS5, still gets them through.
+  `native_limit`, `size_probes`, `dropped_oversize_sent` and
+  `dropped_oversize_received` in `UDP Tunnel closed` show the search and the
+  drops.
+- **A path under 1248 bytes on the wire does not carry the smallest QUIC
+  packet to an IPv6 address**: 1200 bytes of QUIC, 22 of SOCKS5 header and
+  26 of native. The client logs one Info line; QUIC then goes by `0x83`
+  after the eighth dropped packet, or the application falls back to TCP.
+- **The limit is found once per association.** A path that narrows during an
+  association is not noticed, and datagrams longer than the new path are
+  lost until the association ends.
+- **2.3.0-rc1 does not search.** A client with a 2.3.0-rc1 server keeps the
+  limit of 1400 bytes and drops long datagrams the same way. A 2.3.0-rc1
+  client behind a narrow link loses server answers longer than the path that
+  used to arrive fragmented, because the server sets DF too.
 - **The measured direct flow ends on the server's machine.** A real game
   server elsewhere adds the leg from the S5Core node to it, and the tunnel
   does not change that leg.

@@ -58,6 +58,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which moves by the same rule; on other systems set a specific one.
   `UDP_PORT=0` is a configuration error rather than a random port. The wire format and current test scope
   are in [the specification](docs/veil-spec.md#106-native-udp-команда-0x84).
+- Native UDP keeps within the limit of the path. At the start of each
+  association the client finds how long a datagram the path carries both
+  ways, with 7-15 probes of chosen sizes (about 8 KB each way on a 1500-byte
+  path), and tells the server; both ends then keep every native datagram,
+  padding included, within that limit. On Linux the native sockets set DF and
+  ignore the PMTU cache, so a datagram longer than the path is lost rather
+  than fragmented, and a forged PTB does not lower the limit. A datagram
+  longer than the limit is dropped both ways rather than sent by `0x83`, so a
+  QUIC stack that searches for its packet size settles below the limit: on
+  the narrow link bench quic-go sends 99.7-100% of its packets natively and
+  uploads at 38-45 MB/s, against 1.1-1.6 MB/s when long packets went by
+  `0x83`. The eighth long datagram dropped in one direction moves long
+  datagrams to `0x83` for the rest of the association, with one Info line,
+  so an application that keeps sending them still gets them through. On a
+  1500-byte path the limit falls in 1392-1400 bytes on the wire rather than
+  a constant 1400, so an application with a constant packet of 1357-1364
+  bytes to an IPv4 address (1345-1352 to IPv6) goes by `0x83` after its
+  eighth. A path under 1248 bytes on the wire does not carry the smallest
+  QUIC packet to an IPv6 address, and the client says so in one Info line.
+  A 2.3.0-rc1 server does not search, and the client keeps the limit of 1400
+  bytes with it; a 2.3.0-rc1 client behind a narrow link loses server
+  answers longer than the path, which used to arrive fragmented
+  ([bench](docs/benchmarks/mtu-native-2026-09-26.md#после-м-2),
+  [specification](docs/veil-spec.md#107-предел-размера-native)).
 - Native UDP server metrics count accepted packets, drops by tag, replay and
   authentication, read errors of the shared socket, after which it keeps
   reading, and active associations with fixed label sets. The path of every
@@ -167,6 +191,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection that carried the traffic). `cmd/udpshape` measures which UDP
   datagram shapes cross a path, each direction on its own
   ([results](docs/field/udp-shapes.md)).
+- `scripts/matrix/mtu_stand.py` with its helper `mtuprobe` is a narrow link
+  stand without root: four network namespaces in `unshare -Urnm`, the narrow
+  link between two routers so that a large packet always meets one that can
+  answer PTB, and PTB either passing or dropped by nft. It measures native
+  UDP against direct UDP by size, with the fragments, reassemblies and PTB of
+  every namespace, quic-go through native, and bulk TCP through a black hole
+  at `tcp_mtu_probing` 0, 1 and 2
+  ([results](docs/benchmarks/mtu-native-2026-09-26.md)).
+- `scripts/matrix` networks take a narrow uplink with its queue
+  (`uplink_mbit`, `queue_kb`, `queue` of `fifo` or `fq_codel`) and a wake-up
+  delay for the first packets after a pause (`wake_delay_ms`), with game
+  scenarios for each: `game/64hz-200b-upload` runs a bulk upload through the
+  same client next to the game, `game/64hz-200b-wake` pauses the flow for
+  15 s. A cell can poll the server's metrics and count the packets of every
+  tunnel connection and of native UDP on its leg
+  ([results](docs/benchmarks/degradation-2026-09-26.md)).
 
 ## [2.2.0] - 2026-09-24
 
