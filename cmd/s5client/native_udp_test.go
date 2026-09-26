@@ -21,7 +21,7 @@ import (
 	"github.com/mazixs/S5Core/pkg/veil"
 )
 
-func freeTCPPort(t *testing.T) string {
+func freeTCPPort(t testing.TB) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -32,7 +32,7 @@ func freeTCPPort(t *testing.T) string {
 	return p
 }
 
-func freeUDPPort(t *testing.T) int {
+func freeUDPPort(t testing.TB) int {
 	t.Helper()
 	c, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
@@ -66,7 +66,7 @@ func (c *meteredConn) NetConn() net.Conn { return c.Conn }
 
 // startTunnelServer starts an obfs server on loopback, with native UDP when
 // native is set, and returns the address of its obfs listener.
-func startTunnelServer(t *testing.T, native bool) (string, s5server.Config) {
+func startTunnelServer(t testing.TB, native bool) (string, s5server.Config) {
 	t.Helper()
 	return startTunnelServerWith(t, func(c *s5server.Config) {
 		if native {
@@ -75,7 +75,7 @@ func startTunnelServer(t *testing.T, native bool) (string, s5server.Config) {
 	})
 }
 
-func startTunnelServerWith(t *testing.T, adjust func(*s5server.Config)) (string, s5server.Config) {
+func startTunnelServerWith(t testing.TB, adjust func(*s5server.Config)) (string, s5server.Config) {
 	t.Helper()
 	plain, obfsPort := freeTCPPort(t), freeTCPPort(t)
 	cfg := s5server.DefaultConfig()
@@ -110,7 +110,7 @@ func startTunnelServerWith(t *testing.T, adjust func(*s5server.Config)) (string,
 }
 
 // udpEcho answers every datagram with itself.
-func udpEcho(t *testing.T) *net.UDPConn {
+func udpEcho(t testing.TB) *net.UDPConn {
 	t.Helper()
 	echo, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
@@ -134,7 +134,7 @@ func udpEcho(t *testing.T) *net.UDPConn {
 // and hands the association to handleUDPAssociate. It returns the socket the
 // application talks to, the client's UDP port and the metered control
 // connection.
-func openNativeAssociation(t *testing.T, addr string, psk string) (*net.UDPConn, *net.UDPAddr, *meteredConn) {
+func openNativeAssociation(t testing.TB, addr string, psk string) (*net.UDPConn, *net.UDPAddr, *meteredConn) {
 	t.Helper()
 	return openAssociation(t, nativeParams(addr, psk))
 }
@@ -145,7 +145,7 @@ func nativeParams(addr, psk string) clientParams {
 
 // openAssociation asks for the command the accept loop would, 0x84 unless the
 // server is remembered to have no native UDP.
-func openAssociation(t *testing.T, clientCfg clientParams) (*net.UDPConn, *net.UDPAddr, *meteredConn) {
+func openAssociation(t testing.TB, clientCfg clientParams) (*net.UDPConn, *net.UDPAddr, *meteredConn) {
 	t.Helper()
 	t.Cleanup(func() { noNative.Delete(nativeKey(clientCfg)) })
 	req := []byte{5, udpCommandFor(clientCfg), 0, 1, 0, 0, 0, 0, 0, 0}
