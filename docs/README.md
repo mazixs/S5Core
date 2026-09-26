@@ -21,6 +21,7 @@
 | Rerun the raw vs versions comparison (loopback, netem, timeouts, resume) | [Benchmark pipeline](../scripts/matrix/README.md) |
 | Implementation decisions | [Session state](design/session-fsm.md), [half-close](design/half-close.md), [decoy](design/decoy.md), [observability](design/observability-policy.md) |
 | Deployment and migration on real paths | [Migration](field/migration.md), [stealth](field/stealth.md), [UDP shapes](field/udp-shapes.md), [mihomo](field/mihomo.md) |
+| Path MTU, fragmentation and non-MTU degradation (external research, Russian) | [Research index](research/README.md): [MTU](research/mtu.md), [diagnostics](research/mtu-diagnostics.md), [degradation beyond MTU](research/path-degradation.md) |
 | Acceptance gates | [Gate index](gates/README.md) |
 | Open work | [Known defects](fix-plan.md), [backlog](backlog.md), [MIPS client](plan/mips.md), [game sessions](plan/gaming.md) |
 | Historical investigations | [Reports](reports/), [plans](plan/README.md), [archive](archive/) |

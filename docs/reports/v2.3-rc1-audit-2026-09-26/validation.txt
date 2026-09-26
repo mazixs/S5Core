@@ -1,0 +1,38 @@
+Source: 51b13cd (production code at 5bcd9a8)
+Host: local Linux amd64
+
+Initial audit on the same source:
+go test ./...: PASS (exit 0; existing package cache used)
+go vet ./...: PASS (exit 0; no diagnostics)
+go test -race ./cmd/s5client ./internal/socks5 ./pkg/nativeudp ./pkg/s5server ./pkg/obfs ./pkg/transport/ws ./internal/tcptune: PASS
+
+Independent recheck on a fresh git archive:
+go test ./cmd/s5client ./internal/socks5 -run '^TestAudit' -v -count=1: PASS (exit 0)
+go test -race ./cmd/s5client ./internal/socks5 -run '^(TestAudit|TestLostProbesAreNotALostPath|TestADatagramTooBigForNativeTellsTheServerNothing|TestOneFailedNativeAnswerGoesByTCPAndTheNextGoesNative)' -v -count=1: PASS (exit 0)
+Seven diagnostic tests plus three existing control tests. The diagnostic tests include two full-path integration scenarios and deterministic path-policy checks.
+PASS for diagnostic tests means the stated behavior was observed; it does not mean the defects were fixed.
+Shared recheck logs omit endpoint addresses, ephemeral ports and lifecycle messages. Test fixtures use loopback and synthetic values.
+
+Review follow-up on the same isolated source copy:
+go test -race ./cmd/s5client -run '^TestAudit(SizeSelection|OneLostProbeAt50)' -count=1 -v: PASS (exit 0)
+Two additional diagnostic tests. Total: nine diagnostics; the last two were run separately from the earlier seven.
+Size-selection model: probes of 1200/1364 payload bytes used native, 1365/1400 used TCP. After selecting 1400, all 100 data packets used TCP in both directions, while a small control stayed native. This is not a RakNet or QUIC implementation test, nor natural TCP backpressure evidence.
+Probe RTT model: at 50 ms and 100 input packets/s, one lost probe diverted 5/200 packets while up remained true.
+Evidence: review-followup-race.txt (sanitized as above).
+
+Fresh full test suite on the unchanged production source in the working checkout:
+go test -count=1 ./...: PASS (exit 0; no cached test results)
+Evidence: all-tests-fresh.txt. The original all-tests.txt is retained as the initial cached run, not fresh execution evidence.
+
+Second review follow-up on a fresh worktree of 51b13cd:
+go test -race ./cmd/s5client ./internal/socks5 -run '^TestAudit' -v -count=1: PASS (exit 0)
+All ten diagnostics ran together in one invocation, including the new TestAuditTwoLostHeardProbesStrandReceiveOnly.
+Lost ProbeHeard model: two heard probes lost upstream, receive-only application, server sending 100 packets/s for 60 virtual seconds.
+Probe interval 400 ms: the third heard probe arrived, 80 packets by TCP, then 5920 native. Probe interval 580 ms: 6000 of 6000 packets by TCP, client up=true told=false.
+The server route is modelled as in audit_delayed_signal; this is not a full-path or WAN measurement.
+Evidence: all-diagnostics-race.txt (sanitized as above), source audit_lost_heard_test.go.txt.
+
+Only audit documentation and evidence were changed in the working tree.
+No runtime, deployment or configuration changes were made.
+No new WAN, ARM or real-game measurements were performed.
+Full pre-commit pipeline was not run because the working tree changes are documentation only.

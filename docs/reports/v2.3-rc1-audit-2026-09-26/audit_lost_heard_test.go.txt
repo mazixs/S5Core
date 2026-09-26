@@ -1,0 +1,78 @@
+package main
+
+import (
+	"sync/atomic"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/mazixs/S5Core/pkg/nativeudp"
+)
+
+// Two ProbeHeard lost in the network, nothing reordered. The server's route
+// is modelled as in handleUDPTcpmux: a heard probe that arrives -> native.
+// The application only receives, so nothing but probes can move the route.
+func TestAuditTwoLostHeardProbesStrandReceiveOnly(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		jitter   float64
+		stranded bool
+	}{{"probe-400ms", 0, false}, {"probe-580ms", 0.9, true}} {
+		t.Run(c.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var route atomic.Bool
+				var l *liveness
+				seen, dropped := 0, 0
+				ready := make(chan struct{})
+				l = startLivenessWith(t, func(int64) bool {
+					<-ready
+					l.path.mu.Lock()
+					n := len(l.path.heard)
+					l.path.mu.Unlock()
+					if n > seen {
+						seen = n
+						if dropped < 2 {
+							dropped++
+							return true
+						}
+						route.Store(true)
+					}
+					return false
+				}, c.jitter)
+				close(ready)
+				stop := make(chan struct{})
+				var tcp, native atomic.Int64
+				go func() {
+					for {
+						select {
+						case <-stop:
+							return
+						case <-time.After(10 * time.Millisecond):
+							if route.Load() {
+								native.Add(1)
+								l.path.answer(nativeudp.KindData, []byte("state"))
+							} else {
+								tcp.Add(1)
+							}
+						}
+					}
+				}()
+				l.at(60 * time.Second)
+				close(stop)
+				synctest.Wait()
+				t.Logf("lost heard probes=%d, 60s receive-only: client up=%v told=%v server native=%v; server packets native=%d tcp=%d",
+					dropped, l.client.up.Load(), l.client.told.Load(), route.Load(), native.Load(), tcp.Load())
+				if dropped != 2 || !l.client.up.Load() || l.client.told.Load() {
+					t.Fatal("unexpected client state")
+				}
+				if c.stranded {
+					if route.Load() || native.Load() != 0 || tcp.Load() < 5900 {
+						t.Fatal("stranding not reproduced")
+					}
+				} else if !route.Load() || native.Load() < 5000 {
+					t.Fatal("control did not return to native")
+				}
+			})
+		})
+	}
+}

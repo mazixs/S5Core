@@ -1,0 +1,38 @@
+Diagnostic output excerpt. Endpoint and lifecycle logs omitted.
+
+=== RUN   TestAuditDelayedSignalStrandsReceiveOnlyOnTCP
+    audit_delayed_signal_test.go:102: 60s after stale signal: client.up=true server.native=false heard probes=6 -> 6 total probes=16 TCP-only packets=6000
+--- PASS: TestAuditDelayedSignalStrandsReceiveOnlyOnTCP (0.02s)
+=== RUN   TestAuditFullClientTCPWriteBlocksNextNativePacket
+    audit_full_path_linux_test.go:87: real client/hub/server: next short datagram delayed 151.35122ms by blocked TCP write
+--- PASS: TestAuditFullClientTCPWriteBlocksNextNativePacket (0.18s)
+=== RUN   TestAuditFullLateLossStrandsReceiveOnly
+    audit_full_path_linux_test.go:142: actual delayed loss signals=1; receive-only 23.00285941s: packets=1473 TCP plaintext bytes=25041 (17 bytes per state frame)
+--- PASS: TestAuditFullLateLossStrandsReceiveOnly (27.57s)
+=== RUN   TestAuditOneLostProbeDivertsVerifiedTraffic
+=== RUN   TestAuditOneLostProbeDivertsVerifiedTraffic/one-way
+    audit_path_policy_test.go:45: one lost probe, continuous replies=false: up=true diverted=1/200 interval=1.58s..1.58s signals=[1.58s]
+=== RUN   TestAuditOneLostProbeDivertsVerifiedTraffic/two-way-control
+    audit_path_policy_test.go:45: one lost probe, continuous replies=true: up=true diverted=0/200 interval=0s..0s signals=[]
+--- PASS: TestAuditOneLostProbeDivertsVerifiedTraffic (0.01s)
+    --- PASS: TestAuditOneLostProbeDivertsVerifiedTraffic/one-way (0.00s)
+    --- PASS: TestAuditOneLostProbeDivertsVerifiedTraffic/two-way-control (0.01s)
+=== RUN   TestAuditFirstPacketAfterHealthyIdleUsesTCP
+    audit_path_policy_test.go:69: no packet or probe losses: first native=false second native=true up=true signals=[5s]
+--- PASS: TestAuditFirstPacketAfterHealthyIdleUsesTCP (0.00s)
+=== RUN   TestLostProbesAreNotALostPath
+--- PASS: TestLostProbesAreNotALostPath (0.07s)
+=== RUN   TestADatagramTooBigForNativeTellsTheServerNothing
+--- PASS: TestADatagramTooBigForNativeTellsTheServerNothing (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	28.872s
+=== RUN   TestAuditFallbackWriteBlocksHealthyNativeReply
+    audit_native_block_test.go:89: healthy native reply waited 150.373911ms for unrelated oversized TCP fallback write
+--- PASS: TestAuditFallbackWriteBlocksHealthyNativeReply (0.15s)
+=== RUN   TestAuditLateResyncOverridesNewerNativeRecovery
+    audit_native_block_test.go:121: older resync arriving after verified native data moved the server's replies back to TCP
+--- PASS: TestAuditLateResyncOverridesNewerNativeRecovery (0.00s)
+=== RUN   TestOneFailedNativeAnswerGoesByTCPAndTheNextGoesNative
+--- PASS: TestOneFailedNativeAnswerGoesByTCPAndTheNextGoesNative (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.161s

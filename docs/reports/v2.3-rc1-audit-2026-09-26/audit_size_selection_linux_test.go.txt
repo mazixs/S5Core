@@ -1,0 +1,50 @@
+package main
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+// A minimal size-selection application: it accepts the largest echoed probe
+// and then sends at that size. This is neither a RakNet nor a QUIC stack.
+func TestAuditSizeSelectionKeepsLargeTrafficOnTCP(t *testing.T) {
+	r, _ := newAuditFullRig(t, false)
+	r.verified()
+	chosen := 0
+	for _, size := range []int{1200, 1364, 1365, 1400} {
+		payload := strings.Repeat("P", size-8) + "size-end"
+		rd, wr := r.control.read.Load(), r.control.written.Load()
+		r.send(payload)
+		if !r.await(payload, 2*time.Second) {
+			t.Fatalf("probe %d failed", size)
+		}
+		read, written := r.control.read.Load()-rd, r.control.written.Load()-wr
+		t.Logf("probe payload=%d accepted=true TCP bytes up=%d down=%d", size, written, read)
+		if size <= 1364 && (read != 0 || written != 0) {
+			t.Fatal("native-sized control used TCP")
+		}
+		if size > 1364 && (read != int64(size+12) || written != int64(size+12)) {
+			t.Fatal("oversized probe did not use TCP both ways")
+		}
+		chosen = size
+	}
+	payload := strings.Repeat("D", chosen-8) + "data-end"
+	rd, wr := r.control.read.Load(), r.control.written.Load()
+	for i := 0; i < 100; i++ {
+		r.send(payload)
+		if !r.await(payload, 2*time.Second) {
+			t.Fatal("selected-size data lost")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	read, written := r.control.read.Load()-rd, r.control.written.Load()-wr
+	t.Logf("selected=%d: 100/100 delivered, TCP bytes up=%d down=%d, expected=%d each way", chosen, written, read, 100*(chosen+12))
+	if read != int64(100*(chosen+12)) || written != int64(100*(chosen+12)) {
+		t.Fatal("not all selected-size data used TCP")
+	}
+	if !r.native(9999) {
+		t.Fatal("small control packet did not retain native path")
+	}
+	t.Log("small control packet remains native after the selected-size flow")
+}
