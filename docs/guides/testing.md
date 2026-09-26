@@ -90,6 +90,19 @@ memory back before the router runs short: `GOMEMLIMIT=32MiB GOGC=50` cost
 nothing measurable on the ARM router with 200 connections (22-25 MB RSS), and
 on MIPS it has not been measured either.
 
+MSS clamping on the router does not cover the client's own tunnel
+connection: clamping rewrites the SYNs the router forwards, and the client's
+socket takes its MSS from the outgoing interface (1452 on PPPoE). A narrower
+link further on is left to path MTU discovery, so where its ICMP is filtered
+the tunnel connects and large uploads stall. Set `net.ipv4.tcp_mtu_probing=1`
+on the router at boot (`sysctl -w`, or write `1` to
+`/proc/sys/net/ipv4/tcp_mtu_probing`), and the same on a Linux machine
+running the client: `1` probes smaller segments only after a black hole is
+detected. It covers what the client sends; downloads are the server's side
+([Docker guide](docker.md#tunnel-up-bulk-transfer-stalls), where the two
+causes of a stalled transfer are told apart). `OBFS_MTU` is not the knob for
+this: it sizes frames inside the TCP stream, not packets.
+
 ### Timing tests run on a fake clock
 
 Read and write timeouts default to 30 seconds, so checking them the obvious way

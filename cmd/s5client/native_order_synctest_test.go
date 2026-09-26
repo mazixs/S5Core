@@ -205,7 +205,7 @@ func TestOneLostProbeKeepsTheDatagramsNative(t *testing.T) {
 				}
 				for tick := 1; tick <= 200; tick++ {
 					l.at(time.Duration(tick) * 10 * time.Millisecond)
-					if !l.client.carry([]byte("input")) {
+					if l.client.carry([]byte("input")) != byNative {
 						t.Fatalf("the datagram at %v went by 0x83", time.Duration(tick)*10*time.Millisecond)
 					}
 				}
@@ -234,7 +234,7 @@ func TestOneLostProbeAtALongerRTTKeepsTheDatagramsNative(t *testing.T) {
 		l.at(100 * time.Millisecond)
 		for tick := 1; tick <= 200; tick++ {
 			l.at(100*time.Millisecond + time.Duration(tick)*10*time.Millisecond)
-			if !l.client.carry([]byte("input")) {
+			if l.client.carry([]byte("input")) != byNative {
 				t.Fatalf("the datagram at %v went by 0x83", time.Since(l.start))
 			}
 		}
@@ -252,7 +252,7 @@ func TestTheFirstDatagramAfterAPauseGoesNative(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := startLiveness(t, nil)
 		l.at(5 * time.Second)
-		if !l.client.carry([]byte("first")) {
+		if l.client.carry([]byte("first")) != byNative {
 			t.Fatal("the first datagram after the pause went by 0x83")
 		}
 		if got := l.signalled(); len(got) != 0 {
@@ -267,17 +267,17 @@ func TestTheClosingLineSaysWhichPathTheDatagramsTook(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := startLiveness(t, nil)
 		l.at(100 * time.Millisecond)
-		if l.client.carry(make([]byte, l.client.session.MaxPayload()+1)) {
-			t.Fatal("a datagram past the native payload went native")
+		if l.client.carry(make([]byte, l.client.session.MaxPayload()+1)) != dropped {
+			t.Fatal("a datagram past the native payload was not dropped")
 		}
-		if !l.client.carry([]byte("input")) {
+		if l.client.carry([]byte("input")) != byNative {
 			t.Fatal("a datagram of a verified path went by 0x83")
 		}
 		l.path.answer(nativeudp.KindData, []byte("state"))
 		l.client.tcpAnswer(5)
 		l.path.dropDown.Store(true)
 		l.at(5 * time.Second)
-		if l.client.carry([]byte("input")) {
+		if l.client.carry([]byte("input")) == byNative {
 			t.Fatal("a datagram of a lost path went native")
 		}
 		stats := l.client.logStats()
@@ -285,8 +285,10 @@ func TestTheClosingLineSaysWhichPathTheDatagramsTook(t *testing.T) {
 		for i := 0; i < len(stats); i += 2 {
 			got[stats[i].(string)] = stats[i+1]
 		}
-		want := map[string]any{"native_sent": uint64(1), "tcp_sent_oversize": uint64(1), "tcp_sent_other": uint64(1),
-			"native_received": uint64(1), "tcp_received": uint64(1), "tunnel_drops": uint64(0)}
+		want := map[string]any{"native_sent": uint64(1), "tcp_sent_oversize": uint64(0), "tcp_sent_other": uint64(1),
+			"native_received": uint64(1), "tcp_received": uint64(1), "tunnel_drops": uint64(0),
+			"native_limit": nativeudp.MaxWire, "size_probes": uint64(0),
+			"dropped_oversize_sent": uint64(1), "dropped_oversize_received": uint64(0)}
 		if !maps.Equal(got, want) {
 			t.Fatalf("closing line %v, want %v", got, want)
 		}

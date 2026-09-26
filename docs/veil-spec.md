@@ -791,11 +791,38 @@ tag = HMAC-SHA256(tag_key, uint64_BE(counter))[0:8]
 ```
 
 `kind=1` несет датаграмму, `kind=2` пробу без адреса, `kind=3` ответ на
-пробу. Данные пробы клиента либо пусты, либо состоят из одного байта
-`ProbeHeard` (`0x01`): клиент слышит сервер по native (ниже). Прочие данные
-приемник читает как пустые. Паддинг случайной длины от 1 до 32 байт, если хватает места
-до ограничения 1400; при полном пакете его длина может быть нулевой.
-Приемник отбрасывает `pad_len > 32` и длину больше доступного текста.
+пробу. Данные пробы клиента:
+
+```
+flags[1] || uint16_BE(limit) || uint16_BE(size) || filler
+```
+
+Бит 0 `flags` - `ProbeHeard`: клиент слышит сервер по native (ниже),
+остальные биты нулевые, и приемник их не читает. `limit` - предел клиента на
+проводе (раздел 10.7), 0, пока он не найден. `size` - 0 у пробы пути; у пробы
+размера это ее собственная длина на проводе, и клиент просит ответ той же
+длины. `filler` - нули, которыми проба размера добирает свою длину без
+паддинга. Ответ на такую пробу:
+
+```
+uint16_BE(size) || filler
+```
+
+У ответа на пробу пути `size` равен 0, `filler` нет, паддинг обычный. Ответ
+на пробу размера занимает на проводе ровно `size` байт, без паддинга, где
+`size` - меньшее из `size` пробы и ее длины на проводе, но не меньше 28 (ответ
+без `filler`): ответ не длиннее пробы, которую он отражает. Клиент 2.3.0-rc1
+шлет данные пробы пустыми или из одного байта `ProbeHeard` (`0x01`); такую
+пробу, как и любую с данными короче 5 байт, сервер читает в прежнем смысле и
+отвечает пустыми данными. Сервер 2.3.0-rc1 отвечает пустыми данными на любую
+пробу, а расширенную читает как пробу без `ProbeHeard`. Поэтому клиент, чья
+первая проба получила пустой ответ, считает сервер сервером без поиска
+размера: дальше он шлет пробы в прежнем виде и предела не ищет.
+
+Паддинг случайной длины от 1 до 32 байт, если хватает места до предела
+отправителя (раздел 10.7); при полном пакете его длина может быть нулевой, у
+проб размера и ответов на них паддинга нет. Приемник отбрасывает
+`pad_len > 32` и длину больше доступного текста.
 Счетчик на провод не выходит. Приемник держит теги для
 следующих 512 счетчиков, принимает перестановку последних 64, отвергает
 повтор и сдвигает окно только после проверки AEAD. Неизвестный тег,
@@ -810,9 +837,8 @@ tag = HMAC-SHA256(tag_key, uint64_BE(counter))[0:8]
 меняет источник ответов. Наблюдатель, который
 пересылает каждый пакет клиента со своего адреса быстрее самого клиента,
 ответы все же уведет; закрыть это можно только проверкой пути с ответом,
-то есть правкой формата. Максимальный размер всей
-UDP-датаграммы на проводе - 1400 байт; более крупный SOCKS5-пакет идет
-через `0x83`.
+то есть правкой формата. Предел всей UDP-датаграммы на проводе и судьба
+более крупного SOCKS5-пакета - раздел 10.7.
 
 Если подряд теряется больше 512 пакетов одного направления, ни один тег
 отправителя больше не попадает в окно приемника, пробы тоже. Клиент шлет в
@@ -984,6 +1010,95 @@ native-ассоциации больше нет: сессия закрыта и�
 источник выбирает ядро, и на узле с несколькими адресами `UDP_PORT` слушают
 на конкретном адресе (`PROXY_LISTEN_IP`).
 
+### 10.7 Предел размера native
+
+Датаграмма native на проводе не длиннее 1400 байт (`MaxWire`), но путь бывает
+уже: туннель, PPPoE, мобильная сеть, клиент внутри чужого VPN
+([research/mtu.md](research/mtu.md)). На стенде с узким звеном
+([benchmarks/mtu-native-2026-09-26.md](benchmarks/mtu-native-2026-09-26.md))
+датаграмма, не влезшая в путь, без PTB терялась молча, а с PTB резалась на
+фрагменты IP. Случайный паддинг делал потерю по размеру вероятностной: полоса
+размеров шириной в паддинг доходила частично. Крупное уходило в `0x83` и
+доставлялось, поэтому поиск размера quic-go принимал надежный поток за
+рабочий путь и садился на 1441 байт, в 31-52 раза медленнее прямого пути.
+RFC 9298 (раздел 6.1) запрещает ровно это: крупное не кладут в надежный
+поток.
+
+Сокеты native на обеих сторонах ставят DF и не верят кешу PMTU:
+`IP_PMTUDISC_PROBE` и `IPV6_PMTUDISC_PROBE` (Linux). Общая точка на
+wildcard-адресе ставит обе опции, ошибкой считается только отказ обеих.
+Датаграмма длиннее пути теряется, а не режется, и подделанный PTB предела не
+опускает. На других ОС режим остается за ядром, и фрагменты там возможны.
+PTB, который дошел, подключенный сокет клиента сообщает ошибкой `EMSGSIZE`
+на следующем вызове, и датаграмма этого вызова не уходит. Клиент повторяет
+ее один раз: сокет под `PROBE` длину по PTB не выбирает, поэтому вторая
+ошибка относится уже к ней самой. Без повтора ошибку от крупной пробы
+получала контрольная проба раунда, и поиск на пути с PTB кончался на 1200.
+
+Предел пути клиент ищет пробами размера, как в RFC 8899, но один раз на
+ассоциацию:
+
+1. Поиск начинается на первом ответе, который показал сервер с поиском
+   (раздел 10.6), то есть на подтвержденном пути. Раунд - пробы размера и
+   контрольная проба длиной 48-112 байт, которая уходит последней.
+2. Первый раунд - верхняя проба `1400 - [0..8]` байт и по одной пробе в каждой
+   из 5 равных полос между 1200 и верхней. Каждый следующий - по одной пробе в
+   каждой из 3 равных полос между `lo` и `hi`. `lo` - наибольшая отвеченная
+   длина, сначала 1200 (`BASE_PLPMTU` RFC 8899), `hi` - наименьшая
+   неотвеченная длина выше `lo`, сначала 1401. Длина внутри полосы случайная:
+   проба постоянной длины сама стала бы заметной формой.
+3. Раунд кончается, когда отвечены все его пробы или с его отправки прошло
+   `max(2r, r + 25 мс)`, где `r` - время ответа на контроль. Контроль идет
+   последним, поэтому на пути, сохраняющем порядок, ответы на дошедшие пробы
+   приходят раньше его ответа. Раунд без ответа на контроль за
+   `max(2 x srtt, 250 мс)` ничего не решает: путь потерял пакет, а не отверг
+   размер. Такой раунд повторяется со свежими длинами - сразу, если путь
+   подтвержден, иначе на следующем ответе, - но не больше 3 раз подряд.
+4. Поиск кончается, когда `hi - lo <= 17` или решили 3 раунда; предел
+   `L = lo`. Не отвечено ни одной пробы размера - `L = 1200`. Без потерь
+   предел не выше пути и ниже его не больше чем на 34 байта (после третьего
+   раунда между `lo` и `hi` остается не больше двух третей зазора после
+   второго). Проба, потерянная не из-за размера, снижает точность, но не
+   выводит предел за путь. На пути 1500 хватает одного раунда (7 проб, около 8 КБ в каждую
+   сторону), на узком - двух или трех (11-15 проб).
+5. Найденный предел клиент объявляет полем `limit` каждой пробы пути.
+   Сервер берет первый ненулевой, приводит его к 1200-1400 и больше не
+   меняет. До объявления его предел - 1400. Каждая сторона ограничивает
+   своим пределом полезную нагрузку (`L - 26`) и паддинг, поэтому паддинг не
+   выводит датаграмму за предел: потери по размеру становятся ступенькой.
+
+Датаграмму длиннее `L - 26` (до поиска `1400 - 26 = 1374`) сервер отправляет
+по `0x83`, как прежде, а решает ее судьбу клиент:
+
+- клиент отбрасывает ее в обе стороны и на любом пути: исходящую, входящую
+  по native и кадр по `0x83`. Поиск размера у приложения видит ступеньку и
+  садится ниже, а крупное не уезжает в надежный поток;
+- восьмая отброшенная датаграмма одного направления переводит ассоциацию на
+  перенос крупного по `0x83` до ее конца, с одной строкой лога уровня Info.
+  Поиск размера quic-go теряет не больше нескольких проб, а приложение,
+  которое шлет крупное постоянно (VPN поверх SOCKS5), без этого теряло бы его
+  целиком;
+- при `L < 1248` правило то же. Минимальный пакет QUIC (1200 байт) с
+  заголовком SOCKS5 для IPv6-адреса (22) и накладными native (26) в такой
+  путь не влезает, `1200 + 22 + 26 = 1248`, и клиент пишет об этом строку
+  уровня Info. Отдельного правила нет: перенос крупного по `0x83` с самого
+  начала дал quic-go на стенде то же, что правило восьмой (восемь
+  отброшенных набираются на повторах его рукопожатия), а приложению,
+  которое при неудаче QUIC уходит на TCP, ранний перенос только мешает.
+
+Ограничения:
+
+- поиска внутри ассоциации нет: сужение пути по ходу ассоциации не
+  обнаруживается, и датаграммы длиннее нового пути теряются до ее конца;
+- на пути 1500 предел случаен в 1392-1400 байт, то есть полезная нагрузка
+  1366-1374 байта, а пакет QUIC к IPv4-адресу - 1356-1364;
+- ответ той же длины, что проба, - известная форма (отражение длины); проб
+  7-15 на ассоциацию, и все в ее начале;
+- клиент 2.3.0-rc1 за узким звеном с PTB теряет ответы длиннее пути,
+  которые раньше доходили фрагментами: DF ставит и сервер;
+- с сервером 2.3.0-rc1 поиска нет, предел клиента 1400, отброс крупного тот
+  же.
+
 ## 11. Ошибки
 
 Причина отказа ДОЛЖНА различаться в телеметрии, но НЕ ДОЛЖНА различаться на
@@ -1054,6 +1169,7 @@ native-ассоциации больше нет: сессия закрыта и�
 | 9.1 | `pkg/obfs/demo_test.go` (`TestTheStealthChecklist`), `cmd/stealthcheck` |
 | 10 | `internal/socks5/udp_test.go`, `internal/socks5/deadline_test.go`, `cmd/udpprobe`, `scripts/udp_loss_matrix.sh` |
 | 10.6 | `pkg/nativeudp/nativeudp_test.go` (`TestFixedTagMatchesHMAC`, `TestLostOutOfOrderReplayAndForgery`, `TestTheWindowStaysTheSizeOfTheWindow`, `TestRecoversAfterHighRateOutage`, `TestAResyncRecoversFromMoreLostThanTheWindow`, `TestAResyncThroughTheHubKeepsItsIndexInStep`, `TestOnlyAHeardProbeReachesTheAssociation`, `TestAStalledAnswerDoesNotStopTheOtherSessions`, `TestTheAnswersFollowANewAddressOnlyWhenItLeads`, `TestGameDatagramsHaveNoFixedPrefixOrLength`), `pkg/nativeudp/source_linux_test.go` (`TestAWildcardHubAnswersFromTheAddressItWasAsked`, `TestTheSourceOfTheAnswersMovesOnlyWhenTheNewAddressLeads`), `pkg/obfs/wrappers_test.go` (`TestDatagramKeysAreFoundThroughEveryWrapper`), `internal/socks5/udp_native_reply_test.go` (`TestAConnectionWithoutANativePathIsCarriedBy0x83`, `TestAServerWithoutNativeUDPRefusesTheCommand`, `TestOneFailedNativeAnswerGoesByTCPAndTheNextGoesNative`, `TestAGoneNativePathKeepsTheAnswersOnTCP`, `TestTheEmptyFrameCarriesTheCountersBothWays`), `pkg/s5server/native_udp_test.go` (`TestNativeUDPAndTCPFallbackShareAnAssociation`, `TestAnEmptyFrameMovesTheAnswersToTCP`, `TestOnlyAProbeThatHearsTheServerBringsTheAnswersBack`, `TestTheCountersResyncAfterMoreLostThanTheWindow`, `TestANativeSendSaysWhenThePathIsGone`), `cmd/s5client/native_udp_test.go` (`TestAServerThatPredatesNativeIsAskedOnce`, `TestARefusalOfUDPIsNotTakenForAnOldServer`, `TestAnAnswerOverWebSocketIsNotTakenForTheObfsNode`), `cmd/s5client/native_liveness_synctest_test.go` (`TestThePathIsDownExactlyThreeProbesAfterItBreaks`, `TestLostProbesAreNotALostPath`, `TestAnErrorOnTheSocketIsNotTheEndOfIt`, `TestEveryRetryOfALostPathTellsTheServer`, `TestAPathThatNeverAnswersIsReportedOnce`, `TestAVerifiedPathIsNotReportedAsNeverAnswering`, `TestAProbeSaysWhenTheClientHearsTheServer`, `TestADatagramTooBigForNativeTellsTheServerNothing`, `TestAStuckSignalDoesNotStopTheProbes`), `cmd/s5client/native_timing_synctest_test.go` (`TestAnErrorOnAVerifiedPathKeepsItNative`, `TestASparseFlowKeepsTheServersAnswersNative`), `cmd/s5client/native_path_linux_test.go` (`TestAListeningApplicationGetsItsStreamBackByTCP`, `TestAListeningApplicationGetsItsStreamBackNative`, `TestAClientThatIsNotHeardMovesToTCP`, `TestTheCountersResyncWhenThePathHeals`, `TestAnICMPErrorDoesNotEndNativeUDP`), [benchmarks/nativeudp-compat-2026-09-25.json](benchmarks/nativeudp-compat-2026-09-25.json) (смешанные пары с настоящим 2.2.0, вне `go test`) |
+| 10.7 | `pkg/nativeudp/limit_test.go` (`TestTheSpecificationStatesTheLimitOfNative`, `TestPaddingNeverTakesADatagramPastTheLimit`, `TestTheLimitStaysWithinTheRangeOfTheSearch`, `TestAProbeOfASizeIsAnsweredAtItsSize`, `TestAnAnswerIsNeverLongerThanItsProbe`, `TestAProbeOfAnOlderClientGetsAnEmptyAnswer`, `TestTheLimitOfTheClientBoundsTheAnswersOfTheHub`, `TestTheSearchFindsTheLimitOfThePath`, `TestALostProbeNeverTakesTheLimitPastThePath`, `TestARoundWithoutItsControlDecidesNothing`, `TestProbesAndAnswersHaveNoConstantShape`), `pkg/nativeudp/pmtu_linux_test.go` (`TestNativeSocketsDoNotFragment`), `cmd/s5client/native_limit_synctest_test.go` (`TestTheClientFindsTheLimitOfANarrowPath`, `TestAPTBDoesNotCostTheSearchItsControl`, `TestOneRoundFindsTheLimitOfAWidePath`, `TestARoundWithoutItsControlGoesAgain`, `TestBelowTheFloorTheRuleIsTheSame`, `TestAServerWithoutTheSearchIsNotSearched`, `TestTheEighthDroppedDatagramMovesTheLongOnesTo0x83`), `cmd/s5client/native_path_linux_test.go` (`TestADatagramPastTheLimitIsDroppedUntilTheEighth`), `scripts/matrix/mtu_stand.py` и [benchmarks/mtu-native-2026-09-26.md](benchmarks/mtu-native-2026-09-26.md) (узкое звено, вне `go test`) |
 | 11 | `pkg/obfs/failure.go` и тесты причин отказа, `pkg/s5server/replay_probe_test.go`, `pkg/s5server/decoy_probe_test.go`, [design/decoy.md](design/decoy.md) |
 
 Меняя формат, меняйте этот документ **до** кода и обновляйте записанные числа

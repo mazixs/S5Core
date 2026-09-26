@@ -23,14 +23,14 @@ func TestAnErrorOnAVerifiedPathKeepsItNative(t *testing.T) {
 		l := startLiveness(t, nil)
 		l.at(500 * time.Millisecond)
 		l.path.dropUp.Store(true)
-		if !l.client.carry([]byte("into the void")) {
+		if l.client.carry([]byte("into the void")) != byNative {
 			t.Fatal("the datagram before the error went by 0x83")
 		}
 		l.path.errs <- &net.OpError{Op: "read", Net: "udp", Err: syscall.ECONNREFUSED}
 		l.at(600 * time.Millisecond)
 		l.path.dropUp.Store(false)
 		l.at(1700 * time.Millisecond)
-		if !l.client.carry([]byte("input")) {
+		if l.client.carry([]byte("input")) != byNative {
 			t.Fatal("the datagram after the error went by 0x83")
 		}
 		synctest.Wait()
@@ -53,7 +53,7 @@ func TestASparseFlowKeepsTheServersAnswersNative(t *testing.T) {
 		l := startLiveness(t, nil)
 		for i := 0; i < 6; i++ {
 			l.at(100*time.Millisecond + time.Duration(i)*1500*time.Millisecond)
-			if !l.client.carry([]byte("input")) {
+			if l.client.carry([]byte("input")) != byNative {
 				t.Fatalf("datagram %d went by 0x83", i)
 			}
 		}

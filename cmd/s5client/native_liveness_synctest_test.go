@@ -37,19 +37,49 @@ type memPath struct {
 	heard    []time.Duration // when a probe said the client hears the server
 	bare     []time.Duration // when a probe did not
 	start    time.Time
+	// sizes answers like a server with the search for the limit
+	// (docs/veil-spec.md, 10.7), and limit drops what is longer both ways.
+	sizes     bool
+	limit     int
+	loseSized func(size int) bool
+	announced []int // the limits the probes of the path said
+	// ptb has a datagram past limit answered with a PTB, which a connected
+	// socket reports by failing its next call.
+	ptb     bool
+	tooBig  atomic.Bool
+	refused atomic.Int64
 }
 
 func (p *memPath) Write(b []byte) (int, error) {
+	if p.tooBig.Swap(false) {
+		p.refused.Add(1)
+		return 0, syscall.EMSGSIZE
+	}
+	if p.limit != 0 && len(b) > p.limit {
+		p.tooBig.Store(p.ptb)
+		return len(b), nil
+	}
 	if p.dropUp.Load() {
 		return len(b), nil
 	}
+	n := len(b)
 	// The server drops what it cannot open, and the sender never learns.
 	if pk, err := p.server.Open(b); err == nil {
 		switch pk.Kind {
 		case nativeudp.KindProbe:
+			probe, extended := nativeudp.ParseProbe(pk.Data)
+			if probe.Size != 0 {
+				if p.sizes && (p.loseSized == nil || !p.loseSized(probe.Size)) {
+					p.reflect(probe, extended, n)
+				}
+				break
+			}
 			p.mu.Lock()
 			at := time.Since(p.start)
-			heard := len(pk.Data) == 1 && pk.Data[0] == nativeudp.ProbeHeard
+			heard := probe.Heard
+			if probe.Limit != 0 {
+				p.announced = append(p.announced, probe.Limit)
+			}
 			if heard {
 				p.heard = append(p.heard, at)
 			} else {
@@ -60,7 +90,14 @@ func (p *memPath) Write(b []byte) (int, error) {
 				p.onHeard(pk.Counter)
 			}
 			if i := p.probes.Add(1); p.lose == nil || !p.lose(i) {
-				p.answer(nativeudp.KindProbeAck, nil)
+				if !p.sizes {
+					p.answer(nativeudp.KindProbeAck, nil)
+					break
+				}
+				if probe.Limit != 0 {
+					p.server.SetLimit(probe.Limit)
+				}
+				p.reflect(probe, extended, n)
 			}
 		case nativeudp.KindData:
 			p.data.Add(1)
@@ -70,12 +107,31 @@ func (p *memPath) Write(b []byte) (int, error) {
 }
 
 func (p *memPath) answer(kind byte, d []byte) {
+	// A path that drops everything spends no counter of the server: the
+	// window of the client would move past it, and nothing here resyncs.
 	if p.dropDown.Load() {
 		return
 	}
 	wire, err := p.server.Seal(nil, kind, d)
 	if err != nil {
 		panic(err)
+	}
+	p.down(wire)
+}
+
+// reflect answers a probe as a server with the search does.
+func (p *memPath) reflect(probe nativeudp.Probe, extended bool, n int) {
+	if p.dropDown.Load() {
+		return
+	}
+	if err := p.server.SealWriteAnswer(probe, extended, n, func(w []byte) error { p.down(bytes.Clone(w)); return nil }); err != nil {
+		panic(err)
+	}
+}
+
+func (p *memPath) down(wire []byte) {
+	if p.limit != 0 && len(wire) > p.limit {
+		return
 	}
 	p.toClient <- wire
 }
@@ -142,6 +198,12 @@ func startLivenessSignalling(t *testing.T, lose func(int64) bool, jitter float64
 // startLivenessOn lets onHeard see the heard probes from the first.
 func startLivenessOn(t *testing.T, lose func(int64) bool, jitter float64, signal func(), onHeard func(uint64)) *liveness {
 	t.Helper()
+	return startLivenessPath(t, lose, jitter, signal, onHeard, nil)
+}
+
+// startLivenessPath lets setup change the path before the first probe.
+func startLivenessPath(t *testing.T, lose func(int64) bool, jitter float64, signal func(), onHeard func(uint64), setup func(*memPath)) *liveness {
+	t.Helper()
 	psk, secret := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40)
 	ck, err := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleClient)
 	if err != nil {
@@ -152,6 +214,9 @@ func startLivenessOn(t *testing.T, lose func(int64) bool, jitter float64, signal
 		t.Fatal(err)
 	}
 	p := &memPath{server: nativeudp.NewSession(sk), toClient: make(chan []byte, 4096), errs: make(chan error, 16), closed: make(chan struct{}), lose: lose, onHeard: onHeard, start: time.Now()}
+	if setup != nil {
+		setup(p)
+	}
 	l := &liveness{t: t, start: p.start, path: p, signals: make(chan time.Time, 64)}
 	if signal == nil {
 		signal = func() { l.signals <- time.Now() }
@@ -248,7 +313,7 @@ func TestThePathIsDownExactlyThreeProbesAfterItBreaks(t *testing.T) {
 				if l.client.up.Load() {
 					t.Fatal("the path is still up")
 				}
-				if l.client.carry([]byte("input")) {
+				if l.client.carry([]byte("input")) == byNative {
 					t.Fatal("a datagram went native on a path that is down")
 				}
 				// The retry after the break is at 3.4 s.
@@ -399,7 +464,7 @@ func TestAPathThatBreaksUnderTrafficIsDown(t *testing.T) {
 			t.Fatal("up before the retry")
 		}
 		l.at(3800 * time.Millisecond)
-		if !l.client.up.Load() || !l.client.carry([]byte("input")) {
+		if !l.client.up.Load() || l.client.carry([]byte("input")) != byNative {
 			t.Fatal("the retry did not bring native back")
 		}
 	})
@@ -479,7 +544,7 @@ func TestASparseFlowIsCarriedNatively(t *testing.T) {
 		l := startLiveness(t, nil)
 		for i := 0; i < 6; i++ {
 			l.at(100*time.Millisecond + time.Duration(i)*1500*time.Millisecond)
-			if !l.client.carry([]byte("input")) {
+			if l.client.carry([]byte("input")) != byNative {
 				t.Fatalf("datagram %d went by 0x83", i)
 			}
 		}
@@ -542,7 +607,7 @@ func TestAProbeSaysWhenTheClientHearsTheServer(t *testing.T) {
 	})
 }
 
-// A datagram too big for native goes by 0x83 and says nothing to the server:
+// A datagram too big for native is dropped and says nothing to the server:
 // the path is fine, and the answers stay where they are.
 func TestADatagramTooBigForNativeTellsTheServerNothing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -551,10 +616,10 @@ func TestADatagramTooBigForNativeTellsTheServerNothing(t *testing.T) {
 		defer close(stop)
 		l.stream(stop)
 		l.at(100 * time.Millisecond)
-		if l.client.carry(make([]byte, l.client.session.MaxPayload()+1)) {
-			t.Fatal("a datagram too big for native went native")
+		if got := l.client.carry(make([]byte, l.client.session.MaxPayload()+1)); got != dropped {
+			t.Fatalf("a datagram too big for native was carried (%d)", got)
 		}
-		if !l.client.carry([]byte("input")) {
+		if l.client.carry([]byte("input")) != byNative {
 			t.Fatal("the next datagram did not go native")
 		}
 		l.at(time.Second)

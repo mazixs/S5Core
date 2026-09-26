@@ -6,6 +6,7 @@ always written to run.json, including when the cell is told to stop.
 """
 
 import base64
+import datetime
 import json
 import os
 import random
@@ -71,9 +72,10 @@ def _sh(cmd, timeout=10):
     return r.stdout
 
 
-def netem_args(net, out=False):
+def netem_args(net, out=False, wake=False):
     """One pass through lo: half the RTT, the loss and the rate. out is the
-    state a spell (Spells) switches to: an outage or a delay spike."""
+    state a spell (Spells) switches to: an outage or a delay spike; wake the
+    state the generator holds while a stream resumes after a pause."""
     loss = ["loss", f"{net['loss_pct']:g}%"]
     if net.get("loss_outage_ms"):
         loss = ["loss", "100%" if out else "0%"]
@@ -83,27 +85,65 @@ def netem_args(net, out=False):
         r = 1 / net["loss_burst"]
         p = net["loss_pct"] / 100 * r / (1 - net["loss_pct"] / 100)
         loss = ["loss", "gemodel", f"{100 * p:.6g}%", f"{100 * r:.6g}%", "100%", "0%"]
-    delay = ["delay", f"{net['rtt_ms'] / 2 + (net.get('delay_spike_ms', 0) if out else 0):g}ms"]
+    delay = ["delay", f"{net['rtt_ms'] / 2 + (net.get('delay_spike_ms', 0) if out else 0) + (net.get('wake_delay_ms', 0) if wake else 0):g}ms"]
     if net.get("delay_jitter_ms"):
         delay.append(f"{net['delay_jitter_ms']:g}ms")
     rate = ["rate", f"{net['rate_mbit']:g}mbit"] if net["rate_mbit"] > 0 else []
-    if not rate and (net.get("delay_jitter_ms") or net.get("delay_spike_ms")):
+    if not rate and (net.get("delay_jitter_ms") or net.get("delay_spike_ms") or net.get("wake_delay_ms")):
         # With a rate netem queues in order: a varying delay then does not
         # reorder packets, as it would without one (tc-netem(8)).
         rate = ["rate", "10gbit"]
     return ["netem", *delay, *loss, *rate, "limit", "100000"]
 
 
+def _udp_port(spec):
+    return spec["env"]["server"].get("UDP_PORT")
+
+
+def uplink(spec):
+    """A bottleneck in one direction: both directions get half the RTT, the
+    upstream one a token bucket and the queue in front of it. netem comes
+    first: it orphans the skb, so TCP small queues let a local sender fill
+    the queue as it fills a router's."""
+    net, shape = spec["network"], spec["shape"]
+    q = int(net["queue_kb"] * 1024)
+    _sh(["tc", "qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio", "bands", "3", "priomap", *["0"] * 16])
+    for band, handle in (("1:2", "20:"), ("1:3", "30:")):
+        _sh(["tc", "qdisc", "add", "dev", "lo", "parent", band, "handle", handle, *netem_args(net)])
+    _sh(["tc", "qdisc", "add", "dev", "lo", "parent", "30:1", "handle", "40:", "tbf", "rate", f"{net['uplink_mbit']:g}mbit", "burst", "3028", "limit", str(q)])
+    if net["queue"] == "fq_codel":
+        _sh(["tc", "qdisc", "add", "dev", "lo", "parent", "40:1", "handle", "41:", "fq_codel", "limit", str(max(q // 1514, 16)), "memory_limit", str(q)])
+    u32 = ["tc", "filter", "add", "dev", "lo", "parent", "1:", "protocol", "ip", "prio", "10", "u32"]
+    if shape in ("all", CLIENT_IP):
+        # A direct run binds the generator to CLIENT_IP too (_gen_args).
+        _sh([*u32, "match", "ip", "src", f"{CLIENT_IP}/32", "flowid", "1:3"])
+        _sh([*u32, "match", "ip", "dst", f"{CLIENT_IP}/32", "flowid", "1:2"])
+        return
+    for proto, port in (("6", shape), ("17", _udp_port(spec))):
+        if port:
+            _sh([*u32, "match", "ip", "protocol", proto, "0xff", "match", "ip", "dport", str(port), "0xffff", "flowid", "1:3"])
+            _sh([*u32, "match", "ip", "protocol", proto, "0xff", "match", "ip", "sport", str(port), "0xffff", "flowid", "1:2"])
+
+
+def wake_target(spec):
+    """The netem the generator changes when a stream resumes: the one both directions of the leg pass."""
+    return ["root", "handle", "1:"] if spec["shape"] == "all" else ["parent", "1:3", "handle", "30:"]
+
+
 def netem(spec):
     """Shapes lo; returns the running Spells when outages or spikes are laid on in time."""
     net, shape = spec["network"], spec["shape"]
     _sh(["ip", "link", "set", "lo", "up"])
-    if spec.get("settings", {}).get("capture"):
+    st = spec.get("settings", {})
+    if st.get("capture") or st.get("leg_tap") or (isinstance(net, dict) and net.get("uplink_mbit")):
         # lo defaults to a 64 KiB MTU and may expose GSO super-packets to
         # AF_PACKET. Neither is the packet length on a normal 1500-byte leg.
         _sh(["ip", "link", "set", "lo", "mtu", "1500"])
         _sh(["ethtool", "-K", "lo", "gso", "off", "gro", "off", "tso", "off"])
     if net == "loopback":
+        return None
+    if net.get("uplink_mbit"):
+        uplink(spec)
         return None
     args = netem_args(net)
     target = ["root", "handle", "1:"]
@@ -124,7 +164,7 @@ def netem(spec):
             # A native UDP association uses a second socket on the same
             # client-server leg. Shape it with the TCP control connection;
             # otherwise a game-loss cell would report an unshaped UDP path.
-            udp_port = spec["env"]["server"].get("UDP_PORT")
+            udp_port = _udp_port(spec)
             if udp_port:
                 for d in ("sport", "dport"):
                     _sh([*u32, "match", "ip", "protocol", "17", "0xff", "match", "ip", d, str(udp_port), "0xffff", "flowid", "1:3"])
@@ -433,6 +473,199 @@ def log_counts(path):
     return counts
 
 
+# What the client logs when its association changes path, and the counts it logs when the association closes.
+CLIENT_EVENTS = {
+    "Native UDP carrying application datagrams": "carrying",
+    "Native UDP verified for association": "verified",
+    "Native UDP path lost; association using 0x83": "path_lost",
+    "Native UDP not answering; association using 0x83": "not_answering",
+    "Native UDP path restored": "restored",
+}
+CLIENT_STATS = ("native_sent", "tcp_sent_oversize", "tcp_sent_other", "native_received", "tcp_received", "tunnel_drops")
+
+
+def _log_time(v):
+    # slog writes nanoseconds; fromisoformat takes six digits.
+    try:
+        return datetime.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", v)).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def native_log(path):
+    """The native UDP story of a client log: events with their times and the
+    sum of the per-association counts. A release before the counts logs
+    none, and then stats stays empty."""
+    events, stats = {}, {}
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if k := CLIENT_EVENTS.get(d.get("msg")):
+                    events.setdefault(k, []).append(_log_time(d.get("time")))
+                elif d.get("msg") == "UDP Tunnel closed":
+                    for k in CLIENT_STATS:
+                        if isinstance(d.get(k), (int, float)):
+                            stats[k] = stats.get(k, 0) + d[k]
+    except OSError:
+        pass
+    return {"events": {k: len(v) for k, v in events.items()}, "event_at": events, "stats": stats}
+
+
+class GaugeSampler(threading.Thread):
+    """The native UDP counters of the server every interval, to place its
+    path moves against the generator's marks."""
+
+    def __init__(self, path, every):
+        super().__init__(daemon=True)
+        self.path, self.every, self.n = path, every, 0
+        self.halt = threading.Event()
+
+    def run(self):
+        with open(self.path, "w") as f:
+            while not self.halt.wait(self.every):
+                g = gauges()
+                row = {k: v for k, v in g.items() if k.startswith("native_udp_") or k == "error"}
+                f.write(json.dumps({"t": round(time.time(), 3), **row}) + "\n")
+                self.n += 1
+
+    def stop(self):
+        self.halt.set()
+        self.join(timeout=10)
+        return self.n
+
+
+class LegTap(threading.Thread):
+    """Packets with a payload on the client-server leg in 100 ms bins: per
+    TCP connection of the tunnel and for the native UDP socket, each way.
+    It counts what a server release without path counters does not, the
+    0x83 datagrams on an association's control connection. A packet is
+    seen when it leaves the qdisc, that is when it reaches the other side."""
+
+    BIN = 0.1
+
+    def __init__(self, path, port, udp_port):
+        super().__init__(daemon=True)
+        self.path, self.port, self.udp = path, port, int(udp_port or 0)
+        self.halt = threading.Event()
+        self.sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
+        self.sock.bind(("lo", 0))
+        self.sock.setblocking(False)
+        self.bins, self.n, self.error = {}, 0, ""
+
+    def _add(self, data):
+        ihl = (data[14] & 0x0F) * 4
+        total = struct.unpack_from("!H", data, 16)[0]
+        proto, at = data[23], 14 + ihl
+        if len(data) < at + 8:
+            return
+        sport, dport = struct.unpack_from("!HH", data, at)
+        if proto == 6 and self.port in (sport, dport):
+            size = total - ihl - (data[at + 12] >> 4) * 4
+            key, up = f"t{sport if dport == self.port else dport}", dport == self.port
+        elif proto == 17 and self.udp and self.udp in (sport, dport):
+            size = struct.unpack_from("!H", data, at + 4)[0] - 8
+            key, up = "udp", dport == self.udp
+        else:
+            return
+        if size <= 0:
+            return
+        b = self.bins.setdefault(int(time.time() / self.BIN), {})
+        c = b.setdefault(key, [0, 0, 0, 0])
+        i = 0 if up else 2
+        c[i] += 1
+        c[i + 1] += size
+        self.n += 1
+
+    def _flush(self, f, keep):
+        for k in sorted(self.bins):
+            if k >= keep:
+                break
+            f.write(json.dumps({"t": round(k * self.BIN, 1), **self.bins.pop(k)}) + "\n")
+
+    def run(self):
+        with open(self.path, "w") as f:
+            try:
+                while not self.halt.is_set():
+                    r, _, _ = select.select([self.sock], [], [], 0.2)
+                    while r:
+                        try:
+                            data, addr = self.sock.recvfrom(65535)
+                        except BlockingIOError:
+                            break
+                        if addr[2] != socket.PACKET_OUTGOING and len(data) >= 34 and data[12:14] == b"\x08\x00":
+                            self._add(data)
+                    self._flush(f, int(time.time() / self.BIN) - 1)
+            except OSError as e:
+                self.error = str(e)
+            self._flush(f, float("inf"))
+        self.sock.close()
+
+    def stop(self):
+        self.halt.set()
+        self.join(timeout=10)
+        return {"packets": self.n, **({"error": self.error} if self.error else {})}
+
+
+def _rows(path):
+    try:
+        with open(path) as f:
+            return [json.loads(x) for x in f if x.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def windows(spec, out, marks):
+    """What the leg and the server's counters show after each mark of the
+    generator: a resume after a pause, the start of a load. A datagram sent
+    in the first second of a resume reaches the server up to half an RTT
+    and the wake delay later, so the resume window is that much longer."""
+    net = spec["network"] if isinstance(spec["network"], dict) else {}
+    leg, gauge = _rows(os.path.join(out, "leg.jsonl")), _rows(os.path.join(out, "gauges.jsonl"))
+
+    def counters(t):
+        # The last sample at or before t: a counter there has not seen what came after t.
+        prior = [g for g in gauge if g["t"] <= t]
+        return prior[-1] if prior else None
+
+    def delta(a, b):
+        ga, gb = counters(a), counters(b)
+        if not ga or not gb or gb is ga:
+            return {}
+        return {k: gb[k] - ga.get(k, 0) for k in gb if k.startswith("native_udp_") and gb[k] != ga.get(k, 0)}
+
+    def carried(a, b):
+        conns, udp = {}, [0, 0, 0, 0]
+        for r in leg:
+            if a <= r["t"] < b:
+                for k, v in r.items():
+                    if k == "udp":
+                        udp = [x + y for x, y in zip(udp, v)]
+                    elif k != "t":
+                        conns[k] = [x + y for x, y in zip(conns.get(k, [0, 0, 0, 0]), v)]
+        # Under a load the busiest connection is the upload's; the rest are the association's and the idle channel's.
+        busiest = max(conns.values(), key=lambda v: v[0], default=[0, 0, 0, 0])
+        return {"tcp_up_packets": sum(v[0] for v in conns.values()), "tcp_up_busiest": busiest[0],
+                "tcp_up_rest": sum(v[0] for v in conns.values()) - busiest[0],
+                "tcp_up_busiest_bytes": busiest[1], "tcp_down_packets": sum(v[2] for v in conns.values()),
+                "tcp_connections": len(conns), "udp_up_packets": udp[0], "udp_down_packets": udp[2]}
+
+    res = {}
+    span = 1.0 + (net.get("rtt_ms", 0) / 2 + net.get("wake_delay_ms", 0)) / 1000 + 0.1
+    for t in marks.get("resume_at", []):
+        # The same span five seconds on, when the stream is steady, is the leg's own background.
+        res.setdefault("resume", []).append({"at": t, "span_s": round(span, 3), "server": delta(t, t + span),
+                                             "leg": carried(t, t + span), "leg_steady": carried(t + 5, t + 5 + span)})
+    for on, off in zip(marks.get("bulk_on_at", []), marks.get("bulk_off_at", [])):
+        # The load's first second apart: a move to 0x83 on a growing queue happens there.
+        res.setdefault("load", []).append({"on": on, "off": off, "server": delta(on, off), "server_first_s": delta(on, on + 1),
+                                           "server_before": delta(2 * on - off, on), "leg": carried(on, off)})
+    return res
+
+
 class Capture:
     """Headers of the client-server leg through AF_PACKET, written as pcap.
     tcpdump is not used: under its AppArmor profile it ignores signals from
@@ -580,13 +813,20 @@ def _gen_args(spec, socks, budget=None, grace=None):
     st = spec["settings"]
     a = [spec["bin"]["matrix"], "-label", spec["id"], "-scenario-timeout", go_duration(budget or seconds(st["scenario_timeout"])),
          "-hang-grace", go_duration(grace or seconds(st["hang_grace"])), "-max-errors-in-row", str(st["max_errors_in_row"])]
+    net = spec["network"] if isinstance(spec["network"], dict) else {}
     if socks:
         a += ["-socks", socks]
         if spec["shape"] == CLIENT_IP:
             a += ["-source", CLIENT_IP]
-        if isinstance(spec["network"], dict):
+        if net:
             # The generator's own control would bypass netem; the raw cell is the control.
             a += ["-control=false"]
+    elif net.get("uplink_mbit"):
+        # The queue tells its directions apart by this address (uplink).
+        a += ["-source", CLIENT_IP]
+    if net.get("wake_delay_ms"):
+        tc = ["tc", "qdisc", "change", "dev", "lo", *wake_target(spec)]
+        a += ["-wake-on", json.dumps(tc + netem_args(net, wake=True)), "-wake-off", json.dumps(tc + netem_args(net))]
     return a
 
 
@@ -640,10 +880,16 @@ def measure(spec, socks, procs, run, cap):
     if isinstance(spec["network"], dict) and "udp_blackout_after_s" in spec["network"]:
         blackout = UDPBlackout(spec["env"]["server"]["UDP_PORT"], spec["network"]["udp_blackout_after_s"], spec["network"]["udp_blackout_for_s"])
         blackout.start()
-    tcp = None
+    tcp = sampler = tap = None
     if spec["transport"] in ("obfs", "wss") and not spec["direct"]:
         tcp = TCPStats(PORTS[spec["transport"]])
         tcp.start()
+        if st.get("leg_tap"):
+            tap = LegTap(os.path.join(out, "leg.jsonl"), PORTS[spec["transport"]], _udp_port(spec))
+            tap.start()
+    if st.get("gauges_ms") and "server" in procs:
+        sampler = GaugeSampler(os.path.join(out, "gauges.jsonl"), st["gauges_ms"] / 1000)
+        sampler.start()
     stall = seconds(st["scenario_timeout"]) + seconds(st["hang_grace"]) + 30
     if spec["kind"] == "soak":
         stall += max(seconds(st["soak"]), seconds(st["idle"]))
@@ -687,12 +933,22 @@ def measure(spec, socks, procs, run, cap):
     run["seconds"] = round(time.monotonic() - t0, 3)
     if tcp:
         run["tcp"] = tcp.stop()
+    if tap:
+        run["leg_tap"] = tap.stop()
+    if sampler:
+        run["gauge_samples"] = sampler.stop()
     run["generator_rc"] = gen.returncode
     run["after"] = snapshot(procs, "after", run)
     if "server" in procs:
         run["gauges_after"] = gauges()
     result = read_json(os.path.join(out, "result.json"), {})
     run["complete"] = bool(result.get("complete"))
+    marks = {}
+    for sc in (result.get("result") or {}).values() if spec["kind"] != "soak" else ():
+        for k, v in (sc.get("marks") or {}).items():
+            marks.setdefault(k, []).extend(v)
+    if marks and (tap or sampler):
+        run["windows"] = windows(spec, out, marks)
     if why:
         run["status"], run["reason"] = why
     elif gen.returncode == 3:
@@ -744,6 +1000,8 @@ def finish(spec, procs, run, cap):
         run[f"{name}_cpu_lifetime_s"] = round(cpu, 3)
         run[f"{name}_exit"] = p.returncode
         run[f"{name}_log"] = log_counts(os.path.join(spec["dir"], f"{name}.log"))
+    if "client" in procs and _udp_port(spec):
+        run["client_native"] = native_log(os.path.join(spec["dir"], "client.log"))
     # Everything this cell ran and reaped, tc and ip included, plus the cell itself.
     run["own_cpu_s"] = round(sum(r.ru_utime + r.ru_stime for r in map(resource.getrusage, (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))), 3)
     if cap:
