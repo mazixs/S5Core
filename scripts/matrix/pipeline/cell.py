@@ -32,6 +32,13 @@ NATIVE_PACKETS = "s5core_native_udp_packets_total"
 # The outcomes pkg/s5server/native_udp.go publishes; read_error is a failed socket read, not a datagram.
 NATIVE_DROPS = ("tag", "replay", "auth")
 NATIVE_OUTCOMES = ("accepted", *NATIVE_DROPS, "read_error")
+# Series of native associations with fixed labels, one key per label set: the path of each datagram, the moves
+# of the answers and the frames the control stream dropped.
+NATIVE_SERIES = {
+    "s5core_native_udp_datagrams_total": ("native_udp_{direction}_{path}", ("direction", "path")),
+    "s5core_native_udp_route_events_total": ("native_udp_route_{event}", ("event",)),
+    "s5core_native_udp_stream_drops_total": ("native_udp_stream_drop_{reason}", ("reason",)),
+}
 PORT_WAIT = 10
 WARMUP_TIMEOUT = 60
 STOP_WAIT = 5
@@ -360,6 +367,17 @@ def parse_gauges(body):
             continue
         name, _, value = line.rpartition(" ")
         base = name.split("{", 1)[0]
+        if base in NATIVE_SERIES:
+            key, labels = NATIVE_SERIES[base]
+            lb = dict(re.findall(r'(\w+)="([^"]*)"', name))
+            try:
+                v = float(value)
+            except ValueError:
+                continue
+            if all(lb.get(k) for k in labels):
+                key = key.format(**{k: lb[k] for k in labels})
+                out[key] = out.get(key, 0) + v
+            continue
         if base in GAUGES or (base == "s5core_session_transitions_total" and 'illegal="true"' in name):
             key = "illegal_transitions" if base == "s5core_session_transitions_total" else base
             try:

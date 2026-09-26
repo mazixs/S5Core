@@ -39,11 +39,14 @@ const (
 var ErrPacket = errors.New("nativeudp: invalid or replayed datagram")
 
 // Packet is a verified application datagram. A packet from a hub holds a
-// pooled buffer, and Data is valid until Release.
+// pooled buffer, and Data is valid until Release. Counter is the sender's
+// counter of it, which orders what the client says by UDP against what it
+// says by the control connection (docs/veil-spec.md, 10.6).
 type Packet struct {
-	Kind byte
-	Data []byte
-	buf  *[MaxWire]byte
+	Kind    byte
+	Data    []byte
+	Counter uint64
+	buf     *[MaxWire]byte
 }
 
 // Release returns the packet's buffer. A packet from Open has none.
@@ -82,7 +85,10 @@ type Session struct {
 	candidate route
 	packets   chan Packet
 	heard     chan struct{}
-	closed    atomic.Bool
+	// heardTop is the highest counter of a heard probe plus one: probes that
+	// come while one is pending share one wake, and the newest must survive.
+	heardTop atomic.Uint64
+	closed   atomic.Bool
 	// resynced is the last resync the hub made, under its lock.
 	resynced time.Time
 }
@@ -207,6 +213,7 @@ func (s *Session) Open(wire []byte) (Packet, error) {
 	p, counter, err := s.claim(wire)
 	if err == nil {
 		s.settle(counter, nil)
+		p.Counter = counter
 	}
 	return p, err
 }
@@ -314,8 +321,25 @@ func (s *Session) resync(next uint64, moved func(tag [8]byte, added bool)) {
 func (s *Session) Packets() <-chan Packet { return s.packets }
 
 // Heard receives when a probe says the client hears the server natively.
-// Probes that come while one is pending add nothing to it.
+// Probes that come while one is pending add nothing to it but their counter:
+// HeardCounter is the highest of them.
 func (s *Session) Heard() <-chan struct{} { return s.heard }
+
+// HeardCounter is the highest counter of a probe that said the client hears
+// the server, once Heard has received.
+func (s *Session) HeardCounter() uint64 { return s.heardTop.Load() - 1 }
+
+func (s *Session) hear(counter uint64) {
+	for top := s.heardTop.Load(); counter+1 > top; top = s.heardTop.Load() {
+		if s.heardTop.CompareAndSwap(top, counter+1) {
+			break
+		}
+	}
+	select {
+	case s.heard <- struct{}{}:
+	default:
+	}
+}
 
 func (s *Session) Peer() (netip.AddrPort, bool) {
 	r := s.answers.Load()
@@ -601,10 +625,7 @@ func (h *Hub) read() {
 			default:
 			}
 			if len(p.Data) == 1 && p.Data[0] == ProbeHeard {
-				select {
-				case s.heard <- struct{}{}:
-				default:
-				}
+				s.hear(counter)
 			}
 			continue
 		}
@@ -612,7 +633,7 @@ func (h *Hub) read() {
 			continue
 		}
 		buf := wirePool.Get().(*[MaxWire]byte)
-		packet := Packet{Kind: KindData, Data: buf[:copy(buf[:], p.Data)], buf: buf}
+		packet := Packet{Kind: KindData, Data: buf[:copy(buf[:], p.Data)], Counter: counter, buf: buf}
 		select {
 		case s.packets <- packet:
 		default:

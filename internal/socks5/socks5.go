@@ -111,6 +111,9 @@ type Config struct {
 	// the reply carries port 0, and the association goes by 0x83 on the
 	// same connection. Nil NativeUDP answers 0x84 with command not supported.
 	NativeUDP func(net.Conn) (NativeAssociation, error)
+	// NativeCounters, when set, counts where the datagrams of native
+	// associations go.
+	NativeCounters *NativeCounters
 
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
@@ -140,7 +143,10 @@ type NativeAssociation interface {
 	// Receive waits for the next datagram of the client and hands it to
 	// datagram, valid only until datagram returns: its buffer is reused. A
 	// probe of a client that hears the server natively calls heard instead.
-	Receive(ctx context.Context, datagram func([]byte), heard func()) bool
+	// Both get the client's counter of what they hear of, the highest one
+	// where several heard probes came at once: it orders them against the
+	// client's loss signals (docs/veil-spec.md, 10.6).
+	Receive(ctx context.Context, datagram func(counter uint64, data []byte), heard func(counter uint64)) bool
 	// Send writes one answer native. A failed answer goes by the control
 	// connection instead. ErrNativePathGone also moves the answers after it
 	// there, until the client's next native datagram or heard probe; any

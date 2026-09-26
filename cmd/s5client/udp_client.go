@@ -239,9 +239,19 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	slog.Info("UDP Tunnel established", "local_udp", boundAddr.String())
 
 	// 4. Multiplexing Loop
-	errCh := make(chan error, 3)
+	errCh := make(chan error, 4)
 	var clientUDPAddr atomic.Pointer[netip.AddrPort]
 	if native != nil {
+		// The datagrams native does not carry wait for the stream on the
+		// writer's goroutine, not on the one that reads the application:
+		// one too big for native used to hold every short one behind it
+		// (finding F1 of docs/reports/v2.3-rc1-audit-2026-09-26.md).
+		defer native.writer.Stop()
+		go func() {
+			if err := native.writer.Run(); err != nil {
+				errCh <- fmt.Errorf("tunnel write failed: %w", err)
+			}
+		}()
 		go native.run(func(d []byte) {
 			if peer := clientUDPAddr.Load(); peer != nil {
 				_, _ = udpConn.WriteToUDPAddrPort(d, *peer)
@@ -309,6 +319,12 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 
 			// The packet from the application MUST start with a SOCKS5 UDP header
 			// We just tunnel this entire frame verbatim inside length-prefixed TCP
+			if native != nil {
+				var length [2]byte
+				binary.BigEndian.PutUint16(length[:], uint16(n))
+				native.writer.Submit(length[:], buf[:n], n)
+				continue
+			}
 			framePtr := udpFramePool.Get().(*[]byte)
 			frame := (*framePtr)[:2+n]
 			binary.BigEndian.PutUint16(frame[0:2], uint16(n))
@@ -358,6 +374,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				return
 			}
 
+			if native != nil {
+				native.tcpAnswer(int(packetLen))
+			}
 			// Must know where the client is to send UDP back
 			addr := clientUDPAddr.Load()
 			if addr == nil {
@@ -389,5 +408,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 
 	// Wait for any critical failure
 	err = <-errCh
-	slog.Info("UDP Tunnel closed", "reason", err)
+	attrs := []any{"reason", err}
+	if native != nil {
+		attrs = append(attrs, native.logStats()...)
+	}
+	slog.Info("UDP Tunnel closed", attrs...)
 }

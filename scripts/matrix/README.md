@@ -354,7 +354,11 @@ keepalive туннеля. За прокси тот же поток одновр�
 `UDP_NATIVE=true`. `s5core_native_udp_packets_total` в `gauges_*` разложен по
 исходам (`native_udp_accepted`, `_tag`, `_replay`, `_auth`, `_read_error`) плюс
 `native_udp_dropped` - сумма tag, replay и auth; суммы всех исходов под именем
-метрики больше нет, она осталась только в прогонах до этой правки.
+метрики больше нет, она осталась только в прогонах до этой правки. Путь
+датаграмм ассоциаций `0x84` лежит там же по ключу на набор лейблов:
+`native_udp_<direction>_<path>` (`native_udp_to_client_tcp_oversize`),
+`native_udp_route_<event>` и `native_udp_stream_drop_<reason>`
+(`docs/design/observability-policy.md`).
 `plans/game-native-highrate-blackout.toml` повторяет второй отказ на 128 Гц
 и проверяет возврат native-пути. За окно скрытого счетчика (512) эта частота
 не выходит: клиент перестает слать в оборванный путь через секунду. Выход за

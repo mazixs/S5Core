@@ -100,6 +100,28 @@ Native UDP добавляет `s5core_native_udp_packets_total` с единст�
 не сохраняются. `TestNativeUDPMetricsHaveOnlyFixedOutcomes` проверяет набор
 лейблов через реальный сбор OpenTelemetry.
 
+Путь датаграмм ассоциаций `0x84` считают еще три счетчика, все с лейблами из
+закрытых множеств в `pkg/s5server/native_udp.go` (пункт 4 приоритетов аудита
+2.3.0-rc1, `docs/reports/v2.3-rc1-audit-2026-09-26.md`):
+
+- `s5core_native_udp_datagrams_total{direction, path}` - каким путем прошла
+  датаграмма. `direction` - `to_client` или `from_client`, `path` - `native`,
+  `tcp_oversize` (больше предела native), `tcp_route` (путь ответов на TCP
+  или клиент выбрал TCP) и только у `to_client` - `tcp_failed` (native-сокет
+  не записал). Доставка у приложения одинакова на обоих путях, поэтому без
+  этого счетчика путь приходилось выводить из косвенных признаков.
+- `s5core_native_udp_route_events_total{event}` - переходы пути ответов
+  (`to_native`, `to_tcp`) и слова клиента, пришедшие позже более нового слова
+  другого вида (`stale_loss`, `stale_heard`, раздел 10.6 `docs/veil-spec.md`).
+- `s5core_native_udp_stream_drops_total{reason}` - датаграммы, которые
+  управляющее соединение не записало: `queue` (очередь писателя полна) и
+  `age` (ждали дольше 250 мс).
+
+Тот же тест проверяет, что точек ровно столько, сколько в этих множествах.
+Клиент пишет свою половину тех же чисел в строку `UDP Tunnel closed`
+(`native_sent`, `tcp_sent_oversize`, `tcp_sent_other`, `native_received`,
+`tcp_received`, `tunnel_drops`) - без адресов.
+
 ## Экспозиция метрик
 
 `METRICS_BIND_ADDR` по умолчанию слушает localhost, и этот дефолт не меняется.

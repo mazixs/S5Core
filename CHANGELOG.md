@@ -17,11 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   way of its answers by what the client says, not by the way of its last
   datagram: a native datagram or a probe from a client that hears it moves
   them to native, the client's notice by TCP moves them back, and a datagram
-  by `0x83` moves nothing. The client sends the notice as soon as it stops
-  hearing the server, within a second, from a goroutine of its own so that a
-  full TCP buffer does not hold the probes, and it says it hears the server
-  again with its first probe once the path answers, so an application that
-  only listens gets its answers by the working way in both directions.
+  by `0x83` moves nothing. The client hears the server while the path is
+  verified and either a packet of the server came within a second or fewer
+  than two probes in a row are unanswered, so one lost probe, a jump of the
+  round trip or the first datagram after a pause keeps the data native. It
+  sends the notice as soon as it stops hearing the server, and it says it
+  hears the server again with its first probe once the path answers, so an
+  application that only listens gets its answers by the working way in both
+  directions. The notice and the probes are placed by the client's datagram
+  counter rather than by arrival: TCP and UDP deliver in either order, and a
+  late notice no longer overrules a newer native datagram. The TCP stream of
+  a native association has one writer on each side, with a queue of 64
+  datagrams and the notice ahead of it, so a write that waits for the send
+  buffer holds neither the probes nor the datagrams that go native; a
+  datagram that waited longer than 250 ms is dropped, as UDP would drop it.
   It repeats the notice with every retry probe until the path is back: a
   native datagram sent just before the loss can reach the server after it and
   move the answers back to the dead path. The notice and the server's reply
@@ -51,7 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are in [the specification](docs/veil-spec.md#106-native-udp-команда-0x84).
 - Native UDP server metrics count accepted packets, drops by tag, replay and
   authentication, read errors of the shared socket, after which it keeps
-  reading, and active associations with fixed label sets. The
+  reading, and active associations with fixed label sets. The path of every
+  datagram of a native association is counted as well, by direction and by
+  why it went by TCP (too big for native, the answers on TCP, a failed
+  native write), with the moves of the answers between the two and the
+  datagrams the TCP stream dropped
+  ([labels](docs/design/observability-policy.md)); the client logs its half
+  of the same numbers when the association ends. The
   [local game-loss curve](docs/benchmarks/nativeudp-game-loss-2026-09-25.md)
   and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/nativeudp-wan-hour-2026-09-25.json)
   had no disconnects; the final candidate's p99 exceeded its direct-path

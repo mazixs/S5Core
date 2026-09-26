@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -133,7 +134,7 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registration, err := registerNativeMetrics(tel, hub)
+	registration, err := registerNativeMetrics(tel, hub, new(socks5.NativeCounters))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,6 +167,21 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 				if !ok || len(gauge.DataPoints) != 1 || gauge.DataPoints[0].Attributes.Len() != 0 {
 					t.Fatalf("sessions metric: %T %+v", m.Data, m.Data)
 				}
+			case "s5core_native_udp_datagrams_total", "s5core_native_udp_route_events_total", "s5core_native_udp_stream_drops_total":
+				sum, ok := m.Data.(metricdata.Sum[int64])
+				if !ok {
+					t.Fatalf("%s: %T", m.Name, m.Data)
+				}
+				for _, p := range sum.DataPoints {
+					if p.Value != 0 {
+						t.Fatalf("%s value: %+v", m.Name, p)
+					}
+					var labels []string
+					for _, kv := range p.Attributes.ToSlice() {
+						labels = append(labels, string(kv.Key)+"="+kv.Value.AsString())
+					}
+					seen[m.Name+" "+strings.Join(labels, ",")] = true
+				}
 			}
 		}
 	}
@@ -173,6 +189,29 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 		if !seen[label] {
 			t.Fatalf("outcome %q missing: %+v", label, seen)
 		}
+	}
+	fixed := []string{
+		"s5core_native_udp_datagrams_total direction=to_client,path=native",
+		"s5core_native_udp_datagrams_total direction=to_client,path=tcp_oversize",
+		"s5core_native_udp_datagrams_total direction=to_client,path=tcp_route",
+		"s5core_native_udp_datagrams_total direction=to_client,path=tcp_failed",
+		"s5core_native_udp_datagrams_total direction=from_client,path=native",
+		"s5core_native_udp_datagrams_total direction=from_client,path=tcp_oversize",
+		"s5core_native_udp_datagrams_total direction=from_client,path=tcp_route",
+		"s5core_native_udp_route_events_total event=to_native",
+		"s5core_native_udp_route_events_total event=to_tcp",
+		"s5core_native_udp_route_events_total event=stale_loss",
+		"s5core_native_udp_route_events_total event=stale_heard",
+		"s5core_native_udp_stream_drops_total reason=queue",
+		"s5core_native_udp_stream_drops_total reason=age",
+	}
+	for _, series := range fixed {
+		if !seen[series] {
+			t.Fatalf("series %q missing: %+v", series, seen)
+		}
+	}
+	if len(seen) != 5+len(fixed) {
+		t.Fatalf("series beyond the fixed sets: %+v", seen)
 	}
 }
 

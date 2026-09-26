@@ -136,8 +136,9 @@ func TestANativeHookThatFailsIsAServerFailure(t *testing.T) {
 // scriptedNative is a native path whose Send fails as scripted: call i
 // returns errs[i], and a call past the script succeeds.
 type scriptedNative struct {
-	in       chan []byte
-	heard    chan struct{}
+	in       chan scriptedDatagram
+	heard    chan uint64
+	handled  chan struct{}
 	sent     chan []byte
 	resynced chan uint64
 	next     atomic.Uint64
@@ -146,7 +147,7 @@ type scriptedNative struct {
 }
 
 func newScriptedNative(errs ...error) *scriptedNative {
-	return &scriptedNative{in: make(chan []byte, 1), heard: make(chan struct{}, 1), sent: make(chan []byte, 8),
+	return &scriptedNative{in: make(chan scriptedDatagram, 1), heard: make(chan uint64, 1), handled: make(chan struct{}, 16), sent: make(chan []byte, 8),
 		resynced: make(chan uint64, 8), errs: errs}
 }
 
@@ -155,18 +156,44 @@ func (f *scriptedNative) MaxPayload() int    { return 1300 }
 func (f *scriptedNative) Close()             {}
 func (f *scriptedNative) Resync(next uint64) { f.resynced <- next }
 func (f *scriptedNative) Next() uint64       { return f.next.Load() }
-func (f *scriptedNative) Receive(ctx context.Context, datagram func([]byte), heard func()) bool {
+func (f *scriptedNative) Receive(ctx context.Context, datagram func(uint64, []byte), heard func(uint64)) bool {
 	select {
 	case <-ctx.Done():
 		return false
-	case <-f.heard:
-		heard()
+	case counter := <-f.heard:
+		heard(counter)
+		select {
+		case f.handled <- struct{}{}:
+		default:
+		}
 		return true
 	case p := <-f.in:
-		datagram(p)
+		datagram(p.counter, p.data)
 		return true
 	}
 }
+
+// hear delivers a heard probe with counter and waits until the association
+// has taken it.
+func (f *scriptedNative) hear(t *testing.T, counter uint64) {
+	t.Helper()
+	for len(f.handled) > 0 {
+		<-f.handled
+	}
+	f.heard <- counter
+	select {
+	case <-f.handled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the heard probe was not taken")
+	}
+}
+
+// scriptedDatagram is a native datagram of the client with its counter.
+type scriptedDatagram struct {
+	counter uint64
+	data    []byte
+}
+
 func (f *scriptedNative) Send(b []byte) error {
 	if i := int(f.calls.Add(1)) - 1; i < len(f.errs) && f.errs[i] != nil {
 		return f.errs[i]
@@ -180,18 +207,24 @@ func (f *scriptedNative) Send(b []byte) error {
 // to it from and the client's control connection.
 func nativeAnswers(t *testing.T, native *scriptedNative) (*net.UDPConn, netip.AddrPort, net.Conn) {
 	t.Helper()
+	return nativeAnswersCounted(t, native, nil)
+}
+
+func nativeAnswersCounted(t *testing.T, native *scriptedNative, counters *NativeCounters) (*net.UDPConn, netip.AddrPort, net.Conn) {
+	t.Helper()
 	target, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = target.Close() })
 	reply, conn, _ := nativeRequest(t, &Config{
-		NativeUDP: func(net.Conn) (NativeAssociation, error) { return native, nil },
+		NativeUDP:      func(net.Conn) (NativeAssociation, error) { return native, nil },
+		NativeCounters: counters,
 	})
 	if reply[1] != successReply {
 		t.Fatalf("reply %x, want success", reply)
 	}
-	native.in <- BuildUDPHeader(&AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: target.LocalAddr().(*net.UDPAddr).Port}, []byte("hello"))
+	native.in <- scriptedDatagram{data: BuildUDPHeader(&AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: target.LocalAddr().(*net.UDPAddr).Port}, []byte("hello"))}
 	_ = target.SetReadDeadline(time.Now().Add(3 * time.Second))
 	var b [2048]byte
 	_, relay, err := target.ReadFromUDPAddrPort(b[:])

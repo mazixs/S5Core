@@ -31,6 +31,8 @@ type Server struct {
 	socks5        *socks5.Server
 	nativeHub     atomic.Pointer[nativeudp.Hub]
 	nativeMetrics metric.Registration
+	// nativeCounters is shared by every 0x84 association of the server.
+	nativeCounters *socks5.NativeCounters
 
 	// mu защищает поля слушателей: они заполняются в Start, а читаются
 	// из Stop, WSAddr, Addr, UpdateWhitelist и UpdateTimeouts - как правило
@@ -113,9 +115,11 @@ func NewServer(cfg Config) (*Server, error) {
 	// where the quota is noticed", which is a choice, not an omission.
 
 	var server *Server
+	nativeCounters := new(socks5.NativeCounters)
 	socks5conf := &socks5.Config{
-		Logger: cfg.Logger,
-		Dial:   cfg.Dial,
+		Logger:         cfg.Logger,
+		Dial:           cfg.Dial,
+		NativeCounters: nativeCounters,
 		// A node without UDP_PORT, or a listener without obfs keys, answers
 		// 0x84 with port 0: the client then stays on 0x83 without another
 		// connection.
@@ -248,6 +252,8 @@ func NewServer(cfg Config) (*Server, error) {
 		members:     members,
 		saltHistory: obfs.NewSaltHistory(cfg.ObfsReplayWindow),
 		sessions:    session.NewRegistry(sessionTransitionObserver(cfg.Telemetry)),
+
+		nativeCounters: nativeCounters,
 	}
 	server = s
 	gauge, err := registerSessionGauge(cfg.Telemetry, s.sessions)
@@ -482,7 +488,7 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to listen native UDP on %s: %w", addr, err)
 		}
 		s.nativeHub.Store(hub)
-		registration, err := registerNativeMetrics(s.cfg.Telemetry, hub)
+		registration, err := registerNativeMetrics(s.cfg.Telemetry, hub, s.nativeCounters)
 		if err != nil {
 			_ = hub.Close()
 			s.nativeHub.Store(nil)

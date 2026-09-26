@@ -111,6 +111,15 @@ type Telemetry struct {
 	// replay, auth and read_error. NativeUDPSessions counts live associations.
 	NativeUDPPackets  metric.Int64ObservableCounter
 	NativeUDPSessions metric.Int64ObservableGauge
+	// NativeUDPDatagrams is the path each datagram of a 0x84 association
+	// took, by direction and path; NativeUDPRouteEvents the moves of the
+	// server's answers between native and TCP, and the words of the client
+	// that came too late to move them; NativeUDPStreamDrops the frames the
+	// control stream did not write. Every label is fixed in
+	// registerNativeMetrics.
+	NativeUDPDatagrams   metric.Int64ObservableCounter
+	NativeUDPRouteEvents metric.Int64ObservableCounter
+	NativeUDPStreamDrops metric.Int64ObservableCounter
 
 	// meter is kept so that the session gauge can be registered once the
 	// registry that answers it exists, which is in NewServer.
@@ -245,6 +254,21 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 	if err != nil {
 		return nil, err
 	}
+	nativeDatagrams, err := meter.Int64ObservableCounter("s5core_native_udp_datagrams_total",
+		metric.WithDescription("Datagrams of native UDP associations, by direction and the path they took"))
+	if err != nil {
+		return nil, err
+	}
+	nativeRouteEvents, err := meter.Int64ObservableCounter("s5core_native_udp_route_events_total",
+		metric.WithDescription("Moves of native UDP answers between native and TCP, and stale client signals"))
+	if err != nil {
+		return nil, err
+	}
+	nativeStreamDrops, err := meter.Int64ObservableCounter("s5core_native_udp_stream_drops_total",
+		metric.WithDescription("Datagrams the control stream of a native UDP association dropped, by reason"))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Telemetry{
 		ActiveConnections: activeConns,
@@ -271,7 +295,12 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		SessionTransitions: sessionTransitions,
 		NativeUDPPackets:   nativePackets,
 		NativeUDPSessions:  nativeSessions,
-		meter:              meter,
+
+		NativeUDPDatagrams:   nativeDatagrams,
+		NativeUDPRouteEvents: nativeRouteEvents,
+		NativeUDPStreamDrops: nativeStreamDrops,
+
+		meter: meter,
 	}, nil
 }
 

@@ -100,6 +100,18 @@ class Plans(unittest.TestCase):
         self.assertEqual(gauges['native_udp_replay'], 2)
         self.assertEqual(gauges['s5core_native_udp_sessions'], 3)
 
+    def test_native_udp_paths_keep_one_key_per_label_set(self):
+        g = cell.parse_gauges('s5core_native_udp_datagrams_total{direction="to_client",path="native"} 40\n'
+                              's5core_native_udp_datagrams_total{direction="to_client",path="tcp_oversize"} 2\n'
+                              's5core_native_udp_datagrams_total{direction="from_client",path="tcp_route"} 3\n'
+                              's5core_native_udp_route_events_total{event="stale_loss"} 1\n'
+                              's5core_native_udp_stream_drops_total{reason="age"} 5\n'
+                              's5core_native_udp_stream_drops_total{otel_scope_name="a"} 7\n')
+        self.assertEqual({k: v for k, v in g.items() if k.startswith("native_udp_")},
+                         {"native_udp_to_client_native": 40, "native_udp_to_client_tcp_oversize": 2,
+                          "native_udp_from_client_tcp_route": 3, "native_udp_route_stale_loss": 1,
+                          "native_udp_stream_drop_age": 5})
+
     def test_native_udp_outcomes_are_not_summed_into_a_volume(self):
         g = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted",otel_scope_name="a"} 40\n'
                               's5core_native_udp_packets_total{outcome="accepted",otel_scope_name="b"} 2\n'
