@@ -182,5 +182,62 @@
         "native_verified": 0
       }
     ]
+  },
+  "rc1_rc2_check": {
+    "date": "2026-09-26",
+    "scope": "local loopback before the rc2 rollout, real v2.3.0-rc1 (5bcd9a8) and v2.3.0-rc2 (98a864a) binaries, UDP_PORT on the server, UDP_NATIVE=true on the client, two associations of 320 ticks at 64 Hz with 200-byte datagrams per pair",
+    "binaries": {
+      "rc1_s5core_sha256": "9651f14dabfc506ab5f3454b98999021f120c3558c3f80f31898212868753604",
+      "rc1_s5client_sha256": "645512667292cfdad4aa4ea5a42b4f5f4d8fb02a00b95aab21bb173452a491b6",
+      "rc2_s5core_sha256": "8f528f1bffaaebb2c5f41a720f3cc2a01dfccc05d3b176eeb6acfdd25887de4e",
+      "rc2_s5client_sha256": "818d10751e8703368ad2b1c6a1ded494598bb5f1abf27d86e278d6f8a114021a"
+    },
+    "pairs": [
+      {
+        "server": "rc1",
+        "client": "rc1",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 664
+      },
+      {
+        "server": "rc1",
+        "client": "rc2",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 665,
+        "client_native_limit": 1400,
+        "client_size_probes": 0
+      },
+      {
+        "server": "rc2",
+        "client": "rc1",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 665,
+        "datagrams_native_from_client": 638,
+        "datagrams_native_to_client": 639
+      },
+      {
+        "server": "rc2",
+        "client": "rc2",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 681,
+        "datagrams_native_from_client": 638,
+        "datagrams_native_to_client": 638,
+        "client_native_limit": 1395,
+        "client_size_probes": 7
+      }
+    ],
+    "note": "native_accepted counts every native packet the server took, probes included; the rc2 pair has the 7 size probes of each association on top. A client of rc2 finds no search on an rc1 server and keeps the limit of 1400. The only WARN on every server was the one for running without authentication, a setting of the stand."
   }
 }
