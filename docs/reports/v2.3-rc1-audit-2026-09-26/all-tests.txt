@@ -1,0 +1,34 @@
+ok  	github.com/mazixs/S5Core/cmd/connlat	0.053s
+ok  	github.com/mazixs/S5Core/cmd/fpcollect	0.038s
+ok  	github.com/mazixs/S5Core/cmd/fpprobe	0.018s
+ok  	github.com/mazixs/S5Core/cmd/httpsprobe	0.449s
+?   	github.com/mazixs/S5Core/cmd/idleprobe	[no test files]
+ok  	github.com/mazixs/S5Core/cmd/s5client	(cached)
+ok  	github.com/mazixs/S5Core/cmd/s5core	2.130s
+?   	github.com/mazixs/S5Core/cmd/stealthcheck	[no test files]
+?   	github.com/mazixs/S5Core/cmd/udpprobe	[no test files]
+ok  	github.com/mazixs/S5Core/cmd/udpshape	2.420s
+ok  	github.com/mazixs/S5Core/cmd/wirebench	0.008s
+ok  	github.com/mazixs/S5Core/internal/arch	26.659s
+?   	github.com/mazixs/S5Core/internal/buildinfo	[no test files]
+?   	github.com/mazixs/S5Core/internal/diagnostics	[no test files]
+ok  	github.com/mazixs/S5Core/internal/identity	0.228s
+ok  	github.com/mazixs/S5Core/internal/logging	0.002s
+ok  	github.com/mazixs/S5Core/internal/passwordhash	25.675s
+ok  	github.com/mazixs/S5Core/internal/relay	0.004s
+ok  	github.com/mazixs/S5Core/internal/s5core	0.003s
+ok  	github.com/mazixs/S5Core/internal/session	0.003s
+ok  	github.com/mazixs/S5Core/internal/signals	0.202s
+ok  	github.com/mazixs/S5Core/internal/socks5	(cached)
+ok  	github.com/mazixs/S5Core/internal/stealth	0.019s
+ok  	github.com/mazixs/S5Core/internal/tcptune	(cached)
+?   	github.com/mazixs/S5Core/internal/testcert	[no test files]
+ok  	github.com/mazixs/S5Core/internal/userstore	20.316s
+ok  	github.com/mazixs/S5Core/internal/utls	0.029s
+ok  	github.com/mazixs/S5Core/pkg/nativeudp	(cached)
+ok  	github.com/mazixs/S5Core/pkg/obfs	(cached)
+ok  	github.com/mazixs/S5Core/pkg/s5server	(cached)
+ok  	github.com/mazixs/S5Core/pkg/transport/tlsdecoy	0.133s
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	(cached)
+ok  	github.com/mazixs/S5Core/pkg/veil	4.990s
+ok  	github.com/mazixs/S5Core/scripts/testreport	0.002s

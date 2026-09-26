@@ -120,6 +120,7 @@ Fail2ban-обертка над `CredentialStore` живет в `internal/identit
 - `docs/field/` - что происходит на настоящем пути, у каждого числа контроль без туннеля: `nodes.md`, `stealth.md`, `migration.md`.
 - `docs/gates/` - вердикты шлюзов плана: `README.md` (оглавление всех пяти), `g3-wire-format.md`, `g4-first-frame.md`.
 - `docs/plan/` - материалы плана автономными HTML (`audit`, `blockers`, `research`, `plan`, `dpi-research`, `result`), откуда взяты номера задач Ф*; порядок чтения - в `docs/plan/README.md`.
+- `docs/research/` - обзоры внешних источников (RFC, вендоры, чужие замеры), а не замеры нашего кода: `mtu.md` (MTU на пути и что будет с пакетом, который не влез), `mtu-diagnostics.md` (поведение ОС и методика), `path-degradation.md` (деградация помимо MTU). Выводы для S5Core там - вопросы для проверки, собственные числа идут в `benchmarks/` или `field/`.
 - `docs/reports/` и `docs/archive/` - записи прошлого состояния кода, а не его описание. Правятся только тогда, когда меняется сама запись.
 - `docs/backlog.md` - решено и обосновано, но не начато.
 

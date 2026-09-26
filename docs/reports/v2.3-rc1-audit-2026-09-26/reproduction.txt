@@ -1,0 +1,16 @@
+=== RUN   TestAuditDelayedSignalStrandsReceiveOnlyOnTCP
+2000/01/01 02:00:00 INFO Native UDP verified for association
+2000/01/01 02:00:02 WARN Native UDP path lost; association using 0x83 unanswered_probes=3
+2000/01/01 02:00:03 INFO Native UDP path restored
+    audit_delayed_signal_test.go:78: 60s after stale signal: client.up=true server.native=false heard probes=6 -> 6 total probes=16 TCP-only packets=6000
+--- PASS: TestAuditDelayedSignalStrandsReceiveOnlyOnTCP (0.01s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	0.009s
+=== RUN   TestAuditFallbackWriteBlocksHealthyNativeReply
+    audit_native_block_test.go:59: healthy native reply waited 150.269238ms for unrelated oversized TCP fallback write
+--- PASS: TestAuditFallbackWriteBlocksHealthyNativeReply (0.15s)
+=== RUN   TestAuditLateResyncOverridesNewerNativeRecovery
+    audit_native_block_test.go:78: older resync arriving after verified native data moved the server's replies back to TCP
+--- PASS: TestAuditLateResyncOverridesNewerNativeRecovery (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	0.153s

@@ -1,0 +1,110 @@
+package main
+
+import (
+	"bytes"
+	"sync/atomic"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/mazixs/S5Core/pkg/nativeudp"
+	"github.com/mazixs/S5Core/pkg/veil"
+)
+
+// Use the real client watcher and codec, with the server's route updates
+// modelled exactly as handleUDPTcpmux: heard/data -> native, signal -> TCP.
+type auditRoutePath struct {
+	*memPath
+	route atomic.Bool
+}
+
+func (p *auditRoutePath) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	before := len(p.heard)
+	p.mu.Unlock()
+	n, err := p.memPath.Write(b)
+	p.mu.Lock()
+	after := len(p.heard)
+	p.mu.Unlock()
+	if after > before {
+		p.route.Store(true)
+	}
+	return n, err
+}
+
+func TestAuditDelayedSignalStrandsReceiveOnlyOnTCP(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		psk, secret := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40)
+		ck, err := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sk, err := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleServer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := &auditRoutePath{memPath: &memPath{server: nativeudp.NewSession(sk), toClient: make(chan []byte, 4096), errs: make(chan error, 16), closed: make(chan struct{}), start: time.Now()}}
+		release := make(chan struct{})
+		var signals atomic.Int32
+		client := newNativeClient(p, nativeudp.NewSession(ck), func() { signals.Add(1); <-release; p.route.Store(false) })
+		client.jitter = func() float64 { return 0 }
+		go client.run(func([]byte) {})
+		stop := make(chan struct{})
+		var appSending atomic.Bool
+		appSending.Store(true)
+		var tcpData atomic.Int64
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				case <-time.After(10 * time.Millisecond):
+					if !appSending.Load() {
+						continue
+					}
+					if p.route.Load() {
+						p.answer(nativeudp.KindData, []byte("state"))
+					} else {
+						tcpData.Add(1)
+					}
+				}
+			}
+		}()
+		at := func(d time.Duration) { time.Sleep(time.Until(p.start.Add(d))); synctest.Wait() }
+		at(time.Second)
+		appSending.Store(false)
+		p.dropDown.Store(true)
+		at(3 * time.Second)
+		p.dropDown.Store(false)
+		at(3400 * time.Millisecond)
+		if !client.up.Load() || !p.route.Load() {
+			t.Fatal("path did not recover before releasing stale signal")
+		}
+		if signals.Load() != 1 {
+			t.Fatalf("want one blocked signal, got %d", signals.Load())
+		}
+		at(6 * time.Second)
+		close(release)
+		synctest.Wait()
+		appSending.Store(true)
+		before := tcpData.Load()
+		p.mu.Lock()
+		heardBefore := len(p.heard)
+		p.mu.Unlock()
+		at(66 * time.Second)
+		p.mu.Lock()
+		heardAfter := len(p.heard)
+		probes := p.probes.Load()
+		p.mu.Unlock()
+		close(stop)
+		close(p.closed)
+		synctest.Wait()
+		t.Logf("60s after stale signal: client.up=%v server.native=%v heard probes=%d -> %d total probes=%d TCP-only packets=%d", client.up.Load(), p.route.Load(), heardBefore, heardAfter, probes, tcpData.Load()-before)
+		if p.route.Load() {
+			t.Fatal("bug not reproduced: server returned to native")
+		}
+		if !client.up.Load() || heardAfter != heardBefore || tcpData.Load()-before < 5900 {
+			t.Fatal("unexpected observation")
+		}
+	})
+}

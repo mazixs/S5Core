@@ -1,0 +1,49 @@
+package main
+
+import (
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/mazixs/S5Core/pkg/nativeudp"
+)
+
+func TestAuditOneLostProbeAt50msRTT(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ready := make(chan struct{})
+		var l *liveness
+		l = startLivenessWith(t, func(i int64) bool {
+			<-ready
+			if i != 4 {
+				go func() { time.Sleep(50 * time.Millisecond); l.path.answer(nativeudp.KindProbeAck, nil) }()
+			}
+			return true // Replies are either deliberately lost or delivered above.
+		}, 0.9)
+		close(ready)
+		l.at(100 * time.Millisecond)
+		if !l.client.up.Load() {
+			t.Fatal("initial path not verified")
+		}
+		diverted := 0
+		var first, last time.Duration
+		for tick := 1; tick <= 200; tick++ {
+			l.at(100*time.Millisecond + time.Duration(tick)*10*time.Millisecond)
+			if !l.client.carry([]byte("input")) {
+				if !l.client.up.Load() {
+					t.Fatal("unexpected declared outage")
+				}
+				if first == 0 {
+					first = time.Since(l.start)
+				}
+				last = time.Since(l.start)
+				diverted++
+			}
+			synctest.Wait()
+		}
+		l.at(2200 * time.Millisecond)
+		t.Logf("probe RTT=50ms, input=100Hz, one lost probe: up=%v diverted=%d/200 interval=%v..%v signals=%v", l.client.up.Load(), diverted, first, last, l.signalled())
+		if diverted < 5 {
+			t.Fatal("expected at least five diverted packets while awaiting probe acknowledgement")
+		}
+	})
+}
