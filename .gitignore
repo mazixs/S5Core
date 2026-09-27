@@ -63,9 +63,10 @@ __pycache__/
 *.rej
 *.bak
 
-# Local-only scripts and Claude Code settings
+# Local-only scripts, Claude Code settings and skills
 scripts/transparent_proxy.sh
-.claude/settings.local.json
+.claude/
+skills-lock.json
 
 # Local Compose accounts and TLS keys
 /data/
