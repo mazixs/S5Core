@@ -192,6 +192,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only that no adapter appeared. The flags now have two dashes, which the
   earlier versions accept too, and `s5client` or tun2socks exiting right
   after start is reported at once, with the end of its log.
+- The Linux amd64 binaries attached to a release were linked dynamically and
+  needed glibc 2.34 or newer, in 2.2.0 and in the 2.3.0 release candidates:
+  the release job builds that one target natively, where cgo is on by
+  default. The other targets, the Docker image and the builds tested in the
+  field were static already. The job now builds every target with
+  `CGO_ENABLED=0` and `-trimpath` and fails if a binary comes out with cgo,
+  and `scripts/pre-commit.sh` builds the targets the same way.
 
 ### Tooling
 
