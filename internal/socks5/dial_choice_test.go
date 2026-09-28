@@ -96,8 +96,8 @@ func TestInterleaveDropsMappedDuplicates(t *testing.T) {
 	}
 }
 
-// One address takes the whole budget and no race machinery.
-func TestASingleAddressDialsInline(t *testing.T) {
+// One address keeps the whole budget for its first attempt.
+func TestASingleAddressKeepsTheWholeBudget(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	a, b := net.Pipe()
