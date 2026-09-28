@@ -280,6 +280,53 @@ tunnel still waited 3.3 seconds, and why is open. Without Docker, set
 `net.ipv4.tcp_mtu_probing = 1` in a file under `/etc/sysctl.d/`. The client
 side, including a router, is in the [router guide](testing.md#s5client-on-a-router).
 
+### Game UDP loses answers in bursts
+
+A game server answers in bursts: six times in a ten-minute match it sent a
+wave of some 450 datagrams within 5-10 ms, then more at about 2000 a second.
+The kernel gives every UDP socket `net.core.rmem_default` of receive buffer,
+212 992 bytes on every node measured, and counts a game datagram at about
+2.3 KB of memory, so a socket holds about 90 of them. A reader that forwards
+each datagram before it takes the next does not keep up with such a wave,
+so the buffer has to hold it: without that a node lost 250-440 datagrams of
+every burst, 5% of what a match sent, on a path that lost nothing. The
+host's counters did not show it: the drops happen in the container's network
+namespace.
+
+Every UDP socket the server relays through asks for 2 MiB: the sockets of
+`0x03` and `0x83` associations and the native UDP socket. Memory is taken as
+datagrams arrive, so a quiet socket costs nothing more. Without
+`CAP_NET_ADMIN`, which the base file drops, the kernel caps the request at
+`net.core.rmem_max`, usually 212 992 as well. The server says at startup
+which one it got, in the kernel's accounting, which is twice the request and
+what `ss -uam` shows as `rb`: 4 MiB when full, and 425 984 with the usual
+ceiling, about 185 datagrams, twice the default but short of a burst:
+
+```text
+level=INFO msg="UDP receive buffer" bytes=4194304
+level=WARN msg="UDP receive buffer below what answer bursts need, set net.core.rmem_max=2097152 on the host" bytes=425984 rmem_max=212992
+```
+
+Raise the ceiling on the host and restart the container, because a socket
+takes its size when it opens:
+
+```bash
+echo 'net.core.rmem_max = 2097152' | sudo tee /etc/sysctl.d/60-s5core-udp.conf
+sudo sysctl --system
+docker compose restart s5core
+```
+
+Compose `sysctls` does not do it: unlike `tcp_mtu_probing`, `net.core.rmem_max`
+is one value for the whole host, and a container sees it but may not write
+it, so Docker fails the start with `open sysctl net.core.rmem_max file:
+permission denied`. Datagrams dropped on a full buffer are counted in
+`s5core_udp_receive_buffer_drops_total`, the kernel's `RcvbufErrors` of the
+container's namespace: a number that grows with the game is this, and one
+that stays at zero while the game loses answers points to the path.
+
+The client asks for the same 2 MiB on its UDP sockets and logs the same line.
+Run as root, it gets them regardless of `rmem_max`.
+
 Docker references: [environment interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/),
 [local log rotation](https://docs.docker.com/engine/logging/drivers/local/),
 [build cache](https://docs.docker.com/build/cache/optimize/),

@@ -14,6 +14,7 @@ import (
 
 	"github.com/mazixs/S5Core/internal/relay"
 	"github.com/mazixs/S5Core/internal/session"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 )
 
 // handleAssociate implements the standard RFC 1928 UDP ASSOCIATE.
@@ -55,7 +56,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	if bindAddr.IP == nil {
 		bindAddr.IP = net.IPv4zero
 	}
-	clientConn, err := net.ListenUDP("udp", bindAddr)
+	clientConn, err := udpbuf.ListenUDP("udp", bindAddr)
 	if err != nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
 			return fmt.Errorf("failed to send reply: %w", err)
@@ -68,7 +69,7 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	// an operator who pinned BIND_IP to one interface still has every
 	// datagram leave through it, and a port of its own, so the address the
 	// client was handed is not the address targets get to see.
-	targetConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindAddr.IP, Port: 0})
+	targetConn, err := udpbuf.ListenUDP("udp", &net.UDPAddr{IP: bindAddr.IP, Port: 0})
 	if err != nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
 			return fmt.Errorf("failed to send reply: %w", err)
@@ -126,11 +127,11 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	// sent anything alongside its request left it there, and a read straight
 	// from the socket would wait for a byte that has already arrived (plan
 	// task Ф6-5).
+	var closed error
 	go func() {
 		defer workers.Done()
 		var b [1]byte
-		_, err := req.bufConn.Read(b[:])
-		_ = err
+		_, closed = req.bufConn.Read(b[:])
 		close(done)
 		// Force the blocking UDP reads to unblock
 		_ = clientConn.Close()
@@ -270,15 +271,20 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		}
 	}()
 
-	// Wait for TCP close, a relay failure, or server shutdown.
+	// Wait for TCP close, a relay failure, or server shutdown. A closed TCP
+	// connection is the association's normal end whatever closed it, but a
+	// reset is still worth telling from a close.
+	var end error
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		end = ctx.Err()
+		s.associationEnded(AssociationPlain, end)
 	case <-done:
-		return nil
-	case err := <-errCh:
-		return err
+		s.associationEnded(AssociationPlain, closed)
+	case end = <-errCh:
+		s.associationEnded(AssociationPlain, end)
 	}
+	return end
 }
 
 // allowDatagram asks the rule set where this one datagram is going.
@@ -543,7 +549,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	acct := s.udpAccountFor(req)
 
 	// Unbound UDP socket to send/receive to the internet targets
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	udpConn, err := udpbuf.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
 			return fmt.Errorf("failed to send reply: %w", err)
@@ -616,17 +622,19 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	req.session.Enter(session.Relay)
 	_ = tcpConn.SetDeadline(time.Time{})
 
-	// Helper to signal termination to both goroutines.
+	// Helper to signal termination to both goroutines. The cause goes first:
+	// the deadline below wakes the other half with a timeout of its own, and
+	// sent after it the timeout could reach errCh ahead of its cause.
 	stopTunnel := func(e error) {
+		select {
+		case errCh <- e:
+		default:
+		}
 		cancel()
 		_ = tcpConn.SetDeadline(time.Now()) // unblock reads/writes
 		_ = udpConn.Close()
 		if fallback != nil {
 			fallback.Stop()
-		}
-		select {
-		case errCh <- e:
-		default:
 		}
 	}
 
@@ -864,6 +872,11 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	// socket closes once.
 	stopTunnel(err)
 	halves.Wait()
+	kind := AssociationTunnel
+	if nativeSession != nil {
+		kind = AssociationNative
+	}
+	s.associationEnded(kind, err)
 	return err
 }
 

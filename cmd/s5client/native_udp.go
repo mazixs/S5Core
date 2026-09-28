@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/nativeudp"
 	"github.com/mazixs/S5Core/pkg/obfs"
 )
@@ -135,7 +136,7 @@ func dialNative(tunnel net.Conn, port uint16) (*nativeClient, *net.UDPConn, erro
 	if err != nil {
 		return nil, nil, err
 	}
-	c, err := net.DialUDP("udp", nil, remote)
+	c, err := udpbuf.DialUDP("udp", nil, remote)
 	if err != nil {
 		return nil, nil, err
 	}

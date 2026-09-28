@@ -105,6 +105,12 @@ type Config struct {
 	// sooner (internal/tcptune). This package does not know what the
 	// connection is made of, so it only says when.
 	OnUDPTunnel func(conn net.Conn)
+	// OnAssociationEnd, when set, hears of every UDP association that
+	// opened, once, when it ends: its kind (AssociationPlain,
+	// AssociationTunnel, AssociationNative) and how it ended (EndedBy...).
+	// A game that loses its association in the middle of a match is the
+	// one that ended otherwise than by its client.
+	OnAssociationEnd func(kind, reason string)
 	// NativeUDP opens an authenticated datagram path supplied by the server
 	// layer. The SOCKS5 codec does not know the wire transport or its keys.
 	// No association and no error means the connection has no native path:

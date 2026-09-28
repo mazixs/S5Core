@@ -122,6 +122,31 @@ Native UDP добавляет `s5core_native_udp_packets_total` с единст�
 (`native_sent`, `tcp_sent_oversize`, `tcp_sent_other`, `native_received`,
 `tcp_received`, `tunnel_drops`) - без адресов.
 
+`s5core_udp_receive_buffer_drops_total` без лейблов - счетчик ядра
+`RcvbufErrors` (`Udp` из `/proc/net/snmp` плюс `Udp6` из `/proc/net/snmp6`):
+датаграммы, отброшенные на полном буфере приема. Значение приходит из ядра, а
+не из трафика, и принадлежит сетевому пространству процесса: в контейнере это
+сокеты одного сервера, на общем хосте - все UDP-сокеты хоста. Счетчик хоста
+отбросов контейнера не видит, поэтому узел, у которого на матче терялось 5%
+входящего, показывал на хосте ноль (Ч-2, `docs/plan/draft.md`). Есть только на
+Linux. `TestTheReceiveDropsAreOneSeriesWithoutLabels` проверяет, что точка одна
+и без лейблов, и что переполнение сокета ее двигает.
+
+`s5core_udp_associations_ended_total{kind, reason}` - UDP-ассоциации в момент
+закрытия (Ч-4, `docs/plan/draft.md`). `kind` - `associate` (`0x03`), `tunnel`
+(`0x83` и `0x84` без native-пути) или `native` (`0x84` с native-путем).
+`reason` - `client` (клиент закрыл соединение; убитый процесс клиента сервер
+видит так же, как закрытие), `reset` (соединение сброшено), `timeout`
+(транспорт не дождался кадра или записи), `account` (квота или срок аккаунта),
+`shutdown` (остановка сервера) и `error` (все прочее). Оба множества закрыты в
+`internal/socks5/association_end.go`, и все 18 пар выставлены нулем с запуска:
+серия, которая появляется сразу со значением 1, прячет первый шаг от
+`increase()`. Ассоциация игры, закрытая посреди матча не клиентом, видна как
+рост `reset`, `timeout` или `error`. Клиент пишет свою сторону в строку
+`UDP Tunnel closed` (`closed_by`: `application`, `tunnel`, `local`), а живая
+ассоциация раз в минуту пишет `UDP Tunnel running` с итогами на этот момент.
+`TestTheEndOfAUDPAssociationIsCounted` проверяет набор серий и счет.
+
 ## Экспозиция метрик
 
 `METRICS_BIND_ADDR` по умолчанию слушает localhost, и этот дефолт не меняется.

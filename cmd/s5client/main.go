@@ -20,6 +20,7 @@ import (
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/signals"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
 	"github.com/mazixs/S5Core/pkg/veil"
@@ -300,6 +301,8 @@ func main() {
 			"route_domains", len(routePatterns),
 		}, policy.describe()...)...,
 	)
+
+	udpbuf.Report(slog.Default())
 
 	if len(routePatterns) > 0 {
 		slog.Info("Domain routing enabled", "patterns", routePatterns)

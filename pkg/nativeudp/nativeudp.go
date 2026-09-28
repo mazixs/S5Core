@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/veil"
 )
 
@@ -445,7 +446,7 @@ func Listen(addr string, logger *slog.Logger) (*Hub, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := net.ListenUDP("udp", a)
+	c, err := udpbuf.ListenUDP("udp", a)
 	if err != nil {
 		return nil, err
 	}
