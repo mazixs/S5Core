@@ -134,17 +134,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A CONNECT to one address no longer spends the whole `DIAL_TIMEOUT` on one
-  socket. While the first attempt is unanswered, the server opens another
-  socket to the same address at 1, 3 and 7 s, the moments Linux retransmits
-  the SYN, and keeps whichever connects first. A retransmission keeps the
-  source port, so on a path that spreads flows over parallel links by their
-  ports, a flow hashed onto a link that drops everything never connected.
-  Measured on such a path from a node to the servers of a game, at the same
-  time as a direct control: 67% of direct connects and 68% through
-  2.3.0-rc3 got through, 97% through this build, and the wait over 72
-  connects fell from 236 s to 63 s
-  ([numbers](docs/field/nodes.md)). A destination that answers still gets
-  one socket, and a refusal is reported at once.
+  socket. While every attempt is unanswered, the server opens another socket
+  to the same address at 0.5, 1.5, 3, 5 and 7 s and keeps whichever connects
+  first. A retransmission keeps the source port, so on a path that spreads
+  flows over parallel links by their ports, a flow hashed onto a link that
+  drops everything never connected. Measured on such a path from a node to
+  the servers of a game, at the same time as a direct control from the same
+  host: 62% of direct connects got through and 240 of 240 through this
+  build, and a connect that met the hole waited 1.1 s on average and never
+  7 s ([numbers](docs/field/nodes.md)). A destination that answers still
+  gets one socket, and a refusal is reported at once.
 
 ### Performance
 
