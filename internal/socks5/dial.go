@@ -84,8 +84,13 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 	defer timer.Stop()
 	next, active := 0, 0
 	errs := make([]error, len(candidates))
-	// An address still dialing when the budget ends met the end of the budget.
+	// A cancelled dial is answered with the cancellation, named by the first
+	// address like any other answer. An address still dialing when the budget
+	// ends met the end of the budget, and the order decides as usual.
 	ended := func(cause error) error {
+		if !errors.Is(cause, context.DeadlineExceeded) {
+			return fmt.Errorf("dial %s: %w", candidates[0].addr, cause)
+		}
 		for i := range next {
 			if errs[i] == nil {
 				errs[i] = fmt.Errorf("dial %s: %w", candidates[i].addr, cause)
@@ -160,6 +165,9 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, ended(err)
+	}
 	return nil, firstFailure(errs)
 }
 
@@ -195,7 +203,7 @@ func spent(ctx context.Context) error {
 }
 
 // backupAfter is when a single-address dial opens another socket to the same
-// address while every earlier one is still unanswered. A SYN retransmission
+// address while no socket has connected. A SYN retransmission
 // keeps the source port, so on a path that spreads flows over parallel links
 // by their ports, a flow hashed onto a link that drops everything retries into
 // the same hole until the budget is gone; a new socket takes a new port and
@@ -211,10 +219,13 @@ var backupAfter = [...]time.Duration{
 }
 
 // dialOne is the single-address path. The first attempt keeps the whole
-// budget, and its outcome is the answer unless a backup connects or is
-// refused first: a refusal is the destination's own word, while any other
-// failure of a backup, such as a local bind error, says nothing about it. A
-// name with several addresses gets its second socket from the race in
+// budget, and its outcome is the answer unless a backup connects first or a
+// second backup is refused. One refusal may come from a firewall or a
+// balancer on that backup's own path, while a second, by another port, is
+// the destination answering; any other failure of a backup, such as a local
+// bind error, says nothing about it. As in dialResolved, a connection that
+// arrives once the budget is over or the dial is cancelled is closed. A name
+// with several addresses gets its second socket from the race in
 // dialResolved instead.
 func dialOne(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidate dialCandidate) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
@@ -247,15 +258,27 @@ func dialOne(ctx context.Context, dial func(context.Context, string, string) (ne
 	go attempt(false)
 	timer := time.NewTimer(backupAfter[0])
 	defer timer.Stop()
-	next := 0
+	next, refusals := 0, 0
 	for {
 		select {
 		case r := <-results:
 			if r.err == nil {
+				if err := ctx.Err(); err != nil {
+					_ = r.conn.Close()
+					if !r.backup {
+						return nil, fmt.Errorf("dial %s: %w", candidate.addr, err)
+					}
+					continue
+				}
 				return r.conn, nil
 			}
-			if !r.backup || errors.Is(r.err, syscall.ECONNREFUSED) {
+			if !r.backup {
 				return nil, r.err
+			}
+			if refused(r.err) {
+				if refusals++; refusals == 2 {
+					return nil, r.err
+				}
 			}
 		case <-timer.C:
 			// The first attempt is about to report the end of the budget;
@@ -282,6 +305,12 @@ func checkedDial(ctx context.Context, dial func(context.Context, string, string)
 		c = nil
 	}
 	return c, err
+}
+
+// refused reports a connection refused: an RST, or an ICMP port unreachable,
+// in answer to the SYN. Like noRoute, it reads the text as well.
+func refused(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED) || strings.Contains(err.Error(), "connection refused")
 }
 
 // noRoute reports a local "no route for this family" failure, the one IPv6

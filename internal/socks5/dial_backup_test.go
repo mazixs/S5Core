@@ -217,26 +217,117 @@ func TestACancelledDialOpensNoMoreBackups(t *testing.T) {
 	})
 }
 
-// A backup that reached the destination and was refused is the destination
-// answering: nothing listens there, and the first attempt, lost on the way,
-// would have heard the same. The client is told at once, not after the budget.
-func TestARefusedBackupAnswersForTheDestination(t *testing.T) {
+// Two backups refused, each from its own port, are the destination answering:
+// nothing listens there, and the first attempt, lost on the way, would have
+// heard the same. The client is told then, not after the budget. A Dial
+// hook's own error counts by its text.
+func TestASecondRefusedBackupAnswersForTheDestination(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		refusal error
+	}{
+		{"errno", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}},
+		{"text", errors.New("dial tcp 192.0.2.1:80: connect: connection refused")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				released := make(chan struct{})
+				d := &countingDial{origin: time.Now(), behave: func(ctx context.Context, n int) (net.Conn, error) {
+					if n == 0 {
+						defer close(released)
+						return hole(ctx)
+					}
+					return nil, tc.refusal
+				}}
+				_, err := dialResolved(ctx, d.dial, []dialCandidate{{ctx: ctx, addr: "only"}})
+				if !errors.Is(err, tc.refusal) || time.Since(d.origin) != 1500*time.Millisecond {
+					t.Fatalf("elapsed=%v err=%v, want the refusal at 1.5s", time.Since(d.origin), err)
+				}
+				<-released
+			})
+		})
+	}
+}
+
+// One refused backup may have met a firewall or a balancer on its own path
+// rather than the destination: the dial goes on, and the next backup connects.
+func TestOneRefusedBackupDoesNotEndTheDial(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		refused := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+		winner, peer := net.Pipe()
+		defer peer.Close()
 		released := make(chan struct{})
 		d := &countingDial{origin: time.Now(), behave: func(ctx context.Context, n int) (net.Conn, error) {
-			if n == 0 {
+			switch n {
+			case 0:
 				defer close(released)
 				return hole(ctx)
+			case 1:
+				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 			}
-			return nil, refused
+			return winner, nil
 		}}
-		_, err := dialResolved(ctx, d.dial, []dialCandidate{{ctx: ctx, addr: "only"}})
-		if !errors.Is(err, refused) || time.Since(d.origin) != 500*time.Millisecond {
-			t.Fatalf("elapsed=%v err=%v, want the refusal at 500ms", time.Since(d.origin), err)
+		c, err := dialResolved(ctx, d.dial, []dialCandidate{{ctx: ctx, addr: "only"}})
+		if err != nil || c != winner || time.Since(d.origin) != 1500*time.Millisecond {
+			t.Fatalf("after %v got %v, %v, want the second backup's connection at 1.5s", time.Since(d.origin), c, err)
 		}
+		c.Close()
 		<-released
 	})
+}
+
+// A connection that arrives once the budget is over is closed, whichever
+// socket brings it, as it is with several addresses: the caller has stopped
+// waiting for it. The answer is then the first attempt's own, or the end of
+// the budget when the first attempt is the late one.
+func TestAConnectionThatComesTooLateIsClosed(t *testing.T) {
+	late := errors.New("the first attempt, late")
+	for _, tc := range []struct {
+		name   string
+		behave func(ctx context.Context, n int, conn net.Conn) (net.Conn, error)
+		want   error
+		after  time.Duration
+	}{
+		{"first_attempt", func(ctx context.Context, n int, conn net.Conn) (net.Conn, error) {
+			<-ctx.Done()
+			if n == 0 {
+				return conn, nil
+			}
+			return nil, ctx.Err()
+		}, context.DeadlineExceeded, 2 * time.Second},
+		{"backup", func(ctx context.Context, n int, conn net.Conn) (net.Conn, error) {
+			switch n {
+			case 0:
+				time.Sleep(3 * time.Second)
+				return nil, late
+			case 1:
+				<-ctx.Done()
+				return conn, nil
+			}
+			return hole(ctx)
+		}, late, 3 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				conn, peer := net.Pipe()
+				defer peer.Close()
+				d := &countingDial{origin: time.Now(), behave: func(ctx context.Context, n int) (net.Conn, error) {
+					return tc.behave(ctx, n, conn)
+				}}
+				c, err := dialResolved(ctx, d.dial, []dialCandidate{{ctx: ctx, addr: "only"}})
+				if c != nil || !errors.Is(err, tc.want) || time.Since(d.origin) != tc.after {
+					t.Fatalf("after %v got %v, %v, want %v after %v", time.Since(d.origin), c, err, tc.want, tc.after)
+				}
+				synctest.Wait()
+				if _, err := peer.Write([]byte{1}); err == nil {
+					t.Fatal("the late socket was left open")
+				}
+			})
+		})
+	}
 }
