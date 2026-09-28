@@ -190,7 +190,7 @@ func newNativeRig(t *testing.T) *nativeRig {
 	control := &meteredConn{Conn: stream}
 	conn := &rerouted{meteredConn: control, remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.2"), Port: p}}
 	app, handlerSide := tcpPair(t)
-	go handleUDPAssociate(handlerSide, conn, "", clientCfg, req)
+	runUDPAssociate(t, handlerSide, conn, "", clientCfg, req)
 	reply := readAppReply(t, app)
 	if reply[1] != 0 {
 		t.Fatalf("application refused: %x", reply)

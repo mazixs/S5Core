@@ -196,14 +196,13 @@ func TestAnAssociationWithAQuietDirectionIsAWarning(t *testing.T) {
 		t.Fatalf("sending a datagram: %v", err)
 	}
 	readFrame(t, tunnel, len(question))
-	const answers = 3 * quietFloor
-	for i := 0; i < answers; i++ {
+	// One answer at a time: the 300 written at once overflowed the
+	// application's socket under GOMAXPROCS=1, which held 220 of them.
+	buf := make([]byte, 2048)
+	for i := 0; i < 3*quietFloor; i++ {
 		if _, err := tunnel.Write(tunnelFrame(datagram("state"))); err != nil {
 			t.Fatalf("answering: %v", err)
 		}
-	}
-	buf := make([]byte, 2048)
-	for i := 0; i < answers; i++ {
 		_ = app.SetReadDeadline(time.Now().Add(5 * time.Second))
 		if _, err := app.Read(buf); err != nil {
 			t.Fatalf("answer %d never reached the application: %v", i, err)

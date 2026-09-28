@@ -313,6 +313,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stretches the start past 2 s: the helper waits for each listener of the
   server, reports the error of a start that ended early, and starts the
   server again on new ports after `EADDRINUSE`.
+- Every client test that runs a UDP association handler ends it with the
+  test. A handler still running after its test wrote its closing line into
+  the logs the next test captured, and a test that counts closing lines
+  failed on it in the release checks of v2.3.0-rc4. The test of a quiet
+  direction reads each answer before it writes the next: the 300 written at
+  once overflowed the application's socket under `GOMAXPROCS=1`.
 
 ## [2.2.0] - 2026-09-24
 
