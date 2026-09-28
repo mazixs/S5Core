@@ -308,6 +308,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lookup measured the two sizes while the load of other packages changed
   between them, and the test of a stream longer than `READ_TIMEOUT` gave the
   33 s stream 40 s, which a CPU quota stretched past.
+- The client tests that start a tunnel server no longer fail when a port
+  found free is taken before the server listens on it, or when a CPU quota
+  stretches the start past 2 s: the helper waits for each listener of the
+  server, reports the error of a start that ended early, and starts the
+  server again on new ports after `EADDRINUSE`.
 
 ## [2.2.0] - 2026-09-24
 
