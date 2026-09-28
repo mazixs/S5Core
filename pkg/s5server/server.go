@@ -17,6 +17,7 @@ import (
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/internal/userstore"
 	"github.com/mazixs/S5Core/pkg/nativeudp"
 	"github.com/mazixs/S5Core/pkg/obfs"
@@ -140,6 +141,7 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	socks5conf.ObservePhase, socks5conf.CountPhase = phaseHooks(cfg.Telemetry)
 	socks5conf.ObserveHalfClose = halfCloseHook(cfg.Telemetry)
+	socks5conf.OnAssociationEnd = associationEndHook(cfg.Telemetry)
 	if !cfg.UDPTunnelTCPTuningOff {
 		socks5conf.OnUDPTunnel = udpTunnelTuner(logger)
 	}
@@ -481,6 +483,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// listener is a reason to stop the server, not a reason to keep the
 	// other two running unattended.
 	defer s.shutdownListeners()
+	udpbuf.Report(s.logger)
 	if s.cfg.UDPPort != "" {
 		addr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.UDPPort)
 		hub, err := nativeudp.Listen(addr, s.logger)

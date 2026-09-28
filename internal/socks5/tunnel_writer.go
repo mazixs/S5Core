@@ -15,8 +15,15 @@ import (
 // itself, and one datagram too big for native held every short one behind it
 // (finding F1 of the 2.3.0-rc1 audit, docs/veil-spec.md, 10.6).
 const (
-	tunnelQueueFrames = 64
-	tunnelQueueBytes  = 256 << 10
+	// The queue holds a wave of a game server's answers, some 450 datagrams
+	// within 5-10 ms, twice over. The stream takes them more slowly than the
+	// reader hands them over, and a queue of 64 dropped part of every wave
+	// that went by TCP however healthy the stream was
+	// (docs/benchmarks/udp-burst-2026-09-28.md). The age below still bounds
+	// how late a frame can be; the bytes are counted by the buffers frames
+	// take, so they bound small frames at the same 1024.
+	tunnelQueueFrames = 1024
+	tunnelQueueBytes  = 2 << 20
 	// A frame that waited this long is dropped, as UDP would drop it: a
 	// state update this late is worth less than the room it takes.
 	tunnelFrameAge = 250 * time.Millisecond

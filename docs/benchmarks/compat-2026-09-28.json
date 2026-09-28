@@ -1,0 +1,291 @@
+{
+ "date": "2026-09-28",
+ "scope": "user network namespace on loopback, real binaries of v2.2.0, v2.3.0-rc2 and v2.3.0-rc3, every server with every client; the settings of the test node: USERS_FILE, OBFS_REQUIRE_MEMBER_KEY=true, REQUIRE_AUTH=true, member key on the client (PROXY_AUTH_MODE=member-only), UDP_NATIVE=true, UDP_PORT on the server, OBFS_MTU=1400, OBFS_MAX_PADDING=256",
+ "checks": "per pair: 3 sequential and 8 parallel downloads of 4 MiB with sha256, 2 uploads of 4 MiB closed by SHUT_WR and answered with their sha256, 2 UDP associations of 320 datagrams of 200 bytes at 64 Hz to an echo; then SIGTERM to the client and to the server",
+ "build": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags \"-s -w -X github.com/mazixs/S5Core/internal/buildinfo.version=<tag>\" ./cmd/<binary>, go 1.26.6, from the tags v2.2.0 and v2.3.0-rc2 and from the tree of v2.3.0-rc3; the same command gives the same bytes",
+ "binaries_sha256": {
+  "v2.2.0": {
+   "s5core": "b741fade6813ec3412d435dbf03d8b1f0c24b86a29008b0854066b5670081b7b",
+   "s5client": "50835eb2eefd60302141b9564f8852204b61c7deb39064556eef906018738bde"
+  },
+  "v2.3.0-rc2": {
+   "s5core": "b4d805de4d6c7f935ce6773ee4312c33ad34fcb12656e9065dc58e7c2cc88058",
+   "s5client": "7befe3c45a6500584e8980e00d7b7d3367c16df8c5148e0192688bb494559ccb"
+  },
+  "v2.3.0-rc3": {
+   "s5core": "2cbfe44b82ae51a65ee13593f45287ea0be3ee9dd0146e250d7f0904d8d96cdc",
+   "s5client": "7d8ac2406b6a7599022323809522883f2baae46d294491f62a2e453eafa4a033"
+  }
+ },
+ "pairs": [
+  {
+   "server": "v2.2.0",
+   "client": "v2.2.0",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x83",
+    "0x83"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.2.0",
+   "client": "v2.3.0-rc2",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x83"
+   ],
+   "no_native_reason": "0x84 refused with 0x2",
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.2.0",
+   "client": "v2.3.0-rc3",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x83"
+   ],
+   "no_native_reason": "0x84 refused with 0x2",
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc2",
+   "client": "v2.2.0",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x83",
+    "0x83"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc2",
+   "client": "v2.3.0-rc2",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc2",
+   "client": "v2.3.0-rc3",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc3",
+   "client": "v2.2.0",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x83",
+    "0x83"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {},
+   "associations_ended": {
+    "kind=\"tunnel\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc3",
+   "client": "v2.3.0-rc2",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": {
+    "kind=\"native\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc3",
+   "client": "v2.3.0-rc3",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": {
+    "kind=\"native\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  }
+ ]
+}

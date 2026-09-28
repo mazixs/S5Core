@@ -10,9 +10,11 @@ import (
 	"net/netip"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 )
 
 var (
@@ -206,7 +208,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		return
 	}
 
-	udpConn, err := net.ListenUDP("udp", udpAddr)
+	udpConn, err := udpbuf.ListenUDP("udp", udpAddr)
 	if err != nil {
 		slog.Error("Failed to bind local UDP socket", "error", err)
 		_, _ = clientConn.Write([]byte{socks5Ver, socks5GenFailure, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // General failure
@@ -237,9 +239,11 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	}
 
 	slog.Info("UDP Tunnel established", "local_udp", boundAddr.String())
+	opened := time.Now()
+	var stats assocStats
 
 	// 4. Multiplexing Loop
-	errCh := make(chan error, 4)
+	errCh := make(chan assocEnd, 4)
 	var clientUDPAddr atomic.Pointer[netip.AddrPort]
 	if native != nil {
 		// The datagrams native does not carry wait for the stream on the
@@ -249,12 +253,14 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		defer native.writer.Stop()
 		go func() {
 			if err := native.writer.Run(); err != nil {
-				errCh <- fmt.Errorf("tunnel write failed: %w", err)
+				errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel write failed: %w", err)}
 			}
 		}()
 		go native.run(func(d []byte) {
 			if peer := clientUDPAddr.Load(); peer != nil {
-				_, _ = udpConn.WriteToUDPAddrPort(d, *peer)
+				if _, err := udpConn.WriteToUDPAddrPort(d, *peer); err == nil {
+					stats.addReceived(len(d))
+				}
 			}
 		})
 	}
@@ -286,7 +292,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		for {
 			n, src, err := udpConn.ReadFromUDPAddrPort(buf)
 			if err != nil {
-				errCh <- fmt.Errorf("local udp read failed: %w", err)
+				errCh <- assocEnd{endLocal, fmt.Errorf("local udp read failed: %w", err)}
 				return
 			}
 
@@ -312,6 +318,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				stored := src
 				clientUDPAddr.Store(&stored)
 			}
+			stats.addSent(n)
 
 			// The packet from the application MUST start with a SOCKS5 UDP header
 			// We just tunnel this entire frame verbatim inside length-prefixed TCP
@@ -330,7 +337,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 
 			if _, err := obfsConn.Write(frame); err != nil {
 				udpFramePool.Put(framePtr)
-				errCh <- fmt.Errorf("tunnel write failed: %w", err)
+				errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel write failed: %w", err)}
 				return
 			}
 			udpFramePool.Put(framePtr)
@@ -344,7 +351,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		for {
 			// Read 16-bit length prefix
 			if _, err := io.ReadFull(obfsConn, lenBuf); err != nil {
-				errCh <- fmt.Errorf("tunnel read length failed: %w", err)
+				errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel read length failed: %w", err)}
 				return
 			}
 
@@ -355,7 +362,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 				// datagram; otherwise a keepalive.
 				if native != nil {
 					if _, err := io.ReadFull(obfsConn, next[:]); err != nil {
-						errCh <- fmt.Errorf("tunnel read resync failed: %w", err)
+						errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel read resync failed: %w", err)}
 						return
 					}
 					native.session.Resync(binary.BigEndian.Uint64(next[:]))
@@ -368,7 +375,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 			frameBuf := (*framePtr)[:packetLen]
 			if _, err := io.ReadFull(obfsConn, frameBuf); err != nil {
 				udpFramePool.Put(framePtr)
-				errCh <- fmt.Errorf("tunnel read frame failed: %w", err)
+				errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel read frame failed: %w", err)}
 				return
 			}
 
@@ -389,12 +396,14 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 			if errors.Is(err, net.ErrClosed) {
 				// The association is being torn down; answers still in the
 				// tunnel have nowhere to go.
-				errCh <- err
+				errCh <- assocEnd{endLocal, err}
 				return
 			}
 			if err != nil {
 				slog.Warn("Failed to send UDP packet to application", "error", err)
+				continue
 			}
+			stats.addReceived(int(packetLen))
 		}
 	}()
 
@@ -402,14 +411,19 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	go func() {
 		var b [1]byte
 		_, err := clientConn.Read(b[:])
-		errCh <- fmt.Errorf("app tcp connection closed: %w", err)
+		errCh <- assocEnd{endApplication, fmt.Errorf("app tcp connection closed: %w", err)}
 	}()
 
-	// Wait for any critical failure
-	err = <-errCh
-	attrs := []any{"reason", err}
+	var extra func() []any
 	if native != nil {
-		attrs = append(attrs, native.logStats()...)
+		extra = native.logStats
 	}
-	slog.Info("UDP Tunnel closed", attrs...)
+	report := startAssocReport(&stats, opened, extra)
+	end := <-errCh
+	report.stop()
+	var last []any
+	if extra != nil {
+		last = extra()
+	}
+	logAssocClosed(end, opened, stats.totals(), last)
 }

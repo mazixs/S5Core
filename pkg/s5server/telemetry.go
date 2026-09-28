@@ -8,6 +8,7 @@ import (
 
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/internal/userstore"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"go.opentelemetry.io/otel"
@@ -120,6 +121,18 @@ type Telemetry struct {
 	NativeUDPDatagrams   metric.Int64ObservableCounter
 	NativeUDPRouteEvents metric.Int64ObservableCounter
 	NativeUDPStreamDrops metric.Int64ObservableCounter
+	// UDPReceiveDrops is the kernel's count of datagrams dropped on a full
+	// receive buffer, RcvbufErrors, which belongs to the network namespace:
+	// in a container it is the server's alone, and a host's count does not
+	// include it. It is observed once per Telemetry and only on Linux.
+	UDPReceiveDrops metric.Int64ObservableCounter
+	// UDPAssociationsEnded counts UDP associations as they end, by kind
+	// (associate, tunnel, native) and by what ended them (client, reset,
+	// timeout, account, shutdown, error). A game that lost its association in
+	// the middle of a match was ended by something other than its client, and
+	// nothing on the server said so. Both label sets are closed in
+	// internal/socks5.
+	UDPAssociationsEnded metric.Int64Counter
 
 	// meter is kept so that the session gauge can be registered once the
 	// registry that answers it exists, which is in NewServer.
@@ -269,6 +282,23 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 	if err != nil {
 		return nil, err
 	}
+	udpReceiveDrops, err := meter.Int64ObservableCounter("s5core_udp_receive_buffer_drops_total",
+		metric.WithDescription("UDP datagrams the kernel dropped on a full receive buffer, in the server's network namespace"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			if n, ok := udpbuf.ReceiveDrops(); ok {
+				o.Observe(int64(n))
+			}
+			return nil
+		}))
+	if err != nil {
+		return nil, err
+	}
+
+	udpAssociationsEnded, err := meter.Int64Counter("s5core_udp_associations_ended_total",
+		metric.WithDescription("UDP associations that ended, by kind and by what ended them"))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Telemetry{
 		ActiveConnections: activeConns,
@@ -299,6 +329,8 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		NativeUDPDatagrams:   nativeDatagrams,
 		NativeUDPRouteEvents: nativeRouteEvents,
 		NativeUDPStreamDrops: nativeStreamDrops,
+		UDPReceiveDrops:      udpReceiveDrops,
+		UDPAssociationsEnded: udpAssociationsEnded,
 
 		meter: meter,
 	}, nil
@@ -408,6 +440,28 @@ func authVerifyObserver(t *Telemetry) func(userstore.VerifyPath) {
 			return
 		}
 		t.AuthVerifications.Add(context.Background(), 1, label)
+	}
+}
+
+// associationEndHook counts the end of every UDP association. Every pair of
+// the closed sets is added once at zero, so the first end of a kind shows in
+// increase() as well: a series that appears at one hides its first step.
+func associationEndHook(t *Telemetry) func(kind, reason string) {
+	if t == nil || t.UDPAssociationsEnded == nil {
+		return nil
+	}
+	labels := map[[2]string]metric.MeasurementOption{}
+	for _, kind := range socks5.AssociationKinds() {
+		for _, reason := range socks5.AssociationEnds() {
+			label := metric.WithAttributes(attribute.String("kind", kind), attribute.String("reason", reason))
+			labels[[2]string{kind, reason}] = label
+			t.UDPAssociationsEnded.Add(context.Background(), 0, label)
+		}
+	}
+	return func(kind, reason string) {
+		if label, ok := labels[[2]string{kind, reason}]; ok {
+			t.UDPAssociationsEnded.Add(context.Background(), 1, label)
+		}
 	}
 }
 

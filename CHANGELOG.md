@@ -27,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directions. The notice and the probes are placed by the client's datagram
   counter rather than by arrival: TCP and UDP deliver in either order, and a
   late notice no longer overrules a newer native datagram. The TCP stream of
-  a native association has one writer on each side, with a queue of 64
-  datagrams and the notice ahead of it, so a write that waits for the send
+  a native association has one writer on each side, with a queue of 1024
+  datagrams and the notice ahead of it (a queue of 64 lost a quarter of a
+  burst of game answers that went by TCP on a node with one vCPU,
+  [burst stand](docs/benchmarks/udp-burst-2026-09-28.md#откат-на-tcp)), so a write that waits for the send
   buffer holds neither the probes nor the datagrams that go native; a
   datagram that waited longer than 250 ms is dropped, as UDP would drop it.
   It repeats the notice with every retry probe until the path is back: a
@@ -95,6 +97,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/nativeudp-wan-hour-2026-09-25.json)
   had no disconnects; the final candidate's p99 exceeded its direct-path
   acceptance limit by 0.085 ms. This is not production deployment evidence.
+- The end of every UDP association is visible on both sides. The server
+  counts it in `s5core_udp_associations_ended_total{kind, reason}`: `kind` is
+  `associate`, `tunnel` or `native`, `reason` is `client`, `reset`,
+  `timeout`, `account`, `shutdown` or `error`, and all 18 series exist from
+  the start ([labels](docs/design/observability-policy.md)). The client's
+  closing `UDP Tunnel closed` line names who ended the association
+  (`closed_by`: `application`, `tunnel` or `local`) with the datagrams and
+  bytes it carried each way, and is written at Warn unless the application
+  ended it or when one direction carried less than a hundredth of the other
+  (`quiet`), so a client logging at Warn shows a game that lost its
+  association. While an association carries traffic, the client also writes
+  `UDP Tunnel running` once a minute with its totals so far: a client that is
+  killed, as the Windows full tunnel stops it, used to lose the only line of
+  its longest associations.
 - Experimental `s5client` builds for MIPS routers (MT7621, MT7628 and
   similar): `s5client-linux-mipsle-softfloat` and
   `s5client-linux-mips-softfloat`. They have no FPU and no AES instructions,
@@ -126,6 +142,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bursts of UDP answers overflowed the receive buffer of the server's
+  sockets. The kernel gives a UDP socket `net.core.rmem_default`, 212 992
+  bytes on every node measured, which holds about 90 game datagrams, and a
+  game server sends a wave of some 450 within 5-10 ms: a server late to read
+  by a few milliseconds lost 250-440 of every burst, 5% of a match on a clean
+  path. On a stand with the same burst, a node with one vCPU lost 17-22% of
+  every burst before and none after
+  ([burst stand](docs/benchmarks/udp-burst-2026-09-28.md)).
+  Every relay UDP socket of the server and the client now asks for 2 MiB, and
+  both log at startup what the kernel gave, at Warn when `net.core.rmem_max`
+  caps it. Without `CAP_NET_ADMIN`, as in the Docker image, the ceiling is a
+  host setting, and compose `sysctls` cannot set it
+  ([Docker guide](docs/guides/docker.md#game-udp-loses-answers-in-bursts)).
+  The datagrams the kernel drops on a full buffer are counted in
+  `s5core_udp_receive_buffer_drops_total`, from the server's network
+  namespace: the host's counter does not see a container's drops.
 - The client's test servers accepted AES only. On a processor without AES
   instructions the client picks ChaCha, so three tests failed or hung there
   while passing in CI. They now accept both ciphers like a real server, and a
@@ -154,6 +186,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LOG_LEVEL_FILE` is read with a 4 KiB bound, as `TRANSPORT_ADVICE_FILE`
   already was: the reload runs on the signal goroutine, and a path that never
   ends, such as `/dev/zero`, stopped every later `SIGHUP` from being handled.
+- `scripts/s5vpn-win.ps1` passed tun2socks its flags with one dash.
+  tun2socks 2.7.0 parses them with pflag, reads `-interface` as a bundle of
+  short flags and exits with its usage, so the script waited 12 s and said
+  only that no adapter appeared. The flags now have two dashes, which the
+  earlier versions accept too, and `s5client` or tun2socks exiting right
+  after start is reported at once, with the end of its log.
 
 ### Tooling
 
@@ -212,6 +250,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([field results](docs/field/nodes.md)). The WAN stand dates its
   certificate an hour back, so a client clock a few seconds behind the server
   no longer fails the first connections of a wss cell.
+- `scripts/udp_burst_stand.py` replays the burst of a game server (a wave of
+  450 datagrams within 5 ms, then a tail) through native UDP, `0x83` or plain
+  `0x03` in a network namespace, and names the socket that dropped each lost
+  datagram. `--server-user` runs the server without capabilities, as in the
+  Docker image, and `--cut-native` cuts the native path in the middle of the
+  run, so the answers go by the TCP queue
+  ([results](docs/benchmarks/udp-burst-2026-09-28.md)).
+- The em dash check of `scripts/pre-commit.sh` skips files that git ignores,
+  which CI does not have.
 
 ## [2.2.0] - 2026-09-24
 

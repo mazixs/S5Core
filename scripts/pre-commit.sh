@@ -89,8 +89,16 @@ step "Символы в исходниках"
 # Длинное тире приезжает в код копипастой и генераторами, и однажды доехало до
 # строки, которую печатает клиент при каждом запуске (ревью R13): терминал,
 # журнал и почта рендерят его по-разному, а дефис везде одинаков. Ищется по
-# байтам UTF-8, а не через grep -P, которого нет в busybox.
-emdash="$(grep -rl "$(printf '\342\200\224')" --include='*.go' . || true)"
+# байтам UTF-8, а не через grep -P, которого нет в busybox. Файлы, которые git
+# игнорирует, не проверяются: в CI их нет, и вердикты разошлись бы.
+# safe.directory: в контейнере репозиторий принадлежит другому uid, git без
+# него отказывает, и пустой список файлов выглядел бы как чистый.
+dash="$(printf '\342\200\224')"
+if command -v git >/dev/null 2>&1 && git -c safe.directory='*' rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	emdash="$(git -c safe.directory='*' ls-files -co --exclude-standard -z -- '*.go' | xargs -0 -r grep -l "$dash" || true)"
+else
+	emdash="$(grep -rl "$dash" --include='*.go' . || true)"
+fi
 if [ -z "$emdash" ]; then
 	ok "длинного тире в .go нет"
 else
