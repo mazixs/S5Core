@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -77,6 +79,25 @@ func startTunnelServer(t testing.TB, native bool) (string, s5server.Config) {
 
 func startTunnelServerWith(t testing.TB, adjust func(*s5server.Config)) (string, s5server.Config) {
 	t.Helper()
+	// A port found free can be taken before the server listens on it, by a
+	// test of another package or by another freeTCPPort here. Start then
+	// returns at once, and the server is started again on new ports.
+	for attempt := 1; ; attempt++ {
+		addr, cfg, err := tryTunnelServer(t, adjust)
+		if err == nil {
+			return addr, cfg
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) || attempt == 3 {
+			t.Fatal("server did not start:", err)
+		}
+	}
+}
+
+// tryTunnelServer returns once the server listens on each transport it was
+// given, or with the error of a Start that ended before that. A CPU quota
+// stretches a start, so it gets 10 s rather than the 2 s it once had.
+func tryTunnelServer(t testing.TB, adjust func(*s5server.Config)) (string, s5server.Config, error) {
+	t.Helper()
 	plain, obfsPort := freeTCPPort(t), freeTCPPort(t)
 	cfg := s5server.DefaultConfig()
 	cfg.ListenIP, cfg.Port, cfg.ObfsPort = "127.0.0.1", plain, obfsPort
@@ -92,21 +113,30 @@ func startTunnelServerWith(t testing.TB, adjust func(*s5server.Config)) (string,
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- srv.Start(ctx) }()
-	t.Cleanup(func() { cancel(); _ = srv.Stop(); <-done })
 	addr := net.JoinHostPort("127.0.0.1", obfsPort)
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		select {
+		case err := <-done:
+			cancel()
+			_ = srv.Stop()
+			return "", cfg, err
+		default:
+		}
 		c, err := net.DialTimeout("tcp", addr, 20*time.Millisecond)
 		if err == nil {
 			_ = c.Close()
-			break
+			if !cfg.WSEnabled || srv.WSAddr() != "" {
+				t.Cleanup(func() { cancel(); _ = srv.Stop(); <-done })
+				return addr, cfg, nil
+			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("server did not listen", err)
+			cancel()
+			_ = srv.Stop()
+			<-done
+			t.Fatal("server did not listen on each transport", err)
 		}
-		time.Sleep(time.Millisecond)
 	}
-	return addr, cfg
 }
 
 // udpEcho answers every datagram with itself.
@@ -291,20 +321,11 @@ func TestAnAnswerOverWebSocketIsNotTakenForTheObfsNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wsAddr := net.JoinHostPort("127.0.0.1", freeTCPPort(t))
+	var wsAddr string
 	startTunnelServerWith(t, func(c *s5server.Config) {
+		wsAddr = net.JoinHostPort("127.0.0.1", freeTCPPort(t))
 		c.WSEnabled, c.WSAddr, c.WSCertFile, c.WSKeyFile, c.WSPath = true, wsAddr, cert, key, "/ws"
 	})
-	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(time.Millisecond) {
-		c, err := net.DialTimeout("tcp", wsAddr, 20*time.Millisecond)
-		if err == nil {
-			_ = c.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the WebSocket listener did not listen", err)
-		}
-	}
 	addr, cfg := startTunnelServer(t, true)
 	overWS := nativeParams(addr, cfg.ObfsPSK)
 	overWS.Transport, overWS.WSUrl, overWS.WSMinFrame, overWS.WSMaxFrame = "ws", "wss://"+wsAddr+"/ws", 256, 4096
