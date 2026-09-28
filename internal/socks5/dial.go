@@ -159,13 +159,67 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 	return nil, firstErr
 }
 
-// dialOne is the single-address path: no race, so no goroutine, channel or
-// timer, and the whole budget belongs to the one attempt.
+// backupAfter is when a single-address dial opens another socket to the same
+// address while the first one is still unanswered: the moments Linux
+// retransmits a SYN. A retransmission keeps the source port, so on a path that
+// spreads flows over parallel links by their ports, a flow hashed onto a link
+// that drops everything retries into the same hole until the budget is gone.
+// A new socket takes a new port and another draw. An answered attempt is over
+// in one round trip, long before the first backup (docs/field/nodes.md).
+var backupAfter = [...]time.Duration{time.Second, 3 * time.Second, 7 * time.Second}
+
+// dialOne is the single-address path. The first attempt keeps the whole
+// budget, and its outcome is the answer unless a backup connects first: a
+// backup's own failure, such as a local bind error, says nothing about the
+// destination. A name with several addresses gets its second socket from the
+// race in dialResolved instead.
 func dialOne(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidate dialCandidate) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return checkedDial(keepValues(ctx, candidate.ctx), dial, candidate.addr)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		conn   net.Conn
+		err    error
+		backup bool
+	}
+	// Results are taken until dialOne returns, not until ctx ends: at the
+	// deadline the first attempt's own error is the answer.
+	results := make(chan result)
+	returned := make(chan struct{})
+	defer close(returned)
+	attempt := func(backup bool) {
+		c, err := checkedDial(keepValues(ctx, candidate.ctx), dial, candidate.addr)
+		select {
+		case results <- result{c, err, backup}:
+		case <-returned:
+			if c != nil {
+				_ = c.Close()
+			}
+		}
+	}
+	start := time.Now()
+	go attempt(false)
+	timer := time.NewTimer(backupAfter[0])
+	defer timer.Stop()
+	next := 0
+	for {
+		select {
+		case r := <-results:
+			if r.err == nil {
+				return r.conn, nil
+			}
+			if !r.backup {
+				return nil, r.err
+			}
+		case <-timer.C:
+			go attempt(true)
+			if next++; next < len(backupAfter) {
+				timer.Reset(backupAfter[next] - time.Since(start))
+			}
+		}
+	}
 }
 
 // checkedDial holds a Dial hook to one outcome: a connection or an error.

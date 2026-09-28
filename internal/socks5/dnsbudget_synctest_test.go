@@ -155,8 +155,12 @@ func TestTheLookupAndTheDialShareOneBudget(t *testing.T) {
 		conf := &Config{
 			Resolver: slowResolver{takes: lookupTakes},
 			Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// Backups share the first attempt's deadline; one is enough.
 				if d, ok := ctx.Deadline(); ok {
-					dialDeadline <- d
+					select {
+					case dialDeadline <- d:
+					default:
+					}
 				}
 				<-ctx.Done()
 				return nil, ctx.Err()
