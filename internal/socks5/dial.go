@@ -160,13 +160,20 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 }
 
 // backupAfter is when a single-address dial opens another socket to the same
-// address while the first one is still unanswered: the moments Linux
-// retransmits a SYN. A retransmission keeps the source port, so on a path that
-// spreads flows over parallel links by their ports, a flow hashed onto a link
-// that drops everything retries into the same hole until the budget is gone.
-// A new socket takes a new port and another draw. An answered attempt is over
-// in one round trip, long before the first backup (docs/field/nodes.md).
-var backupAfter = [...]time.Duration{time.Second, 3 * time.Second, 7 * time.Second}
+// address while every earlier one is still unanswered. A SYN retransmission
+// keeps the source port, so on a path that spreads flows over parallel links
+// by their ports, a flow hashed onto a link that drops everything retries into
+// the same hole until the budget is gone; a new socket takes a new port and
+// another draw. On the node where this was found, 551 of the 553 dials that
+// needed no backup were over within half a second, and a new socket fell into
+// the hole again about one time in three, so the draws come early and often:
+// next to backups at 1s, 3s and 7s, this schedule cut the wait of a dial that
+// met the hole from 2.0s to 1.1s on average, and none of 81 waited 7s where 7
+// of 75 did (docs/field/nodes.md). A destination that never answers costs six
+// sockets.
+var backupAfter = [...]time.Duration{
+	500 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second, 5 * time.Second, 7 * time.Second,
+}
 
 // dialOne is the single-address path. The first attempt keeps the whole
 // budget, and its outcome is the answer unless a backup connects first: a

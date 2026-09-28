@@ -40,8 +40,8 @@ func hole(ctx context.Context) (net.Conn, error) {
 }
 
 // The first attempt's source port hashed onto a link that drops everything:
-// its retransmissions never arrive. The backup a second later takes another
-// port and connects, and the stuck attempt is released.
+// its retransmissions never arrive. The backup half a second later takes
+// another port and connects, and the stuck attempt is released.
 func TestABackupSocketGetsPastAFlowThatFallsIntoAHole(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -60,25 +60,27 @@ func TestABackupSocketGetsPastAFlowThatFallsIntoAHole(t *testing.T) {
 		if err != nil || c != winner {
 			t.Fatalf("got %v, %v", c, err)
 		}
-		if elapsed := time.Since(d.origin); elapsed != time.Second {
-			t.Fatalf("connected after %v, want the first backup at 1s", elapsed)
+		if elapsed := time.Since(d.origin); elapsed != 500*time.Millisecond {
+			t.Fatalf("connected after %v, want the first backup at 500ms", elapsed)
 		}
 		c.Close()
 		<-released
 	})
 }
 
-// A destination that never answers gets a new socket at each moment Linux
-// would retransmit the SYN, and the reply is the first attempt's own error
-// at the end of the budget - the same answer as before backups existed.
-func TestEveryBackupWaitsForARetransmissionMoment(t *testing.T) {
+// A destination that never answers gets a new socket at each moment of the
+// schedule that falls inside the budget, and the reply is the first attempt's
+// own error at the end of it - the same answer as before backups existed.
+func TestBackupsKeepDrawingUntilTheBudgetEnds(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		budget time.Duration
 		starts []time.Duration
 	}{
-		{"whole_budget", 10 * time.Second, []time.Duration{0, time.Second, 3 * time.Second, 7 * time.Second}},
-		{"short_budget", 2 * time.Second, []time.Duration{0, time.Second}},
+		{"whole_budget", 10 * time.Second, []time.Duration{
+			0, 500 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second, 5 * time.Second, 7 * time.Second,
+		}},
+		{"short_budget", 2 * time.Second, []time.Duration{0, 500 * time.Millisecond, 1500 * time.Millisecond}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -145,7 +147,7 @@ func TestABackupsOwnFailureDoesNotAnswerForTheDestination(t *testing.T) {
 		defer peer.Close()
 		d := &countingDial{origin: time.Now(), behave: func(_ context.Context, n int) (net.Conn, error) {
 			if n == 0 {
-				time.Sleep(1500 * time.Millisecond)
+				time.Sleep(1200 * time.Millisecond)
 				return first, nil
 			}
 			return nil, syscall.EADDRINUSE
