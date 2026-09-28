@@ -186,7 +186,7 @@ func openAssociation(t testing.TB, clientCfg clientParams) (*net.UDPConn, *net.U
 	metered := &meteredConn{Conn: stream}
 	t.Cleanup(func() { _ = stream.Close() })
 	app, handlerSide := tcpPair(t)
-	go handleUDPAssociate(handlerSide, metered, "", clientCfg, req)
+	runUDPAssociate(t, handlerSide, metered, "", clientCfg, req)
 	reply := readAppReply(t, app)
 	if reply[1] != 0 {
 		t.Fatalf("application refused: %x", reply)
@@ -388,7 +388,7 @@ func TestARefusalOfUDPIsNotTakenForAnOldServer(t *testing.T) {
 	}
 	defer stream.Close()
 	app, handlerSide := tcpPair(t)
-	go handleUDPAssociate(handlerSide, stream, "", cfg, req)
+	runUDPAssociate(t, handlerSide, stream, "", cfg, req)
 	if reply := readAppReply(t, app); reply[1] != replyNotAllowed {
 		t.Fatalf("the application was told %x, want the refusal", reply)
 	}
@@ -426,7 +426,7 @@ func TestARefusedRetryKeepsItsPhase(t *testing.T) {
 	}
 	defer stream.Close()
 	app, handlerSide := tcpPair(t)
-	go handleUDPAssociate(handlerSide, stream, "", cfg, req)
+	runUDPAssociate(t, handlerSide, stream, "", cfg, req)
 	if reply := readAppReply(t, app); reply[1] == 0 {
 		t.Fatalf("the application was told %x", reply)
 	}
