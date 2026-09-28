@@ -181,8 +181,10 @@ else
 	else
 		build_failed=0
 		while read -r build; do
+			# CGO_ENABLED=0, как в шаге сборки release.yml: нативная цель иначе
+			# собиралась бы здесь с cgo, а в релиз уходит без него.
 			# shellcheck disable=SC2086 # переменные цели разбиваются на слова намеренно
-			if ! env ${build% *} go build -o /dev/null "${build##* }"; then
+			if ! env CGO_ENABLED=0 ${build% *} go build -o /dev/null "${build##* }"; then
 				bad "сборка: $build"
 				build_failed=1
 			fi

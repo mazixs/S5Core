@@ -90,6 +90,10 @@ jobs:
       - name: Build binaries
         env:
           LDFLAGS: -s -w -X github.com/mazixs/S5Core/internal/buildinfo.version=${{ github.ref_name }}
+          # linux/amd64 раннер собирает нативно, то есть по умолчанию с cgo и с требованием
+          # glibc 2.34; остальные цели, образ и сборки, проверенные в поле, статические.
+          CGO_ENABLED: "0"
+          GOFLAGS: -trimpath
         run: |
           mkdir -p dist
           GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5core-linux-amd64 ./cmd/s5core
@@ -104,6 +108,9 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/s5client-windows-amd64.exe ./cmd/s5client
           GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="$LDFLAGS" -o dist/s5client-linux-mipsle-softfloat ./cmd/s5client
           GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="$LDFLAGS" -o dist/s5client-linux-mips-softfloat ./cmd/s5client
+          for f in dist/*; do
+            go version -m "$f" | grep -q 'CGO_ENABLED=0' || { echo "$f is built with cgo"; exit 1; }
+          done
 
       - name: Release
         uses: softprops/action-gh-release@v3
