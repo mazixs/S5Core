@@ -259,6 +259,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([results](docs/benchmarks/udp-burst-2026-09-28.md)).
 - The em dash check of `scripts/pre-commit.sh` skips files that git ignores,
   which CI does not have.
+- Three timing tests no longer fail under the load of a full `-race` run in
+  the CI container: the test of the hub's resync limit took the time between
+  two resyncs to be under the limit, the test of the constant-time member
+  lookup measured the two sizes while the load of other packages changed
+  between them, and the test of a stream longer than `READ_TIMEOUT` gave the
+  33 s stream 40 s, which a CPU quota stretched past.
 
 ## [2.2.0] - 2026-09-24
 

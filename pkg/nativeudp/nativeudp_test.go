@@ -204,6 +204,16 @@ func TestAResyncThroughTheHubKeepsItsIndexInStep(t *testing.T) {
 	hub.Resync(registered, client.Next())
 	answered()
 	lose()
+	// Under -race on a loaded machine answered and lose outlast resyncEvery,
+	// and the second resync is then rightly honoured: take the last one to
+	// have been just now.
+	hub.mu.Lock()
+	if registered.resynced.IsZero() {
+		hub.mu.Unlock()
+		t.Fatal("the resync did not record when it happened")
+	}
+	registered.resynced = time.Now()
+	hub.mu.Unlock()
 	hub.Resync(registered, client.Next())
 	dropped(2)
 	hub.mu.Lock()
