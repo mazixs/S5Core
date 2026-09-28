@@ -143,7 +143,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host: 62% of direct connects got through and 240 of 240 through this
   build, and a connect that met the hole waited 1.1 s on average and never
   7 s ([numbers](docs/field/nodes.md)). A destination that answers still
-  gets one socket, and a refusal is reported at once.
+  gets one socket. A refusal is reported at once, whichever socket meets it,
+  so a closed port behind such a hole answers with a refusal in about half
+  a second, not with a timeout after `DIAL_TIMEOUT`; any other failure of a
+  backup, such as a local bind error, leaves the answer to the first
+  socket. No socket is opened once the budget is spent or the server stops.
+  The share of connects a backup saved shows in the dial phase of
+  `s5core_connection_phase_seconds`: on the node with the hole, a build
+  with backups at 1, 3 and 7 s saved 215 of the 1277 connects of a client in
+  an evening, and 4 did not connect.
 
 ### Performance
 
@@ -172,6 +180,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The datagrams the kernel drops on a full buffer are counted in
   `s5core_udp_receive_buffer_drops_total`, from the server's network
   namespace: the host's counter does not see a container's drops.
+- A CONNECT to a name with several addresses, none of which connected, was
+  answered by whichever address failed first, and at the end of
+  `DIAL_TIMEOUT` by the address started last, whatever the others had met:
+  a refusal of the first address could turn into a timeout, and the same
+  destination could get a different reply code from one attempt to the
+  next. The first address in the resolver's order now names the failure, as
+  in `net.Dialer`, unless it only says this host has no route for its
+  family, and an address still unanswered at the end of the budget is
+  reported as a timeout.
 - The client's test servers accepted AES only. On a processor without AES
   instructions the client picks ChaCha, so three tests failed or hung there
   while passing in CI. They now accept both ciphers like a real server, and a

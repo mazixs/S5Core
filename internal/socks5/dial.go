@@ -62,14 +62,18 @@ func interleaveIPs(ips []net.IP) []net.IP {
 // deadline. A large DNS answer must not shrink a usable attempt to milliseconds.
 // An unbuffered result channel transfers socket ownership exactly once.
 func dialResolved(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidates []dialCandidate) (net.Conn, error) {
-	if len(candidates) == 1 {
+	switch len(candidates) {
+	case 0:
+		return nil, errors.New("no address to dial")
+	case 1:
 		return dialOne(ctx, dial, candidates[0])
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {
-		conn net.Conn
-		err  error
+		conn  net.Conn
+		err   error
+		index int
 	}
 	results := make(chan result)
 	delay := 250 * time.Millisecond
@@ -79,17 +83,23 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	next, active := 0, 0
+	errs := make([]error, len(candidates))
+	// An address still dialing when the budget ends met the end of the budget.
+	ended := func(cause error) error {
+		for i := range next {
+			if errs[i] == nil {
+				errs[i] = fmt.Errorf("dial %s: %w", candidates[i].addr, cause)
+			}
+		}
+		return firstFailure(errs)
+	}
 	launch := func() error {
-		if err := ctx.Err(); err != nil {
+		if err := spent(ctx); err != nil {
 			return err
 		}
-		// A child deadline can fire before the parent's cancellation callback.
-		// Do not start another address after the shared deadline in that gap.
-		if end, ok := ctx.Deadline(); ok && !time.Now().Before(end) {
-			return context.DeadlineExceeded
-		}
-		candidate := candidates[next]
-		remaining := len(candidates) - next
+		index := next
+		candidate := candidates[index]
+		remaining := len(candidates) - index
 		next++
 		active++
 		go func() {
@@ -107,7 +117,7 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 			}
 			c, err := checkedDial(keepValues(lifetime, candidate.ctx), dial, candidate.addr)
 			select {
-			case results <- result{c, err}:
+			case results <- result{c, err, index}:
 			case <-ctx.Done():
 				if c != nil {
 					_ = c.Close()
@@ -119,36 +129,30 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 	if err := launch(); err != nil {
 		return nil, err
 	}
-	var firstErr error
 	for active > 0 {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("dial %s: %w", candidates[next-1].addr, ctx.Err())
+			return nil, ended(ctx.Err())
 		case r := <-results:
 			active--
 			if r.err == nil {
-				if ctx.Err() != nil {
+				if err := ctx.Err(); err != nil {
 					_ = r.conn.Close()
-					return nil, ctx.Err()
+					return nil, ended(err)
 				}
 				return r.conn, nil
 			}
-			// The first failure names the preferred family, as in
-			// net.Dialer, unless it only says this host has no route for
-			// that family: then what the other family met is the answer.
-			if firstErr == nil || (noRoute(firstErr) && !noRoute(r.err)) {
-				firstErr = r.err
-			}
+			errs[r.index] = r.err
 			if next < len(candidates) {
 				if err := launch(); err != nil {
-					return nil, err
+					return nil, ended(err)
 				}
 				timer.Reset(delay)
 			}
 		case <-timer.C:
 			if next < len(candidates) && active < 2 {
 				if err := launch(); err != nil {
-					return nil, err
+					return nil, ended(err)
 				}
 			}
 			if next < len(candidates) {
@@ -156,7 +160,38 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 			}
 		}
 	}
-	return nil, firstErr
+	return nil, firstFailure(errs)
+}
+
+// firstFailure names a dial that no address answered: the first address in
+// the resolver's order, as in net.Dialer, whichever failed first, unless it
+// only says this host has no route for that family - then what another
+// address met is the answer. Addresses never tried have no error.
+func firstFailure(errs []error) error {
+	var missing error
+	for _, err := range errs {
+		switch {
+		case err == nil:
+		case !noRoute(err):
+			return err
+		case missing == nil:
+			missing = err
+		}
+	}
+	return missing
+}
+
+// spent reports why ctx can start no more attempts. A child deadline can fire
+// before the parent's cancellation callback, so the deadline is read from the
+// clock as well: nothing new starts after it in that gap.
+func spent(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if end, ok := ctx.Deadline(); ok && !time.Now().Before(end) {
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 // backupAfter is when a single-address dial opens another socket to the same
@@ -176,10 +211,11 @@ var backupAfter = [...]time.Duration{
 }
 
 // dialOne is the single-address path. The first attempt keeps the whole
-// budget, and its outcome is the answer unless a backup connects first: a
-// backup's own failure, such as a local bind error, says nothing about the
-// destination. A name with several addresses gets its second socket from the
-// race in dialResolved instead.
+// budget, and its outcome is the answer unless a backup connects or is
+// refused first: a refusal is the destination's own word, while any other
+// failure of a backup, such as a local bind error, says nothing about it. A
+// name with several addresses gets its second socket from the race in
+// dialResolved instead.
 func dialOne(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), candidate dialCandidate) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -192,7 +228,8 @@ func dialOne(ctx context.Context, dial func(context.Context, string, string) (ne
 		backup bool
 	}
 	// Results are taken until dialOne returns, not until ctx ends: at the
-	// deadline the first attempt's own error is the answer.
+	// deadline the first attempt's own error is the answer. Like the race in
+	// net.Dialer, this relies on Dial returning once ctx is done.
 	results := make(chan result)
 	returned := make(chan struct{})
 	defer close(returned)
@@ -217,10 +254,15 @@ func dialOne(ctx context.Context, dial func(context.Context, string, string) (ne
 			if r.err == nil {
 				return r.conn, nil
 			}
-			if !r.backup {
+			if !r.backup || errors.Is(r.err, syscall.ECONNREFUSED) {
 				return nil, r.err
 			}
 		case <-timer.C:
+			// The first attempt is about to report the end of the budget;
+			// a backup started now would only be handed a dead context.
+			if spent(ctx) != nil {
+				continue
+			}
 			go attempt(true)
 			if next++; next < len(backupAfter) {
 				timer.Reset(backupAfter[next] - time.Since(start))

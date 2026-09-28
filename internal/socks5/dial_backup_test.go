@@ -81,6 +81,7 @@ func TestBackupsKeepDrawingUntilTheBudgetEnds(t *testing.T) {
 			0, 500 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second, 5 * time.Second, 7 * time.Second,
 		}},
 		{"short_budget", 2 * time.Second, []time.Duration{0, 500 * time.Millisecond, 1500 * time.Millisecond}},
+		{"budget_ends_on_a_backup", 3 * time.Second, []time.Duration{0, 500 * time.Millisecond, 1500 * time.Millisecond}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -186,5 +187,56 @@ func TestTheLosingSocketOfABackupRaceIsClosed(t *testing.T) {
 		if _, err := latePeer.Write([]byte{1}); err == nil {
 			t.Fatal("the losing socket was left open")
 		}
+	})
+}
+
+// A dial cancelled while its first attempt has not yet noticed opens no more
+// backups: they would only be handed a dead context. The answer is still the
+// first attempt's own.
+func TestACancelledDialOpensNoMoreBackups(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		time.AfterFunc(time.Second, cancel)
+		late := errors.New("the first attempt, late")
+		d := &countingDial{origin: time.Now(), behave: func(ctx context.Context, n int) (net.Conn, error) {
+			if n == 0 {
+				time.Sleep(2 * time.Second)
+				return nil, late
+			}
+			return hole(ctx)
+		}}
+		_, err := dialResolved(ctx, d.dial, []dialCandidate{{ctx: ctx, addr: "only"}})
+		if !errors.Is(err, late) || time.Since(d.origin) != 2*time.Second {
+			t.Fatalf("elapsed=%v err=%v", time.Since(d.origin), err)
+		}
+		synctest.Wait()
+		if got := d.started(); len(got) != 2 || got[1] != 500*time.Millisecond {
+			t.Fatalf("attempts started at %v, want 0 and 500ms", got)
+		}
+	})
+}
+
+// A backup that reached the destination and was refused is the destination
+// answering: nothing listens there, and the first attempt, lost on the way,
+// would have heard the same. The client is told at once, not after the budget.
+func TestARefusedBackupAnswersForTheDestination(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		refused := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+		released := make(chan struct{})
+		d := &countingDial{origin: time.Now(), behave: func(ctx context.Context, n int) (net.Conn, error) {
+			if n == 0 {
+				defer close(released)
+				return hole(ctx)
+			}
+			return nil, refused
+		}}
+		_, err := dialResolved(ctx, d.dial, []dialCandidate{{ctx: ctx, addr: "only"}})
+		if !errors.Is(err, refused) || time.Since(d.origin) != 500*time.Millisecond {
+			t.Fatalf("elapsed=%v err=%v, want the refusal at 500ms", time.Since(d.origin), err)
+		}
+		<-released
 	})
 }

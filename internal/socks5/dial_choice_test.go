@@ -48,6 +48,73 @@ func TestThePreferredFamilyStillNamesARealFailure(t *testing.T) {
 	}
 }
 
+// The first address in the resolver's order names the failure, as in
+// net.Dialer, even when the other one fails first.
+func TestThePreferredAddressNamesTheFailureWhicheverFailsFirst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		timeout := errors.New("dial tcp 192.0.2.1:80: i/o timeout")
+		dial := func(_ context.Context, _, addr string) (net.Conn, error) {
+			if addr == "192.0.2.1:80" {
+				time.Sleep(time.Second)
+				return nil, timeout
+			}
+			return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+		}
+		_, err := dialResolved(ctx, dial, []dialCandidate{{ctx: ctx, addr: "192.0.2.1:80"}, {ctx: ctx, addr: "[2001:db8::1]:80"}})
+		if !errors.Is(err, timeout) {
+			t.Fatalf("got %v, want the preferred address's timeout", err)
+		}
+	})
+}
+
+// An address that has not answered by the end of its budget met that end, and
+// the order still decides: the preferred address's refusal is the answer
+// while the other one waits out the whole budget, and the other one's refusal
+// is not the answer when the preferred address runs out of time.
+func TestTheEndOfTheBudgetKeepsTheOrder(t *testing.T) {
+	refused := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+	for _, tc := range []struct {
+		name, refuses string
+		want          error
+		after         time.Duration
+	}{
+		{"preferred_refuses", "a", refused, 10 * time.Second},
+		{"other_refuses", "b", context.DeadlineExceeded, 5 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				dial := func(ctx context.Context, _, addr string) (net.Conn, error) {
+					if addr == tc.refuses {
+						return nil, refused
+					}
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				start := time.Now()
+				_, err := dialResolved(ctx, dial, []dialCandidate{{ctx: ctx, addr: "a"}, {ctx: ctx, addr: "b"}})
+				if !errors.Is(err, tc.want) || time.Since(start) != tc.after {
+					t.Fatalf("after %v got %v, want %v after %v", time.Since(start), err, tc.want, tc.after)
+				}
+			})
+		})
+	}
+}
+
+// An empty address list is an answer, not a panic in the handler.
+func TestNoAddressIsAFailureNotAPanic(t *testing.T) {
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		t.Fatal("dialled with no address")
+		return nil, nil
+	}
+	if c, err := dialResolved(context.Background(), dial, nil); c != nil || err == nil {
+		t.Fatalf("got %v, %v", c, err)
+	}
+}
+
 // A timeout cut from a resolver-values context used to park one goroutine per
 // attempt: WithTimeout could not find the lifetime's cancelCtx through Value.
 func TestADerivedDeadlineCostsNoGoroutine(t *testing.T) {
