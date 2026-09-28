@@ -104,6 +104,29 @@ func TestTheEndOfTheBudgetKeepsTheOrder(t *testing.T) {
 	}
 }
 
+// A dial cancelled by its caller is answered with the cancellation, not with
+// what an address met before it: the preferred address's refusal says nothing
+// about why the dial ended, and its text would pick the reply code.
+func TestACancelledDialIsAnsweredWithTheCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		time.AfterFunc(time.Second, cancel)
+		dial := func(ctx context.Context, _, addr string) (net.Conn, error) {
+			if addr == "a" {
+				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		start := time.Now()
+		_, err := dialResolved(ctx, dial, []dialCandidate{{ctx: ctx, addr: "a"}, {ctx: ctx, addr: "b"}})
+		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "refused") || time.Since(start) != time.Second {
+			t.Fatalf("after %v got %v, want the cancellation after 1s", time.Since(start), err)
+		}
+	})
+}
+
 // An empty address list is an answer, not a panic in the handler.
 func TestNoAddressIsAFailureNotAPanic(t *testing.T) {
 	dial := func(context.Context, string, string) (net.Conn, error) {
