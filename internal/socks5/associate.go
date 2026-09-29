@@ -548,15 +548,17 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	// account's quota and expiry never touched the association (F03).
 	acct := s.udpAccountFor(req)
 
-	// Unbound UDP socket to send/receive to the internet targets
-	udpConn, err := udpbuf.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	// Unbound UDP socket to send/receive to the internet targets. It can be
+	// rotated onto a new source port while nothing answers on it, to get past a
+	// dead link on the path (rotatingUDP).
+	egress, err := newRotatingUDP(net.IPv4zero)
 	if err != nil {
 		if err := sendReply(conn, serverFailure, nil); err != nil {
 			return fmt.Errorf("failed to send reply: %w", err)
 		}
 		return fmt.Errorf("failed to bind local udp socket: %w", err)
 	}
-	defer func() { _ = udpConn.Close() }()
+	defer func() { _ = egress.Close() }()
 
 	// Reply success (BND.ADDR/PORT is irrelevant since traffic flows via TCP)
 	bindSpec := AddrSpec{IP: net.IPv4zero, Port: 0}
@@ -632,7 +634,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		}
 		cancel()
 		_ = tcpConn.SetDeadline(time.Now()) // unblock reads/writes
-		_ = udpConn.Close()
+		_ = egress.Close()
 		if fallback != nil {
 			fallback.Stop()
 		}
@@ -670,10 +672,21 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			default:
 			}
 
-			n, rAddr, err := udpConn.ReadFromUDPAddrPort(buf)
+			c := egress.current()
+			n, rAddr, err := c.ReadFromUDPAddrPort(buf)
 			if err != nil {
+				// The socket may have been closed under this read by a
+				// rotation, not by shutdown; if so, read from the new one.
+				if egress.replaced(c) {
+					continue
+				}
 				stopTunnel(fmt.Errorf("udp socket read error: %w", err))
 				return
+			}
+			if egress.gotReply() {
+				if n := egress.rotations(); n > 0 {
+					s.config.Logger.Info("socks: udp egress socket answered after rotation", "rotations", n)
+				}
 			}
 
 			// Length prefix, header and payload are written into one pooled
@@ -736,10 +749,11 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	// association's. It closes after both readers, when the handler returns.
 	meter := newUDPMeter(acct)
 	dispatcher := newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
-		nw, err := udpConn.WriteToUDPAddrPort(payload, dest)
+		nw, err := egress.current().WriteToUDPAddrPort(payload, dest)
 		if err != nil {
 			return true
 		}
+		egress.sentToTarget()
 		if st := meter.inbound(nw); st != SessionAllowed {
 			stopTunnel(s.endOfAssociation(req, st))
 			return false
@@ -747,6 +761,19 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		return true
 	}, meter.flush)
 	defer dispatcher.close()
+
+	// Rotate the egress socket while it hears nothing back, so a match that
+	// lands on a dead link gets a fresh draw instead of waiting out the game's
+	// own retries on the same dead port. Each draw is a debug line: a target
+	// that never answers, such as one-way telemetry, draws all four. The
+	// first reply after a draw is the info line, written by the reader above.
+	halves.Add(1)
+	go func() {
+		defer halves.Done()
+		watchDeadEgress(tunnelCtx, egress, func(n int) {
+			s.config.Logger.Debug("socks: rotated udp egress socket after no replies", "rotation", n)
+		})
+	}()
 
 	// TCP -> Internet: read length-prefixed UDP packets and send out
 	go func() {

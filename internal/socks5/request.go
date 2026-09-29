@@ -333,6 +333,15 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	if len(candidates) == 0 {
 		candidates = []dialCandidate{{ctx: ctx, addr: req.realDestAddr.Address()}}
 	}
+	// The backup schedule adapts only where there is one address and a history
+	// for it: a name resolved to several addresses gets its second socket from
+	// the race in dialResolved, not from a backup.
+	if len(candidates) == 1 && s.dialHistory != nil {
+		only := candidates[0]
+		only.firstBackup = s.dialHistory.firstBackup(only.addr)
+		only.onConnect = func(d time.Duration) { s.dialHistory.record(only.addr, d) }
+		candidates = []dialCandidate{only}
+	}
 	target, err := dialResolved(dialCtx, dial, candidates)
 	dialPhase.end(err == nil)
 	if err != nil {
