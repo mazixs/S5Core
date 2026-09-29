@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -14,6 +15,20 @@ import (
 type dialCandidate struct {
 	ctx  context.Context
 	addr string
+	// firstBackup, when nonzero, is when dialOne opens its first backup
+	// socket instead of the default backupAfter[0]. handleConnect sets it
+	// from the dial history of this address's prefix, clamped to
+	// [dialBackupFloor, backupAfter[0]], so a destination we have reached
+	// before gets its backup sooner but never later than the default
+	// (RFC 8305, section 5). Zero keeps the default schedule, and it only
+	// takes effect on the single-address path.
+	firstBackup time.Duration
+	// onConnect, when set, is called with how long the first attempt took,
+	// but only when the first attempt is the one that connected, and within
+	// backupAfter[0]. A time from a dial the backups rescued, or from a
+	// first attempt that connected on a retransmitted SYN, would be the
+	// hole's, not the path's, so it is not recorded.
+	onConnect func(time.Duration)
 }
 
 // interleaveIPs preserves the resolver's preferred family and alternates
@@ -256,7 +271,14 @@ func dialOne(ctx context.Context, dial func(context.Context, string, string) (ne
 	}
 	start := time.Now()
 	go attempt(false)
-	timer := time.NewTimer(backupAfter[0])
+	// The first backup may come sooner than the default when the history of
+	// this prefix says a healthy connection is quick here; it never comes
+	// later. The rest of the schedule is unchanged, measured from start.
+	first := backupAfter[0]
+	if candidate.firstBackup > 0 && candidate.firstBackup < first {
+		first = candidate.firstBackup
+	}
+	timer := time.NewTimer(first)
 	defer timer.Stop()
 	next, refusals := 0, 0
 	for {
@@ -269,6 +291,15 @@ func dialOne(ctx context.Context, dial func(context.Context, string, string) (ne
 						return nil, fmt.Errorf("dial %s: %w", candidate.addr, err)
 					}
 					continue
+				}
+				// A first attempt that took longer than the default first
+				// backup has nothing to teach the history: it either lost its
+				// SYN and connected on the kernel's retransmission, which
+				// comes after a second, or sits on a path where the default
+				// is right anyway. One such sample would lift the estimate for
+				// several dials.
+				if elapsed := time.Since(start); !r.backup && candidate.onConnect != nil && elapsed < backupAfter[0] {
+					candidate.onConnect(elapsed)
 				}
 				return r.conn, nil
 			}
@@ -318,4 +349,108 @@ func refused(err error) bool {
 // their own errors; handleConnect maps replies by the same text.
 func noRoute(err error) bool {
 	return errors.Is(err, syscall.ENETUNREACH) || strings.Contains(err.Error(), "network is unreachable")
+}
+
+// dialBackupFloor is the earliest a history-timed first backup may open. It is
+// RFC 8305's minimum connection attempt delay: below it the backup races the
+// first attempt so closely that healthy destinations open a second socket for
+// nothing.
+const dialBackupFloor = 100 * time.Millisecond
+
+// dialHistory remembers how long a healthy connection to a destination prefix
+// took, so the next dial there can time its first backup socket from the path
+// rather than from a fixed default (RFC 8305, section 5). It is keyed by prefix,
+// not by address, because a link is chosen by the whole 5-tuple and neighbours
+// share a path: /24 for IPv4, /48 for IPv6. The map is bounded by a ring that
+// evicts the oldest prefix, so a server that dials everywhere does not grow it
+// without limit.
+type dialHistory struct {
+	mu     sync.Mutex
+	sample map[netip.Prefix]time.Duration
+	ring   []netip.Prefix
+	next   int
+}
+
+const dialHistoryLimit = 1024
+
+func newDialHistory() *dialHistory {
+	return &dialHistory{
+		sample: make(map[netip.Prefix]time.Duration),
+		ring:   make([]netip.Prefix, dialHistoryLimit),
+	}
+}
+
+// dialPrefix is the history key of a numeric address.
+func dialPrefix(addr string) (netip.Prefix, bool) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	ip = ip.Unmap()
+	bits := 24
+	if ip.Is6() {
+		bits = 48
+	}
+	p, err := ip.Prefix(bits)
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	return p, true
+}
+
+// firstBackup is when the next dial to addr should open its first backup,
+// derived from the recorded connect time with a margin so a healthy socket
+// usually wins first, clamped to [dialBackupFloor, backupAfter[0]]. Zero means
+// no history, and the caller keeps the default schedule.
+func (h *dialHistory) firstBackup(addr string) time.Duration {
+	p, ok := dialPrefix(addr)
+	if !ok {
+		return 0
+	}
+	h.mu.Lock()
+	d, ok := h.sample[p]
+	h.mu.Unlock()
+	if !ok {
+		return 0
+	}
+	return clampDuration(d+d/2, dialBackupFloor, backupAfter[0])
+}
+
+// record folds a clean connect time into the prefix's history.
+func (h *dialHistory) record(addr string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	p, ok := dialPrefix(addr)
+	if !ok {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	prev, ok := h.sample[p]
+	if !ok {
+		if old := h.ring[h.next]; old.IsValid() {
+			delete(h.sample, old)
+		}
+		h.ring[h.next] = p
+		h.next = (h.next + 1) % len(h.ring)
+		h.sample[p] = d
+		return
+	}
+	// A slow exponential average keeps one outlier from moving the estimate.
+	h.sample[p] = (prev*3 + d) / 4
+}
+
+func clampDuration(d, lo, hi time.Duration) time.Duration {
+	if d < lo {
+		return lo
+	}
+	if d > hi {
+		return hi
+	}
+	return d
 }

@@ -21,7 +21,7 @@ var (
 	ErrNoSupportedAuth = fmt.Errorf("no supported authentication mechanism")
 )
 
-// A Request encapsulates authentication state provided
+// An AuthContext encapsulates authentication state provided
 // during negotiation
 type AuthContext struct {
 	// Provided auth method
@@ -186,7 +186,7 @@ func (s *Server) authenticate(conn io.Writer, bufConn io.Reader, source, identit
 			_, err := conn.Write([]byte{Socks5Version, NoAuth})
 			auth.end(err == nil)
 			if err != nil {
-				return nil, err
+				return nil, connFailure("auth", "method_write", err)
 			}
 			return &AuthContext{NoAuth, map[string]string{"Username": identity}}, nil
 		}

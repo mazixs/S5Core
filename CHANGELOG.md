@@ -155,6 +155,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `s5core_connection_phase_seconds`: on the node with the hole, a build
   with backups at 1, 3 and 7 s saved 215 of the 1277 connects of a client in
   an evening, and 4 did not connect.
+- The first backup socket of a dial is timed by the history of the
+  destination's network instead of always at 0.5 s. The server remembers, per
+  /24 (per /48 for IPv6), how long a first attempt took to connect on its own
+  and under 0.5 s, and opens the first backup to that network at one and a
+  half times that average, never before 100 ms (the minimum connection attempt
+  delay of RFC 8305) and never after the default. A dial that a backup
+  rescued, or a first attempt that connected on a retransmitted SYN, is not
+  recorded: that is the hole's time, not the path's. A name with several
+  addresses keeps the default schedule, as its second socket comes from the
+  race between the addresses. The table holds 1024 networks. On the node with
+  the hole, dials longer than 0.5 s went from 8.4% (66 of 782) in a morning
+  on rc4 to 1.1% (32 of 2896) in a day on this build, and the player's entry
+  into a match from 13-14 s to 6-7 s ([numbers](docs/field/nodes.md)).
+- A UDP association (`0x83`, `0x84`) whose socket to the targets has never
+  heard an answer changes that socket: once at least two datagrams went out,
+  the socket has been open for a second and nothing came back, the server
+  opens a new socket, on a new port, and closes the old one, at most four
+  times, checked every 250 ms. On the same path the port a socket draws can
+  put every flow of the association on the link that drops everything, and a
+  new socket is a new draw. After the first answer the socket is never
+  changed: a new draw would move the flows that work into the hole. The
+  first answer after a change is one Info line with the number of changes,
+  each change a Debug line. In a day on that node 32 associations answered
+  after one change, 23 of them in an evening of play. A probe that sends
+  everything within its first second gets nothing from this, as nothing more
+  goes out on the new socket: 40% of a game's region-list probes through
+  that node stay unanswered with or without it.
 
 ### Performance
 

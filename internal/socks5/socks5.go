@@ -175,6 +175,7 @@ type NativeAssociation interface {
 type Server struct {
 	config      *Config
 	authMethods map[uint8]Authenticator
+	dialHistory *dialHistory
 }
 
 // New creates a new Server and potentially returns an error
@@ -204,7 +205,8 @@ func New(conf *Config) (*Server, error) {
 	}
 
 	server := &Server{
-		config: conf,
+		config:      conf,
+		dialHistory: newDialHistory(),
 	}
 
 	server.authMethods = make(map[uint8]Authenticator)
