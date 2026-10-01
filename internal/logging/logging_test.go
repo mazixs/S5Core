@@ -8,7 +8,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
+
+// SetLevel replaces the current level; production changes it only through
+// SetLevelFromEnv and ToggleDebug.
+func SetLevel(l slog.Level) { levelVar.Set(l) }
 
 func TestParseLevel(t *testing.T) {
 	cases := []struct {
@@ -209,5 +214,21 @@ func TestToggleDebug(t *testing.T) {
 	SetLevel(slog.LevelWarn)
 	if got := ToggleDebug(); got != slog.LevelDebug {
 		t.Fatalf("ToggleDebug() из warn = %v, want debug", got)
+	}
+}
+
+func TestTheServiceLogWritesUTC(t *testing.T) {
+	var buf bytes.Buffer
+	prev := time.Local
+	time.Local = time.FixedZone("UTC+3", 3*3600)
+	defer func() { time.Local = prev }()
+
+	New(&buf).Info("line")
+	var rec struct{ Time string }
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(rec.Time, "Z") {
+		t.Fatalf("time %q, want UTC", rec.Time)
 	}
 }

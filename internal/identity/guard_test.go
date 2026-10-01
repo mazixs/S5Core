@@ -347,7 +347,7 @@ func TestFail2BanStoreCleanup(t *testing.T) {
 // Behind one NAT that is an operator's entire subscriber base, locked out by
 // one typo.
 //
-// R06 of docs/fix-plan.md.
+// R06, fixed in 2.0.0.
 func TestAGuardWithNoLimitBansNobody(t *testing.T) {
 	for _, retries := range []int{0, -1} {
 		guard := NewGuard(staticCredentials{"alice": "right"}, Options{

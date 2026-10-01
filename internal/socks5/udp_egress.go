@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -81,6 +82,16 @@ func (e *rotatingUDP) sentToTarget() { e.tx.Add(1) }
 // the one event worth a line in the log, whenever it comes: the watcher may
 // have run out of draws by then.
 func (e *rotatingUDP) gotReply() bool { return e.rx.Add(1) == 1 }
+
+// replied counts a reply and logs the first one that follows a rotation.
+func (e *rotatingUDP) replied(log *slog.Logger) {
+	if !e.gotReply() {
+		return
+	}
+	if n := e.rotations(); n > 0 {
+		log.Info("socks: udp egress socket answered after rotation", "rotations", n)
+	}
+}
 func (e *rotatingUDP) recvCount() int64 {
 	return e.rx.Load()
 }

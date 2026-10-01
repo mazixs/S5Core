@@ -62,29 +62,6 @@ func TestUserAccount_IsNotYetActive(t *testing.T) {
 	}
 }
 
-func TestUserAccount_IsTrafficExceeded(t *testing.T) {
-	tests := []struct {
-		name     string
-		limit    int64
-		used     int64
-		exceeded bool
-	}{
-		{"no limit", 0, 1000, false},
-		{"under limit", 1000, 500, false},
-		{"at limit", 1000, 1000, true},
-		{"over limit", 1000, 1500, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			u := UserAccount{TrafficLimitBytes: tt.limit, TrafficUsedBytes: tt.used}
-			if got := u.IsTrafficExceeded(); got != tt.exceeded {
-				t.Errorf("IsTrafficExceeded() = %v, want %v", got, tt.exceeded)
-			}
-		})
-	}
-}
-
 func createTestFile(t *testing.T, users []UserAccount) string {
 	t.Helper()
 	dir := t.TempDir()

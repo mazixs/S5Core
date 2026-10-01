@@ -82,107 +82,88 @@ func interrupted(err error) error {
 	return err
 }
 
+// probeFlags are the probe's flags as parsed, plus which of them were given.
+type probeFlags struct {
+	to, forms, sizes, sustain *string
+	count                     *int
+	rate                      *float64
+	drain, duration, window   *time.Duration
+	reuse, json               *bool
+	set                       map[string]bool
+}
+
+// usageRule is one check of the flags: bad means msg is the error.
+type usageRule struct {
+	bad bool
+	msg string
+}
+
+func firstBroken(rules ...usageRule) error {
+	for _, r := range rules {
+		if r.bad {
+			return usageError(r.msg)
+		}
+	}
+	return nil
+}
+
+// misplaced refuses the flags of names that were given in a mode they do not
+// belong to.
+func (f probeFlags) misplaced(names []string, format string) error {
+	for _, name := range names {
+		if f.set[name] {
+			return usagef(format, name)
+		}
+	}
+	return nil
+}
+
 func parseProbe(args []string, notes io.Writer) (probeConfig, error) {
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
-	to := fs.String("to", "", "server as HOST:PORT[,PORT...] (required)")
-	formList := fs.String("forms", "all", "comma-separated forms: "+formNames()+", or all")
-	sizeList := fs.String("sizes", "100,500,1200", "comma-separated UDP payload sizes in bytes")
-	count := fs.Int("count", 100, "datagrams per test")
-	rate := fs.Float64("rate", 64, "datagrams per second in each flow")
-	drain := fs.Duration("drain", 2*time.Second, "how long to wait for replies after the last send")
-	reuse := fs.Bool("reuse", false, "send every test from one socket instead of a fresh source port each")
-	asJSON := fs.Bool("json", false, "print JSON lines")
-	sustain := fs.String("sustain", "", "send one flow of FORM@SIZE instead of the matrix")
-	duration := fs.Duration("duration", 60*time.Second, "length of the -sustain flow")
-	window := fs.Duration("window", 5*time.Second, "report the -sustain flow per window of this length")
+	f := probeFlags{
+		to:       fs.String("to", "", "server as HOST:PORT[,PORT...] (required)"),
+		forms:    fs.String("forms", "all", "comma-separated forms: "+formNames()+", or all"),
+		sizes:    fs.String("sizes", "100,500,1200", "comma-separated UDP payload sizes in bytes"),
+		count:    fs.Int("count", 100, "datagrams per test"),
+		rate:     fs.Float64("rate", 64, "datagrams per second in each flow"),
+		drain:    fs.Duration("drain", 2*time.Second, "how long to wait for replies after the last send"),
+		reuse:    fs.Bool("reuse", false, "send every test from one socket instead of a fresh source port each"),
+		json:     fs.Bool("json", false, "print JSON lines"),
+		sustain:  fs.String("sustain", "", "send one flow of FORM@SIZE instead of the matrix"),
+		duration: fs.Duration("duration", 60*time.Second, "length of the -sustain flow"),
+		window:   fs.Duration("window", 5*time.Second, "report the -sustain flow per window of this length"),
+		set:      map[string]bool{},
+	}
 	if err := fs.Parse(args); err != nil {
 		return probeConfig{}, flagError(err)
 	}
 	if fs.NArg() > 0 {
 		return probeConfig{}, usagef("probe: unexpected argument %q", fs.Arg(0))
 	}
-	set := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	fs.Visit(func(fl *flag.Flag) { f.set[fl.Name] = true })
 
-	if *to == "" {
+	if *f.to == "" {
 		return probeConfig{}, usagef("probe: -to is required")
 	}
-	host, ports, err := parseHostPorts(*to)
+	host, ports, err := parseHostPorts(*f.to)
 	if err != nil {
 		return probeConfig{}, err
 	}
-	if host == "" {
-		return probeConfig{}, usagef("probe: -to needs a host")
+	if err := firstBroken(
+		usageRule{host == "", "probe: -to needs a host"},
+		usageRule{*f.rate <= 0 || *f.rate > 10000 || math.IsNaN(*f.rate), "probe: -rate must be above 0 and at most 10000"},
+		usageRule{*f.drain <= 0, "probe: -drain must be positive"},
+	); err != nil {
+		return probeConfig{}, err
 	}
-	if *rate <= 0 || *rate > 10000 || math.IsNaN(*rate) {
-		return probeConfig{}, usagef("probe: -rate must be above 0 and at most 10000")
-	}
-	if *drain <= 0 {
-		return probeConfig{}, usagef("probe: -drain must be positive")
-	}
-	cfg := probeConfig{rate: *rate, drain: *drain, reuse: *reuse, json: *asJSON}
-
-	if *sustain != "" {
-		for _, name := range []string{"forms", "sizes", "count", "reuse"} {
-			if set[name] {
-				return probeConfig{}, usagef("probe: -%s does not apply to -sustain", name)
-			}
-		}
-		if len(ports) != 1 {
-			return probeConfig{}, usagef("probe: -sustain measures one flow, give -to one port")
-		}
-		name, digits, ok := strings.Cut(*sustain, "@")
-		fm := formByName(name)
-		size, err := strconv.Atoi(digits)
-		if !ok || fm == nil || err != nil {
-			return probeConfig{}, usagef("probe: -sustain wants FORM@SIZE with a form from: %s", formNames())
-		}
-		if size, err = fm.wire(size); err != nil {
-			return probeConfig{}, usagef("probe: -sustain: %v", err)
-		}
-		if *window <= 0 || *duration < *window {
-			return probeConfig{}, usagef("probe: -window must be positive and -duration at least one window")
-		}
-		if window.Seconds()**rate < 1 {
-			return probeConfig{}, usagef("probe: at -rate %g a %s window holds no datagram", *rate, *window)
-		}
-		cfg.count = int(math.Round(duration.Seconds() * *rate))
-		cfg.window = *window
-		cfg.cells = []cellSpec{{port: ports[0], form: fm, size: size}}
+	cfg := probeConfig{rate: *f.rate, drain: *f.drain, reuse: *f.reuse, json: *f.json}
+	if *f.sustain != "" {
+		err = f.sustainFlow(&cfg, ports)
 	} else {
-		for _, name := range []string{"duration", "window"} {
-			if set[name] {
-				return probeConfig{}, usagef("probe: -%s applies only to -sustain", name)
-			}
-		}
-		if *count < 1 {
-			return probeConfig{}, usagef("probe: -count must be positive")
-		}
-		fl, err := parseForms(*formList)
-		if err != nil {
-			return probeConfig{}, err
-		}
-		sizes, err := parseSizes(*sizeList)
-		if err != nil {
-			return probeConfig{}, err
-		}
-		for _, fm := range fl {
-			for _, want := range sizes {
-				size, err := fm.wire(want)
-				if err != nil {
-					_, _ = fmt.Fprintf(notes, "udpshape: skip %s@%d: %v\n", fm.name, want, err)
-					continue
-				}
-				for _, p := range ports {
-					cfg.cells = append(cfg.cells, cellSpec{port: p, form: fm, size: size})
-				}
-			}
-		}
-		if len(cfg.cells) == 0 {
-			return probeConfig{}, usagef("probe: no form fits any of the sizes")
-		}
-		cfg.count = *count
-		slices.SortStableFunc(cfg.cells, func(a, b cellSpec) int { return a.port - b.port })
+		err = f.matrixCells(&cfg, ports, notes)
+	}
+	if err != nil {
+		return probeConfig{}, err
 	}
 	if total := cfg.rate * float64(len(cfg.cells)); total > maxTotalRate {
 		return probeConfig{}, usagef("probe: %d flows at %g pps are %g pps in all, at most %d; lower -rate or the matrix",
@@ -194,6 +175,72 @@ func parseProbe(args []string, notes io.Writer) (probeConfig, error) {
 
 	cfg.host, err = resolve(host)
 	return cfg, err
+}
+
+// sustainFlow is the -sustain mode: one flow of one form and size.
+func (f probeFlags) sustainFlow(cfg *probeConfig, ports []int) error {
+	if err := f.misplaced([]string{"forms", "sizes", "count", "reuse"}, "probe: -%s does not apply to -sustain"); err != nil {
+		return err
+	}
+	if len(ports) != 1 {
+		return usagef("probe: -sustain measures one flow, give -to one port")
+	}
+	name, digits, ok := strings.Cut(*f.sustain, "@")
+	fm := formByName(name)
+	size, err := strconv.Atoi(digits)
+	if !ok || fm == nil || err != nil {
+		return usagef("probe: -sustain wants FORM@SIZE with a form from: %s", formNames())
+	}
+	if size, err = fm.wire(size); err != nil {
+		return usagef("probe: -sustain: %v", err)
+	}
+	window, duration, rate := *f.window, *f.duration, *f.rate
+	if err := firstBroken(
+		usageRule{window <= 0 || duration < window, "probe: -window must be positive and -duration at least one window"},
+		usageRule{window.Seconds()*rate < 1, fmt.Sprintf("probe: at -rate %g a %s window holds no datagram", rate, window)},
+	); err != nil {
+		return err
+	}
+	cfg.count = int(math.Round(duration.Seconds() * rate))
+	cfg.window = window
+	cfg.cells = []cellSpec{{port: ports[0], form: fm, size: size}}
+	return nil
+}
+
+// matrixCells is the matrix mode: every form at every size on every port.
+func (f probeFlags) matrixCells(cfg *probeConfig, ports []int, notes io.Writer) error {
+	if err := f.misplaced([]string{"duration", "window"}, "probe: -%s applies only to -sustain"); err != nil {
+		return err
+	}
+	if *f.count < 1 {
+		return usagef("probe: -count must be positive")
+	}
+	fl, err := parseForms(*f.forms)
+	if err != nil {
+		return err
+	}
+	sizes, err := parseSizes(*f.sizes)
+	if err != nil {
+		return err
+	}
+	for _, fm := range fl {
+		for _, want := range sizes {
+			size, err := fm.wire(want)
+			if err != nil {
+				_, _ = fmt.Fprintf(notes, "udpshape: skip %s@%d: %v\n", fm.name, want, err)
+				continue
+			}
+			for _, p := range ports {
+				cfg.cells = append(cfg.cells, cellSpec{port: p, form: fm, size: size})
+			}
+		}
+	}
+	if len(cfg.cells) == 0 {
+		return usagef("probe: no form fits any of the sizes")
+	}
+	cfg.count = *f.count
+	slices.SortStableFunc(cfg.cells, func(a, b cellSpec) int { return a.port - b.port })
+	return nil
 }
 
 func resolve(host string) (netip.Addr, error) {

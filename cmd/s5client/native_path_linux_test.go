@@ -180,7 +180,7 @@ func newNativeRig(t *testing.T) *nativeRig {
 
 	clientCfg := clientParams{ServerAddr: addr, PSK: cfg.ObfsPSK, MTU: 1400, MaxPadding: 32, Transport: "obfs", UDPNative: true, HandshakeTimeout: 3 * time.Second}
 	req := []byte{5, socks5.UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialTunnel(clientCfg, req)
+	stream, _, err := dialAttempt(clientCfg.attempt(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func newNativeRig(t *testing.T) *nativeRig {
 
 func (r *nativeRig) send(payload string) {
 	r.t.Helper()
-	d := socks5.BuildUDPHeader(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: r.target.conn.LocalAddr().(*net.UDPAddr).Port}, []byte(payload))
+	d := socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: r.target.conn.LocalAddr().(*net.UDPAddr).Port}, []byte(payload))
 	if _, err := r.app.WriteToUDP(d, r.local); err != nil {
 		r.t.Fatal(err)
 	}

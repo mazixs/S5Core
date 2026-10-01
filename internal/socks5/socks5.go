@@ -10,9 +10,9 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/acceptretry"
 	"github.com/mazixs/S5Core/internal/session"
 )
 
@@ -29,7 +29,7 @@ type Config struct {
 
 	// If provided, username/password authentication is enabled,
 	// by appending a UserPassAuthenticator to AuthMethods. If not provided,
-	// and AUthMethods is nil, then "auth-less" mode is enabled.
+	// and AuthMethods is nil, then "auth-less" mode is enabled.
 	Credentials CredentialStore
 
 	// Resolver can be provided to do custom name resolution.
@@ -39,11 +39,6 @@ type Config struct {
 	// Rules is provided to enable custom logic around permitting
 	// various commands. If not provided, PermitAll is used.
 	Rules RuleSet
-
-	// Rewriter can be used to transparently rewrite addresses.
-	// This is invoked before the RuleSet is invoked.
-	// Defaults to NoRewrite.
-	Rewriter AddressRewriter
 
 	// BindIP is used for bind or udp associate
 	BindIP net.IP
@@ -99,7 +94,7 @@ type Config struct {
 	SessionStatus func(username string) SessionStatus
 
 	// OnUDPTunnel, when set, is given the client's connection once it
-	// becomes a UDP-over-TCP tunnel (0x83), before the reply that opens it.
+	// becomes a UDP-over-TCP tunnel (0x83 or 0x84), before the reply that opens it.
 	// From then on the connection carries the datagrams of a game or a call
 	// rather than a transfer, and the socket under it may want to retransmit
 	// sooner (internal/tcptune). This package does not know what the
@@ -111,6 +106,10 @@ type Config struct {
 	// A game that loses its association in the middle of a match is the
 	// one that ended otherwise than by its client.
 	OnAssociationEnd func(kind, reason string)
+	// OnConnEnd, when set, is given the record of every connection once, after
+	// the connection is closed and everything it started has returned. Nil
+	// skips the bookkeeping altogether.
+	OnConnEnd func(conn net.Conn, end *ConnEnd)
 	// NativeUDP opens an authenticated datagram path supplied by the server
 	// layer. The SOCKS5 codec does not know the wire transport or its keys.
 	// No association and no error means the connection has no native path:
@@ -228,15 +227,6 @@ func New(conf *Config) (*Server, error) {
 // empty and the caller's is larger, which the relay's 32 KiB always is.
 const handshakeBufferSize = 1088
 
-// ListenAndServe is used to create a listener and serve on it
-func (s *Server) ListenAndServe(network, addr string) error {
-	l, err := net.Listen(network, addr)
-	if err != nil {
-		return err
-	}
-	return s.ServeContext(context.Background(), l)
-}
-
 // ServeContext is used to serve connections from a listener with the given context.
 func (s *Server) ServeContext(ctx context.Context, l net.Listener) error {
 	live := newConnSet()
@@ -268,8 +258,8 @@ func (s *Server) ServeContext(ctx context.Context, l net.Listener) error {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			if recoverableAcceptError(err) {
-				retryIn = nextAcceptRetry(retryIn)
+			if acceptretry.Recoverable(err) {
+				retryIn = acceptretry.Next(retryIn)
 				s.config.Logger.Warn("accept failed, listener stays up",
 					"error", err, "retry_in", retryIn)
 				timer := time.NewTimer(retryIn)
@@ -311,61 +301,6 @@ func (s *Server) ServeContext(ctx context.Context, l net.Listener) error {
 			_ = s.ServeConnContext(ctx, c)
 		}(conn)
 	}
-}
-
-// The accept loop's retry schedule. A descriptor shortage clears once the
-// load drops, so the pause exists to stop the loop spinning through the
-// backlog at full speed, and the ceiling exists so that a listener which
-// recovers after a long outage is serving again within a second.
-const (
-	acceptRetryFirst = 5 * time.Millisecond
-	acceptRetryMax   = time.Second
-)
-
-func nextAcceptRetry(current time.Duration) time.Duration {
-	if current == 0 {
-		return acceptRetryFirst
-	}
-	if next := current * 2; next < acceptRetryMax {
-		return next
-	}
-	return acceptRetryMax
-}
-
-// recoverableAcceptError reports whether the next Accept on the same listener
-// can succeed. Everything listed here is about this moment and not about the
-// listening socket: the process is out of descriptors (EMFILE) or the system
-// is (ENFILE), the kernel has no buffer space (ENOBUFS, ENOMEM), the client
-// disappeared between SYN and accept (ECONNABORTED), or the call was
-// interrupted (EINTR, EAGAIN). Returning from Accept on any of them takes the
-// whole port down and keeps it down long after the cause has passed, which is
-// an outage the server inflicts on itself.
-//
-// A closed listener is the opposite and must not be retried: it never comes
-// back, and a retry loop over it spins.
-func recoverableAcceptError(err error) bool {
-	if err == nil || errors.Is(err, net.ErrClosed) {
-		return false
-	}
-	for _, e := range recoverableAcceptErrnos {
-		if errors.Is(err, e) {
-			return true
-		}
-	}
-	// A listener with a deadline set - only tests do this - reports the
-	// expiry as a timeout, and the next call is expected to work.
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
-}
-
-var recoverableAcceptErrnos = []error{
-	syscall.EMFILE,
-	syscall.ENFILE,
-	syscall.ENOBUFS,
-	syscall.ENOMEM,
-	syscall.ECONNABORTED,
-	syscall.EINTR,
-	syscall.EAGAIN,
 }
 
 // connSet holds the connections a listener is currently serving, so that
@@ -414,6 +349,23 @@ func (s *connSet) closeAll() {
 
 // ServeConnContext is used to serve a single connection with the given context.
 func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error) {
+	// Deferred first, so it runs last: after the close below and after the
+	// failure has its stage.
+	var end *ConnEnd
+	if s.config.OnConnEnd != nil {
+		end = &ConnEnd{Started: time.Now()}
+		defer func() {
+			r := recover()
+			if r != nil {
+				end.Result = ResultError
+			}
+			end.finish(err)
+			s.config.OnConnEnd(conn, end)
+			if r != nil {
+				panic(r)
+			}
+		}()
+	}
 	defer func() { _ = conn.Close() }()
 
 	sessionPhase := s.startPhase(PhaseSession)
@@ -469,6 +421,9 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	// The first byte is in: a peer that speaks. Everything up to the reply
 	// to the request is the handshake.
 	sess.Enter(session.Handshake)
+	if end != nil {
+		end.Spoke = true
+	}
 
 	// Ensure we are compatible
 	if version[0] != Socks5Version {
@@ -482,6 +437,7 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	if err != nil {
 		return connFailure("auth", "exchange", err)
 	}
+	end.authenticated(authContext)
 
 	stage = "request"
 	request, err := NewRequest(br)
@@ -495,6 +451,11 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	}
 	request.AuthContext = authContext
 	request.session = sess
+	request.end = end
+	if end != nil {
+		end.Command = commandName(request.Command)
+		end.DstName = request.DestAddr != nil && request.DestAddr.FQDN != ""
+	}
 	if client, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 		request.RemoteAddr = &AddrSpec{IP: client.IP, Port: client.Port}
 	}

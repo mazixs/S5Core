@@ -32,11 +32,14 @@ import (
 
 // Role says which end of the connection this is. The two ends share a secret
 // and must not share a counter space, so neither may be inferred.
-type Role int
+type Role uint8
 
 const (
+	// RoleUnset is the zero value and is rejected by Derive.
 	RoleUnset Role = iota
+	// RoleClient is the end that dialed.
 	RoleClient
+	// RoleServer is the end that accepted.
 	RoleServer
 )
 

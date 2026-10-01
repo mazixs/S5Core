@@ -2,6 +2,7 @@ package socks5
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"log/slog"
@@ -106,4 +107,13 @@ func TestSOCKS5_Connect(t *testing.T) {
 	if !bytes.Equal(out, expected) {
 		t.Errorf("bad: %v", out)
 	}
+}
+
+// ListenAndServe is used to create a listener and serve on it.
+func (s *Server) ListenAndServe(network, addr string) error {
+	l, err := net.Listen(network, addr)
+	if err != nil {
+		return err
+	}
+	return s.ServeContext(context.Background(), l)
 }

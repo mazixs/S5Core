@@ -86,7 +86,7 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 	if err != nil || p.Kind != nativeudp.KindProbeAck {
 		t.Fatalf("probe: %v %+v", err, p)
 	}
-	body := socks5.BuildUDPHeader(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("game tick"))
+	body := socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("game tick"))
 	wire, err = client.Seal(nil, nativeudp.KindData, body)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 	// answer stays native: the client sends by 0x83 what is too big for
 	// native, and the answers used to follow it to TCP for as long as the
 	// client sent nothing native (finding 1 of the third review).
-	body = socks5.BuildUDPHeader(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("by 0x83"))
+	body = socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("by 0x83"))
 	frame := make([]byte, 2+len(body))
 	binary.BigEndian.PutUint16(frame[:2], uint16(len(body)))
 	copy(frame[2:], body)
@@ -259,7 +259,7 @@ func newNativeFixture(t *testing.T) *nativeFixture {
 	}
 	t.Cleanup(func() { _ = f.udp.Close() })
 
-	f.send(t, nativeudp.KindData, socks5.BuildUDPHeader(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: f.target.LocalAddr().(*net.UDPAddr).Port}, []byte("hello")))
+	f.send(t, nativeudp.KindData, socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: f.target.LocalAddr().(*net.UDPAddr).Port}, []byte("hello")))
 	_ = f.target.SetReadDeadline(time.Now().Add(3 * time.Second))
 	var b [2048]byte
 	if _, f.relay, err = f.target.ReadFromUDPAddrPort(b[:]); err != nil {
@@ -536,4 +536,10 @@ func socksOver(t *testing.T, c net.Conn, command byte, addr []byte) byte {
 		t.Fatal(err)
 	}
 	return reply[3]
+}
+
+// socksDatagram is a datagram as the client writes it: the SOCKS5 UDP header
+// for dst, then data.
+func socksDatagram(dst *socks5.AddrSpec, data []byte) []byte {
+	return append(socks5.AppendUDPHeader(nil, dst), data...)
 }

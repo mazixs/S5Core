@@ -15,6 +15,7 @@ import (
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/internal/udpbuf"
+	"github.com/mazixs/S5Core/pkg/obfs"
 )
 
 var (
@@ -139,8 +140,8 @@ var tuneUDPTunnel = tcptune.Tuner(nil)
 // handleUDPAssociate handles the client side of UDP Associate.
 // It opens a local UDP socket, tells the application its address,
 // and then multiplexes UDP packets over the obfuscated TCP tunnel.
-// wireReq is the request dialTunnel sent, 0x83 or 0x84.
-func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string, cfg clientParams, wireReq []byte) {
+// wireReq is the request dialAttempt sent, 0x83 or 0x84.
+func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg clientParams, wireReq []byte) {
 	requestedNative := len(wireReq) > 1 && wireReq[1] == socks5.UDPNativeCommand
 	command := socks5.UDPTunnelCommand
 	if requestedNative {
@@ -154,7 +155,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 	serverReply, err := readSOCKSReply(obfsConn)
 	if err != nil {
 		wrapped := &tunnelError{phase: phaseConnectReply, err: err}
-		logTunnelFailure(wrapped, destFQDN, cfg)
+		logTunnelFailure(wrapped, dest, cfg)
 		_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		return
 	}
@@ -171,16 +172,16 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		requestedNative, command = false, socks5.UDPTunnelCommand
 		obfsConn, cfg, err = dialAttempt(cfg, fallback)
 		if err != nil {
-			// dialTunnel named the phase that failed, and the hint and the
+			// dialAttempt named the phase that failed, and the hint and the
 			// transport policy both depend on it.
-			logTunnelFailure(err, destFQDN, cfg)
+			logTunnelFailure(err, dest, cfg)
 			_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(err), 0, 1, 0, 0, 0, 0, 0, 0})
 			return
 		}
 		defer obfsConn.Close()
 		if serverReply, err = readSOCKSReply(obfsConn); err != nil {
 			wrapped := &tunnelError{phase: phaseConnectReply, err: err}
-			logTunnelFailure(wrapped, destFQDN, cfg)
+			logTunnelFailure(wrapped, dest, cfg)
 			_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0, 1, 0, 0, 0, 0, 0, 0})
 			return
 		}
@@ -238,7 +239,8 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		return
 	}
 
-	slog.Info("UDP Tunnel established", "local_udp", boundAddr.String())
+	id := obfs.LogIDOf(obfsConn)
+	slog.Info("UDP Tunnel established", "conn", id, "local_udp", boundAddr.String())
 	opened := time.Now()
 	var stats assocStats
 
@@ -414,16 +416,16 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, destFQDN string,
 		errCh <- assocEnd{endApplication, fmt.Errorf("app tcp connection closed: %w", err)}
 	}()
 
-	var extra func() []any
-	if native != nil {
-		extra = native.logStats
+	extra := func() []any {
+		attrs := []any{"conn", id}
+		if native != nil {
+			attrs = append(attrs, native.logStats()...)
+		}
+		return attrs
 	}
 	report := startAssocReport(&stats, opened, extra)
 	end := <-errCh
 	report.stop()
-	var last []any
-	if extra != nil {
-		last = extra()
-	}
-	logAssocClosed(end, opened, stats.totals(), last)
+	minutes.udp.Add(1)
+	logAssocClosed(end, opened, stats.totals(), extra())
 }

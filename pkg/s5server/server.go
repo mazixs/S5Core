@@ -13,6 +13,7 @@ import (
 
 	"github.com/mazixs/S5Core/internal/buildinfo"
 	"github.com/mazixs/S5Core/internal/identity"
+	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/s5core"
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/internal/socks5"
@@ -45,11 +46,8 @@ type Server struct {
 	// plain listener, which meant it worked on a third of the surface and
 	// said nothing about the rest.
 	pipelines  []*listenerPipeline
-	listener   *listenerPipeline
 	obfsListen net.Listener
 	wsListen   net.Listener
-	tcpListen  net.Listener
-	credStore  *identity.Guard
 	userStore  *userstore.Store
 	// members is the table the obfuscation layer resolves a client's
 	// identity against, nil when no user file is configured. It is rebuilt
@@ -73,13 +71,25 @@ type Server struct {
 	// Stop so a restarted server does not leave it pointing at a dead
 	// registry.
 	sessionGauge metric.Registration
-	logger       *slog.Logger
-	ctx          context.Context
-	cancelFunc   context.CancelFunc
-	wg           sync.WaitGroup
+
+	// boot names this server's process in its markers; journal is the
+	// session journal while Start runs, nil when SessionLog is off.
+	boot       string
+	started    time.Time
+	journal    atomic.Pointer[sessionJournal]
+	endMetrics *connEndMetrics
+	minutes    *minuteSummary
+	connsEnded atomic.Int64
+	reloads    atomic.Int64
+	stopped    atomic.Bool
+
+	logger     *slog.Logger
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	wg         sync.WaitGroup
 }
 
-// udpTunnelTuner builds the hook that tunes the socket of a 0x83 tunnel. A
+// udpTunnelTuner builds the hook that tunes the socket of a 0x83 or 0x84 tunnel. A
 // test replaces it to see the connection the hook is given.
 var udpTunnelTuner = tcptune.Tuner
 
@@ -142,83 +152,18 @@ func NewServer(cfg Config) (*Server, error) {
 	socks5conf.ObservePhase, socks5conf.CountPhase = phaseHooks(cfg.Telemetry)
 	socks5conf.ObserveHalfClose = halfCloseHook(cfg.Telemetry)
 	socks5conf.OnAssociationEnd = associationEndHook(cfg.Telemetry)
+	socks5conf.OnConnEnd = func(conn net.Conn, end *socks5.ConnEnd) { server.connEnded(conn, end) }
 	if !cfg.UDPTunnelTCPTuningOff {
 		socks5conf.OnUDPTunnel = udpTunnelTuner(logger)
 	}
 
-	var credStore *identity.Guard
 	var uStore *userstore.Store
 	var members *veil.Directory
-
 	if cfg.RequireAuth {
-		// One account mechanism, not two (plan task Ф6-3). The user store
-		// used to be the path for USERS_FILE while PROXY_USER went into a
-		// plain map, which meant quotas, expiry dates, roles and Argon2id
-		// existed for one kind of deployment and not the other, and AddUser
-		// did something different depending on which one it was. Without a
-		// file the store simply has no file: it starts empty, AddUser fills
-		// it, and everything downstream is the same code.
-		uStore = userstore.NewStore(logger)
-		uStore.SetKDFBudget(cfg.KDFMemoryBudget)
-		if cfg.UsersFile != "" {
-			if err := uStore.LoadFromFile(cfg.UsersFile); err != nil {
-				return nil, fmt.Errorf("failed to load users file: %w", err)
-			}
+		var err error
+		if uStore, members, err = setupAccounts(cfg, logger, socks5conf); err != nil {
+			return nil, err
 		}
-		uStore.SetVerifyObserver(authVerifyObserver(cfg.Telemetry))
-		var store socks5.CredentialStore = userstore.NewCredentialAdapter(uStore)
-
-		// The lock-free per-user traffic counter, resolved once per
-		// connection and shared by the TCP relay and both UDP modes. One
-		// path, so a quota means the same thing whichever command the
-		// client sent.
-		socks5conf.TrafficCounter = uStore.TrafficCounterFor
-		// A quota is only a limit if it is checked while the session runs.
-		// The relay asks this on the 64 KiB flush boundary it already has,
-		// and the answer says why - a spent quota and an account that is
-		// gone resolve to different terminal states (plan task Ф6-1).
-		socks5conf.SessionStatus = func(username string) socks5.SessionStatus {
-			switch uStore.SessionStatus(username) {
-			case userstore.SessionQuotaExceeded:
-				return socks5.SessionQuotaExceeded
-			case userstore.SessionExpired:
-				return socks5.SessionExpired
-			default:
-				return socks5.SessionAllowed
-			}
-		}
-
-		// Accounts that carry a tunnel key are recognised by the obfuscation
-		// layer before the SOCKS5 handshake starts, and what it says outranks
-		// a password (plan task Ф5-5).
-		//
-		// Only a file gets a member directory. A store with no file has no
-		// keys to resolve yet, and building a directory anyway would put a
-		// Roster prologue on the wire for deployments that never asked for
-		// one - a change of wire format as a side effect of a refactor.
-		if cfg.UsersFile != "" {
-			directory, err := veil.NewDirectory(tunnelMembers(uStore))
-			if err != nil {
-				return nil, fmt.Errorf("failed to build the tunnel member directory: %w", err)
-			}
-			members = directory
-			socks5conf.TunnelIdentity = obfs.IdentityOf
-		}
-
-		if cfg.Fail2BanRetries > 0 {
-			authFailure, accountAlert := authHooks(cfg.Telemetry)
-			credStore = identity.NewGuard(store, identity.Options{
-				MaxRetries:     cfg.Fail2BanRetries,
-				BanTime:        cfg.Fail2BanTime,
-				Logger:         logger,
-				OnAuthFailure:  authFailure,
-				OnAccountAlert: accountAlert,
-			})
-			store = credStore
-		}
-
-		cator := socks5.UserPassAuthenticator{Credentials: store}
-		socks5conf.AuthMethods = []socks5.Authenticator{cator}
 	} else {
 		logger.Warn("Running the proxy server without authentication is NOT recommended")
 	}
@@ -249,13 +194,16 @@ func NewServer(cfg Config) (*Server, error) {
 		cfg:         cfg,
 		socks5:      srv,
 		logger:      logger,
-		credStore:   credStore,
 		userStore:   uStore,
 		members:     members,
 		saltHistory: obfs.NewSaltHistory(cfg.ObfsReplayWindow),
 		sessions:    session.NewRegistry(sessionTransitionObserver(cfg.Telemetry)),
 
 		nativeCounters: nativeCounters,
+
+		boot:       logging.NewBoot(),
+		endMetrics: newConnEndMetrics(cfg.Telemetry),
+		minutes:    newMinuteSummary(),
 	}
 	server = s
 	gauge, err := registerSessionGauge(cfg.Telemetry, s.sessions)
@@ -269,6 +217,81 @@ func NewServer(cfg Config) (*Server, error) {
 		s.advice.Store(advice)
 	}
 	return s, nil
+}
+
+// setupAccounts builds the account store for a server that requires
+// authentication and wires it into the SOCKS5 configuration: credentials,
+// traffic counters, quota checks and, with USERS_FILE, the member directory.
+func setupAccounts(cfg Config, logger *slog.Logger, conf *socks5.Config) (*userstore.Store, *veil.Directory, error) {
+	// One account mechanism, not two (plan task Ф6-3). The user store
+	// used to be the path for USERS_FILE while PROXY_USER went into a
+	// plain map, which meant quotas, expiry dates, roles and Argon2id
+	// existed for one kind of deployment and not the other, and AddUser
+	// did something different depending on which one it was. Without a
+	// file the store simply has no file: it starts empty, AddUser fills
+	// it, and everything downstream is the same code.
+	uStore := userstore.NewStore(logger)
+	uStore.SetKDFBudget(cfg.KDFMemoryBudget)
+	if cfg.UsersFile != "" {
+		if err := uStore.LoadFromFile(cfg.UsersFile); err != nil {
+			return nil, nil, fmt.Errorf("failed to load users file: %w", err)
+		}
+	}
+	uStore.SetVerifyObserver(authVerifyObserver(cfg.Telemetry))
+	var store socks5.CredentialStore = userstore.NewCredentialAdapter(uStore)
+	var members *veil.Directory
+
+	// The lock-free per-user traffic counter, resolved once per
+	// connection and shared by the TCP relay and both UDP modes. One
+	// path, so a quota means the same thing whichever command the
+	// client sent.
+	conf.TrafficCounter = uStore.TrafficCounterFor
+	// A quota is only a limit if it is checked while the session runs.
+	// The relay asks this on the 64 KiB flush boundary it already has,
+	// and the answer says why - a spent quota and an account that is
+	// gone resolve to different terminal states (plan task Ф6-1).
+	conf.SessionStatus = func(username string) socks5.SessionStatus {
+		switch uStore.SessionStatus(username) {
+		case userstore.SessionQuotaExceeded:
+			return socks5.SessionQuotaExceeded
+		case userstore.SessionExpired:
+			return socks5.SessionExpired
+		default:
+			return socks5.SessionAllowed
+		}
+	}
+
+	// Accounts that carry a tunnel key are recognised by the obfuscation
+	// layer before the SOCKS5 handshake starts, and what it says outranks
+	// a password (plan task Ф5-5).
+	//
+	// Only a file gets a member directory. A store with no file has no
+	// keys to resolve yet, and building a directory anyway would put a
+	// Roster prologue on the wire for deployments that never asked for
+	// one - a change of wire format as a side effect of a refactor.
+	if cfg.UsersFile != "" {
+		directory, err := veil.NewDirectory(tunnelMembers(uStore))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to build the tunnel member directory: %w", err)
+		}
+		members = directory
+		conf.TunnelIdentity = obfs.IdentityOf
+	}
+
+	if cfg.Fail2BanRetries > 0 {
+		authFailure, accountAlert := authHooks(cfg.Telemetry)
+		store = identity.NewGuard(store, identity.Options{
+			MaxRetries:     cfg.Fail2BanRetries,
+			BanTime:        cfg.Fail2BanTime,
+			Logger:         logger,
+			OnAuthFailure:  authFailure,
+			OnAccountAlert: accountAlert,
+		})
+	}
+
+	cator := socks5.UserPassAuthenticator{Credentials: store}
+	conf.AuthMethods = []socks5.Authenticator{cator}
+	return uStore, members, nil
 }
 
 // ReloadUsers reloads the user store from the configured file.
@@ -470,7 +493,7 @@ func (s *Server) UpdateSessionTimeouts(dial, frame, grace time.Duration) {
 }
 
 // Start begins listening and serving traffic. It blocks until stopped.
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context) (err error) {
 	s.ctx, s.cancelFunc = context.WithCancel(ctx)
 
 	// However this function ends, it leaves nothing listening. A server that
@@ -483,9 +506,18 @@ func (s *Server) Start(ctx context.Context) error {
 	// listener is a reason to stop the server, not a reason to keep the
 	// other two running unattended.
 	defer s.shutdownListeners()
+	s.started = time.Now()
+	if err := s.openJournal(); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			s.closeJournal()
+		}
+	}()
 	udpbuf.Report(s.logger)
 	if s.cfg.UDPPort != "" {
-		addr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.UDPPort)
+		addr := s.listenAddr(s.cfg.UDPPort)
 		hub, err := nativeudp.Listen(addr, s.logger)
 		if err != nil {
 			return fmt.Errorf("failed to listen native UDP on %s: %w", addr, err)
@@ -534,10 +566,7 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
-	listenAddr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.Port)
-	if s.cfg.ListenIP == "" {
-		listenAddr = ":" + s.cfg.Port
-	}
+	listenAddr := s.listenAddr(s.cfg.Port)
 
 	l, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -545,20 +574,13 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	plain := newListenerPipeline(l, TransportPlain, s.cfg, s.cfg.Telemetry, limiter, s.sessions)
-	s.mu.Lock()
-	s.tcpListen = l
-	s.listener = plain
-	s.mu.Unlock()
 
 	s.logger.Info("Start listening proxy service (plain SOCKS5)", "address", listenAddr)
 	serve(plain)
 
 	// Start obfuscated listener on a separate port if enabled
 	if s.cfg.ObfsEnabled && s.cfg.ObfsPort != "" {
-		obfsAddr := net.JoinHostPort(s.cfg.ListenIP, s.cfg.ObfsPort)
-		if s.cfg.ListenIP == "" {
-			obfsAddr = ":" + s.cfg.ObfsPort
-		}
+		obfsAddr := s.listenAddr(s.cfg.ObfsPort)
 
 		obfsListen, err := net.Listen("tcp", obfsAddr)
 		if err != nil {
@@ -587,10 +609,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.cfg.WSEnabled {
 		wsAddr := s.cfg.WSAddr
 		if wsAddr == "" {
-			wsAddr = net.JoinHostPort(s.cfg.ListenIP, "443")
-			if s.cfg.ListenIP == "" {
-				wsAddr = ":443"
-			}
+			wsAddr = s.listenAddr("443")
 		}
 
 		// Пустая строка в списке сабпротоколов - не "любой", а требование
@@ -637,10 +656,14 @@ func (s *Server) Start(ctx context.Context) error {
 	// открытый порт.
 	transports := s.enabledTransports()
 	s.logger.Info("Active transports",
+		"event", "process_start",
+		"boot", s.boot,
 		"summary", transportSummary(s.cfg),
 		"version", buildinfo.Version(),
 		"go_version", buildinfo.GoVersion(),
+		"session_log", sessionLogMode(s.cfg),
 	)
+	go s.minutes.run(s.ctx, s.logger, s.journal.Load, s.boot)
 	s.cfg.Telemetry.RecordBuildInfo(buildinfo.Version(), buildinfo.GoVersion(), transports)
 
 	// Keep the member table ahead of the clock, so that crossing an hour
@@ -783,6 +806,10 @@ func transportSummary(cfg Config) string {
 	return strings.Join(parts, ", ")
 }
 
+// listenAddr is where a listener on port binds: LISTEN_IP, or every address
+// when it is empty (net.JoinHostPort gives ":port" then).
+func (s *Server) listenAddr(port string) string { return net.JoinHostPort(s.cfg.ListenIP, port) }
+
 // Stop shuts the server down and returns when it has actually stopped:
 // listeners closed, live connections closed, connection handlers finished and
 // the traffic counters written to USERS_FILE.
@@ -805,6 +832,10 @@ func (s *Server) Stop() error {
 	// once in two dozen runs.
 	if s.userStore != nil {
 		s.userStore.StopPeriodicFlush()
+	}
+	if !s.started.IsZero() && s.stopped.CompareAndSwap(false, true) {
+		s.minutes.emit(s.logger, s.journal.Load(), s.boot)
+		s.closeJournal()
 	}
 	// The gauge's callback holds the session registry. Leaving it registered
 	// keeps a stopped server's registry alive and reporting zeroes into the

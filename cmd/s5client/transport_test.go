@@ -361,9 +361,9 @@ func TestTheHelloGoesUpAndTheAdviceComesDownOneRealTunnel(t *testing.T) {
 	}
 	cfg.policy = policy
 
-	conn, used, err := dialTunnel(cfg, connectRequest())
+	conn, used, err := dialAttempt(cfg.attempt(), connectRequest())
 	if err != nil {
-		t.Fatalf("dialTunnel: %v", err)
+		t.Fatalf("dialAttempt: %v", err)
 	}
 	defer conn.Close()
 

@@ -4,6 +4,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -28,16 +29,17 @@ const MinMTU = 64
 // the role separates the nonce space of the two directions, which share one
 // key. There is no default, because a wrong default would mean both ends
 // encrypting different data under the same key and nonce - the one mistake
-// AES-GCM does not survive.
-type Role uint8
+// AES-GCM does not survive. It is veil.Role: the key schedule takes the same
+// value, so there is nothing to convert.
+type Role = veil.Role
 
 const (
 	// RoleUnset is the zero value and is rejected by NewConn.
-	RoleUnset Role = iota
+	RoleUnset = veil.RoleUnset
 	// RoleClient is the end that dialed.
-	RoleClient
+	RoleClient = veil.RoleClient
 	// RoleServer is the end that accepted.
-	RoleServer
+	RoleServer = veil.RoleServer
 )
 
 // frameOverhead is what one frame costs besides the bytes it carries: the
@@ -269,6 +271,9 @@ type conn struct {
 	pending    *pendingControl
 	helloSeen  bool
 	adviceSeen bool
+	// clientBuild is the hello's version, kept for the server's session
+	// journal. Written once, on the read that delivers the hello.
+	clientBuild string
 
 	// Write and read are serialised separately. net.Conn is documented as
 	// safe for concurrent use, and a tunnel always has a reader and a writer
@@ -507,11 +512,7 @@ func (c *conn) DatagramKeys() (veil.DatagramKeys, error) {
 	if !c.sendReady.Load() || !c.recvReady || !c.authenticated {
 		return veil.DatagramKeys{}, errors.New("obfs: datagram keys requested before authentication")
 	}
-	role := veil.RoleClient
-	if c.cfg.Role == RoleServer {
-		role = veil.RoleServer
-	}
-	return veil.DeriveDatagram(c.cfg.PSK, c.resolved.Secret, c.resolved.Context, role)
+	return veil.DeriveDatagram(c.cfg.PSK, c.resolved.Secret, c.resolved.Context, c.cfg.Role)
 }
 
 // ErrNoDatagramKeys is DatagramKeysOf on a connection with no obfs layer: a
@@ -563,11 +564,7 @@ func (c *conn) deriveSession() error {
 		return fmt.Errorf("obfs: key derivation failed: %w", err)
 	}
 
-	role := veil.RoleClient
-	if c.cfg.Role == RoleServer {
-		role = veil.RoleServer
-	}
-	session, err := veil.Derive(c.cfg.PSK, resolved.Secret, resolved.Context, role)
+	session, err := veil.Derive(c.cfg.PSK, resolved.Secret, resolved.Context, c.cfg.Role)
 	if err != nil {
 		return fmt.Errorf("obfs: %w", err)
 	}
@@ -1352,6 +1349,42 @@ type Identified interface {
 func IdentityOf(c net.Conn) string {
 	if id, ok := layerOf[Identified](c); ok {
 		return id.Identity()
+	}
+	return ""
+}
+
+// LogID is the connection's id in logs, the same on both ends (veil.LogID),
+// as 12 hex digits. It is empty until the session keys are derived: on a
+// client at once, on a server once the opening has been read. It is derived
+// on each call, so a caller that never logs never pays for it.
+func (c *conn) LogID() string {
+	if !c.sendReady.Load() {
+		return ""
+	}
+	id, err := veil.LogID(c.cfg.PSK, c.resolved.Secret, c.resolved.Context)
+	if err != nil {
+		return ""
+	}
+	return hex.EncodeToString(id[:])
+}
+
+// ClientBuild is the build the client named in its hello, empty when it sent
+// none. It comes from the peer: whoever prints it bounds it first.
+func (c *conn) ClientBuild() string { return c.clientBuild }
+
+// LogIDOf finds the obfs layer through the wrappers, as IdentityOf does, and
+// returns its LogID; empty for a connection with no obfs layer.
+func LogIDOf(c net.Conn) string {
+	if l, ok := layerOf[interface{ LogID() string }](c); ok {
+		return l.LogID()
+	}
+	return ""
+}
+
+// ClientBuildOf is ClientBuild through the wrappers.
+func ClientBuildOf(c net.Conn) string {
+	if l, ok := layerOf[interface{ ClientBuild() string }](c); ok {
+		return l.ClientBuild()
 	}
 	return ""
 }

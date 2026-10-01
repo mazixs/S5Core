@@ -78,9 +78,9 @@ func TestTheServerTunesTheSocketOfEveryUDPTunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 	echoAddr := startEchoServer(t)
-	const obfsPort = "19471"
+	obfsPort := reservePort(t)
 	srv := startServer(t, Config{
-		Port: "19470", ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		Port: reservePort(t), ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
 		WSEnabled: true, WSAddr: "127.0.0.1:0", WSCertFile: certFile, WSKeyFile: keyFile, WSPath: "/ws",
 		// cmd/s5core always has a limit, and its wrapper sits between the
@@ -160,9 +160,9 @@ func TestTheServerTunesTheSocketOfEveryUDPTunnel(t *testing.T) {
 func TestTheSwitchLeavesTheKernelTimer(t *testing.T) {
 	var tuned tunedConns
 	tuned.hook(t)
-	const obfsPort = "19473"
+	obfsPort := reservePort(t)
 	startServer(t, Config{
-		Port: "19472", ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		Port: reservePort(t), ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
 		UDPTunnelTCPTuningOff: true,
 	})

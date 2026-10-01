@@ -7,17 +7,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
+
+var leakOnce sync.Once
 
 // Plan task Ф6-5: the metrics endpoint used to live on http.DefaultServeMux,
 // which any package in the binary can add to. A handler registered there must
 // not appear on this port - that is the whole difference between a mux of our
 // own and the global one.
 func TestTheMetricsPortServesOnlyItsOwnPaths(t *testing.T) {
-	http.HandleFunc("/leaked-by-some-other-package", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("this should never be reachable on the metrics port"))
+	// Registered once per process: a second HandleFunc on the same path
+	// panics, and -count=2 runs the test twice.
+	leakOnce.Do(func() {
+		http.HandleFunc("/leaked-by-some-other-package", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("this should never be reachable on the metrics port"))
+		})
 	})
 
 	srv := newMetricsServer("")

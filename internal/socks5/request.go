@@ -43,11 +43,6 @@ var (
 	errUnrecognizedAddrType = fmt.Errorf("unrecognized address type")
 )
 
-// AddressRewriter is used to rewrite a destination transparently
-type AddressRewriter interface {
-	Rewrite(ctx context.Context, request *Request) (context.Context, *AddrSpec)
-}
-
 // AddrSpec is used to return the target AddrSpec
 // which may be specified as IPv4, IPv6, or a FQDN
 type AddrSpec struct {
@@ -74,8 +69,6 @@ func (a AddrSpec) Address() string {
 
 // A Request represents request received by a server
 type Request struct {
-	// Protocol version
-	Version uint8
 	// Requested command
 	Command uint8
 	// AuthContext provided during negotiation
@@ -103,13 +96,13 @@ type Request struct {
 	// no dial budget.
 	attemptDeadline time.Time
 	dialCandidates  []dialCandidate
-	// AddrSpec of the actual destination (might be affected by rewrite)
-	realDestAddr *AddrSpec
-	bufConn      io.Reader
+	bufConn         io.Reader
 	// session is the connection's state machine (plan task Ф6-1), nil when
 	// the connection did not come through a listener pipeline. Every method
 	// on a nil session is a no-op, so the handlers below do not check.
 	session *session.Session
+	// end is the connection's record for Config.OnConnEnd, nil without one.
+	end *ConnEnd
 }
 
 // conn is what answering a request needs: somewhere to write the reply and
@@ -161,7 +154,6 @@ func NewRequest(conn io.Reader) (*Request, error) {
 	}
 
 	request := &Request{
-		Version:  Socks5Version,
 		Command:  header[1],
 		DestAddr: dest,
 		bufConn:  conn,
@@ -246,9 +238,7 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		// does. keepValues takes the one and leaves the other.
 		ctx = keepValues(ctx, ctx_)
 		dest.IP = addr
-		// The rewriter retains sole control when configured: its single
-		// result must never fall back to a pre-rewrite destination.
-		if s.config.Rewriter == nil && len(ips) > 0 {
+		if len(ips) > 0 {
 			for _, ip := range ips {
 				candidateAddr := *dest
 				candidateAddr.IP = append(net.IP(nil), ip...)
@@ -270,18 +260,6 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		}
 	}
 
-	// Apply any address rewrites
-	req.realDestAddr = req.DestAddr
-	if s.config.Rewriter != nil {
-		ctx, req.realDestAddr = s.config.Rewriter.Rewrite(ctx, req)
-	}
-	if req.realDestAddr == nil {
-		if err := sendReply(conn, serverFailure, nil); err != nil {
-			return connFailure("request", "reply_write", err)
-		}
-		return fmt.Errorf("rewrite returned nil address")
-	}
-
 	// Switch on the command
 	switch req.Command {
 	case ConnectCommand:
@@ -301,19 +279,12 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 	}
 }
 
-// handleConnect is used to handle a connect command
+// handleConnect dials the destination, answers the client and relays until
+// both halves end.
 func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) error {
 	// The rules have already been applied in handleRequest, before the name
 	// was resolved.
-	sess := req.session
 
-	// Attempt to connect
-	dial := s.config.Dial
-	if dial == nil {
-		dial = func(ctx context.Context, net_, addr string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, net_, addr)
-		}
-	}
 	// One attempt gets the session's dial budget. Without it the attempt
 	// runs on the operating system's own timeout, which is over two minutes
 	// on Linux - and every one of those minutes the client sits waiting for
@@ -328,32 +299,10 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		dialCtx, cancelDial = context.WithDeadline(ctx, req.attemptDeadline)
 		defer cancelDial()
 	}
-	dialPhase := s.startPhase(PhaseDial)
-	candidates := req.dialCandidates
-	if len(candidates) == 0 {
-		candidates = []dialCandidate{{ctx: ctx, addr: req.realDestAddr.Address()}}
-	}
-	// The backup schedule adapts only where there is one address and a history
-	// for it: a name resolved to several addresses gets its second socket from
-	// the race in dialResolved, not from a backup.
-	if len(candidates) == 1 && s.dialHistory != nil {
-		only := candidates[0]
-		only.firstBackup = s.dialHistory.firstBackup(only.addr)
-		only.onConnect = func(d time.Duration) { s.dialHistory.record(only.addr, d) }
-		candidates = []dialCandidate{only}
-	}
-	target, err := dialResolved(dialCtx, dial, candidates)
-	dialPhase.end(err == nil)
+	target, err := s.dialTarget(ctx, dialCtx, req)
 	if err != nil {
-		msg := err.Error()
-		resp := hostUnreachable
-		if strings.Contains(msg, "refused") {
-			resp = connectionRefused
-		} else if strings.Contains(msg, "network is unreachable") {
-			resp = networkUnreachable
-		}
 		failure := connFailure("dial", "connect", err)
-		if replyErr := sendReply(conn, resp, nil); replyErr != nil {
+		if replyErr := sendReply(conn, dialFailureReply(err), nil); replyErr != nil {
 			return errors.Join(failure, connFailure("request", "reply_write", replyErr))
 		}
 		return failure
@@ -372,6 +321,42 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		return connFailure("request", "reply_write", err)
 	}
 
+	return s.relayConnect(ctx, conn, req, target)
+}
+
+// dialTarget connects to the request's addresses under dialCtx and writes the
+// attempts into the connection's end record.
+func (s *Server) dialTarget(ctx, dialCtx context.Context, req *Request) (net.Conn, error) {
+	dial := s.config.Dial
+	if dial == nil {
+		dial = func(ctx context.Context, net_, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, net_, addr)
+		}
+	}
+	dialPhase := s.startPhase(PhaseDial)
+	candidates := req.dialCandidates
+	if len(candidates) == 0 {
+		candidates = []dialCandidate{{ctx: ctx, addr: req.DestAddr.Address()}}
+	}
+	var dials *dialRecorder
+	if req.end != nil {
+		dials = new(dialRecorder)
+		dial = dials.wrap(dial)
+	}
+	dialStart := time.Now()
+	target, err := dialResolved(dialCtx, dial, s.timedByHistory(candidates))
+	dialPhase.end(err == nil)
+	if dials != nil {
+		dials.settle(req.end, target, candidates[0].addr, time.Since(dialStart))
+	}
+	return target, err
+}
+
+// relayConnect copies both ways between the client and the connected
+// destination until both halves end, and returns why the relay ended.
+func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, target net.Conn) error {
+	sess := req.session
+
 	// The handshake is over. From here the connection is a relay: the
 	// transport asks the session for its deadlines, and the relay idle
 	// timeout replaces the handshake budget.
@@ -380,13 +365,10 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	// The wait for the destination's first byte starts once the client has its
 	// success reply: from here on, any delay is the destination's or ours.
 	var targetSrc io.Reader = target
-	if fb := s.startPhase(PhaseFirstByte); fb != nil {
-		targetSrc = &firstByteReader{Reader: target, timer: fb}
+	if fb := s.startPhase(PhaseFirstByte); fb != nil || req.end != nil {
+		targetSrc = &firstByteReader{Reader: target, timer: fb, end: req.end, since: time.Now()}
 		defer fb.end(false)
 	}
-
-	// Extract username for per-user traffic tracking
-	username := extractUsername(req)
 
 	// Only the destination side is observed here. The client side is closed
 	// through the transport stack, which is the only place that knows whether
@@ -396,11 +378,102 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 	closeTargetWrite := func() {
 		targetWriteOnce.Do(func() { relay.HalfClose(target, s.halfCloseObserver()) })
 	}
-	closeClientWrite := func() { relay.HalfClose(conn, nil) }
 
 	// Start proxying
 	proxyCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	toDestination, toClient := s.connectHalves(conn, req, target, targetSrc, closeTargetWrite)
+
+	results := make(chan relay.Result, 2)
+	go func() { results <- relay.Result{ToDestination: true, Err: toDestination.Run()} }()
+	go func() { results <- relay.Result{Err: toClient.Run()} }()
+
+	torn := false
+	closeBoth := func() {
+		torn = true
+		cancel()
+		// Force-close connections to unblock the other goroutine
+		_ = target.Close()
+		if nc, ok := conn.(net.Conn); ok {
+			_ = nc.Close()
+		}
+	}
+
+	// Wait for both halves. A half that ends cleanly - its source sent EOF -
+	// leaves the other running: that is the half-closed state, and it is how
+	// a destination gets to finish its answer after the client is done
+	// asking. A half that fails takes the other down with it.
+	var firstErr error
+	closedBy := ""
+	for pending := 2; pending > 0; {
+		select {
+		case r := <-results:
+			pending--
+			if closedBy == "" {
+				closedBy = relayClosedBy(r, sess.InGrace(), false)
+			}
+			switch {
+			case sess.InGrace():
+				// The account ended the session and the drain is running.
+				// The half towards the destination is expected to end - its
+				// side of the destination is closed - and the end of the
+				// drain is the end of the session.
+				if firstErr == nil {
+					firstErr = ErrSessionNotAllowed
+				}
+				if !r.ToDestination {
+					closeBoth()
+				}
+			case r.Err != nil:
+				if firstErr == nil {
+					firstErr = r.Err
+				}
+				closeBoth()
+			case torn:
+				// Both sides and the session are already closed: a half that
+				// ends cleanly now saw the teardown, not a half-close.
+			default:
+				sess.Enter(session.HalfClosed)
+			}
+		case <-proxyCtx.Done():
+			// The relay was ended by the context rather than by either peer:
+			// the server is stopping, or the caller gave up. Both sides are
+			// closed so the halves stop copying, and then they are waited
+			// for.
+			//
+			// This branch used to be empty, which meant returning while both
+			// halves were still running. The destination stayed open until
+			// the deferred close ran - and the halves kept copying through a
+			// connection the caller was closing, so a shutdown raced every
+			// live relay instead of ending it.
+			if firstErr == nil {
+				firstErr = proxyCtx.Err()
+			}
+			if closedBy == "" {
+				closedBy = ClosedByShutdown
+			}
+			closeBoth()
+			for ; pending > 0; pending-- {
+				<-results
+			}
+		}
+	}
+	if e := req.end; e != nil {
+		e.ClosedBy = closedBy
+		e.Up, e.Down = toDestination.Copied, toClient.Copied
+	}
+	return connFailure("relay", "copy", firstErr)
+}
+
+// connectHalves builds the two directions of a CONNECT relay with the
+// account's counter, quota check and drain.
+func (s *Server) connectHalves(conn conn, req *Request, target net.Conn, targetSrc io.Reader,
+	closeTargetWrite func()) (toDestination, toClient *relay.Half) {
+	sess := req.session
+	// Extract username for per-user traffic tracking
+	username := extractUsername(req)
+	closeClientWrite := func() { relay.HalfClose(conn, nil) }
 
 	// Resolved once per connection: the relay asks a closure, not the store.
 	var status func() SessionStatus
@@ -440,92 +513,56 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 		}
 	}
 
-	toDestination := &relay.Half{
+	toDestination = &relay.Half{
 		Dst: target, Src: req.bufConn,
 		Counter: counter, Status: status, Exhaust: exhaust(false),
 		CloseDst: closeTargetWrite,
 	}
-	toClient := &relay.Half{
+	toClient = &relay.Half{
 		Dst: conn, Src: targetSrc,
 		Counter: counter, Status: status, Exhaust: exhaust(true),
 		CloseDst: closeClientWrite,
 	}
-
-	results := make(chan relay.Result, 2)
-	go func() { results <- relay.Result{ToDestination: true, Err: toDestination.Run()} }()
-	go func() { results <- relay.Result{Err: toClient.Run()} }()
-
-	torn := false
-	closeBoth := func() {
-		torn = true
-		cancel()
-		// Force-close connections to unblock the other goroutine
-		_ = target.Close()
-		if nc, ok := conn.(net.Conn); ok {
-			_ = nc.Close()
-		}
-	}
-
-	// Wait for both halves. A half that ends cleanly - its source sent EOF -
-	// leaves the other running: that is the half-closed state, and it is how
-	// a destination gets to finish its answer after the client is done
-	// asking. A half that fails takes the other down with it.
-	var firstErr error
-	for pending := 2; pending > 0; {
-		select {
-		case r := <-results:
-			pending--
-			switch {
-			case sess.InGrace():
-				// The account ended the session and the drain is running.
-				// The half towards the destination is expected to end - its
-				// side of the destination is closed - and the end of the
-				// drain is the end of the session.
-				if firstErr == nil {
-					firstErr = ErrSessionNotAllowed
-				}
-				if !r.ToDestination {
-					closeBoth()
-				}
-			case r.Err != nil:
-				if firstErr == nil {
-					firstErr = r.Err
-				}
-				closeBoth()
-			case torn:
-				// Both sides and the session are already closed: a half that
-				// ends cleanly now saw the teardown, not a half-close.
-			default:
-				sess.Enter(session.HalfClosed)
-			}
-		case <-proxyCtx.Done():
-			// The relay was ended by the context rather than by either peer:
-			// the server is stopping, or the caller gave up. Both sides are
-			// closed so the halves stop copying, and then they are waited
-			// for.
-			//
-			// This branch used to be empty, which meant returning while both
-			// halves were still running. The destination stayed open until
-			// the deferred close ran - and the halves kept copying through a
-			// connection the caller was closing, so a shutdown raced every
-			// live relay instead of ending it.
-			if firstErr == nil {
-				firstErr = proxyCtx.Err()
-			}
-			closeBoth()
-			for ; pending > 0; pending-- {
-				<-results
-			}
-		}
-	}
-	return connFailure("relay", "copy", firstErr)
+	return toDestination, toClient
 }
 
-// handleBind is used to handle a connect command
-func (s *Server) handleBind(ctx context.Context, conn conn, req *Request) error {
-	// Rules were applied in handleRequest, before any name was resolved.
+// timedByHistory gives every address its own history: when its first backup
+// opens, and where a clean connect time is recorded.
+func (s *Server) timedByHistory(candidates []dialCandidate) []dialCandidate {
+	if s.dialHistory == nil {
+		return candidates
+	}
+	timed := make([]dialCandidate, len(candidates))
+	for i, c := range candidates {
+		c.firstBackup = s.dialHistory.firstBackup(c.addr)
+		addr := c.addr
+		c.onConnect = func(d time.Duration) { s.dialHistory.record(addr, d) }
+		timed[i] = c
+	}
+	return timed
+}
 
-	// TODO: Support bind
+// dialFailureReply picks the reply code of a dial no address answered with a
+// connection.
+func dialFailureReply(err error) uint8 {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "refused"):
+		return connectionRefused
+	case strings.Contains(msg, "network is unreachable"):
+		return networkUnreachable
+	}
+	return hostUnreachable
+}
+
+// handleBind answers BIND with "command not supported".
+func (s *Server) handleBind(ctx context.Context, conn conn, req *Request) error {
+	// BIND is not supported on purpose: the server would have to accept an
+	// inbound connection on behalf of the client, which no client of this
+	// proxy needs and which opens a listening port per request.
+	if req.end != nil {
+		req.end.Result, req.end.Stage = ResultError, "request"
+	}
 	if err := sendReply(conn, commandNotSupported, nil); err != nil {
 		return connFailure("request", "reply_write", err)
 	}

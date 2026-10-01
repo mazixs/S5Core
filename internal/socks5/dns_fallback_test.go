@@ -145,41 +145,24 @@ func (r candidateRules) Allow(ctx context.Context, req *Request) (context.Contex
 	return ctx, req.DestAddr.IP == nil || req.DestAddr.IP.String() == r.allowed
 }
 
-type fixedRewrite struct{ dest *AddrSpec }
-
-func (r fixedRewrite) Rewrite(ctx context.Context, _ *Request) (context.Context, *AddrSpec) {
-	return ctx, r.dest
-}
-
-func TestFallbackRespectsPolicyAndRewrite(t *testing.T) {
-	for _, rewrite := range []bool{false, true} {
-		t.Run(fmt.Sprint(rewrite), func(t *testing.T) {
-			target := fallbackTarget(t)
-			host, port, _ := net.SplitHostPort(target)
-			p, _ := net.LookupPort("tcp", port)
-			cfg := &Config{Resolver: candidateResolver{[]net.IP{net.ParseIP("127.0.0.2"), net.ParseIP(host)}}, Rules: candidateRules{host}}
-			if rewrite {
-				cfg.Rewriter = fixedRewrite{&AddrSpec{IP: net.ParseIP("127.0.0.3"), Port: p}}
-			}
-			var attempted []string
-			cfg.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
-				attempted = append(attempted, addr)
-				return (&net.Dialer{}).DialContext(ctx, network, addr)
-			}
-			s, err := New(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			req := &Request{Command: ConnectCommand, DestAddr: &AddrSpec{FQDN: "policy.invalid", Port: p}, bufConn: bytes.NewReader(nil)}
-			err = s.handleRequest(context.Background(), req, new(MockConn))
-			if rewrite {
-				if err == nil || len(attempted) != 1 || attempted[0] != net.JoinHostPort("127.0.0.3", port) {
-					t.Fatalf("rewrite escaped: %v %v", attempted, err)
-				}
-			} else if err != nil || len(attempted) != 1 || attempted[0] != target {
-				t.Fatalf("policy escaped: %v %v", attempted, err)
-			}
-		})
+func TestFallbackRespectsPolicy(t *testing.T) {
+	target := fallbackTarget(t)
+	host, port, _ := net.SplitHostPort(target)
+	p, _ := net.LookupPort("tcp", port)
+	cfg := &Config{Resolver: candidateResolver{[]net.IP{net.ParseIP("127.0.0.2"), net.ParseIP(host)}}, Rules: candidateRules{host}}
+	var attempted []string
+	cfg.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		attempted = append(attempted, addr)
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	s, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &Request{Command: ConnectCommand, DestAddr: &AddrSpec{FQDN: "policy.invalid", Port: p}, bufConn: bytes.NewReader(nil)}
+	err = s.handleRequest(context.Background(), req, new(MockConn))
+	if err != nil || len(attempted) != 1 || attempted[0] != target {
+		t.Fatalf("policy escaped: %v %v", attempted, err)
 	}
 }
 

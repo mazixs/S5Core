@@ -13,11 +13,13 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -51,10 +53,6 @@ func ParseLevel(s string) (slog.Level, error) {
 		return slog.LevelInfo, fmt.Errorf("unknown log level %q (want debug, info, warn or error)", s)
 	}
 }
-
-// SetLevel replaces the current level. It is safe to call at any time,
-// including from a signal handler while connections are being served.
-func SetLevel(l slog.Level) { levelVar.Set(l) }
 
 // Level reports the current level.
 func Level() slog.Level { return levelVar.Level() }
@@ -118,7 +116,90 @@ func ToggleDebug() slog.Level {
 
 // New builds a JSON logger bound to the shared level variable.
 func New(w io.Writer) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: levelVar}))
+	return slog.New(counting{slog.NewJSONHandler(w, &slog.HandlerOptions{Level: levelVar})})
+}
+
+// NewTee is New for a file, plus a short text copy of the lines at or above
+// consoleLevel for a console. The file keeps the shared level; the console
+// line is only built when its own level lets it through.
+func NewTee(file, console io.Writer, consoleLevel slog.Leveler) *slog.Logger {
+	return slog.New(counting{tee{
+		slog.NewJSONHandler(file, &slog.HandlerOptions{Level: levelVar}),
+		slog.NewTextHandler(console, &slog.HandlerOptions{Level: consoleLevel}),
+	}})
+}
+
+// The service log's own line counts by level, and the lines its writer
+// refused, for s5core_log_lines_total and s5core_log_dropped_total.
+var (
+	serviceLines   [4]atomic.Uint64
+	serviceDropped atomic.Uint64
+)
+
+// ServiceLevels names the levels ServiceLines reports, in its order.
+func ServiceLevels() []string { return []string{"debug", "info", "warn", "error"} }
+
+// ServiceLines is how many lines the service log wrote, by level, in the order
+// of ServiceLevels.
+func ServiceLines(level int) uint64 { return serviceLines[level].Load() }
+
+// ServiceDropped is how many lines the service log could not write.
+func ServiceDropped() uint64 { return serviceDropped.Load() }
+
+func levelIndex(l slog.Level) int {
+	switch {
+	case l < slog.LevelInfo:
+		return 0
+	case l < slog.LevelWarn:
+		return 1
+	case l < slog.LevelError:
+		return 2
+	}
+	return 3
+}
+
+type counting struct{ slog.Handler }
+
+// Handle writes the time in UTC, as the session journal does: lines of a
+// client on a laptop and of a server in a container must line up as written.
+func (h counting) Handle(ctx context.Context, r slog.Record) error {
+	r.Time = r.Time.UTC()
+	err := h.Handler.Handle(ctx, r)
+	if err != nil {
+		serviceDropped.Add(1)
+	} else {
+		serviceLines[levelIndex(r.Level)].Add(1)
+	}
+	return err
+}
+
+func (h counting) WithAttrs(as []slog.Attr) slog.Handler { return counting{h.Handler.WithAttrs(as)} }
+func (h counting) WithGroup(n string) slog.Handler       { return counting{h.Handler.WithGroup(n)} }
+
+type tee [2]slog.Handler
+
+func (t tee) Enabled(ctx context.Context, l slog.Level) bool {
+	return t[0].Enabled(ctx, l) || t[1].Enabled(ctx, l)
+}
+
+func (t tee) Handle(ctx context.Context, r slog.Record) error {
+	var err error
+	for _, h := range t {
+		if h.Enabled(ctx, r.Level) {
+			if e := h.Handle(ctx, r); e != nil && err == nil {
+				err = e
+			}
+		}
+	}
+	return err
+}
+
+func (t tee) WithAttrs(as []slog.Attr) slog.Handler {
+	return tee{t[0].WithAttrs(as), t[1].WithAttrs(as)}
+}
+
+func (t tee) WithGroup(n string) slog.Handler {
+	return tee{t[0].WithGroup(n), t[1].WithGroup(n)}
 }
 
 // Setup builds the process logger from LOG_LEVEL, installs it as the slog

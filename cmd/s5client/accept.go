@@ -2,24 +2,24 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
-	"syscall"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/acceptretry"
 )
 
 // Resource exhaustion must not turn into a CPU and log-writing loop. A
 // successful accept resets the delay; shutdown interrupts even the longest wait.
 func acceptWithBackoff(ctx context.Context, listener net.Listener) (net.Conn, error) {
-	delay := 5 * time.Millisecond
+	delay := acceptretry.Next(0)
 	var logged time.Time
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		c, err := listener.Accept()
-		if err == nil || !retryAccept(err) {
+		if err == nil || !acceptretry.Recoverable(err) {
 			return c, err
 		}
 		if time.Since(logged) >= time.Second {
@@ -33,19 +33,6 @@ func acceptWithBackoff(ctx context.Context, listener net.Listener) (net.Conn, er
 			return nil, ctx.Err()
 		case <-timer.C:
 		}
-		delay = min(delay*2, time.Second)
+		delay = acceptretry.Next(delay)
 	}
-}
-
-func retryAccept(err error) bool {
-	if errors.Is(err, net.ErrClosed) {
-		return false
-	}
-	for _, errno := range []error{syscall.EMFILE, syscall.ENFILE, syscall.ENOBUFS, syscall.ENOMEM, syscall.ECONNABORTED, syscall.EINTR, syscall.EAGAIN} {
-		if errors.Is(err, errno) {
-			return true
-		}
-	}
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
 }

@@ -47,69 +47,33 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		return err
 	}
 
-	// The account is resolved once, here, and shared by both directions:
-	// where its traffic is counted, and whether it may still transfer.
-	acct := s.udpAccountFor(req)
-
-	// The socket the client talks to. Its address is what the reply carries.
-	bindAddr := &net.UDPAddr{IP: s.config.BindIP, Port: 0}
-	if bindAddr.IP == nil {
-		bindAddr.IP = net.IPv4zero
-	}
-	clientConn, err := udpbuf.ListenUDP("udp", bindAddr)
-	if err != nil {
-		if err := sendReply(conn, serverFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %w", err)
-		}
-		return fmt.Errorf("failed to bind UDP port: %w", err)
-	}
-	defer func() { _ = clientConn.Close() }()
-
-	// The socket the internet talks to. It takes the same local address, so
-	// an operator who pinned BIND_IP to one interface still has every
-	// datagram leave through it, and a port of its own, so the address the
-	// client was handed is not the address targets get to see.
-	targetConn, err := udpbuf.ListenUDP("udp", &net.UDPAddr{IP: bindAddr.IP, Port: 0})
-	if err != nil {
-		if err := sendReply(conn, serverFailure, nil); err != nil {
-			return fmt.Errorf("failed to send reply: %w", err)
-		}
-		return fmt.Errorf("failed to bind UDP egress port: %w", err)
-	}
-	defer func() { _ = targetConn.Close() }()
-
-	// Tell the client where to send UDP packets
-	localAddr := clientConn.LocalAddr().(*net.UDPAddr)
-	bindSpec := AddrSpec{IP: localAddr.IP, Port: localAddr.Port}
-
-	// Some clients expect our public IP if we bound to 0.0.0.0
-	if bindSpec.IP.IsUnspecified() {
-		if tcpLocal, ok := client.LocalAddr().(*net.TCPAddr); ok {
-			bindSpec.IP = tcpLocal.IP
-		}
+	a := &plainAssociation{
+		s:   s,
+		req: req,
+		// The account is resolved once, here, and shared by both directions:
+		// where its traffic is counted, and whether it may still transfer.
+		acct: s.udpAccountFor(req),
 	}
 
-	if err := sendReply(conn, successReply, &bindSpec); err != nil {
-		return fmt.Errorf("failed to send reply: %w", err)
+	if err := a.bind(conn, client); err != nil {
+		return err
 	}
+	defer func() { _ = a.clientConn.Close() }()
+	defer func() { _ = a.targetConn.Close() }()
 
 	// We only accept packets from the client's registered IP (weak security as per RFC)
-	clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-
-	// clientUDPAddrPtr is written by the client-facing goroutine and read by
-	// the target-facing one - use atomic pointer.
-	var clientUDPAddrPtr atomic.Pointer[net.UDPAddr]
+	a.clientIP, _, _ = net.SplitHostPort(conn.RemoteAddr().String())
 
 	assocCtx, cancel := context.WithCancel(ctx)
-	errCh := make(chan error, 3)
-	done := make(chan struct{})
+	a.errCh = make(chan error, 3)
+	a.done = make(chan struct{})
 	var workers sync.WaitGroup
 	workers.Add(3)
 	defer func() {
 		cancel()
 		_ = client.SetDeadline(time.Now())
-		_ = clientConn.Close()
-		_ = targetConn.Close()
+		_ = a.clientConn.Close()
+		_ = a.targetConn.Close()
 		workers.Wait()
 	}()
 
@@ -132,143 +96,19 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 		defer workers.Done()
 		var b [1]byte
 		_, closed = req.bufConn.Read(b[:])
-		close(done)
+		close(a.done)
 		// Force the blocking UDP reads to unblock
-		_ = clientConn.Close()
-		_ = targetConn.Close()
+		_ = a.clientConn.Close()
+		_ = a.targetConn.Close()
 	}()
 
-	// Client -> target. Everything that arrives here claims to be from the
-	// client, and is dropped unless it really is.
 	go func() {
 		defer workers.Done()
-		buf := make([]byte, 65535)
-		meter := newUDPMeter(acct)
-		question := newDatagramQuestion(req)
-		dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
-			nw, err := targetConn.WriteToUDPAddrPort(payload, dest)
-			if err != nil || nw <= 0 {
-				return true
-			}
-			if st := meter.inbound(nw); st != SessionAllowed {
-				select {
-				case errCh <- s.endOfAssociation(req, st):
-				default:
-				}
-				return false
-			}
-			return true
-		}, meter.flush)
-		defer dispatcher.close()
-
-		for {
-			select {
-			case <-done:
-				return
-			default:
-			}
-
-			// Set a short read deadline so we can check `done` periodically
-			_ = clientConn.SetReadDeadline(time.Now().Add(udpPollInterval))
-			n, rAddr, err := clientConn.ReadFromUDP(buf)
-			if err != nil {
-				if isTimeout(err) {
-					continue
-				}
-				select {
-				case <-done:
-				default:
-					errCh <- fmt.Errorf("udp read failed: %w", err)
-				}
-				return
-			}
-
-			if !isClientDatagram(clientUDPAddrPtr.Load(), clientIP, rAddr) {
-				continue
-			}
-
-			// Parse SOCKS5 UDP header
-			// IMPORTANT: copy the IP out of buf before reuse
-			hdrLen, err := parseUDPHeaderInto(buf[:n], &question.dest)
-			if err != nil {
-				s.config.Logger.Warn("socks: invalid UDP header from client", "error", err)
-				continue
-			}
-
-			if !s.allowDatagram(ctx, question) {
-				s.config.Logger.Debug("socks: udp datagram blocked by rules",
-					"destination", question.dest.String())
-				continue
-			}
-
-			// Remember client's actual UDP address (atomic store)
-			addrCopy := &net.UDPAddr{
-				IP:   make(net.IP, len(rAddr.IP)),
-				Port: rAddr.Port,
-				Zone: rAddr.Zone,
-			}
-			copy(addrCopy.IP, rAddr.IP)
-			clientUDPAddrPtr.Store(addrCopy)
-
-			dispatcher.submit(&question.dest, buf[hdrLen:n])
-		}
+		a.fromClient(ctx, assocCtx)
 	}()
-
-	// Target -> client. Nothing that arrives here is ever read as a command:
-	// it is a reply, and the only question is whether there is a client
-	// address to send it to yet.
 	go func() {
 		defer workers.Done()
-		buf := make([]byte, 65535)
-		meter := newUDPMeter(acct)
-		defer meter.flush()
-
-		for {
-			select {
-			case <-done:
-				return
-			default:
-			}
-
-			_ = targetConn.SetReadDeadline(time.Now().Add(udpPollInterval))
-			n, rAddr, err := targetConn.ReadFromUDP(buf)
-			if err != nil {
-				if isTimeout(err) {
-					continue
-				}
-				select {
-				case <-done:
-				default:
-					errCh <- fmt.Errorf("udp read failed: %w", err)
-				}
-				return
-			}
-
-			curClient := clientUDPAddrPtr.Load()
-			if curClient == nil {
-				continue // Drop if we don't know the client's UDP port yet
-			}
-
-			// The header and the datagram are assembled in a pooled
-			// buffer: a fresh slice per packet, sized with the payload,
-			// is up to 64 KiB of garbage per datagram on a path whose
-			// whole point is small packets (plan task Ф6-5).
-			pktPtr := udpBufPool.Get().(*[]byte)
-			pkt := AppendUDPHeaderFromAddr((*pktPtr)[:0], rAddr)
-			pkt = append(pkt, buf[:n]...)
-
-			_, werr := clientConn.WriteToUDP(pkt, curClient)
-			udpBufPool.Put(pktPtr)
-			if werr != nil {
-				continue
-			}
-			// The payload is what the target sent; the header this server
-			// put in front of it is not the client's traffic.
-			if st := meter.outbound(n); st != SessionAllowed {
-				errCh <- s.endOfAssociation(req, st)
-				return
-			}
-		}
+		a.fromTargets()
 	}()
 
 	// Wait for TCP close, a relay failure, or server shutdown. A closed TCP
@@ -278,13 +118,213 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 	select {
 	case <-ctx.Done():
 		end = ctx.Err()
-		s.associationEnded(AssociationPlain, end)
-	case <-done:
-		s.associationEnded(AssociationPlain, closed)
-	case end = <-errCh:
-		s.associationEnded(AssociationPlain, end)
+		s.associationEnded(req, AssociationPlain, end, nil)
+	case <-a.done:
+		s.associationEnded(req, AssociationPlain, closed, nil)
+	case end = <-a.errCh:
+		s.associationEnded(req, AssociationPlain, end, nil)
 	}
 	return end
+}
+
+// plainAssociation is one RFC 1928 UDP ASSOCIATE: the socket the client talks
+// to, the socket the targets talk to, and what both directions share.
+type plainAssociation struct {
+	s    *Server
+	req  *Request
+	acct *udpAccount
+
+	clientConn *net.UDPConn
+	targetConn *net.UDPConn
+	clientIP   string
+	// clientAddr is written by the client-facing goroutine and read by the
+	// target-facing one.
+	clientAddr atomic.Pointer[net.UDPAddr]
+
+	done  chan struct{}
+	errCh chan error
+}
+
+// bind opens both sockets and answers the client with the address of its own.
+// On failure it answers with serverFailure and closes what it opened.
+func (a *plainAssociation) bind(conn conn, client net.Conn) error {
+	// The socket the client talks to. Its address is what the reply carries.
+	bindAddr := &net.UDPAddr{IP: a.s.config.BindIP, Port: 0}
+	if bindAddr.IP == nil {
+		bindAddr.IP = net.IPv4zero
+	}
+	clientConn, err := udpbuf.ListenUDP("udp", bindAddr)
+	if err != nil {
+		if err := sendReply(conn, serverFailure, nil); err != nil {
+			return fmt.Errorf("failed to send reply: %w", err)
+		}
+		return fmt.Errorf("failed to bind UDP port: %w", err)
+	}
+
+	// The socket the internet talks to. It takes the same local address, so
+	// an operator who pinned BIND_IP to one interface still has every
+	// datagram leave through it, and a port of its own, so the address the
+	// client was handed is not the address targets get to see.
+	targetConn, err := udpbuf.ListenUDP("udp", &net.UDPAddr{IP: bindAddr.IP, Port: 0})
+	if err != nil {
+		_ = clientConn.Close()
+		if err := sendReply(conn, serverFailure, nil); err != nil {
+			return fmt.Errorf("failed to send reply: %w", err)
+		}
+		return fmt.Errorf("failed to bind UDP egress port: %w", err)
+	}
+	a.clientConn, a.targetConn = clientConn, targetConn
+
+	// Tell the client where to send UDP packets
+	localAddr := clientConn.LocalAddr().(*net.UDPAddr)
+	bindSpec := AddrSpec{IP: localAddr.IP, Port: localAddr.Port}
+
+	// Some clients expect our public IP if we bound to 0.0.0.0
+	if bindSpec.IP.IsUnspecified() {
+		if tcpLocal, ok := client.LocalAddr().(*net.TCPAddr); ok {
+			bindSpec.IP = tcpLocal.IP
+		}
+	}
+
+	if err := sendReply(conn, successReply, &bindSpec); err != nil {
+		_ = clientConn.Close()
+		_ = targetConn.Close()
+		return fmt.Errorf("failed to send reply: %w", err)
+	}
+	return nil
+}
+
+// fromClient relays client -> target. Everything that arrives here claims to
+// be from the client, and is dropped unless it really is.
+func (a *plainAssociation) fromClient(ctx, assocCtx context.Context) {
+	s, req := a.s, a.req
+	buf := make([]byte, 65535)
+	meter := newUDPMeter(a.acct)
+	question := newDatagramQuestion(req)
+	dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+		nw, err := a.targetConn.WriteToUDPAddrPort(payload, dest)
+		if err != nil || nw <= 0 {
+			return true
+		}
+		req.end.target(dest)
+		if st := meter.inbound(nw); st != SessionAllowed {
+			select {
+			case a.errCh <- s.endOfAssociation(req, st):
+			default:
+			}
+			return false
+		}
+		return true
+	}, meter.flush)
+	defer dispatcher.close()
+
+	for {
+		select {
+		case <-a.done:
+			return
+		default:
+		}
+
+		// Set a short read deadline so we can check `done` periodically
+		_ = a.clientConn.SetReadDeadline(time.Now().Add(udpPollInterval))
+		n, rAddr, err := a.clientConn.ReadFromUDP(buf)
+		if err != nil {
+			if isTimeout(err) {
+				continue
+			}
+			select {
+			case <-a.done:
+			default:
+				a.errCh <- fmt.Errorf("udp read failed: %w", err)
+			}
+			return
+		}
+
+		if !isClientDatagram(a.clientAddr.Load(), a.clientIP, rAddr) {
+			continue
+		}
+
+		// Parse SOCKS5 UDP header
+		// IMPORTANT: copy the IP out of buf before reuse
+		hdrLen, err := parseUDPHeaderInto(buf[:n], &question.dest)
+		if err != nil {
+			s.config.Logger.Warn("socks: invalid UDP header from client", "error", err)
+			continue
+		}
+
+		if !s.allowDatagram(ctx, question) {
+			s.config.Logger.Debug("socks: udp datagram blocked by rules",
+				"destination", question.dest.String())
+			continue
+		}
+
+		// Remember client's actual UDP address (atomic store)
+		addrCopy := &net.UDPAddr{
+			IP:   make(net.IP, len(rAddr.IP)),
+			Port: rAddr.Port,
+			Zone: rAddr.Zone,
+		}
+		copy(addrCopy.IP, rAddr.IP)
+		a.clientAddr.Store(addrCopy)
+
+		dispatcher.submit(&question.dest, buf[hdrLen:n])
+	}
+}
+
+// fromTargets relays target -> client. Nothing that arrives here is ever read
+// as a command: it is a reply, and the only question is whether there is a
+// client address to send it to yet.
+func (a *plainAssociation) fromTargets() {
+	buf := make([]byte, 65535)
+	meter := newUDPMeter(a.acct)
+	defer meter.flush()
+
+	for {
+		select {
+		case <-a.done:
+			return
+		default:
+		}
+
+		_ = a.targetConn.SetReadDeadline(time.Now().Add(udpPollInterval))
+		n, rAddr, err := a.targetConn.ReadFromUDP(buf)
+		if err != nil {
+			if isTimeout(err) {
+				continue
+			}
+			select {
+			case <-a.done:
+			default:
+				a.errCh <- fmt.Errorf("udp read failed: %w", err)
+			}
+			return
+		}
+
+		curClient := a.clientAddr.Load()
+		if curClient == nil {
+			continue // Drop if we don't know the client's UDP port yet
+		}
+
+		// The header and the datagram are assembled in a pooled
+		// buffer: a fresh slice per packet, sized with the payload,
+		// is up to 64 KiB of garbage per datagram on a path whose
+		// whole point is small packets (plan task Ф6-5).
+		pktPtr := udpBufPool.Get().(*[]byte)
+		pkt := AppendUDPHeaderFromAddr((*pktPtr)[:0], rAddr)
+		pkt = append(pkt, buf[:n]...)
+
+		_, werr := a.clientConn.WriteToUDP(pkt, curClient)
+		udpBufPool.Put(pktPtr)
+		if werr != nil {
+			continue
+		}
+		// The payload is what the target sent; the header this server
+		// put in front of it is not the client's traffic.
+		if st := meter.outbound(n); st != SessionAllowed {
+			a.errCh <- a.s.endOfAssociation(a.req, st)
+			return
+		}
+	}
 }
 
 // allowDatagram asks the rule set where this one datagram is going.
@@ -325,7 +365,6 @@ type datagramQuestion struct {
 
 func newDatagramQuestion(req *Request) *datagramQuestion {
 	q := &datagramQuestion{req: Request{
-		Version:     Socks5Version,
 		Command:     req.Command,
 		AuthContext: req.AuthContext,
 		RemoteAddr:  req.RemoteAddr,
@@ -375,6 +414,8 @@ type udpAccount struct {
 	// docs/reports/code-quality-audit-2026-09-20.md).
 	bytesIn  func(int64)
 	bytesOut func(int64)
+	// end, when set, gets the association's totals on every flush.
+	end *ConnEnd
 }
 
 // udpAccountFor resolves the account behind this request.
@@ -382,6 +423,7 @@ func (s *Server) udpAccountFor(req *Request) *udpAccount {
 	acct := &udpAccount{
 		bytesIn:  s.config.BytesAddIn,
 		bytesOut: s.config.BytesAddOut,
+		end:      req.end,
 	}
 	username := extractUsername(req)
 	if username == "" {
@@ -423,6 +465,8 @@ type udpMeter struct {
 	// not yet in the account's counter. They are separate sums because the
 	// metrics are directional and the quota is not.
 	in, out, due int64
+	// inN and outN are the datagrams behind in and out.
+	inN, outN int64
 	// asked is when the account was last consulted.
 	asked time.Time
 }
@@ -446,8 +490,17 @@ const udpStatusInterval = time.Second
 // inbound counts a datagram relayed from the client, outbound one relayed to
 // it. Both answer what the account may still do, which is SessionAllowed for
 // as long as the batch boundary has not been reached.
-func (m *udpMeter) inbound(n int) SessionStatus  { m.in += int64(n); return m.record(int64(n)) }
-func (m *udpMeter) outbound(n int) SessionStatus { m.out += int64(n); return m.record(int64(n)) }
+func (m *udpMeter) inbound(n int) SessionStatus {
+	m.in += int64(n)
+	m.inN++
+	return m.record(int64(n))
+}
+
+func (m *udpMeter) outbound(n int) SessionStatus {
+	m.out += int64(n)
+	m.outN++
+	return m.record(int64(n))
+}
 
 func (m *udpMeter) record(n int64) SessionStatus {
 	m.due += n
@@ -476,7 +529,10 @@ func (m *udpMeter) flush() {
 	if m.due > 0 && m.acct.counter != nil {
 		m.acct.counter.Add(m.due)
 	}
-	m.in, m.out, m.due = 0, 0, 0
+	if m.inN+m.outN > 0 {
+		m.acct.end.addDatagrams(m.in, m.out, m.inN, m.outN)
+	}
+	m.in, m.out, m.due, m.inN, m.outN = 0, 0, 0, 0, 0
 }
 
 // endOfAssociation is what a UDP association does when its account may no
@@ -514,29 +570,12 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		}
 		return err
 	}
-	var nativeSession NativeAssociation
-	if req.Command == UDPNativeCommand {
-		// A server with no native UDP at all answers as a plain SOCKS5
-		// server does, and the client asks again by 0x83.
-		if s.config.NativeUDP == nil {
-			failure := protocolFailure("request", "command", errors.New("native UDP is not supported"))
-			if err := sendReply(conn, commandNotSupported, nil); err != nil {
-				return errors.Join(failure, connFailure("request", "reply_write", err))
-			}
-			return failure
-		}
-		var nativeErr error
-		nativeSession, nativeErr = s.config.NativeUDP(tcpConn)
-		if nativeErr != nil {
-			failure := connFailure("request", "native_udp", nativeErr)
-			if err := sendReply(conn, serverFailure, nil); err != nil {
-				return errors.Join(failure, connFailure("request", "reply_write", err))
-			}
-			return failure
-		}
-		if nativeSession != nil {
-			defer nativeSession.Close()
-		}
+	nativeSession, err := s.openNative(conn, tcpConn, req)
+	if err != nil {
+		return err
+	}
+	if nativeSession != nil {
+		defer nativeSession.Close()
 	}
 
 	if s.config.OnUDPTunnel != nil {
@@ -572,12 +611,29 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 4)
 	count := s.config.NativeCounters
 	if count == nil {
 		count = new(NativeCounters)
 	}
-	path := answerPath{count: count}
+	t := &udpTunnel{
+		s:         s,
+		req:       req,
+		ctx:       ctx,
+		tunnelCtx: tunnelCtx,
+		cancel:    cancel,
+		tcpConn:   tcpConn,
+		// Frames are read through the handshake buffer and written to the
+		// socket. The first frame of a client that does not wait for its
+		// reply is already in that buffer, and reading past it from the
+		// socket would drop it (plan task Ф6-5).
+		tcpReader: req.bufConn,
+		native:    nativeSession,
+		egress:    egress,
+		acct:      acct,
+		count:     count,
+		path:      answerPath{count: count},
+		errCh:     make(chan error, 4),
+	}
 	// No goroutine outlives this function: it waits for all of them before
 	// it returns, so nothing is still reading the handshake buffer or writing
 	// into the connection once the caller starts closing it.
@@ -585,36 +641,17 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	halves.Add(2)
 	// On a native association the stream has one writer of its own, and the
 	// reader of the answers only queues for it (TunnelWriter).
-	var fallback *TunnelWriter
 	if nativeSession != nil {
 		halves.Add(2)
-		var answer [10]byte
-		tcpMeter := newUDPMeter(acct)
-		fallback = NewTunnelWriter(tcpConn, func() []byte {
-			binary.BigEndian.PutUint64(answer[2:], nativeSession.Next())
-			return answer[:]
-		}, func(payload int) error {
-			// The length prefix and the header belong to the tunnel, not to
-			// the client's transfer.
-			if st := tcpMeter.outbound(payload); st != SessionAllowed {
-				return s.endOfAssociation(req, st)
-			}
-			return nil
-		})
-		fallback.Count(&count.Drops)
+		tcpMeter := t.startFallback()
 		defer func() {
-			if n := fallback.Dropped(); n > 0 {
+			if n := t.fallback.Dropped(); n > 0 {
 				s.config.Logger.Debug("socks: native association dropped frames its stream could not take",
 					"frames", n)
 			}
 		}()
 		defer tcpMeter.flush()
 	}
-	// Frames are read through the handshake buffer and written to the socket.
-	// The first frame of a client that does not wait for its reply is already
-	// in that buffer, and reading past it from the socket would drop it (plan
-	// task Ф6-5).
-	tcpReader := req.bufConn
 	// A tunnel is idle whenever the application has nothing to send, so no idle
 	// timeout may apply to it. The session's Tunnel kind is what tells the
 	// transport to stop arming the relay idle timeout; the explicit clear
@@ -623,22 +660,6 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	req.session.Become(session.Tunnel)
 	req.session.Enter(session.Relay)
 	_ = tcpConn.SetDeadline(time.Time{})
-
-	// Helper to signal termination to both goroutines. The cause goes first:
-	// the deadline below wakes the other half with a timeout of its own, and
-	// sent after it the timeout could reach errCh ahead of its cause.
-	stopTunnel := func(e error) {
-		select {
-		case errCh <- e:
-		default:
-		}
-		cancel()
-		_ = tcpConn.SetDeadline(time.Now()) // unblock reads/writes
-		_ = egress.Close()
-		if fallback != nil {
-			fallback.Stop()
-		}
-	}
 
 	// Only one goroutine below writes to the TCP connection - the one
 	// carrying datagrams from the internet, or on a native association the
@@ -650,123 +671,45 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	//
 	// A second writer would need this back. TestOnlyOneGoroutineWritesToTheTunnel
 	// fails under -race if one appears.
-	if fallback != nil {
+	if t.fallback != nil {
 		go func() {
 			defer halves.Done()
-			if err := fallback.Run(); err != nil {
-				stopTunnel(err)
+			if err := t.fallback.Run(); err != nil {
+				t.stop(err)
 			}
 		}()
 	}
 
-	// Internet -> TCP: read UDP responses and write into TCP stream
 	go func() {
 		defer halves.Done()
-		buf := make([]byte, 65535)
-		meter := newUDPMeter(acct)
-		defer meter.flush()
-		for {
-			select {
-			case <-tunnelCtx.Done():
-				return
-			default:
-			}
-
-			c := egress.current()
-			n, rAddr, err := c.ReadFromUDPAddrPort(buf)
-			if err != nil {
-				// The socket may have been closed under this read by a
-				// rotation, not by shutdown; if so, read from the new one.
-				if egress.replaced(c) {
-					continue
-				}
-				stopTunnel(fmt.Errorf("udp socket read error: %w", err))
-				return
-			}
-			if egress.gotReply() {
-				if n := egress.rotations(); n > 0 {
-					s.config.Logger.Info("socks: udp egress socket answered after rotation", "rotations", n)
-				}
-			}
-
-			// Length prefix, header and payload are written into one pooled
-			// buffer. The header used to be built into a slice of its own and
-			// then copied in here, which is an allocation and a copy of the
-			// whole datagram per packet (plan task Ф6-5).
-			framePtr := udpBufPool.Get().(*[]byte)
-			frame := AppendUDPHeaderFromAddrPort((*framePtr)[:2], rAddr)
-			frame = append(frame, buf[:n]...)
-			binary.BigEndian.PutUint16(frame[0:2], uint16(len(frame)-2))
-
-			switch {
-			case nativeSession == nil:
-			case len(frame)-2 > nativeSession.MaxPayload():
-				count.AnswersOversize.Add(1)
-			case !path.Native():
-				count.AnswersRoute.Add(1)
-			default:
-				err := nativeSession.Send(frame[2:])
-				if err == nil {
-					count.AnswersNative.Add(1)
-					udpBufPool.Put(framePtr)
-					if st := meter.outbound(n); st != SessionAllowed {
-						stopTunnel(s.endOfAssociation(req, st))
-						return
-					}
-					continue
-				}
-				count.AnswersFailed.Add(1)
-				// This answer goes by TCP either way; only a path that is gone
-				// takes the answers after it there (see NativeAssociation.Send).
-				if errors.Is(err, ErrNativePathGone) {
-					path.Gone()
-				}
-			}
-			if fallback != nil {
-				// A frame the stream cannot take in time is lost, as the
-				// datagram would be.
-				fallback.Submit(frame, nil, n)
-				udpBufPool.Put(framePtr)
-				continue
-			}
-			_, err = tcpConn.Write(frame)
-			udpBufPool.Put(framePtr)
-			if err != nil {
-				stopTunnel(fmt.Errorf("tcp write error: %w", err))
-				return
-			}
-			// The length prefix and the header belong to the tunnel, not to
-			// the client's transfer.
-			if st := meter.outbound(n); st != SessionAllowed {
-				stopTunnel(s.endOfAssociation(req, st))
-				return
-			}
-		}
+		t.answers()
 	}()
 
 	// Both ways the client sends, by this stream and natively, share one
 	// dispatcher: the datagrams and lookups it may queue are the
 	// association's. It closes after both readers, when the handler returns.
 	meter := newUDPMeter(acct)
-	dispatcher := newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+	t.dispatcher = newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
 		nw, err := egress.current().WriteToUDPAddrPort(payload, dest)
 		if err != nil {
 			return true
 		}
 		egress.sentToTarget()
+		req.end.target(dest)
 		if st := meter.inbound(nw); st != SessionAllowed {
-			stopTunnel(s.endOfAssociation(req, st))
+			t.stop(s.endOfAssociation(req, st))
 			return false
 		}
 		return true
 	}, meter.flush)
-	defer dispatcher.close()
+	defer t.dispatcher.close()
 
 	// Rotate the egress socket while it hears nothing back, so a match that
 	// lands on a dead link gets a fresh draw instead of waiting out the game's
 	// own retries on the same dead port. Each draw is a debug line: a target
 	// that never answers, such as one-way telemetry, draws all four. The
-	// first reply after a draw is the info line, written by the reader above.
+	// first answer after a draw is one info line (replied), and the record
+	// (ConnEnd) carries the draws and whether a target answered.
 	halves.Add(1)
 	go func() {
 		defer halves.Done()
@@ -775,109 +718,15 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		})
 	}()
 
-	// TCP -> Internet: read length-prefixed UDP packets and send out
 	go func() {
 		defer halves.Done()
-		question := newDatagramQuestion(req)
-		lenBuf := make([]byte, 2)
-		var next [8]byte
-		for {
-			select {
-			case <-tunnelCtx.Done():
-				return
-			default:
-			}
-
-			if _, err := io.ReadFull(tcpReader, lenBuf); err != nil {
-				if tunnelCtx.Err() != nil {
-					return
-				}
-				stopTunnel(fmt.Errorf("tcp read length error: %w", err))
-				return
-			}
-
-			packetLen := binary.BigEndian.Uint16(lenBuf)
-			if packetLen == 0 {
-				// On 0x84 with a native path an empty frame is the client
-				// saying that it does not hear the server natively, followed
-				// by the counter of its next datagram at the time it decided.
-				// The answers go back to this stream unless the client said
-				// the opposite later by UDP, and the server answers with its
-				// own counter either way. On 0x83 it is a keepalive
-				// (docs/veil-spec.md, 10.6).
-				if nativeSession != nil {
-					if _, err := io.ReadFull(tcpReader, next[:]); err != nil {
-						if tunnelCtx.Err() != nil {
-							return
-						}
-						stopTunnel(fmt.Errorf("tcp read resync error: %w", err))
-						return
-					}
-					counter := binary.BigEndian.Uint64(next[:])
-					path.Lost(counter)
-					nativeSession.Resync(counter)
-					fallback.Control()
-				}
-				continue
-			}
-
-			framePtr := udpBufPool.Get().(*[]byte)
-			frameBuf := (*framePtr)[:packetLen]
-			if _, err := io.ReadFull(tcpReader, frameBuf); err != nil {
-				udpBufPool.Put(framePtr)
-				if tunnelCtx.Err() != nil {
-					return
-				}
-				stopTunnel(fmt.Errorf("tcp read frame error: %w", err))
-				return
-			}
-
-			hdrLen, err := parseUDPHeaderInto(frameBuf, &question.dest)
-			if err != nil {
-				udpBufPool.Put(framePtr)
-				s.config.Logger.Warn("socks: invalid udp-tcpmux header", "error", err)
-				continue
-			}
-
-			if !s.allowDatagram(ctx, question) {
-				udpBufPool.Put(framePtr)
-				s.config.Logger.Debug("socks: udp-tcpmux datagram blocked by rules",
-					"destination", question.dest.String())
-				continue
-			}
-			// A datagram by 0x83 says nothing about the answers: the client
-			// sends by it what is too big for native and what it has while
-			// the path is unproven, and it tells the server by the empty
-			// frame when it stops hearing it.
-			if nativeSession != nil {
-				if int(packetLen) > nativeSession.MaxPayload() {
-					count.ClientOversize.Add(1)
-				} else {
-					count.ClientRoute.Add(1)
-				}
-			}
-
-			dispatcher.submit(&question.dest, frameBuf[hdrLen:])
-			udpBufPool.Put(framePtr)
-		}
+		t.fromStream()
 	}()
 
 	if nativeSession != nil {
 		go func() {
 			defer halves.Done()
-			question := newDatagramQuestion(req)
-			handle := func(counter uint64, packet []byte) {
-				hdrLen, err := parseUDPHeaderInto(packet, &question.dest)
-				if err != nil || !s.allowDatagram(ctx, question) {
-					return
-				}
-				count.ClientNative.Add(1)
-				path.Heard(counter)
-				dispatcher.submit(&question.dest, packet[hdrLen:])
-			}
-			heard := path.Heard
-			for nativeSession.Receive(tunnelCtx, handle, heard) {
-			}
+			t.fromNative()
 		}()
 	}
 
@@ -890,21 +739,295 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	// that could not return. A client using 0x83 was enough to make a
 	// shutdown hang.
 	select {
-	case err = <-errCh:
+	case err = <-t.errCh:
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
 	// Whichever half is still running is told to stop, and then waited for.
-	// stopTunnel is idempotent: the send to errCh is non-blocking and the
-	// socket closes once.
-	stopTunnel(err)
+	// stop is idempotent: the send to errCh is non-blocking and the socket
+	// closes once.
+	t.stop(err)
 	halves.Wait()
 	kind := AssociationTunnel
 	if nativeSession != nil {
 		kind = AssociationNative
 	}
-	s.associationEnded(kind, err)
+	s.associationEnded(req, kind, err, egress)
 	return err
+}
+
+// openNative asks for the native path of a 0x84 request. A nil association
+// with no error is a 0x83 request, or a node that answers 0x84 with port 0;
+// an error has already been answered to the client.
+func (s *Server) openNative(conn conn, tcpConn net.Conn, req *Request) (NativeAssociation, error) {
+	if req.Command != UDPNativeCommand {
+		return nil, nil
+	}
+	// A server with no native UDP at all answers as a plain SOCKS5
+	// server does, and the client asks again by 0x83.
+	if s.config.NativeUDP == nil {
+		failure := protocolFailure("request", "command", errors.New("native UDP is not supported"))
+		if err := sendReply(conn, commandNotSupported, nil); err != nil {
+			return nil, errors.Join(failure, connFailure("request", "reply_write", err))
+		}
+		return nil, failure
+	}
+	nativeSession, nativeErr := s.config.NativeUDP(tcpConn)
+	if nativeErr != nil {
+		failure := connFailure("request", "native_udp", nativeErr)
+		if err := sendReply(conn, serverFailure, nil); err != nil {
+			return nil, errors.Join(failure, connFailure("request", "reply_write", err))
+		}
+		return nil, failure
+	}
+	return nativeSession, nil
+}
+
+// udpTunnel is one 0x83 or 0x84 association: the stream it is carried by,
+// the socket towards the targets and, on 0x84, the native path.
+type udpTunnel struct {
+	s   *Server
+	req *Request
+	// ctx is the connection's context, which the rules are asked under;
+	// tunnelCtx ends with the association.
+	ctx       context.Context
+	tunnelCtx context.Context
+	cancel    context.CancelFunc
+
+	tcpConn   net.Conn
+	tcpReader io.Reader
+	native    NativeAssociation
+	fallback  *TunnelWriter
+	egress    *rotatingUDP
+
+	acct       *udpAccount
+	count      *NativeCounters
+	path       answerPath
+	dispatcher *udpDispatcher
+	errCh      chan error
+}
+
+// stop signals termination to every half. The cause goes first: the deadline
+// below wakes the other half with a timeout of its own, and sent after it the
+// timeout could reach errCh ahead of its cause.
+func (t *udpTunnel) stop(e error) {
+	select {
+	case t.errCh <- e:
+	default:
+	}
+	t.cancel()
+	_ = t.tcpConn.SetDeadline(time.Now()) // unblock reads/writes
+	_ = t.egress.Close()
+	if t.fallback != nil {
+		t.fallback.Stop()
+	}
+}
+
+// startFallback builds the single writer of a native association's stream
+// and returns the meter of what it carries.
+func (t *udpTunnel) startFallback() *udpMeter {
+	var answer [10]byte
+	tcpMeter := newUDPMeter(t.acct)
+	t.fallback = NewTunnelWriter(t.tcpConn, func() []byte {
+		binary.BigEndian.PutUint64(answer[2:], t.native.Next())
+		return answer[:]
+	}, func(payload int) error {
+		// The length prefix and the header belong to the tunnel, not to
+		// the client's transfer.
+		if st := tcpMeter.outbound(payload); st != SessionAllowed {
+			return t.s.endOfAssociation(t.req, st)
+		}
+		return nil
+	})
+	t.fallback.Count(&t.count.Drops)
+	return tcpMeter
+}
+
+// answers carries Internet -> client: it reads UDP responses and sends each
+// natively or writes it into the TCP stream.
+func (t *udpTunnel) answers() {
+	s, req, egress, count, nativeSession := t.s, t.req, t.egress, t.count, t.native
+	buf := make([]byte, 65535)
+	meter := newUDPMeter(t.acct)
+	defer meter.flush()
+	for {
+		select {
+		case <-t.tunnelCtx.Done():
+			return
+		default:
+		}
+
+		c := egress.current()
+		n, rAddr, err := c.ReadFromUDPAddrPort(buf)
+		if err != nil {
+			// The socket may have been closed under this read by a
+			// rotation, not by shutdown; if so, read from the new one.
+			if egress.replaced(c) {
+				continue
+			}
+			t.stop(fmt.Errorf("udp socket read error: %w", err))
+			return
+		}
+		egress.replied(s.config.Logger)
+
+		// Length prefix, header and payload are written into one pooled
+		// buffer. The header used to be built into a slice of its own and
+		// then copied in here, which is an allocation and a copy of the
+		// whole datagram per packet (plan task Ф6-5).
+		framePtr := udpBufPool.Get().(*[]byte)
+		frame := AppendUDPHeaderFromAddrPort((*framePtr)[:2], rAddr)
+		frame = append(frame, buf[:n]...)
+		binary.BigEndian.PutUint16(frame[0:2], uint16(len(frame)-2))
+
+		switch {
+		case nativeSession == nil:
+		case len(frame)-2 > nativeSession.MaxPayload():
+			count.AnswersOversize.Add(1)
+		case !t.path.Native():
+			count.AnswersRoute.Add(1)
+		default:
+			err := nativeSession.Send(frame[2:])
+			if err == nil {
+				count.AnswersNative.Add(1)
+				udpBufPool.Put(framePtr)
+				if st := meter.outbound(n); st != SessionAllowed {
+					t.stop(s.endOfAssociation(req, st))
+					return
+				}
+				continue
+			}
+			count.AnswersFailed.Add(1)
+			// This answer goes by TCP either way; only a path that is gone
+			// takes the answers after it there (see NativeAssociation.Send).
+			if errors.Is(err, ErrNativePathGone) {
+				t.path.Gone()
+			}
+		}
+		if t.fallback != nil {
+			// A frame the stream cannot take in time is lost, as the
+			// datagram would be.
+			t.fallback.Submit(frame, nil, n)
+			udpBufPool.Put(framePtr)
+			continue
+		}
+		_, err = t.tcpConn.Write(frame)
+		udpBufPool.Put(framePtr)
+		if err != nil {
+			t.stop(fmt.Errorf("tcp write error: %w", err))
+			return
+		}
+		// The length prefix and the header belong to the tunnel, not to
+		// the client's transfer.
+		if st := meter.outbound(n); st != SessionAllowed {
+			t.stop(s.endOfAssociation(req, st))
+			return
+		}
+	}
+}
+
+// fromStream carries client -> Internet by the stream: it reads
+// length-prefixed datagrams and hands them to the dispatcher.
+func (t *udpTunnel) fromStream() {
+	s, tcpReader, nativeSession := t.s, t.tcpReader, t.native
+	question := newDatagramQuestion(t.req)
+	lenBuf := make([]byte, 2)
+	var next [8]byte
+	for {
+		select {
+		case <-t.tunnelCtx.Done():
+			return
+		default:
+		}
+
+		if _, err := io.ReadFull(tcpReader, lenBuf); err != nil {
+			if t.tunnelCtx.Err() != nil {
+				return
+			}
+			t.stop(fmt.Errorf("tcp read length error: %w", err))
+			return
+		}
+
+		packetLen := binary.BigEndian.Uint16(lenBuf)
+		if packetLen == 0 {
+			// On 0x84 with a native path an empty frame is the client
+			// saying that it does not hear the server natively, followed
+			// by the counter of its next datagram at the time it decided.
+			// The answers go back to this stream unless the client said
+			// the opposite later by UDP, and the server answers with its
+			// own counter either way. On 0x83 it is a keepalive
+			// (docs/veil-spec.md, 10.6).
+			if nativeSession != nil {
+				if _, err := io.ReadFull(tcpReader, next[:]); err != nil {
+					if t.tunnelCtx.Err() != nil {
+						return
+					}
+					t.stop(fmt.Errorf("tcp read resync error: %w", err))
+					return
+				}
+				counter := binary.BigEndian.Uint64(next[:])
+				t.path.Lost(counter)
+				nativeSession.Resync(counter)
+				t.fallback.Control()
+			}
+			continue
+		}
+
+		framePtr := udpBufPool.Get().(*[]byte)
+		frameBuf := (*framePtr)[:packetLen]
+		if _, err := io.ReadFull(tcpReader, frameBuf); err != nil {
+			udpBufPool.Put(framePtr)
+			if t.tunnelCtx.Err() != nil {
+				return
+			}
+			t.stop(fmt.Errorf("tcp read frame error: %w", err))
+			return
+		}
+
+		hdrLen, err := parseUDPHeaderInto(frameBuf, &question.dest)
+		if err != nil {
+			udpBufPool.Put(framePtr)
+			s.config.Logger.Warn("socks: invalid udp-tcpmux header", "error", err)
+			continue
+		}
+
+		if !s.allowDatagram(t.ctx, question) {
+			udpBufPool.Put(framePtr)
+			s.config.Logger.Debug("socks: udp-tcpmux datagram blocked by rules",
+				"destination", question.dest.String())
+			continue
+		}
+		// A datagram by 0x83 says nothing about the answers: the client
+		// sends by it what is too big for native and what it has while
+		// the path is unproven, and it tells the server by the empty
+		// frame when it stops hearing it.
+		if nativeSession != nil {
+			if int(packetLen) > nativeSession.MaxPayload() {
+				t.count.ClientOversize.Add(1)
+			} else {
+				t.count.ClientRoute.Add(1)
+			}
+		}
+
+		t.dispatcher.submit(&question.dest, frameBuf[hdrLen:])
+		udpBufPool.Put(framePtr)
+	}
+}
+
+// fromNative carries client -> Internet by the native path.
+func (t *udpTunnel) fromNative() {
+	question := newDatagramQuestion(t.req)
+	handle := func(counter uint64, packet []byte) {
+		hdrLen, err := parseUDPHeaderInto(packet, &question.dest)
+		if err != nil || !t.s.allowDatagram(t.ctx, question) {
+			return
+		}
+		t.count.ClientNative.Add(1)
+		t.path.Heard(counter)
+		t.dispatcher.submit(&question.dest, packet[hdrLen:])
+	}
+	heard := t.path.Heard
+	for t.native.Receive(t.tunnelCtx, handle, heard) {
+	}
 }
 
 var udpBufPool = sync.Pool{

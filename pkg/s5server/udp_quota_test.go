@@ -121,7 +121,7 @@ func (s *udpQuotaStand) tunnel(t *testing.T) net.Conn {
 
 func (s *udpQuotaStand) frame(payload []byte) []byte {
 	port := s.echo.LocalAddr().(*net.UDPAddr).Port
-	body := socks5.BuildUDPHeader(
+	body := socksDatagram(
 		&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: port}, payload)
 	frame := make([]byte, 2+len(body))
 	binary.BigEndian.PutUint16(frame[0:2], uint16(len(body)))

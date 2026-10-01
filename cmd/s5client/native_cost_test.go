@@ -15,7 +15,7 @@ func gameRoundTrip(tb testing.TB, clientCfg clientParams) (roundTrip func() erro
 	echo := udpEcho(tb)
 	sender, local, metered := openAssociation(tb, clientCfg)
 	to := local.AddrPort()
-	question := socks5.BuildUDPHeader(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, make([]byte, 200))
+	question := socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, make([]byte, 200))
 	inbound := make([]byte, 2048)
 	_ = sender.SetReadDeadline(time.Now().Add(10 * time.Minute))
 	return func() error {

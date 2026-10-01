@@ -1,8 +1,11 @@
 package socks5
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -222,5 +225,40 @@ func TestTheWatcherGivesUpAfterTheLastDraw(t *testing.T) {
 	}
 	if e.rotations() != udpRotateMax {
 		t.Fatalf("rotations %d, want %d", e.rotations(), udpRotateMax)
+	}
+}
+
+// The first reply after a rotation is one Info line with the count; a reply
+// without a rotation and every later reply log nothing.
+func TestTheFirstReplyAfterARotationIsOneInfoLine(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	quiet, err := newRotatingUDP(net.IPv4zero)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer quiet.Close()
+	quiet.replied(log)
+	if buf.Len() != 0 {
+		t.Fatalf("a reply without a rotation logged: %s", buf.String())
+	}
+
+	e, err := newRotatingUDP(net.IPv4zero)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	if ok, err := e.rotate(); !ok || err != nil {
+		t.Fatalf("rotate: ok=%v err=%v", ok, err)
+	}
+	e.replied(log)
+	e.replied(log)
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("got %d lines, want 1: %s", len(lines), buf.String())
+	}
+	if !strings.Contains(lines[0], "level=INFO") || !strings.Contains(lines[0], "answered after rotation") || !strings.Contains(lines[0], "rotations=1") {
+		t.Fatalf("unexpected line: %s", lines[0])
 	}
 }

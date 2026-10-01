@@ -144,6 +144,7 @@ func dialNative(tunnel net.Conn, port uint16) (*nativeClient, *net.UDPConn, erro
 		slog.Debug("Native UDP socket may fragment datagrams longer than the path", "error", err)
 	}
 	n := newNativeClient(c, nativeudp.NewSession(keys), nil)
+	n.logID = obfs.LogIDOf(tunnel)
 	n.writer = socks5.NewTunnelWriter(tunnel, n.signalFrame, nil)
 	n.signal = n.writer.Control
 	return n, c, nil
@@ -168,6 +169,7 @@ type datagramConn interface {
 // the path.
 type nativeClient struct {
 	conn    datagramConn
+	logID   string
 	session *nativeudp.Session
 	// signal asks for the empty frame to be written, and must not wait for
 	// the tunnel: a stream whose send buffer is full would hold the probes,
@@ -336,7 +338,7 @@ func (n *nativeClient) drop(count *atomic.Uint64) bool {
 	}
 	if count.Add(1) >= nativeOversizeDrops && n.bounded.Swap(false) {
 		slog.Info("Native UDP: the application keeps sending datagrams longer than native carries; they use 0x83",
-			"max_payload", n.session.MaxPayload())
+			"conn", n.logID, "max_payload", n.session.MaxPayload())
 	}
 	return true
 }
@@ -374,7 +376,7 @@ func (n *nativeClient) carry(d []byte) carried {
 	n.stats.sent.Add(1)
 	n.told.Store(false)
 	if !n.usedData.Swap(true) {
-		slog.Info("Native UDP carrying application datagrams")
+		slog.Info("Native UDP carrying application datagrams", "conn", n.logID)
 	}
 	return byNative
 }
@@ -585,7 +587,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			return false
 		}
 		n.up.Store(false)
-		slog.Warn("Native UDP path lost; association using 0x83", "unanswered_probes", unanswered)
+		slog.Warn("Native UDP path lost; association using 0x83", "conn", n.logID, "unanswered_probes", unanswered)
 		unanswered, retry = 0, nativeRetryFirst
 		return true
 	}
@@ -613,9 +615,9 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			retry = nativeRetryFirst
 			if !n.up.Swap(true) {
 				if verified {
-					slog.Info("Native UDP path restored")
+					slog.Info("Native UDP path restored", "conn", n.logID)
 				} else {
-					slog.Info("Native UDP verified for association")
+					slog.Info("Native UDP verified for association", "conn", n.logID)
 				}
 				verified = true
 			}
@@ -667,7 +669,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 				// and nothing else would say where they went.
 				if !verified && !reported && missed(now) {
 					reported = true
-					slog.Info("Native UDP not answering; association using 0x83",
+					slog.Info("Native UDP not answering; association using 0x83", "conn", n.logID,
 						"addr", n.conn.RemoteAddr().String(), "unanswered_probes", unanswered)
 				}
 			}

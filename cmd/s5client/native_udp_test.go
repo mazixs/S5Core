@@ -179,7 +179,7 @@ func openAssociation(t testing.TB, clientCfg clientParams) (*net.UDPConn, *net.U
 	t.Helper()
 	t.Cleanup(func() { noNative.Delete(nativeKey(clientCfg)) })
 	req := []byte{5, udpCommandFor(clientCfg), 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialTunnel(clientCfg, req)
+	stream, _, err := dialAttempt(clientCfg.attempt(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func startOldServer(t *testing.T, psk string, creds socks5.CredentialStore, rule
 // tick sends one datagram through the association and waits for its echo.
 func tick(t *testing.T, sender *net.UDPConn, local *net.UDPAddr, echo *net.UDPConn, i int) {
 	t.Helper()
-	payload := socks5.BuildUDPHeader(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("tick"))
+	payload := socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("tick"))
 	if _, err := sender.WriteToUDP(payload, local); err != nil {
 		t.Fatal(err)
 	}
@@ -302,6 +302,10 @@ func TestANodeWithoutNativeUDPCarriesTheAssociationOnOneConnection(t *testing.T)
 	for i := 0; i < 3; i++ {
 		r, w := metered.read.Load(), metered.written.Load()
 		tick(t, sender, local, echo, i)
+		deadline := time.Now().Add(time.Second)
+		for (metered.read.Load() == r || metered.written.Load() == w) && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
 		if metered.read.Load() == r || metered.written.Load() == w {
 			t.Fatalf("tick %d did not cross the connection that asked for 0x84", i)
 		}
@@ -382,7 +386,7 @@ func TestARefusalOfUDPIsNotTakenForAnOldServer(t *testing.T) {
 	cfg := nativeParams(addr, psk)
 	t.Cleanup(func() { noNative.Delete(nativeKey(cfg)) })
 	req := []byte{5, udpCommandFor(cfg), 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialTunnel(cfg, req)
+	stream, _, err := dialAttempt(cfg.attempt(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +413,7 @@ type allowOnce struct{ used atomic.Bool }
 func (a *allowOnce) Valid(string, string) bool { return !a.used.Swap(true) }
 
 // The retry by 0x83 is refused its login. That is the server answering, and
-// the log names the phase dialTunnel saw, without the hint for a server that
+// the log names the phase dialAttempt saw, without the hint for a server that
 // went quiet. The retry's error used to be wrapped once more as the reply
 // phase, and the hint sent the operator after the PSK and the clock.
 func TestARefusedRetryKeepsItsPhase(t *testing.T) {
@@ -420,7 +424,7 @@ func TestARefusedRetryKeepsItsPhase(t *testing.T) {
 	cfg.ProxyUser, cfg.ProxyPass = "alice", "secret"
 	t.Cleanup(func() { noNative.Delete(nativeKey(cfg)) })
 	req := []byte{5, socks5.UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialTunnel(cfg, req)
+	stream, _, err := dialAttempt(cfg.attempt(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,4 +438,10 @@ func TestARefusedRetryKeepsItsPhase(t *testing.T) {
 	if !strings.Contains(out, "phase="+string(phaseAuthRejected)) || strings.Contains(out, "hint=") {
 		t.Fatalf("the retry's failure was logged as:\n%s", out)
 	}
+}
+
+// socksDatagram is a datagram as the client writes it: the SOCKS5 UDP header
+// for dst, then data.
+func socksDatagram(dst *socks5.AddrSpec, data []byte) []byte {
+	return append(socks5.AppendUDPHeader(nil, dst), data...)
 }

@@ -60,14 +60,6 @@ func (u *UserAccount) IsNotYetActive(now time.Time) bool {
 	return false
 }
 
-// IsTrafficExceeded checks if the user has exceeded their traffic limit.
-func (u *UserAccount) IsTrafficExceeded() bool {
-	if u.TrafficLimitBytes > 0 && u.TrafficUsedBytes >= u.TrafficLimitBytes {
-		return true
-	}
-	return false
-}
-
 // Identity is this account as the tunnel knows it: name, key, role and
 // policy, with nothing about passwords in it. key is the decoded tunnel key,
 // which the caller has already validated; an account without one gets an
@@ -98,11 +90,4 @@ func (u *UserAccount) Policy() identity.Policy {
 		TrafficLimitBytes: u.TrafficLimitBytes,
 		TrafficUsedBytes:  u.TrafficUsedBytes,
 	}
-}
-
-// Credential is the password half: the Argon2id hash and nothing else. A
-// legacy plaintext password is not a credential - it is a thing waiting to be
-// migrated into one on its first successful use.
-func (u *UserAccount) Credential() identity.Credential {
-	return identity.Credential{Hash: u.PasswordHash}
 }
