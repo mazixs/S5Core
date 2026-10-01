@@ -141,7 +141,7 @@ gives a second view of the same cost. After removing loopback duplicates and
 the opening second, 3,198 client-to-server TLS application packets contain
 1,599 groups of two records. The median packet is 259 bytes; the most common
 length appears in 37 packets (1.2%). The server-to-client side has the same
-two-record shape. [Derived capture counts](wss-packet-shape-2026-09-25.json)
+two-record shape. [Derived capture counts](data-2026-09-25/wss-packet-shape-2026-09-25.json)
 identify the local run; the raw pcap remains under ignored `bench/runs/`.
 
 If both records of each short game write were put in one socket write, their

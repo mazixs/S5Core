@@ -24,7 +24,7 @@ applicable new tunnels. Bounded TLS session reuse preserves trust checks.
 DNS caching and PGO were evaluated and left disabled without sufficient benefit.
 
 See the [changelog](../../CHANGELOG.md#210---2026-09-22), [evidence and limitations](../reports/performance-implementation-2026-09-22.md)
-and [reproduction guide](../performance-validation.md). These are lab and ARM
+and [reproduction guide](performance-validation.md). These are lab and ARM
 loopback results, not production WAN acceptance or a completed canary. Older
 measurements below retain their original workloads and are not directly comparable.
 
@@ -154,6 +154,8 @@ actually spending was GC pressure. Method and full output:
 PROFILE_CONNS=8 PROFILE_MB=1024 go test -tags loadtest -run TestObfsRelayProfile ./pkg/s5server/
 go tool pprof -list='Read$' -sample_index=alloc_space bench/profiles/obfs-relay.alloc
 ```
+
+The test writes the profile to `bench/profiles/`: local data, not in the repository.
 
 #### On ARM: measured on a router, 19.09.2026
 

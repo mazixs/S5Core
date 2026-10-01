@@ -1,0 +1,81 @@
+"""Replay the isolated rc5 performance experiments; results go to /tmp.
+Run: python3 docs/reports/v2.3-rc5-performance-2026-09-30/reproduce.py.txt
+Production source is only read. Overlay variants are built in a temporary directory.
+"""
+from pathlib import Path
+import hashlib
+import json
+import os
+import subprocess
+import tempfile
+
+artifacts = Path(__file__).resolve().parent
+repo = artifacts.parents[2]
+source = repo / "pkg/nativeudp/nativeudp.go"
+expected = "e3a5a91d09177d967424d99b1df981093a99dd78bee404e4a091b4c537906d30"
+if hashlib.sha256(source.read_bytes()).hexdigest() != expected:
+    raise SystemExit("nativeudp.go differs from the audited rc5 source; rebase the experiments first")
+results = Path(tempfile.mkdtemp(prefix="s5core-rc5-replay-", dir="/tmp"))
+env = {**os.environ, "GOCACHE": "/tmp/s5core-rc5-audit-cache", "GOMAXPROCS": "1"}
+
+def run(args, filename=None, extra_env=None):
+    options = {"cwd": repo, "env": {**env, **(extra_env or {})}, "check": True}
+    if filename:
+        with (results / filename).open("a") as output:
+            output.write("command: " + " ".join(map(str, args)) + "\n")
+            output.flush()
+            subprocess.run(list(map(str, args)), stdout=output, stderr=subprocess.STDOUT, **options)
+    else:
+        subprocess.run(list(map(str, args)), **options)
+
+binaries = {}
+for variant, patch_name in [("base", None), ("zero", "zero-padding.patch"), ("cached", "cached-hmac.patch")]:
+    replacements = {str(repo / "pkg/nativeudp/audit_cost_test.go"): str(artifacts / "cost_test.go.txt")}
+    if patch_name:
+        replacement = results / (variant + ".go")
+        replacement.write_bytes(source.read_bytes())
+        run(["patch", replacement, artifacts / patch_name])
+        replacements[str(source)] = str(replacement)
+    overlay = results / (variant + "-overlay.json")
+    overlay.write_text(json.dumps({"Replace": replacements}))
+    binary = results / (variant + ".test")
+    run(["go", "test", "-overlay", overlay, "-c", "-o", binary, "./pkg/nativeudp"])
+    binaries[variant] = binary
+    if variant == "cached":
+        race_binary = results / "cached-race.test"
+        run(["go", "test", "-race", "-overlay", overlay, "-c", "-o", race_binary, "./pkg/nativeudp"])
+        binaries["cached-race"] = race_binary
+
+names = ["AuditConcurrentCodecDirections", "AuditTagMatchesReference", "FixedTagMatchesHMAC",
+         "LostOutOfOrderReplayAndForgery", "RecoversAfterHighRateOutage", "AResyncRecoversFromMoreLostThanTheWindow",
+         "GameDatagramsHaveNoFixedPrefixOrLength", "PaddingNeverTakesADatagramPastTheLimit",
+         "TheLimitStaysWithinTheRangeOfTheSearch", "AProbeOfASizeIsAnsweredAtItsSize",
+         "AnAnswerIsNeverLongerThanItsProbe", "AProbeOfAnOlderClientGetsAnEmptyAnswer",
+         "TheSearchFindsTheLimitOfThePath", "ALostProbeNeverTakesTheLimitPastThePath",
+         "ARoundWithoutItsControlDecidesNothing", "ProbesAndAnswersHaveNoConstantShape"]
+test_filter = "^Test(" + "|".join(names) + ")$"
+for variant, binary in binaries.items():
+    run([binary, "-test.run", test_filter, "-test.v", "-test.count", "1"],
+        "pure-tests-" + variant + ".txt", {"GOMAXPROCS": "2"})
+
+bench_filter = "^BenchmarkAuditNativeCost$/(aes|chacha)/(200|928)/SealOpen$|^BenchmarkAuditTag$"
+# Complete all builds first. Rotate order, measure sequentially.
+for round_number in range(5):
+    order = ["base", "zero", "cached"] if round_number % 2 == 0 else ["cached", "zero", "base"]
+    for variant in order:
+        run([binaries[variant], "-test.run", "^$", "-test.bench", bench_filter,
+             "-test.benchmem", "-test.benchtime", "300ms"], "paired-" + variant + ".txt")
+for variant in ["base", "cached"]:
+    run([binaries[variant], "-test.run", "^$", "-test.bench", "^BenchmarkAuditSessionSetup$",
+         "-test.benchmem", "-test.benchtime", "300ms", "-test.count", "3"], "setup-" + variant + ".txt")
+
+wave_overlay = results / "wave-overlay.json"
+wave_overlay.write_text(json.dumps({"Replace": {
+    str(repo / "internal/socks5/audit_wave_test.go"): str(artifacts / "writer_wave_test.go.txt")}}))
+run(["go", "test", "-overlay", wave_overlay, "-run", "^TestAuditQueuedWaveWriteCalls$",
+     "-count=1", "-v", "./internal/socks5"], "queued-wave.txt")
+run(["go", "test", "-run", "^$", "-bench", "^BenchmarkFramingOnly$", "-benchmem",
+     "-count=3", "-benchtime=200ms", "./pkg/obfs"], "tcp-framing.txt")
+run(["go", "test", "-run", "^$", "-bench", "^BenchmarkFrameObserver$", "-benchmem",
+     "-count=3", "-benchtime=300ms", "./pkg/s5server"], "tcp-frame-observer.txt")
+print("Results:", results)
