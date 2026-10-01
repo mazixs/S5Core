@@ -1,0 +1,55 @@
+round=1 variant=zero
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditNativeCost/aes/200/SealOpen         	  433684	       824.3 ns/op	 242.62 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/aes/928/SealOpen         	  340878	      1046 ns/op	 887.07 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/200/SealOpen      	  376046	       959.6 ns/op	 208.41 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/928/SealOpen      	  234357	      1569 ns/op	 591.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditTag                                 	 1770812	       207.3 ns/op	       0 B/op	       0 allocs/op
+PASS
+round=2 variant=zero
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditNativeCost/aes/200/SealOpen         	  434364	       819.2 ns/op	 244.13 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/aes/928/SealOpen         	  340749	      1050 ns/op	 883.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/200/SealOpen      	  381154	       976.7 ns/op	 204.77 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/928/SealOpen      	  232724	      1561 ns/op	 594.65 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditTag                                 	 1744174	       204.5 ns/op	       0 B/op	       0 allocs/op
+PASS
+round=3 variant=zero
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditNativeCost/aes/200/SealOpen         	  434445	       802.7 ns/op	 249.15 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/aes/928/SealOpen         	  345601	      1048 ns/op	 885.22 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/200/SealOpen      	  366525	       966.2 ns/op	 206.99 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/928/SealOpen      	  235484	      1530 ns/op	 606.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditTag                                 	 1784721	       203.8 ns/op	       0 B/op	       0 allocs/op
+PASS
+round=4 variant=zero
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditNativeCost/aes/200/SealOpen         	  425502	       812.2 ns/op	 246.26 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/aes/928/SealOpen         	  343909	      1051 ns/op	 882.91 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/200/SealOpen      	  370018	       977.7 ns/op	 204.55 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/928/SealOpen      	  226720	      1525 ns/op	 608.45 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditTag                                 	 1738281	       206.2 ns/op	       0 B/op	       0 allocs/op
+PASS
+round=5 variant=zero
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditNativeCost/aes/200/SealOpen         	  428364	       804.5 ns/op	 248.59 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/aes/928/SealOpen         	  339831	      1050 ns/op	 884.02 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/200/SealOpen      	  366318	       960.0 ns/op	 208.33 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCost/chacha/928/SealOpen      	  235458	      1537 ns/op	 603.64 MB/s	       0 B/op	       0 allocs/op
+BenchmarkAuditTag                                 	 1774552	       205.8 ns/op	       0 B/op	       0 allocs/op
+PASS

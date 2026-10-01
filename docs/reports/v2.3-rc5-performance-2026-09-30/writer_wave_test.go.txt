@@ -1,0 +1,40 @@
+package socks5
+
+import (
+	"errors"
+	"testing"
+)
+
+type auditWaveWriter struct{ calls, bytes int }
+
+func (w *auditWaveWriter) Write(b []byte) (int, error) {
+	w.calls++
+	w.bytes += len(b)
+	return len(b), nil
+}
+func TestAuditQueuedWaveWriteCalls(t *testing.T) {
+	w := new(auditWaveWriter)
+	n := 0
+	end := errors.New("end of measured wave")
+	q := NewTunnelWriter(w, func() []byte { return []byte{0, 0} }, func(int) error {
+		n++
+		if n == 900 {
+			return end
+		}
+		return nil
+	})
+	payload := make([]byte, 938)
+	head := []byte{3, 170}
+	for range 900 {
+		if !q.Submit(head, payload, 928) {
+			t.Fatal("wave did not fit")
+		}
+	}
+	if err := q.Run(); err != end {
+		t.Fatal(err)
+	}
+	if w.calls != 900 || w.bytes != 900*940 {
+		t.Fatalf("calls=%d bytes=%d", w.calls, w.bytes)
+	}
+	t.Logf("queued frames=900, stream Write calls=%d, bytes=%d, drops=%d", w.calls, w.bytes, q.Dropped())
+}

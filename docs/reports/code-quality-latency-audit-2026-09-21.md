@@ -188,7 +188,7 @@ Upload таким образом может выглядеть невероят�
 
 ## Материалы и повторение
 
-Исходные результаты и пробы находятся в [audit-2026-09-21](audit-2026-09-21/). Важные файлы: [пробы](audit-2026-09-21/probes.log), [Close](audit-2026-09-21/ws-close-probe.log), [UDP](audit-2026-09-21/udp-probe.log), [race-пробы](audit-2026-09-21/probes-race.log), [телеметрия](audit-2026-09-21/telemetry-bench.txt), [benchstat двух версий](audit-2026-09-21/roundtrip-benchstat.txt), [цикл Accept](audit-2026-09-21/client-accept-summary.txt).
+Исходные результаты и пробы находятся в [audit-2026-09-21](audit-2026-09-21/). Важные файлы: пробы (`probes.log`, в истории git), Close (`ws-close-probe.log`, в истории git), UDP (`udp-probe.log`, в истории git), race-пробы (`probes-race.log`, в истории git), [телеметрия](audit-2026-09-21/telemetry-bench.txt), [benchstat двух версий](audit-2026-09-21/roundtrip-benchstat.txt), [цикл Accept](audit-2026-09-21/client-accept-summary.txt).
 
 Из корня репозитория:
 

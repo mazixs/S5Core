@@ -1,0 +1,4 @@
+=== RUN   TestFrameTransitionObserverDoesNotAllocate
+--- PASS: TestFrameTransitionObserverDoesNotAllocate (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	0.003s

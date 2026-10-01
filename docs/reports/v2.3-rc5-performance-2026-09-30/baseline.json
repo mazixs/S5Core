@@ -1,0 +1,19 @@
+{
+  "branch": "mzx/native-udp-game-2.3",
+  "head": "83420220d5c3d95dbab5a8968951985461c5117d",
+  "remote_head_verified_with": "GitHub fetch_commit API",
+  "remote_head_url": "https://github.com/mazixs/S5Core/commit/83420220d5c3d95dbab5a8968951985461c5117d",
+  "rc5": "b4bd6397c916c5cd13e99f89a3ce6a59a686816a",
+  "head_diff_from_rc5": "docs/plan/v2.3-rc5.md only",
+  "runtime_source_changed": false,
+  "go": "go version go1.26.6 linux/amd64",
+  "kernel": "Linux 7.0.0-34-generic",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+  "benchmark_GOMAXPROCS": 1,
+  "pure_test_GOMAXPROCS": 2,
+  "cpu_affinity": "not pinned",
+  "paired_rounds": 5,
+  "paired_benchtime": "300ms",
+  "full_suite": "attempted; failed because sandbox forbids OS sockets",
+  "network_WAN_ARM_game_measurements": "not performed in this audit"
+}

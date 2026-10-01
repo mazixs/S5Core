@@ -21,6 +21,9 @@ go tool pprof -list='Read$' -sample_index=alloc_space bench/profiles/obfs-relay.
 go tool pprof -top bench/profiles/obfs-relay.cpu
 ```
 
+Профили в `bench/profiles/` пишет сам тест: это локальные данные, не в
+репозитории.
+
 Прогон: 8 соединений, по 1 ГиБ скачивания через obfs-порт, всего 8 ГиБ,
 2,29 с, 3571 МиБ/с внутри процесса (loopback, i7-11700K).
 

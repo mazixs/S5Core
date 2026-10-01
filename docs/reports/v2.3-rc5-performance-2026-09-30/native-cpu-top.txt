@@ -1,0 +1,55 @@
+File: s5core-rc5-native.test
+Build ID: 019481f09dc443518e539fdd9c50589e7ee95e00
+Type: cpu
+Time: 2026-09-30 00:15:28 +03
+Duration: 6.83s, Total samples = 6.83s (99.94%)
+Showing nodes accounting for 6.55s, 95.90% of 6.83s total
+Dropped 21 nodes (cum <= 0.03s)
+      flat  flat%   sum%        cum   cum%
+     2.20s 32.21% 32.21%      2.20s 32.21%  crypto/internal/fips140/sha256.blockSHANI
+     0.74s 10.83% 43.05%      0.74s 10.83%  crypto/internal/fips140/aes/gcm.gcmAesEnc
+     0.63s  9.22% 52.27%      0.63s  9.22%  crypto/internal/fips140/aes/gcm.gcmAesDec
+     0.31s  4.54% 56.81%      0.31s  4.54%  runtime.vgetrandom
+     0.18s  2.64% 59.44%      1.56s 22.84%  crypto/internal/fips140/sha256.(*Digest).checkSum
+     0.18s  2.64% 62.08%      0.18s  2.64%  runtime.memmove
+     0.16s  2.34% 64.42%      1.80s 26.35%  crypto/internal/fips140/sha256.(*Digest).Sum
+     0.15s  2.20% 66.62%      0.15s  2.20%  crypto/internal/fips140/aes.encryptBlockAsm
+     0.15s  2.20% 68.81%      3.19s 46.71%  github.com/mazixs/S5Core/pkg/nativeudp.(*tagger).tag
+     0.15s  2.20% 71.01%      0.22s  3.22%  runtime.mapassign_fast64
+     0.14s  2.05% 73.06%      2.48s 36.31%  crypto/internal/fips140/sha256.(*Digest).Write
+     0.12s  1.76% 74.82%      0.12s  1.76%  crypto/internal/fips140/aes/gcm.gcmAesFinish
+     0.12s  1.76% 76.57%      1.12s 16.40%  github.com/mazixs/S5Core/pkg/nativeudp.(*Session).claim
+     0.12s  1.76% 78.33%      3.46s 50.66%  github.com/mazixs/S5Core/pkg/nativeudp.(*Session).seal
+     0.11s  1.61% 79.94%      3.04s 44.51%  crypto/sha256.Sum256
+     0.09s  1.32% 81.26%      3.32s 48.61%  github.com/mazixs/S5Core/pkg/nativeudp.(*Session).Open
+     0.09s  1.32% 82.58%      0.09s  1.32%  sync/atomic.(*Bool).CompareAndSwap (inline)
+     0.07s  1.02% 83.60%      1.03s 15.08%  crypto/internal/fips140/aes/gcm.seal
+     0.07s  1.02% 84.63%      0.07s  1.02%  errors.Is
+     0.07s  1.02% 85.65%      0.15s  2.20%  internal/runtime/maps.(*table).Delete
+     0.07s  1.02% 86.68%      0.07s  1.02%  internal/sync.(*Mutex).Unlock (inline)
+     0.06s  0.88% 87.55%      0.06s  0.88%  internal/sync.(*Mutex).Lock (inline)
+     0.05s  0.73% 88.29%      0.06s  0.88%  crypto/internal/fips140.RecordApproved
+     0.05s  0.73% 89.02%      1.09s 15.96%  crypto/internal/fips140/aes/gcm.(*GCM).sealAfterIndicator
+     0.05s  0.73% 89.75%      0.05s  0.73%  crypto/internal/fips140/aes/gcm.gcmAesData
+     0.05s  0.73% 90.48%      2.25s 32.94%  crypto/internal/fips140/sha256.block
+     0.05s  0.73% 91.22%      0.45s  6.59%  crypto/internal/sysrand.read
+     0.04s  0.59% 91.80%      2.11s 30.89%  github.com/mazixs/S5Core/pkg/nativeudp.(*Session).settle
+     0.04s  0.59% 92.39%      0.04s  0.59%  runtime.memhash64
+     0.03s  0.44% 92.83%      0.57s  8.35%  crypto/internal/sysrand.Read
+     0.03s  0.44% 93.27%      0.62s  9.08%  crypto/rand.Read
+     0.03s  0.44% 93.70%         2s 29.28%  github.com/mazixs/S5Core/pkg/nativeudp.(*Session).advance
+     0.03s  0.44% 94.14%      0.19s  2.78%  internal/runtime/maps.(*Map).Delete
+     0.02s  0.29% 94.44%      0.18s  2.64%  crypto/internal/fips140/aes.EncryptBlockInternal (inline)
+     0.02s  0.29% 94.73%      0.59s  8.64%  crypto/internal/fips140/drbg.Read
+     0.02s  0.29% 95.02%      0.33s  4.83%  internal/syscall/unix.GetRandom
+     0.01s  0.15% 95.17%      0.16s  2.34%  crypto/internal/fips140/aes.encryptBlock
+     0.01s  0.15% 95.31%      0.83s 12.15%  crypto/internal/fips140/aes/gcm.(*GCM).Open
+     0.01s  0.15% 95.46%      1.10s 16.11%  crypto/internal/fips140/aes/gcm.(*GCM).Seal
+     0.01s  0.15% 95.61%      0.80s 11.71%  crypto/internal/fips140/aes/gcm.open
+     0.01s  0.15% 95.75%      6.81s 99.71%  github.com/mazixs/S5Core/pkg/nativeudp.BenchmarkCodecRoundTrip
+     0.01s  0.15% 95.90%      0.20s  2.93%  runtime.mapdelete_fast64
+         0     0% 95.90%      3.47s 50.81%  github.com/mazixs/S5Core/pkg/nativeudp.(*Session).Seal
+         0     0% 95.90%      0.06s  0.88%  sync.(*Mutex).Lock (inline)
+         0     0% 95.90%      0.07s  1.02%  sync.(*Mutex).Unlock
+         0     0% 95.90%      6.81s 99.71%  testing.(*B).launch
+         0     0% 95.90%      6.81s 99.71%  testing.(*B).runN

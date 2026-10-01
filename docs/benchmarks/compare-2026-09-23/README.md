@@ -16,7 +16,8 @@
 
 ## Стенд
 
-Тот же `bench/matrix`, что в [matrix-2026-09-22](../matrix-2026-09-22/README.md):
+Тот же стенд `bench/matrix` (локальные скрипты, не в репозитории; теперь его
+заменяет `scripts/matrix`), что в [matrix-2026-09-22](../matrix-2026-09-22/README.md):
 настоящие процессы `s5core` и `s5client`, источники HTTP/1.1, HTTPS (TLS 1.3),
 HTTP/2, HTTP/3 поверх QUIC, TCP echo и UDP echo в процессе генератора. Отличия
 этой серии:

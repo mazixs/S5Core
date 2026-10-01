@@ -7,7 +7,7 @@
 раздел 7 [`research/mtu-diagnostics.md`](../research/mtu-diagnostics.md) и
 F4 [аудита 2.3.0-rc1](../reports/v2.3-rc1-audit-2026-09-26.md). Сводные числа
 по каждой ячейке и кривые доставки лежат в
-[`mtu-native-2026-09-26.json`](mtu-native-2026-09-26.json).
+[`mtu-native-2026-09-26.json`](data-2026-09-26/mtu-native-2026-09-26.json).
 
 Итог:
 
@@ -412,7 +412,7 @@ quic-go нет (`Reset` только при миграции). Поэтому р
 обеих сторонах, поиск предела пробами размера, паддинг и датаграммы в
 пределах найденного `L`, отброс крупнее предела и правило восьмой
 отброшенной. Сводка по ячейкам - в
-[`mtu-native-m2-2026-09-26.json`](mtu-native-m2-2026-09-26.json), в том же
+[`mtu-native-m2-2026-09-26.json`](data-2026-09-26/mtu-native-m2-2026-09-26.json), в том же
 формате, что и до М-2.
 
 Итог:
@@ -670,9 +670,11 @@ python3 scripts/matrix/mtu_stand.py udp --out bench/mtu/run     # повторя
 python3 scripts/matrix/mtu_stand.py quic --out bench/mtu/run --timeout 20
 python3 scripts/matrix/mtu_stand.py tcp --out bench/mtu/run
 python3 scripts/matrix/mtu_stand.py tcp --out bench/mtu/run --narrow-repeats 3 --timeout 15 --cells v4-1400-filter-probing1
-python3 scripts/matrix/mtu_stand.py summary bench/mtu/run --json docs/benchmarks/mtu-native-2026-09-26.json
+python3 scripts/matrix/mtu_stand.py summary bench/mtu/run --json docs/benchmarks/data-2026-09-26/mtu-native-2026-09-26.json
 python3 -m unittest discover -s scripts/matrix/tests -p 'test_mtu_stand.py'
 ```
+
+Каталоги `bench/mtu/...` - вывод стенда, локальные данные, не в репозитории.
 
 После М-2 - те же шаги на сборке коммита с этим разделом, в отдельный
 каталог:
@@ -681,7 +683,7 @@ python3 -m unittest discover -s scripts/matrix/tests -p 'test_mtu_stand.py'
 python3 scripts/matrix/mtu_stand.py build --ref HEAD --bin bench/mtu/bin-m2
 python3 scripts/matrix/mtu_stand.py udp --bin bench/mtu/bin-m2 --out bench/mtu/m2-run
 python3 scripts/matrix/mtu_stand.py quic --bin bench/mtu/bin-m2 --out bench/mtu/m2-run --timeout 20
-python3 scripts/matrix/mtu_stand.py summary bench/mtu/m2-run --json docs/benchmarks/mtu-native-m2-2026-09-26.json
+python3 scripts/matrix/mtu_stand.py summary bench/mtu/m2-run --json docs/benchmarks/data-2026-09-26/mtu-native-m2-2026-09-26.json
 ```
 
 Повторы ячеек TCP на узком пути запускались по одной, чтобы каждый запуск
