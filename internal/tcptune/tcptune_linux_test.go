@@ -1,38 +1,52 @@
 package tcptune
 
 import (
+	"bytes"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
+const tcpRTOMaxMS = 44 // TCP_RTO_MAX_MS, not in golang.org/x/sys yet
+
+func readOpt(t *testing.T, conn *net.TCPConn, opt int) (int, error) {
+	t.Helper()
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v int
+	var gerr error
+	_ = raw.Control(func(fd uintptr) { v, gerr = unix.GetsockoptInt(int(fd), unix.IPPROTO_TCP, opt) })
+	return v, gerr
+}
+
+// The values are written here, not taken from the table, so that a changed
+// or dropped row is a failure. Linux 2.6.34 and later all have thin
+// timeouts; only the floor (6.15) may be refused.
 func TestTheTunnelSocketGetsItsOptions(t *testing.T) {
 	c, _ := tcpPair(t)
 	skipped, err := ForDatagrams(netConnWrapper{c})
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := c.SyscallConn()
-	if err != nil {
-		t.Fatal(err)
+	if why, ok := skipped["TCP_THIN_LINEAR_TIMEOUTS"]; ok {
+		t.Fatalf("TCP_THIN_LINEAR_TIMEOUTS refused: %v", why)
 	}
-	for _, o := range options {
-		if why, ok := skipped[o.name]; ok {
-			t.Logf("%s: the kernel refused it (%v), which is allowed", o.name, why)
-			continue
-		}
-		var got int
-		var gerr error
-		_ = raw.Control(func(fd uintptr) { got, gerr = unix.GetsockoptInt(int(fd), unix.IPPROTO_TCP, o.opt) })
-		if gerr != nil {
-			t.Fatalf("%s: read back: %v", o.name, gerr)
-		}
-		// The timer floor is kept in jiffies; a tick is at most 10 ms.
-		if got != o.value && (o.opt != tcpRTOMinUS || got < o.value-10_000 || got > o.value+10_000) {
-			t.Fatalf("%s = %d, want %d", o.name, got, o.value)
-		}
+	if got, err := readOpt(t, c, unix.TCP_THIN_LINEAR_TIMEOUTS); err != nil || got != 1 {
+		t.Fatalf("TCP_THIN_LINEAR_TIMEOUTS = %d (%v), want 1", got, err)
+	}
+	if why, ok := skipped["TCP_RTO_MIN_US"]; ok {
+		t.Logf("TCP_RTO_MIN_US: the kernel refused it (%v), which is allowed", why)
+		return
+	}
+	got, err := readOpt(t, c, tcpRTOMinUS)
+	// The kernel keeps the floor in jiffies; a tick is at most 10 ms.
+	if err != nil || got < 10_000 || got > 30_000 {
+		t.Fatalf("TCP_RTO_MIN_US = %d (%v), want 20000", got, err)
 	}
 }
 
@@ -41,20 +55,16 @@ func TestTheOtherEndIsNotTouched(t *testing.T) {
 	if _, err := ForDatagrams(c); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := s.SyscallConn()
-	var got int
-	_ = raw.Control(func(fd uintptr) {
-		got, _ = unix.GetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_THIN_LINEAR_TIMEOUTS)
-	})
-	if got != 0 {
+	if got, _ := readOpt(t, s, unix.TCP_THIN_LINEAR_TIMEOUTS); got != 0 {
 		t.Fatalf("the peer's socket has thin timeouts %d; only the tuned one should", got)
 	}
 }
 
 // An option read back is not yet a timer that moved. After a few round trips
-// on loopback the tuned end's RTO sits at its floor and the other end's at
-// the kernel's 200 ms. The accepted end is the tuned one here, as on the
-// server.
+// on loopback the tuned end's RTO sits at its floor, well below the untuned
+// end's. The base is measured, not assumed to be 200 ms: a host sysctl
+// (net.ipv4.tcp_rto_min_us) or a route's rto_min lowers it for both ends. The
+// accepted end is the tuned one here, as on the server.
 func TestTheTimerFollowsTheFloor(t *testing.T) {
 	c, s := tcpPair(t)
 	skipped, err := ForDatagrams(s)
@@ -92,44 +102,45 @@ func TestTheTimerFollowsTheFloor(t *testing.T) {
 		}
 		return time.Duration(info.Rto) * time.Microsecond
 	}
-	if got := rto(s); got >= 100*time.Millisecond {
-		t.Fatalf("tuned end: RTO %v, want near the 20 ms floor", got)
+	base, tuned := rto(c), rto(s)
+	if base < 100*time.Millisecond {
+		t.Skipf("the untuned end already has RTO %v: this host lowers the floor for every socket", base)
 	}
-	if got := rto(c); got < 200*time.Millisecond {
-		t.Fatalf("untuned end: RTO %v, want the kernel's 200 ms or more", got)
+	if tuned*2 > base {
+		t.Fatalf("tuned end: RTO %v, untuned %v; want the tuned one near the 20 ms floor", tuned, base)
 	}
 }
 
 // The tuning changes how soon TCP retransmits, not how long it keeps trying.
-// Both are read from the same options on Linux: the cap of the timer and the
-// user timeout set the time after which the kernel closes the connection with
-// ETIMEDOUT, so the tuned socket must keep the values of an untuned one.
+// From the cap of the timer and the user timeout the kernel derives when it
+// closes a retransmitting connection with ETIMEDOUT, so the tuned socket must
+// keep the values of an untuned one.
 func TestTheTunedSocketGivesUpNoSooner(t *testing.T) {
 	c, s := tcpPair(t)
 	if _, err := ForDatagrams(s); err != nil {
 		t.Fatal(err)
 	}
-	read := func(conn *net.TCPConn, opt int) (int, error) {
-		raw, err := conn.SyscallConn()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v int
-		var gerr error
-		_ = raw.Control(func(fd uintptr) { v, gerr = unix.GetsockoptInt(int(fd), unix.IPPROTO_TCP, opt) })
-		return v, gerr
-	}
 	for _, o := range []struct {
 		name string
 		opt  int
 	}{{"TCP_RTO_MAX_MS", tcpRTOMaxMS}, {"TCP_USER_TIMEOUT", unix.TCP_USER_TIMEOUT}} {
-		want, err := read(c, o.opt)
+		want, err := readOpt(t, c, o.opt)
 		if err != nil {
 			t.Logf("%s: the kernel does not have it (%v)", o.name, err)
 			continue
 		}
-		if got, _ := read(s, o.opt); got != want {
+		if got, _ := readOpt(t, s, o.opt); got != want {
 			t.Fatalf("%s = %d on the tuned socket, %d on an untuned one", o.name, got, want)
 		}
+	}
+}
+
+func TestTheTunerSaysTheSocketIsClosed(t *testing.T) {
+	c, _ := tcpPair(t)
+	_ = c.Close()
+	var log bytes.Buffer
+	Tuner(debugLogger(&log))(c)
+	if out := log.String(); !strings.Contains(out, "could not tune the socket") || !strings.Contains(out, "use of closed network connection") {
+		t.Fatalf("log: %q", out)
 	}
 }

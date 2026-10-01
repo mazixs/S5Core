@@ -211,28 +211,19 @@ func (r *valueResolver) Resolve(ctx context.Context, name string) (context.Conte
 	return short, net.ParseIP("203.0.113.8"), nil
 }
 
-// seenValue records what the request context carried by the time the address
-// was rewritten, which is the first place after the lookup that sees it.
-type seenValue struct {
-	got chan any
-}
-
-func (r *seenValue) Rewrite(ctx context.Context, req *Request) (context.Context, *AddrSpec) {
-	r.got <- ctx.Value(valueKey{})
-	return ctx, req.DestAddr
-}
-
 func TestWhatTheResolverAddsSurvivesButItsDeadlineDoesNot(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const lookupLifetime = time.Second
 
 		resolver := &valueResolver{lifetime: lookupLifetime, cancels: make(chan context.CancelFunc, 1)}
-		rewriter := &seenValue{got: make(chan any, 1)}
+		// The dial is the first place after the lookup that sees the
+		// request context.
+		seen := make(chan any, 1)
 		target, destination := net.Pipe()
 		conf := &Config{
 			Resolver: resolver,
-			Rewriter: rewriter,
 			Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				seen <- ctx.Value(valueKey{})
 				return destination, nil
 			},
 		}
@@ -250,7 +241,7 @@ func TestWhatTheResolverAddsSurvivesButItsDeadlineDoesNot(t *testing.T) {
 			t.Fatalf("connect failed with reply %#x", reply[1])
 		}
 
-		if got := <-rewriter.got; got != "carries.a.value.example" {
+		if got := <-seen; got != "carries.a.value.example" {
 			t.Fatalf("the request context carried %v after the lookup, want the value the resolver attached", got)
 		}
 

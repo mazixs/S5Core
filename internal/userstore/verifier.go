@@ -257,12 +257,3 @@ func (c *verifierCache) retain(keep map[string]*userEntry) {
 		}
 	}
 }
-
-func (c *verifierCache) size() int {
-	if c == nil || c.items == nil {
-		return 0
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.items)
-}

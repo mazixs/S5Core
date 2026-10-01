@@ -53,8 +53,10 @@ func associationEnd(err error) string {
 	return EndedByError
 }
 
-func (s *Server) associationEnded(kind string, err error) {
+func (s *Server) associationEnded(req *Request, kind string, err error, egress *rotatingUDP) {
+	reason := associationEnd(err)
+	req.end.associationEnded(kind, reason, egress)
 	if s.config.OnAssociationEnd != nil {
-		s.config.OnAssociationEnd(kind, associationEnd(err))
+		s.config.OnAssociationEnd(kind, reason)
 	}
 }

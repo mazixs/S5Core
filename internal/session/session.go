@@ -395,24 +395,25 @@ func (s *Session) GraceDeadline() (time.Time, bool) {
 // ReadDeadline is the deadline the transport should arm for the read it is
 // about to do, given the states the session is in right now.
 func (s *Session) ReadDeadline(now time.Time) (time.Time, bool) {
-	if s == nil {
-		return time.Time{}, false
-	}
-	return s.deadline(now, s.sla.ReadIdle, true)
+	return s.deadline(now, true)
 }
 
 // WriteDeadline is the same for a write.
 func (s *Session) WriteDeadline(now time.Time) (time.Time, bool) {
-	if s == nil {
-		return time.Time{}, false
-	}
-	return s.deadline(now, s.sla.WriteIdle, false)
+	return s.deadline(now, false)
 }
 
 // deadline is the SLA table read for one operation. The stricter bound
 // always wins, so adding a state never loosens a deadline that applied
 // before.
-func (s *Session) deadline(now time.Time, idle time.Duration, read bool) (time.Time, bool) {
+func (s *Session) deadline(now time.Time, read bool) (time.Time, bool) {
+	if s == nil {
+		return time.Time{}, false
+	}
+	idle := s.sla.WriteIdle
+	if read {
+		idle = s.sla.ReadIdle
+	}
 	var d time.Time
 	switch s.Protocol() {
 	case Accepted, Handshake, Dialing:

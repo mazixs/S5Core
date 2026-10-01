@@ -230,17 +230,19 @@ func (c *Clocked) diagnose(psk, prologue []byte, mine int64) {
 	}
 }
 
-// epochTag is the MAC that binds a prologue to an hour and a context.
+// epochTag is the MAC that binds a prologue to an hour and a context. Clocked
+// keys it with the PSK over the random part, Roster with the member's key
+// over the random part and the identity field.
 //
 // The context goes in as its canonical string, so a prologue minted for node
 // A does not authenticate on node B and a prologue minted under the old
 // format version does not authenticate on a server that dropped it. Neither
 // fact is on the wire: an observer sees eight bytes that look random, and a
 // node that refuses refuses the way it refuses noise.
-func epochTag(psk, random []byte, epoch int64, ctx Context) [sha256.Size]byte {
-	mac := hmac.New(sha256.New, psk)
+func epochTag(key, head []byte, epoch int64, ctx Context) [sha256.Size]byte {
+	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(clockedMACLabel))
-	mac.Write(random)
+	mac.Write(head)
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], uint64(epoch))
 	mac.Write(buf[:])

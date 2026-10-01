@@ -133,6 +133,18 @@ type Telemetry struct {
 	// nothing on the server said so. Both label sets are closed in
 	// internal/socks5.
 	UDPAssociationsEnded metric.Int64Counter
+	// ConnectionsEnded counts every connection that reached SOCKS5, by
+	// transport, kind (connect, udp, bind, none) and result; DialOutcomes
+	// every address of every dial, by family and outcome;
+	// UDPEgressRotations the associations whose egress socket was redrawn,
+	// by how that ended. LogLines and LogDropped are what the service log and
+	// the session journal wrote and lost. Every label set is closed in code
+	// (docs/design/observability-policy.md).
+	ConnectionsEnded   metric.Int64Counter
+	DialOutcomes       metric.Int64Counter
+	UDPEgressRotations metric.Int64Counter
+	LogLines           metric.Int64ObservableCounter
+	LogDropped         metric.Int64ObservableCounter
 
 	// meter is kept so that the session gauge can be registered once the
 	// registry that answers it exists, which is in NewServer.
@@ -300,6 +312,34 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		return nil, err
 	}
 
+	connectionsEnded, err := meter.Int64Counter("s5core_connections_ended_total",
+		metric.WithDescription("Connections that reached SOCKS5, by transport, kind and result"))
+	if err != nil {
+		return nil, err
+	}
+	dialOutcomes, err := meter.Int64Counter("s5core_dial_outcomes_total",
+		metric.WithDescription("Addresses dialled for CONNECT, by family and outcome"))
+	if err != nil {
+		return nil, err
+	}
+	egressRotations, err := meter.Int64Counter("s5core_udp_egress_rotations_total",
+		metric.WithDescription("UDP associations that redrew their egress socket, by how that ended"))
+	if err != nil {
+		return nil, err
+	}
+	logLines, err := meter.Int64ObservableCounter("s5core_log_lines_total",
+		metric.WithDescription("Lines written, by stream (service, sessions) and level"),
+		metric.WithInt64Callback(observeLogLines))
+	if err != nil {
+		return nil, err
+	}
+	logDropped, err := meter.Int64ObservableCounter("s5core_log_dropped_total",
+		metric.WithDescription("Lines that could not be written, by stream (service, sessions)"),
+		metric.WithInt64Callback(observeLogDropped))
+	if err != nil {
+		return nil, err
+	}
+
 	return &Telemetry{
 		ActiveConnections: activeConns,
 		TotalConnections:  totalConns,
@@ -331,6 +371,12 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		NativeUDPStreamDrops: nativeStreamDrops,
 		UDPReceiveDrops:      udpReceiveDrops,
 		UDPAssociationsEnded: udpAssociationsEnded,
+
+		ConnectionsEnded:   connectionsEnded,
+		DialOutcomes:       dialOutcomes,
+		UDPEgressRotations: egressRotations,
+		LogLines:           logLines,
+		LogDropped:         logDropped,
 
 		meter: meter,
 	}, nil

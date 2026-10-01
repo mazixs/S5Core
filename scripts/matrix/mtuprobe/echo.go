@@ -2,22 +2,17 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"flag"
-	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/mazixs/S5Core/scripts/matrix/internal/stand"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/quic-go/qlog"
@@ -81,8 +76,9 @@ func runEcho(args []string) {
 		must(err)
 		pc, err := net.ListenUDP("udp", ua)
 		must(err)
+		cert, _, _ := stand.SelfSigned(ua.IP)
 		srv := &http3.Server{Handler: bulkMux(),
-			TLSConfig: http3.ConfigureTLSConfig(&tls.Config{Certificates: []tls.Certificate{selfSigned(ua.IP)}, MinVersion: tls.VersionTLS13}),
+			TLSConfig: http3.ConfigureTLSConfig(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13}),
 			QUICConfig: &quic.Config{MaxIdleTimeout: 60 * time.Second, InitialPacketSize: uint16(*initial),
 				DisablePathMTUDiscovery: !*pmtud, Tracer: mtu.tracer("server")}}
 		go func() { _ = srv.Serve(pc) }()
@@ -157,26 +153,8 @@ func bulkMux() *http.ServeMux {
 			n -= k
 		}
 	})
-	m.HandleFunc("/sink", func(w http.ResponseWriter, r *http.Request) {
-		n, _ := io.Copy(io.Discard, r.Body)
-		_, _ = w.Write([]byte(strconv.FormatInt(n, 10)))
-	})
+	m.HandleFunc("/sink", stand.Sink)
 	return m
-}
-
-func selfSigned(ip net.IP) tls.Certificate {
-	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	tpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: ip.String()},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		IPAddresses:  []net.IP{ip, net.IPv4(127, 0, 0, 1)},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
 // mtuLog keeps the MTU updates of quic-go's path MTU discovery, by side.

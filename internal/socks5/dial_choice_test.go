@@ -55,10 +55,16 @@ func TestThePreferredAddressNamesTheFailureWhicheverFailsFirst(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		timeout := errors.New("dial tcp 192.0.2.1:80: i/o timeout")
-		dial := func(_ context.Context, _, addr string) (net.Conn, error) {
+		dial := func(ctx context.Context, _, addr string) (net.Conn, error) {
 			if addr == "192.0.2.1:80" {
-				time.Sleep(time.Second)
-				return nil, timeout
+				// The address now has a backup at 500ms, so the hook has to
+				// let go when the dial is over, as a real one does.
+				select {
+				case <-time.After(time.Second):
+					return nil, timeout
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			}
 			return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 		}
@@ -72,7 +78,9 @@ func TestThePreferredAddressNamesTheFailureWhicheverFailsFirst(t *testing.T) {
 // An address that has not answered by the end of its budget met that end, and
 // the order still decides: the preferred address's refusal is the answer
 // while the other one waits out the whole budget, and the other one's refusal
-// is not the answer when the preferred address runs out of time.
+// is not the answer when the preferred address runs out of time. A first
+// attempt has no share of the budget any more (Н-5 of docs/plan/v2.3-rc6.md):
+// it waits for the end of the whole budget, not for the 5s it had before.
 func TestTheEndOfTheBudgetKeepsTheOrder(t *testing.T) {
 	refused := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 	for _, tc := range []struct {
@@ -81,7 +89,7 @@ func TestTheEndOfTheBudgetKeepsTheOrder(t *testing.T) {
 		after         time.Duration
 	}{
 		{"preferred_refuses", "a", refused, 10 * time.Second},
-		{"other_refuses", "b", context.DeadlineExceeded, 5 * time.Second},
+		{"other_refuses", "b", context.DeadlineExceeded, 10 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {

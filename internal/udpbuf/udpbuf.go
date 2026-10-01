@@ -1,16 +1,6 @@
-// Package udpbuf sizes the receive buffers of the UDP sockets that take
-// traffic nobody paces for them: the answers of targets to an association,
-// and the datagrams of the native path.
-//
-// A game server answers in bursts: a wave of some 450 datagrams within 5-10
-// ms, up to 128 in one millisecond, then a tail of about 2000 a second. The
-// kernel gives a socket net.core.rmem_default, 212 992 bytes on every node
-// measured, and counts a datagram at the memory the network card gave it,
-// some 2304 bytes, so the socket holds about 90. A reader that forwards each
-// datagram before it takes the next falls behind such a wave however idle
-// the server is, so the buffer has to hold the wave: without that a node lost
-// 250-440 datagrams of every burst, 5% of a match on a clean path
-// (docs/field/nodes.md, "Узел B для игры"; docs/plan/draft.md, Ч-2).
+// Package udpbuf grows the receive buffers of the relay's UDP sockets, which
+// take bursts of answers nobody paces for them (docs/plan/draft.md, Ч-2;
+// docs/benchmarks/udp-burst-2026-09-28.md).
 package udpbuf
 
 import (
@@ -19,18 +9,12 @@ import (
 	"strconv"
 )
 
-// Want is what every such socket asks for. Linux doubles it for its own
-// bookkeeping, so a socket that gets it holds some 1800 datagrams of a game
-// burst; a quiet socket costs nothing more, because the memory is taken as
-// datagrams arrive.
+// Want is what every relay UDP socket asks for.
 const Want = 2 << 20
 
 // Got is what the kernel gave a socket.
 type Got struct {
-	// Bytes is the size as the kernel reports it. Linux reports twice what
-	// a socket asked for, the memory it accounts, which is also what ss
-	// shows: 4 MiB for Want, twice rmem_max when that is lower, and
-	// rmem_default, not doubled, on a socket that never asked.
+	// Bytes is the size the kernel reports; Linux reports twice what it gave.
 	Bytes int
 	// Full is whether that is all Want asked for.
 	Full bool
@@ -46,7 +30,7 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*net.UDPConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _ = Grow(c)
+	_, _ = grow(c)
 	return c, nil
 }
 
@@ -56,8 +40,17 @@ func DialUDP(network string, laddr, raddr *net.UDPAddr) (*net.UDPConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _ = Grow(c)
+	_, _ = grow(c)
 	return c, nil
+}
+
+// Grow asks for Want and reports what the socket got, with the ceiling.
+func Grow(c *net.UDPConn) (Got, error) {
+	got, err := grow(c)
+	if got.Bytes > 0 {
+		got.Limit = limit()
+	}
+	return got, err
 }
 
 // Probe grows a socket of its own and reports what it got. Every socket of

@@ -154,7 +154,7 @@ func (r *Roster) Offer(psk, dst []byte) (Result, error) {
 	mask := identityMask(psk, random, epoch)
 	subtle.XORBytes(identity, tag[:], mask[:])
 
-	mac := rosterMAC(r.Member.Key, dst[:rosterRandomSize+rosterIdentitySize], epoch, r.Context)
+	mac := epochTag(r.Member.Key, dst[:rosterRandomSize+rosterIdentitySize], epoch, r.Context)
 	copy(dst[rosterRandomSize+rosterIdentitySize:], mac[:clockedTagSize])
 
 	return Result{
@@ -217,7 +217,7 @@ func (r *Roster) search(psk, prologue []byte, mine int64, window int) (Member, i
 
 			if member, ok := r.Members.lookup(epoch, tag); ok {
 				for _, ctx := range contexts {
-					want := rosterMAC(member.Key, prologue[:rosterRandomSize+rosterIdentitySize], epoch, ctx)
+					want := epochTag(member.Key, prologue[:rosterRandomSize+rosterIdentitySize], epoch, ctx)
 					if hmac.Equal(mac, want[:clockedTagSize]) {
 						return member, epoch, ctx, true
 					}
@@ -453,25 +453,6 @@ func identityMask(psk, random []byte, epoch int64) [rosterIdentitySize]byte {
 	var mask [rosterIdentitySize]byte
 	copy(mask[:], sum[:])
 	return mask
-}
-
-// rosterMAC authenticates the prologue under the member's own key, so
-// resolving an identity is not the same as believing it: an observer who
-// copies someone's identity field still cannot produce this.
-func rosterMAC(key, head []byte, epoch int64, ctx Context) [sha256.Size]byte {
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(clockedMACLabel))
-	mac.Write(head)
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], uint64(epoch))
-	mac.Write(buf[:])
-	label := ctx.String()
-	binary.BigEndian.PutUint64(buf[:], uint64(len(label)))
-	mac.Write(buf[:])
-	mac.Write([]byte(label))
-	var out [sha256.Size]byte
-	mac.Sum(out[:0])
-	return out
 }
 
 // rosterSecret is the prologue, the epoch and the member's key. The key is

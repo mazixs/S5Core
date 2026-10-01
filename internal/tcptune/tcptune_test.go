@@ -1,8 +1,11 @@
 package tcptune
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +59,21 @@ func TestAPipeHasNoSocket(t *testing.T) {
 	defer b.Close()
 	if _, err := ForDatagrams(netConnWrapper{a}); !errors.Is(err, ErrNoSocket) {
 		t.Fatalf("got %v, want ErrNoSocket", err)
+	}
+}
+
+func debugLogger(w *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+func TestTheTunerSaysThereIsNoSocket(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	var log bytes.Buffer
+	Tuner(debugLogger(&log))(a)
+	if out := log.String(); !strings.Contains(out, "no socket to tune") {
+		t.Fatalf("log: %q", out)
 	}
 }
 

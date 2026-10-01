@@ -94,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([labels](docs/design/observability-policy.md)); the client logs its half
   of the same numbers when the association ends. The
   [local game-loss curve](docs/benchmarks/nativeudp-game-loss-2026-09-25.md)
-  and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/nativeudp-wan-hour-2026-09-25.json)
+  and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/data-2026-09-25/nativeudp-wan-hour-2026-09-25.json)
   had no disconnects; the final candidate's p99 exceeded its direct-path
   acceptance limit by 0.085 ms. This is not production deployment evidence.
 - The end of every UDP association is visible on both sides. The server
@@ -120,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are not guaranteed. No server setting is needed. How to pick the binary:
   [router guide](docs/guides/testing.md#s5client-on-a-router).
 - `UDP_TUNNEL_TCP_TUNING` on the server and the client, on by default: the TCP
-  socket of a `0x83` UDP tunnel, and no other, gets thin-stream linear
+  socket of a `0x83` or `0x84` UDP tunnel, and no other, gets thin-stream linear
   timeouts and, on Linux 6.15 and later, a 20 ms floor for its retransmission
   timer. The cap of the timer is left to the kernel on purpose: Linux derives
   from it when a connection that keeps retransmitting is closed, and a lower
@@ -130,6 +130,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as on most routers, keeps its UDP with the linear timeouts alone. `false`
   keeps the kernel's timer
   ([what it buys and what it costs](docs/benchmarks/game-tuning.md)).
+- A session journal on the server, off by default: `SESSION_LOG=abnormal`
+  writes one JSON line for each connection that ended badly, `all` for every
+  one, to `SESSION_LOG_FILE` only, never to stdout. A line carries the
+  account, the network of the target (/24 or /48 and the port, never a
+  name; `SESSION_LOG_DST=none` leaves it out), the bytes, the duration, who
+  ended it and the dial attempts, and never the address of the client. The
+  file is rotated by size and age by the server itself, mode 0600
+  ([policy](docs/design/observability-policy.md#журнал-сессий)). New
+  metrics: `s5core_connections_ended_total`, `s5core_dial_outcomes_total`,
+  `s5core_udp_egress_rotations_total`, `s5core_log_lines_total` and
+  `s5core_log_dropped_total`, all with closed labels. A symbolic link, a
+  directory or any other file that is not a regular one at the path of
+  `SESSION_LOG_FILE` stops the server at startup: the file is opened with
+  `O_NOFOLLOW` (on Windows, which has none, a check before opening refuses
+  a link), so the journal is never appended to a file someone else chose
+  and rotation never moves a directory into the archive.
+- `LOG_FILE` on the client: JSON in the file, `LOG_CONSOLE_LEVEL` (warn) on
+  the console, a file of its own for each run with the last `LOG_KEEP` (40)
+  in `archive/` next to it, and a note when the last run ended without its
+  closing line. Every relayed TCP connection ends in one `TCP Tunnel closed`
+  line with its bytes, duration and who ended it, and a busy minute in one
+  summary line. The client and the server name a connection by the same
+  `conn` id, derived from the session secret under its own HKDF label,
+  `log-id` ([specification](docs/veil-spec.md)), so a line on one side finds
+  its line on the other; nothing on the wire changes. `LOG_FILE` is opened
+  under the same rule as `SESSION_LOG_FILE`: a path that is not a regular
+  file is an error at startup.
 
 ### Changed
 
@@ -162,9 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   half times that average, never before 100 ms (the minimum connection attempt
   delay of RFC 8305) and never after the default. A dial that a backup
   rescued, or a first attempt that connected on a retransmitted SYN, is not
-  recorded: that is the hole's time, not the path's. A name with several
-  addresses keeps the default schedule, as its second socket comes from the
-  race between the addresses. The table holds 1024 networks. On the node with
+  recorded: that is the hole's time, not the path's. Each address of a name
+  is timed by the history of its own network. The table holds 1024 networks. On the node with
   the hole, dials longer than 0.5 s went from 8.4% (66 of 782) in a morning
   on rc4 to 1.1% (32 of 2896) in a day on this build, and the player's entry
   into a match from 13-14 s to 6-7 s ([numbers](docs/field/nodes.md)).
@@ -182,6 +208,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   everything within its first second gets nothing from this, as nothing more
   goes out on the new socket: 40% of a game's region-list probes through
   that node stay unanswered with or without it.
+
+- Cleanup of the server's logs and types. A server without `USERS_FILE`
+  no longer writes `User store reloaded successfully` or
+  `Failed to reload users` on `SIGHUP`: it has no file to re-read, and the
+  failure line marked every reload of such a server as failed. The service
+  lines of the server carry their time in UTC, as the session journal does,
+  so lines of servers in different zones compare without conversion. The
+  `Server stopped cleanly` line is gone: `Server stopped`
+  (`event=process_stop`) takes its place with the uptime, the connections
+  served and those still open. `veil.Role` is a `uint8` instead of an `int`, and
+  `obfs.Role` is an alias of it; code that embeds the SDK and names the
+  roles by `RoleClient` and `RoleServer` does not change.
 
 ### Performance
 
@@ -537,7 +575,7 @@ documents H01-H05 and the subsequent R01 address-budget correction.
   profiles, 4/16/64 request concurrency, UDP under simulated loss, full race
   checks and both release binaries across all five supported platform targets.
 
-See the [validation guide](docs/performance-validation.md) for reproduction.
+See the [validation guide](docs/benchmarks/performance-validation.md) for reproduction.
 Publication of these changes is not a production deployment: representative
 WAN/VPS acceptance, peak-load budgets and a limited canary remain outstanding.
 

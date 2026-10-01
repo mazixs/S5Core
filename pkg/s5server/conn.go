@@ -28,6 +28,16 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
+// closeWriteBelow passes a half-close to the connection under a wrapper. Every
+// wrapper between socks5 and the socket has to, or the half-close turns into a
+// full close.
+func closeWriteBelow(c net.Conn, wrapper string) error {
+	if cw, ok := c.(closeWriter); ok {
+		return cw.CloseWrite()
+	}
+	return fmt.Errorf("%s: underlying connection does not support CloseWrite", wrapper)
+}
+
 // timeoutConn arms session budgets at the transport boundary. Successful
 // outbound stream traffic extends an already pending client read; write
 // deadlines still bound a blocked writer independently.
@@ -87,12 +97,7 @@ func (c *timeoutConn) Write(b []byte) (int, error) {
 	return n, err
 }
 
-func (c *timeoutConn) CloseWrite() error {
-	if cw, ok := c.Conn.(closeWriter); ok {
-		return cw.CloseWrite()
-	}
-	return fmt.Errorf("timeoutConn: underlying connection does not support CloseWrite")
-}
+func (c *timeoutConn) CloseWrite() error { return closeWriteBelow(c.Conn, "timeoutConn") }
 
 // metricsConn is designed to count traffic and reduce GC using buffer pools.
 type metricsConn struct {
@@ -216,12 +221,7 @@ func (c *metricsConn) Close() error {
 // it fails. This is the one place that knows both that the attempt failed and
 // which transport the client came in on.
 func (c *metricsConn) CloseWrite() error {
-	cw, ok := c.Conn.(closeWriter)
-	if !ok {
-		c.failHalfClose()
-		return fmt.Errorf("metricsConn: underlying connection does not support CloseWrite")
-	}
-	if err := cw.CloseWrite(); err != nil {
+	if err := closeWriteBelow(c.Conn, "metricsConn"); err != nil {
 		c.failHalfClose()
 		return err
 	}
@@ -309,14 +309,7 @@ func (c *limitedConn) Close() error {
 // the kernel's timer.
 func (c *limitedConn) NetConn() net.Conn { return c.Conn }
 
-// CloseWrite keeps the half-close path intact: every wrapper between socks5
-// and the socket has to pass it down, or the shutdown turns into a full close.
-func (c *limitedConn) CloseWrite() error {
-	if cw, ok := c.Conn.(closeWriter); ok {
-		return cw.CloseWrite()
-	}
-	return fmt.Errorf("limitedConn: underlying connection does not support CloseWrite")
-}
+func (c *limitedConn) CloseWrite() error { return closeWriteBelow(c.Conn, "limitedConn") }
 
 // listenerPipeline is the single path from an accepted socket to a connection
 // the SOCKS5 core can serve: connection limit, IP whitelist, deadlines,

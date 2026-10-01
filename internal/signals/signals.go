@@ -15,6 +15,7 @@
 package signals
 
 import (
+	"context"
 	"os"
 	"os/signal"
 )
@@ -27,4 +28,34 @@ func Notify(ch chan<- os.Signal, sigs ...os.Signal) bool {
 	}
 	signal.Notify(ch, sigs...)
 	return true
+}
+
+// Action is what to do on any of Signals.
+type Action struct {
+	Signals []os.Signal
+	Do      func()
+}
+
+// Handle runs each action on its own goroutine until ctx ends, so a slow
+// reload does not hold up a debug toggle. An action whose list is empty on
+// this platform starts nothing. The subscription outlives ctx on purpose: a
+// SIGHUP during shutdown would otherwise get its default action and kill the
+// process in the middle of draining connections and the final traffic flush.
+func Handle(ctx context.Context, actions ...Action) {
+	for _, a := range actions {
+		ch := make(chan os.Signal, 1)
+		if !Notify(ch, a.Signals...) {
+			continue
+		}
+		go func(do func()) {
+			for {
+				select {
+				case <-ch:
+					do()
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(a.Do)
+	}
 }

@@ -2,16 +2,10 @@ package main
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
-	"encoding/pem"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mazixs/S5Core/scripts/matrix/internal/stand"
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -89,24 +84,6 @@ func (c filteredPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	}
 }
 
-func selfSigned(ip net.IP) (tls.Certificate, *x509.CertPool, string) {
-	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	tpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: ip.String()},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		IPAddresses:  []net.IP{ip, net.IPv4(127, 0, 0, 1)},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
-	leaf, _ := x509.ParseCertificate(der)
-	pool := x509.NewCertPool()
-	pool.AddCert(leaf)
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, pool, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
-}
-
 func loadOrigin(path string) *origin {
 	b, err := os.ReadFile(path)
 	must(err)
@@ -133,15 +110,12 @@ func mux() *http.ServeMux {
 		w.Header().Set("Content-Length", strconv.Itoa(n))
 		_, _ = w.Write(largeBody[:n])
 	})
-	m.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-		n, _ := io.Copy(io.Discard, r.Body)
-		_, _ = w.Write([]byte(strconv.FormatInt(n, 10)))
-	})
+	m.HandleFunc("/upload", stand.Sink)
 	return m
 }
 
 func startOrigin(ip net.IP, allow allowed) *origin {
-	cert, pool, certPEM := selfSigned(ip)
+	cert, pool, certPEM := stand.SelfSigned(ip)
 	o := &origin{roots: pool, CertPEM: certPEM}
 	tcp := func() net.Listener {
 		l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: ip})

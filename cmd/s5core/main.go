@@ -107,8 +107,16 @@ type params struct {
 	// KDFMemoryBudgetMB is the memory concurrent password checks may use.
 	// Zero is the library default (256 MiB); a negative value removes the
 	// bound and is for embedders that have their own.
-	KDFMemoryBudgetMB int    `env:"KDF_MEMORY_BUDGET_MB" envDefault:"0"`
-	LogLevel          string `env:"LOG_LEVEL" envDefault:"info"`
+	KDFMemoryBudgetMB int `env:"KDF_MEMORY_BUDGET_MB" envDefault:"0"`
+
+	// The session journal (pkg/s5server Config.SessionLog): off unless asked
+	// for, because it is the one output that names accounts and networks.
+	SessionLog          string        `env:"SESSION_LOG" envDefault:"off"`
+	SessionLogFile      string        `env:"SESSION_LOG_FILE" envDefault:""`
+	SessionLogMaxSizeMB int           `env:"SESSION_LOG_MAX_SIZE_MB" envDefault:"20"`
+	SessionLogMaxFiles  int           `env:"SESSION_LOG_MAX_FILES" envDefault:"10"`
+	SessionLogMaxAge    time.Duration `env:"SESSION_LOG_MAX_AGE" envDefault:"168h"`
+	SessionLogDst       string        `env:"SESSION_LOG_DST" envDefault:"net"`
 }
 
 // loadConfig is the binary's whole configuration path: the environment, the
@@ -168,7 +176,6 @@ func main() {
 	// на сервере, который уже запущен.
 	setupLogLevelToggle(ctx)
 
-	// Start metrics server (Legacy Prometheus endpoint)
 	if cfg.MetricsPort != "" {
 		go startMetricsServer(ctx, cfg.MetricsBindAddr, cfg.MetricsPort)
 	}
@@ -187,8 +194,6 @@ func main() {
 		slog.Error("Server stopped with error", "error", startErr)
 		os.Exit(1)
 	}
-
-	slog.Info("Server stopped cleanly")
 }
 
 // applyEnvAliases accepts the names the other binary uses for the same thing.
@@ -266,6 +271,12 @@ func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger)
 		UsersFile:             cfg.UsersFile,
 		TrafficFlushInterval:  cfg.TrafficFlush,
 		KDFMemoryBudget:       int64(cfg.KDFMemoryBudgetMB) << 20,
+		SessionLog:            cfg.SessionLog,
+		SessionLogFile:        cfg.SessionLogFile,
+		SessionLogMaxSize:     int64(cfg.SessionLogMaxSizeMB) << 20,
+		SessionLogMaxFiles:    cfg.SessionLogMaxFiles,
+		SessionLogMaxAge:      cfg.SessionLogMaxAge,
+		SessionLogDst:         cfg.SessionLogDst,
 	}
 
 	if cfg.TLSFingerprint != "" {
@@ -279,7 +290,8 @@ func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger)
 	}
 
 	if cfg.RequireAuth && cfg.UsersFile == "" {
-		// Legacy mode: single user from env
+		// Without a file the account comes from the environment, into the
+		// same store a file would fill (plan task Ф6-3).
 		if cfg.User != "" && cfg.Password != "" {
 			if err := srv.AddUser(cfg.User, cfg.Password); err != nil {
 				return nil, fmt.Errorf("failed to add proxy user: %w", err)
@@ -293,83 +305,73 @@ func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger)
 }
 
 func setupHotReload(ctx context.Context, srv *s5server.Server) {
-	hupCtx := make(chan os.Signal, 1)
-	if !signals.Notify(hupCtx, signals.Reload...) {
-		// A platform with no reload signal has nothing to listen for, and
-		// listening for nothing means listening for everything.
+	signals.Handle(ctx, signals.Action{Signals: signals.Reload, Do: func() { reload(srv) }})
+}
+
+// reload re-reads what a running server may change: the whitelist, the
+// timeouts, the transport advice, USERS_FILE and the log level.
+func reload(srv *s5server.Server) {
+	slog.Info("SIGHUP received, reloading configuration...")
+	var newCfg params
+	if err := env.Parse(&newCfg); err != nil {
+		slog.Error("Failed to parse env config during reload", "error", err)
+		srv.RecordReload("env")
 		return
 	}
-	go func() {
-		for {
-			select {
-			case <-hupCtx:
-				slog.Info("SIGHUP received, reloading configuration...")
-				var newCfg params
-				if err := env.Parse(&newCfg); err != nil {
-					slog.Error("Failed to parse env config during reload", "error", err)
-					continue
-				}
+	var failed []string
 
-				if err := srv.UpdateWhitelist(newCfg.AllowedIPs); err != nil {
-					slog.Error("Failed to update whitelist during reload", "error", err)
-				} else {
-					slog.Info("Whitelist reloaded successfully")
-				}
+	if err := srv.UpdateWhitelist(newCfg.AllowedIPs); err != nil {
+		slog.Error("Failed to update whitelist during reload", "error", err)
+		failed = append(failed, "whitelist")
+	} else {
+		slog.Info("Whitelist reloaded successfully")
+	}
 
-				srv.UpdateTimeouts(newCfg.ReadTimeout, newCfg.WriteTimeout)
-				srv.UpdateHandshakeTimeout(newCfg.HandshakeTimeout)
-				srv.UpdateSessionTimeouts(newCfg.DialTimeout, newCfg.FrameTimeout, newCfg.QuotaGrace)
-				slog.Info("Timeouts reloaded successfully")
+	srv.UpdateTimeouts(newCfg.ReadTimeout, newCfg.WriteTimeout)
+	srv.UpdateHandshakeTimeout(newCfg.HandshakeTimeout)
+	srv.UpdateSessionTimeouts(newCfg.DialTimeout, newCfg.FrameTimeout, newCfg.QuotaGrace)
+	slog.Info("Timeouts reloaded successfully")
 
-				// The transport advice is the one setting whose whole
-				// value is in being changeable without a restart - which is
-				// why it is read from its file here and not just re-parsed
-				// out of an environment nothing outside this process can
-				// change (audit finding F19).
-				if err := resolveTransportAdvice(&newCfg); err != nil {
-					slog.Error("Failed to read the transport advice during reload, keeping previous", "error", err)
-				} else if err := srv.UpdateTransportAdvice(newCfg.TransportAdvice); err != nil {
-					slog.Error("Failed to apply TRANSPORT_ADVICE during reload, keeping previous", "error", err)
-				} else {
-					slog.Info("Transport advice reloaded", "advice", newCfg.TransportAdvice)
-				}
+	// The transport advice is the one setting whose whole value is in being
+	// changeable without a restart - which is why it is read from its file
+	// here and not just re-parsed out of an environment nothing outside this
+	// process can change (audit finding F19).
+	if err := resolveTransportAdvice(&newCfg); err != nil {
+		slog.Error("Failed to read the transport advice during reload, keeping previous", "error", err)
+		failed = append(failed, "advice")
+	} else if err := srv.UpdateTransportAdvice(newCfg.TransportAdvice); err != nil {
+		slog.Error("Failed to apply TRANSPORT_ADVICE during reload, keeping previous", "error", err)
+		failed = append(failed, "advice")
+	} else {
+		slog.Info("Transport advice reloaded", "advice", newCfg.TransportAdvice)
+	}
 
-				if err := srv.ReloadUsers(); err != nil {
-					slog.Error("Failed to reload users during SIGHUP", "error", err)
-				} else {
-					slog.Info("User store reloaded successfully")
-				}
-
-				// Уровень логов меняется на работающем процессе: диагностика
-				// протокола включается там, где отказ уже происходит.
-				if level, err := logging.SetLevelFromEnv(); err != nil {
-					slog.Error("Failed to apply LOG_LEVEL during reload, keeping previous", "error", err, "log_level", level)
-				} else {
-					slog.Info("Log level applied", "log_level", level)
-				}
-
-			case <-ctx.Done():
-				return
-			}
+	// Without USERS_FILE there is nothing to re-read, and counting that as a
+	// failed reload marked every reload of such a server as failed.
+	if newCfg.UsersFile != "" {
+		if err := srv.ReloadUsers(); err != nil {
+			slog.Error("Failed to reload users during SIGHUP", "error", err)
+			failed = append(failed, "users")
+		} else {
+			slog.Info("User store reloaded successfully")
 		}
-	}()
+	}
+
+	// Уровень логов меняется на работающем процессе: диагностика протокола
+	// включается там, где отказ уже происходит.
+	if level, err := logging.SetLevelFromEnv(); err != nil {
+		slog.Error("Failed to apply LOG_LEVEL during reload, keeping previous", "error", err, "log_level", level)
+		failed = append(failed, "log_level")
+	} else {
+		slog.Info("Log level applied", "log_level", level)
+	}
+	srv.RecordReload(failed...)
 }
 
 func setupLogLevelToggle(ctx context.Context) {
-	usrCh := make(chan os.Signal, 1)
-	if !signals.Notify(usrCh, signals.ToggleDebug...) {
-		return
-	}
-	go func() {
-		for {
-			select {
-			case <-usrCh:
-				slog.Info("Log level toggled by SIGUSR1", "log_level", logging.ToggleDebug())
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	signals.Handle(ctx, signals.Action{Signals: signals.ToggleDebug, Do: func() {
+		slog.Info("Log level toggled by SIGUSR1", "log_level", logging.ToggleDebug())
+	}})
 }
 
 // metricsHeaderTimeout bounds how long a client may take to send its request
