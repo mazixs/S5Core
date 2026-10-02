@@ -52,7 +52,7 @@ func requireAuthPathLabel(t *testing.T, metricName string, set attribute.Set) st
 	for iter.Next() {
 		kv := iter.Attribute()
 		n++
-		key, value := string(kv.Key), kv.Value.Emit()
+		key, value := string(kv.Key), kv.Value.String()
 		if key != "path" {
 			t.Errorf("%s: label %q=%q is not allowed", metricName, key, value)
 			continue
@@ -134,7 +134,7 @@ func TestArgon2idRunsOncePerPasswordNotPerConnection(t *testing.T) {
 			return err
 		}
 		defer func() { _ = conn.Close() }()
-		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		if err := conn.SetDeadline(time.Now().Add(answerWithin)); err != nil {
 			return err
 		}
 		return socks5Connect(conn, user, pass, echoAddr)

@@ -1,0 +1,18 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/s5server
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkFrameObserver/bare         	   17715	     20025 ns/op	1636.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare         	   17763	     20132 ns/op	1627.68 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/bare         	   17967	     20050 ns/op	1634.28 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only   	   17793	     19954 ns/op	1642.14 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only   	   18288	     19722 ns/op	1661.46 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/state-only   	   18302	     19760 ns/op	1658.29 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/noop-telemetry         	   17954	     19973 ns/op	1640.60 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/noop-telemetry         	   18027	     19909 ns/op	1645.88 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/noop-telemetry         	   18062	     19899 ns/op	1646.74 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/sdk-telemetry          	   16742	     21097 ns/op	1553.21 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/sdk-telemetry          	   17546	     20413 ns/op	1605.24 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFrameObserver/sdk-telemetry          	   17689	     20413 ns/op	1605.27 MB/s	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	4.309s

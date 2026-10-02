@@ -304,6 +304,7 @@ func (c *conn) deliverControl(kind frameKind, payload []byte) error {
 		if err != nil {
 			return err
 		}
+		c.clientBuild = h.Version
 		if c.cfg.OnHello != nil {
 			c.cfg.OnHello(h)
 		}

@@ -345,22 +345,30 @@ func (cfg clientParams) effectiveTransport() transportKind {
 	return transportObfs
 }
 
-// dialTunnel is dialObfsTunnel under the policy: the attempt is shaped
-// first, and its outcome is fed back so that the next attempt can differ.
-// The attempt's configuration is returned so that the caller logs what was
-// actually used, not what was configured. Without a policy - tests build
-// their configuration by hand - it is dialObfsTunnel and nothing else.
-func dialTunnel(cfg clientParams, connectReq []byte) (net.Conn, clientParams, error) {
+// attempt is the configuration of the next connection: the transport the
+// policy chooses now and the shape it was advised. A request that depends on
+// the transport is built from it before dialAttempt.
+func (cfg clientParams) attempt() clientParams {
 	if cfg.policy == nil {
-		conn, err := dialObfsTunnel(cfg, connectReq)
-		return conn, cfg, err
+		return cfg
 	}
-	attempt := cfg.policy.apply(cfg)
+	return cfg.policy.apply(cfg)
+}
+
+// dialAttempt is dialObfsTunnel under the policy: the outcome is fed back so
+// that the next attempt can differ, and the attempt's configuration is
+// returned so that the caller logs what was actually used. Without a policy -
+// tests build their configuration by hand - it is dialObfsTunnel and nothing
+// else.
+func dialAttempt(attempt clientParams, connectReq []byte) (net.Conn, clientParams, error) {
 	conn, err := dialObfsTunnel(attempt, connectReq)
+	if attempt.policy == nil {
+		return conn, attempt, err
+	}
 	if err != nil {
-		cfg.policy.onFailure(attempt, tunnelPhaseOf(err))
+		attempt.policy.onFailure(attempt, tunnelPhaseOf(err))
 		return nil, attempt, err
 	}
-	cfg.policy.onSuccess(attempt)
+	attempt.policy.onSuccess(attempt)
 	return conn, attempt, nil
 }

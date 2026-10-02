@@ -1,0 +1,74 @@
+package main
+
+import (
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+func TestAuditOneLostProbeDivertsVerifiedTraffic(t *testing.T) {
+	for _, continuousReplies := range []bool{false, true} {
+		name := "one-way"
+		if continuousReplies {
+			name = "two-way-control"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				// Initial probes 1 and 2 pass; lose only probe 4. No data is lost.
+				l := startLivenessWith(t, func(i int64) bool { return i == 4 }, 0.9)
+				stop := make(chan struct{})
+				defer close(stop)
+				if continuousReplies {
+					l.stream(stop)
+				}
+				l.at(10 * time.Millisecond)
+				if !l.client.up.Load() {
+					t.Fatal("initial verification failed")
+				}
+				diverted := 0
+				var first, last time.Duration
+				for tick := 1; tick <= 200; tick++ {
+					l.at(time.Duration(tick) * 10 * time.Millisecond)
+					if !l.client.carry([]byte("input")) {
+						if !l.client.up.Load() {
+							t.Fatal("test intended to observe diversion while up")
+						}
+						diverted++
+						if first == 0 {
+							first = time.Since(l.start)
+						}
+						last = time.Since(l.start)
+					}
+					synctest.Wait()
+				}
+				signals := l.signalled()
+				t.Logf("one lost probe, continuous replies=%v: up=%v diverted=%d/200 interval=%v..%v signals=%v", continuousReplies, l.client.up.Load(), diverted, first, last, signals)
+				if continuousReplies {
+					if diverted != 0 || len(signals) != 0 {
+						t.Fatal("control was diverted")
+					}
+				} else if diverted == 0 || len(signals) == 0 {
+					t.Fatal("diversion not reproduced")
+				}
+			})
+		})
+	}
+}
+
+func TestAuditFirstPacketAfterHealthyIdleUsesTCP(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLiveness(t, nil)
+		l.at(5 * time.Second)
+		if !l.client.up.Load() {
+			t.Fatal("path should remain verified")
+		}
+		first := l.client.carry([]byte("first"))
+		synctest.Wait()
+		second := l.client.carry([]byte("second"))
+		synctest.Wait()
+		t.Logf("no packet or probe losses: first native=%v second native=%v up=%v signals=%v", first, second, l.client.up.Load(), l.signalled())
+		if first || !second {
+			t.Fatal("unexpected idle behavior")
+		}
+	})
+}

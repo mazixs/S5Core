@@ -1,9 +1,11 @@
+import json
 import os
 import random
 import sys
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -22,6 +24,15 @@ def raw_plan(**over):
     }
     p.update(over)
     return p
+
+
+def native_plan(**over):
+    native = {"server": {"UDP_PORT": "41443"}, "client": {"UDP_NATIVE": "true"}}
+    return raw_plan(base="n", candidate="n", cpus={"raw": "0", "plain": ["5"], "obfs": ["1", "2"], "wss": ["3", "4"]}, variants={
+        "raw": {"direct": True}, "tcp": {"ref": "HEAD"}, "n": {"ref": "worktree", "env": native},
+        "off": {"ref": "worktree", "env": {"server": native["server"]}},
+        "zero": {"ref": "worktree", "env": {"server": {"UDP_PORT": "0"}, "client": native["client"]}},
+    }, **over)
 
 
 class Units(unittest.TestCase):
@@ -82,6 +93,201 @@ class Verdict(unittest.TestCase):
 
 
 class Plans(unittest.TestCase):
+    def test_native_udp_metrics_keep_fixed_outcomes(self):
+        gauges = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 42\n'
+                                   's5core_native_udp_packets_total{outcome="replay"} 2\n'
+                                   's5core_native_udp_sessions 3\n')
+        self.assertEqual(gauges['native_udp_accepted'], 42)
+        self.assertEqual(gauges['native_udp_replay'], 2)
+        self.assertEqual(gauges['s5core_native_udp_sessions'], 3)
+
+    def test_native_udp_paths_keep_one_key_per_label_set(self):
+        g = cell.parse_gauges('s5core_native_udp_datagrams_total{direction="to_client",path="native"} 40\n'
+                              's5core_native_udp_datagrams_total{direction="to_client",path="tcp_oversize"} 2\n'
+                              's5core_native_udp_datagrams_total{direction="from_client",path="tcp_route"} 3\n'
+                              's5core_native_udp_route_events_total{event="stale_loss"} 1\n'
+                              's5core_native_udp_stream_drops_total{reason="age"} 5\n'
+                              's5core_native_udp_stream_drops_total{otel_scope_name="a"} 7\n')
+        self.assertEqual({k: v for k, v in g.items() if k.startswith("native_udp_")},
+                         {"native_udp_to_client_native": 40, "native_udp_to_client_tcp_oversize": 2,
+                          "native_udp_from_client_tcp_route": 3, "native_udp_route_stale_loss": 1,
+                          "native_udp_stream_drop_age": 5})
+
+    def test_native_udp_outcomes_are_not_summed_into_a_volume(self):
+        g = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted",otel_scope_name="a"} 40\n'
+                              's5core_native_udp_packets_total{outcome="accepted",otel_scope_name="b"} 2\n'
+                              's5core_native_udp_packets_total{outcome="tag"} 1\n'
+                              's5core_native_udp_packets_total{outcome="replay"} 2\n'
+                              's5core_native_udp_packets_total{outcome="auth"} 3\n'
+                              's5core_native_udp_packets_total{outcome="read_error"} 4\n')
+        self.assertNotIn("s5core_native_udp_packets_total", g)
+        self.assertEqual({k: v for k, v in g.items() if k.startswith("native_udp_")},
+                         {"native_udp_accepted": 42, "native_udp_tag": 1, "native_udp_replay": 2, "native_udp_auth": 3,
+                          "native_udp_read_error": 4, "native_udp_dropped": 6})
+        self.assertEqual(cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 5\n')["native_udp_dropped"], 0)
+
+    def test_udp_blackout_targets_only_native_port(self):
+        cmds = []
+        blackout = cell.UDPBlackout("41443", 0, 0.001)
+        with patch.object(cell, "_sh", side_effect=lambda cmd: cmds.append(cmd)):
+            blackout.start()
+            blackout.join(timeout=1)
+        self.assertFalse(blackout.is_alive())
+        self.assertTrue(blackout.started_at)
+        adds = [c for c in cmds if c[:3] == ["tc", "filter", "add"]]
+        self.assertEqual(len(adds), 2)
+        self.assertTrue(all("17" in c and "41443" in c and "drop" in c for c in adds))
+        self.assertTrue(all("6" not in c for c in adds))
+        self.assertEqual(cmds[-1][:3], ["tc", "filter", "del"])
+
+    def test_udp_blackout_plan_needs_both_times(self):
+        def resolve(**net):
+            return plan.resolve(native_plan(series=[{"name": "n", "network": {"rtt_ms": 50, **net}, "variants": ["n"]}]), ".")
+        for bad in ({"udp_blackout_after_s": 0}, {"udp_blackout_for_s": 1},
+                    {"udp_blackout_after_s": -1, "udp_blackout_for_s": 1},
+                    {"udp_blackout_after_s": 0, "udp_blackout_for_s": 0}):
+            with self.assertRaises(plan.PlanError):
+                resolve(**bad)
+        resolve(udp_blackout_after_s=1, udp_blackout_for_s=2)
+
+    def test_udp_blackout_is_refused_before_the_run_where_it_has_no_native_leg(self):
+        blackout = {"rtt_ms": 50, "udp_blackout_after_s": 10, "udp_blackout_for_s": 12}
+
+        def resolve(**series):
+            return plan.resolve(native_plan(series=[{"name": "bm", "network": blackout, **series}]), ".")
+        bad = {
+            "raw": {"variants": ["raw", "n"]},
+            "tcp": {"variants": ["tcp", "n"]},
+            "plain": {"variants": ["n"], "transports": ["plain"], "auth": "none"},
+            "off": {"variants": ["off"]},
+            "zero": {"variants": ["zero"]},
+        }
+        for variant, series in bad.items():
+            with self.assertRaises(plan.PlanError, msg=variant) as e:
+                resolve(**series)
+            self.assertIn("blackout", str(e.exception))
+            self.assertIn(variant, str(e.exception))
+        with self.assertRaises(plan.PlanError):
+            resolve(variants=["raw", "n"], group="g")
+        cells = [c for b in plan.expand(resolve(variants=["n"])) for c in b["cells"]]
+        self.assertEqual({c["transport"] for c in cells}, {"obfs", "wss"})
+        # UDP_PORT from the series env counts as the variant's, as it does in the cell.
+        resolve(variants=["tcp"], env={"server": {"UDP_PORT": "41443"}, "client": {"UDP_NATIVE": "true"}})
+
+    def test_the_cell_refuses_a_blackout_before_it_shapes_lo(self):
+        written = {}
+        with tempfile.TemporaryDirectory() as d:
+            spec = {"id": "bm/raw-r1", "dir": d, "tmp": d, "parent_pid": os.getppid(), "parent_netns": -1,
+                    "network": {"rtt_ms": 50, "udp_blackout_after_s": 0, "udp_blackout_for_s": 1},
+                    "direct": True, "transport": "direct", "shape": "all", "env": {"server": {}, "client": {}}}
+            with patch.object(cell, "read_json", return_value=spec), patch.object(cell, "set_pdeathsig"), \
+                    patch.object(cell.signal, "signal"), patch.object(cell, "netns_inode", return_value=1), \
+                    patch.object(cell, "netem") as shaped, patch.object(cell, "_sh", return_value=""), \
+                    patch.object(cell, "write_json", side_effect=lambda path, run: written.update(run)):
+                with self.assertRaises(SystemExit):
+                    cell.main("spec.json")
+        shaped.assert_not_called()
+        self.assertEqual(written["status"], "setup_failed")
+        self.assertIn("blackout", written["reason"])
+
+    def test_native_udp_is_shaped_with_its_tcp_control_leg(self):
+        commands = []
+        spec = {"network": {"rtt_ms": 50, "loss_pct": 0.5, "rate_mbit": 0},
+                "shape": 41444, "env": {"server": {"UDP_PORT": "41443"}}}
+        with patch.object(cell, "_sh", side_effect=lambda command: commands.append(command)):
+            cell.netem(spec)
+        filters = [c for c in commands if c[:3] == ["tc", "filter", "add"]]
+        self.assertEqual(len(filters), 4)
+        def matched(proto, port):
+            return any(any(c[i:i+5] == ["match", "ip", "protocol", proto, "0xff"] for i in range(len(c)-4))
+                       and port in c for c in filters)
+        self.assertTrue(matched("6", "41444"))
+        self.assertTrue(matched("17", "41443"))
+
+    def test_an_uplink_queues_only_the_upstream_direction(self):
+        def net(**kw):
+            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 50, **kw}}]), ".")["series"][0]["network"]
+        for bad in ({"uplink_mbit": 3}, {"queue_kb": 256}, {"uplink_mbit": 3, "queue_kb": 256, "queue": "red"},
+                    {"uplink_mbit": 3, "queue_kb": 256, "rate_mbit": 10}, {"uplink_mbit": 3, "queue_kb": 0}):
+            with self.assertRaises(plan.PlanError):
+                net(**bad)
+        self.assertEqual(net(uplink_mbit=3, queue_kb=256)["queue"], "fifo")
+        n = net(uplink_mbit=3, queue_kb=256, queue="fq_codel")
+        self.assertIn("аплинк 3 Мбит/с, очередь fq_codel 256 КБ", report.net_title(n))
+        for shape, udp, up in ((41443, "41443", [["dport", "41443", "6"], ["dport", "41443", "17"]]),
+                               ("all", None, [["src", "127.0.0.2/32"]])):
+            commands = []
+            spec = {"network": n, "shape": shape, "env": {"server": {"UDP_PORT": udp} if udp else {}}, "settings": {}}
+            with patch.object(cell, "_sh", side_effect=lambda command: commands.append(command)):
+                self.assertIsNone(cell.netem(spec))
+            self.assertIn(["ethtool", "-K", "lo", "gso", "off", "gro", "off", "tso", "off"], commands)
+            qdiscs = [c[5:] for c in commands if c[:4] == ["tc", "qdisc", "add", "dev"]]
+            self.assertEqual([q[:4] for q in qdiscs[1:]], [["parent", "1:2", "handle", "20:"], ["parent", "1:3", "handle", "30:"],
+                                                         ["parent", "30:1", "handle", "40:"], ["parent", "40:1", "handle", "41:"]])
+            self.assertEqual(qdiscs[3][4:10], ["tbf", "rate", "3mbit", "burst", "3028", "limit"])
+            self.assertEqual(qdiscs[4][-2:], ["memory_limit", str(256 * 1024)])
+            to_up = [c for c in commands if c[:3] == ["tc", "filter", "add"] and c[-1] == "1:3"]
+            self.assertEqual(len(to_up), len(up))
+            for c, want in zip(to_up, up):
+                self.assertTrue(all(w in c for w in want), c)
+        # The direct cell binds to the same address, or the queue would not see its upstream.
+        spec = {"network": n, "shape": "all", "direct": True, "id": "x", "bin": {"matrix": "m"},
+                "settings": {"scenario_timeout": "1m", "hang_grace": "5s", "max_errors_in_row": 5}}
+        a = cell._gen_args(spec, "")
+        self.assertEqual(a[a.index("-source") + 1], plan.CLIENT_IP)
+
+    def test_a_wake_delays_the_leg_only_while_the_generator_holds_it(self):
+        def net(**kw):
+            return plan.resolve(raw_plan(series=[{"name": "n", "network": {"rtt_ms": 50, **kw}}]), ".")["series"][0]["network"]
+        for bad in ({"wake_delay_ms": 0}, {"wake_delay_ms": 260, "uplink_mbit": 3, "queue_kb": 256}):
+            with self.assertRaises(plan.PlanError):
+                net(**bad)
+        n = net(wake_delay_ms=260)
+        # The rate keeps the order: what is sent after the hold waits behind what was delayed.
+        self.assertEqual(cell.netem_args(n), ["netem", "delay", "25ms", "loss", "0%", "rate", "10gbit", "limit", "100000"])
+        self.assertEqual(cell.netem_args(n, wake=True)[:3], ["netem", "delay", "285ms"])
+        base = {"network": n, "id": "x", "bin": {"matrix": "m"}, "settings": {"scenario_timeout": "1m", "hang_grace": "5s", "max_errors_in_row": 5}}
+        for shape, socks, target in (("all", "", ["root", "handle", "1:"]), (41443, "127.0.0.1:41081", ["parent", "1:3", "handle", "30:"])):
+            a = cell._gen_args(base | {"shape": shape}, socks)
+            on, off = (json.loads(a[a.index(f) + 1]) for f in ("-wake-on", "-wake-off"))
+            self.assertEqual(on[:5 + len(target)], ["tc", "qdisc", "change", "dev", "lo", *target])
+            self.assertIn("285ms", on)
+            self.assertEqual(off[5 + len(target):], cell.netem_args(n))
+
+    def test_windows_count_what_follows_a_mark(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "gauges.jsonl"), "w") as f:
+                for t, v in ((99.9, 5), (100.5, 7), (101.4, 9), (106, 9)):
+                    f.write(json.dumps({"t": t, "native_udp_from_client_tcp_route": v}) + "\n")
+            with open(os.path.join(d, "leg.jsonl"), "w") as f:
+                f.write(json.dumps({"t": 100.2, "t40000": [3, 900, 0, 0], "t40001": [1, 60, 1, 60], "udp": [2, 400, 1, 200]}) + "\n")
+                f.write(json.dumps({"t": 105.5, "t40001": [1, 60, 0, 0]}) + "\n")
+            w = cell.windows({"network": {"rtt_ms": 50, "wake_delay_ms": 260}}, d, {"resume_at": [100.0]})["resume"][0]
+        self.assertAlmostEqual(w["span_s"], 1.385)
+        self.assertEqual(w["server"], {"native_udp_from_client_tcp_route": 2})
+        self.assertEqual((w["leg"]["tcp_up_packets"], w["leg"]["tcp_up_busiest"], w["leg"]["udp_up_packets"]), (4, 3, 2))
+        self.assertEqual(w["leg_steady"]["tcp_up_packets"], 1)
+
+    def test_the_client_log_gives_path_moves_and_counts(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "client.log")
+            with open(path, "w") as f:
+                f.write('{"time":"2026-09-26T10:00:01.123456789+02:00","level":"WARN","msg":"Native UDP path lost; association using 0x83","unanswered_probes":3}\n')
+                f.write('{"time":"2026-09-26T10:00:02+02:00","level":"INFO","msg":"UDP Tunnel closed","reason":"x","native_sent":10,"tcp_sent_other":2}\n')
+                f.write('{"time":"2026-09-26T10:00:03+02:00","level":"INFO","msg":"UDP Tunnel closed","reason":"x","native_sent":5,"tcp_sent_other":1}\n')
+            got = cell.native_log(path)
+        self.assertEqual(got["events"], {"path_lost": 1})
+        self.assertAlmostEqual(got["event_at"]["path_lost"][0] % 60, 1.123456, places=5)
+        self.assertEqual(got["stats"], {"native_sent": 15, "tcp_sent_other": 3})
+
+    def test_capture_disables_loopback_superpackets(self):
+        commands = []
+        spec = {"network": "loopback", "shape": None, "settings": {"capture": True}}
+        with patch.object(cell, "_sh", side_effect=lambda command: commands.append(command)):
+            cell.netem(spec)
+        self.assertIn(["ip", "link", "set", "lo", "mtu", "1500"], commands)
+        self.assertIn(["ethtool", "-K", "lo", "gso", "off", "gro", "off", "tso", "off"], commands)
+
     def test_shipped_plans_load(self):
         for name in os.listdir(PLANS):
             if name.endswith(".toml"):

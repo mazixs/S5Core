@@ -186,8 +186,9 @@ the run; the production clients on the router were not touched.
   spread is the stand's noise floor for a 1 ms p99 over 500 samples per run,
   not a regression.
 
-Raw runs: `bench/arm/out/` (not committed), summaries
-`bench/arm/cmp-every-cur.summary.json` and `bench/arm/cmp-none-cur.summary.json`.
+Raw runs `bench/arm/out/` and the summaries
+`bench/arm/cmp-every-cur.summary.json` and `bench/arm/cmp-none-cur.summary.json`
+are local data, not in the repository.
 
 ## Limits
 

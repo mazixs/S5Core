@@ -63,7 +63,7 @@ docker run -d --name lat-target --network "$NET" --cap-add NET_ADMIN \
   -v "$OUT/bin:/bin/s5:ro" "$IMAGE" /bin/s5/connlat -listen 0.0.0.0:9100 >/dev/null
 
 docker run -d --name lat-server --network "$NET" --cap-add NET_ADMIN \
-  -e REQUIRE_AUTH=false -e PROXY_LISTEN_IP=0.0.0.0 -e PROXY_PORT=1080 \
+  -e REQUIRE_AUTH=false -e ALLOW_PRIVATE_DEST=true -e PROXY_LISTEN_IP=0.0.0.0 -e PROXY_PORT=1080 \
   -e OBFS_ENABLED=true -e OBFS_PORT=1443 -e OBFS_PSK="$PSK" \
   -e WS_ENABLED=true -e WS_ADDR=0.0.0.0:8443 -e WS_PATH=/ws \
   -e WS_CERT_FILE=/etc/s5/cert.pem -e WS_KEY_FILE=/etc/s5/key.pem \

@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
+	"net/netip"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +23,8 @@ import (
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/signals"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
 	"github.com/mazixs/S5Core/pkg/veil"
@@ -98,6 +103,15 @@ type clientParams struct {
 	// behind a lost segment waits for the retransmission timer. Off keeps the
 	// kernel's timer, for a path where that turns out better.
 	UDPTunnelTCPTuning bool `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
+	UDPNative          bool `env:"UDP_NATIVE" envDefault:"false"`
+	// TunnelDeadTimeout closes the tunnel of a CONNECT stream once what the
+	// client sent on it has gone unacknowledged this long. A path that lost
+	// its state (a NAT, a provider) swallows the segments, and the kernel
+	// would keep retransmitting for up to a quarter of an hour while the
+	// application waits. It is above READ_TIMEOUT and WRITE_TIMEOUT of the
+	// server, which gives up on a silent or a stuck stream by then anyway.
+	// Zero leaves the kernel's rule.
+	TunnelDeadTimeout time.Duration `env:"TUNNEL_DEAD_TIMEOUT" envDefault:"45s"`
 
 	// How long a shutdown waits for connections that are still carrying
 	// traffic before it stops waiting.
@@ -140,7 +154,12 @@ type clientParams struct {
 	// the explicit "s5client timezone" command.
 	TimezoneCheck bool `env:"TIMEZONE_CHECK" envDefault:"false"`
 
-	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
+	// LOG_LEVEL is read by internal/logging, not here.
+	// LogFile, when set, takes the log off the console: see openLogFile.
+	LogFile         string `env:"LOG_FILE" envDefault:""`
+	LogKeep         int    `env:"LOG_KEEP" envDefault:"40"`
+	LogMaxSizeMB    int    `env:"LOG_MAX_SIZE_MB" envDefault:"10"`
+	LogConsoleLevel string `env:"LOG_CONSOLE_LEVEL" envDefault:"warn"`
 
 	// Transport is which transport to use: obfs, ws, or auto (plan task
 	// Ф5-7). Auto is the configured default - ws when WS_URL is set, obfs
@@ -209,31 +228,46 @@ func main() {
 		return
 	}
 
-	if cfg.ServerAddr == "" {
-		slog.Error("SERVER_ADDR is required")
-		os.Exit(1)
-	}
-	if cfg.PSK == "" || len(cfg.PSK) != 32 {
-		slog.Error("OBFS_PSK must be exactly 32 bytes")
+	if !prepare(&cfg) {
 		os.Exit(1)
 	}
 
-	if _, err := memberKey(cfg); err != nil {
-		slog.Error("OBFS_MEMBER_KEY is unusable", "error", err)
+	ctx, stop := signal.NotifyContext(context.Background(), signals.Terminate...)
+	defer stop()
+	if err := run(ctx, cfg); err != nil {
 		os.Exit(1)
+	}
+}
+
+// prepare checks the configuration and builds what the connections share:
+// the trust roots, the WebSocket dialer and the transport policy. Every
+// refusal is logged here, with the setting it is about.
+func prepare(cfg *clientParams) bool {
+	if cfg.ServerAddr == "" {
+		slog.Error("SERVER_ADDR is required")
+		return false
+	}
+	if cfg.PSK == "" || len(cfg.PSK) != 32 {
+		slog.Error("OBFS_PSK must be exactly 32 bytes")
+		return false
+	}
+
+	if _, err := memberKey(*cfg); err != nil {
+		slog.Error("OBFS_MEMBER_KEY is unusable", "error", err)
+		return false
 	}
 	if cfg.MemberKey != "" && cfg.MemberID == "" {
 		slog.Error("OBFS_MEMBER_KEY is set without OBFS_MEMBER_ID: the server needs the name the key belongs to")
-		os.Exit(1)
+		return false
 	}
-	if err := validateAuthMode(cfg); err != nil {
+	if err := validateAuthMode(*cfg); err != nil {
 		slog.Error("Invalid proxy authentication configuration", "error", err)
-		os.Exit(1)
+		return false
 	}
 
 	if err := checkPrologue(cfg.Prologue); err != nil {
 		slog.Error("OBFS_PROLOGUE is not usable", "error", err)
-		os.Exit(1)
+		return false
 	}
 
 	if !veil.IsCipher(clientCipher(cfg.Cipher)) {
@@ -241,54 +275,88 @@ func main() {
 		// would otherwise look like a server that refuses everything.
 		slog.Error("OBFS_CIPHER is not a cipher this build knows",
 			"value", cfg.Cipher, "known", veil.Ciphers())
-		os.Exit(1)
+		return false
 	}
 
 	if cfg.KeepaliveMin < 0 || cfg.KeepaliveMax < 0 {
 		slog.Error("KEEPALIVE_MIN and KEEPALIVE_MAX must not be negative")
-		os.Exit(1)
+		return false
 	}
 	if cfg.KeepaliveMin > 0 && cfg.KeepaliveMax < cfg.KeepaliveMin {
 		// A max below the min would silently collapse the draw to a constant,
 		// which is the one shape the interval exists to avoid.
 		slog.Error("KEEPALIVE_MAX must be at least KEEPALIVE_MIN",
 			"min", cfg.KeepaliveMin, "max", cfg.KeepaliveMax)
-		os.Exit(1)
+		return false
+	}
+
+	if err := checkTunnelDeadTimeout(cfg.TunnelDeadTimeout); err != nil {
+		slog.Error("TUNNEL_DEAD_TIMEOUT is not usable", "error", err)
+		return false
 	}
 
 	pool, err := loadRootCAs(cfg.WSCAFile)
 	if err != nil {
 		slog.Error("Invalid TLS trust configuration", "error", err)
-		os.Exit(1)
+		return false
 	}
 	cfg.rootCAs = pool
 	if cfg.WSUrl != "" && cfg.WSTLSSessionCache {
 		cfg.wsDialer = ws.NewDialer(cfg.wsOptions())
 	}
 
-	policy, err := newClientPolicy(cfg)
+	policy, err := newClientPolicy(*cfg)
 	if err != nil {
 		slog.Error("Transport policy is not usable", "error", err)
-		os.Exit(1)
+		return false
 	}
 	cfg.policy = policy
+	return true
+}
 
-	startupChecks(cfg)
-
-	// Parse domain routing patterns
-	var routePatterns []string
-	if cfg.RouteDomains != "" {
-		for _, d := range strings.Split(cfg.RouteDomains, ",") {
-			d = strings.TrimSpace(d)
-			if d != "" {
-				routePatterns = append(routePatterns, d)
-			}
+// routeDomains is ROUTE_DOMAINS as a list, without the empty entries.
+func routeDomains(raw string) []string {
+	var patterns []string
+	for _, d := range strings.Split(raw, ",") {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			patterns = append(patterns, d)
 		}
 	}
+	return patterns
+}
+
+// run serves the local SOCKS5 port until ctx ends, then waits for the open
+// connections up to SHUTDOWN_TIMEOUT. It logs its own failures, so the caller
+// only has to exit.
+func run(ctx context.Context, cfg clientParams) error {
+	startupChecks(cfg)
+
+	routePatterns := routeDomains(cfg.RouteDomains)
 	routes := newDomainMatcher(routePatterns)
+
+	logFile, prevUnclean, err := openLogFile(cfg, os.Stdout)
+	if err != nil {
+		slog.Error("LOG_FILE is not usable", "error", err)
+		return err
+	}
+	if logFile != nil {
+		defer func() { _ = logFile.Close() }()
+	}
+	boot := logging.NewBoot()
+	started := time.Now()
+	account := cfg.MemberID
+	if account == "" {
+		account = cfg.ProxyUser
+	}
 
 	slog.Info("S5Client starting",
 		append([]any{
+			"event", eventStart,
+			"boot", boot,
+			"account", account,
+			"log_file", cfg.LogFile,
+			"prev_unclean", prevUnclean,
 			"version", buildinfo.Version(),
 			"log_level", logging.Level(),
 			"listen", cfg.ListenAddr,
@@ -297,8 +365,10 @@ func main() {
 			"mtu", cfg.MTU,
 			"max_padding", cfg.MaxPadding,
 			"route_domains", len(routePatterns),
-		}, policy.describe()...)...,
+		}, cfg.policy.describe()...)...,
 	)
+
+	udpbuf.Report(slog.Default())
 
 	if len(routePatterns) > 0 {
 		slog.Info("Domain routing enabled", "patterns", routePatterns)
@@ -309,26 +379,21 @@ func main() {
 	listener, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		slog.Error("Failed to listen", "error", err)
-		os.Exit(1)
+		return err
 	}
 	defer listener.Close()
-
-	sigCh := make(chan os.Signal, 1)
-	signals.Notify(sigCh, signals.Terminate...)
-
-	hupCh := make(chan os.Signal, 1)
-	hupWanted := signals.Notify(hupCh, signals.Reload...)
-
-	usrCh := make(chan os.Signal, 1)
-	usrWanted := signals.Notify(usrCh, signals.ToggleDebug...)
 
 	var wg sync.WaitGroup
 	acceptCtx, stopAccept := context.WithCancel(context.Background())
 	defer stopAccept()
+	go minutes.run(acceptCtx, boot)
 
 	go func() {
-		<-sigCh
-		slog.Info("Shutting down s5client...")
+		select {
+		case <-ctx.Done():
+			slog.Info("Shutting down s5client...")
+		case <-acceptCtx.Done():
+		}
 		stopAccept()
 		listener.Close()
 	}()
@@ -349,43 +414,43 @@ func main() {
 			slog.Warn("Connections still open at shutdown, exiting anyway",
 				"waited", cfg.ShutdownTimeout)
 		}
+		minutes.emit(boot)
+		slog.Info("S5Client stopped", "event", eventStop, "boot", boot,
+			"uptime_s", int64(time.Since(started).Seconds()), "open", minutes.open.Load())
 	}()
 
-	// A platform without these signals never sends on the channel; the
-	// goroutines are simply not started, because listening for no signal at
-	// all means listening for every signal.
-	if hupWanted {
-		go func() {
-			for range hupCh {
-				if level, err := logging.SetLevelFromEnv(); err != nil {
-					slog.Error("Failed to apply LOG_LEVEL on SIGHUP, keeping previous", "error", err, "log_level", level)
-				} else {
-					slog.Info("Log level applied", "log_level", level)
-				}
+	signals.Handle(acceptCtx,
+		signals.Action{Signals: signals.Reload, Do: func() {
+			if level, err := logging.SetLevelFromEnv(); err != nil {
+				slog.Error("Failed to apply LOG_LEVEL on SIGHUP, keeping previous", "error", err, "log_level", level)
+			} else {
+				slog.Info("Log level applied", "log_level", level)
 			}
-		}()
-	}
+		}},
+		signals.Action{Signals: signals.ToggleDebug, Do: func() {
+			slog.Info("Log level toggled by SIGUSR1", "log_level", logging.ToggleDebug())
+		}},
+	)
 
-	if usrWanted {
-		go func() {
-			for range usrCh {
-				slog.Info("Log level toggled by SIGUSR1", "log_level", logging.ToggleDebug())
-			}
-		}()
-	}
+	serveLoop(acceptCtx, listener, cfg, routes, &wg)
+	return nil
+}
 
+// serveLoop accepts local connections until the listener closes, at most
+// MAX_CONNECTIONS at a time: one over the limit is closed at once.
+func serveLoop(ctx context.Context, listener net.Listener, cfg clientParams, routes *domainMatcher, wg *sync.WaitGroup) {
 	limit := cfg.MaxConnections
 	if limit <= 0 {
 		limit = 1024
 	}
 	slots := make(chan struct{}, limit)
 	for {
-		clientConn, err := acceptWithBackoff(acceptCtx, listener)
+		clientConn, err := acceptWithBackoff(ctx, listener)
 		if err != nil {
 			if !errors.Is(err, net.ErrClosed) && !errors.Is(err, context.Canceled) {
 				slog.Error("Accept stopped", "error", err)
 			}
-			break
+			return
 		}
 		select {
 		case slots <- struct{}{}:
@@ -397,6 +462,8 @@ func main() {
 		go func(c net.Conn) {
 			defer wg.Done()
 			defer func() { <-slots }()
+			minutes.open.Add(1)
+			defer minutes.open.Add(-1)
 			handleClient(c, cfg, routes)
 		}(clientConn)
 	}
@@ -424,6 +491,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 		slog.Error("SOCKS5 handshake failed", "error", err)
 		return
 	}
+	dest := logDest(connectReq, destFQDN)
 
 	if err := clientConn.SetDeadline(time.Time{}); err != nil {
 		return
@@ -434,24 +502,29 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 		return
 	}
 
+	setupStart := time.Now()
+	// The policy decides the transport and shape of this attempt (plan task
+	// Ф5-7) before the request is built: the command of an association
+	// depends on what is known of the node behind that transport.
+	attempt := cfg.attempt()
+
 	// For UDP Associate, we need to rewrite the command byte to our custom UDPTunnelCommand (0x83)
 	// before sending it through the tunnel, so the server knows to multiplex it over TCP.
 	wireReq := make([]byte, len(connectReq))
 	copy(wireReq, connectReq)
 	if cmd == socks5.AssociateCommand {
-		wireReq[1] = socks5.UDPTunnelCommand
+		wireReq[1] = udpCommandFor(attempt)
 	}
 
-	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request. The
-	// policy decides the transport and format of this attempt (plan task
-	// Ф5-7); from here on cfg is what was actually used.
-	obfsConn, cfg, err := dialTunnel(cfg, wireReq)
+	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request; from here
+	// on cfg is what was actually used.
+	obfsConn, cfg, err := dialAttempt(attempt, wireReq)
 	if err != nil {
 		// A timeout here used to be invisible: no deadline, no error, no log
 		// line, and an application waiting forever. The phase says which step
 		// went silent, which is the difference between "the server is
 		// unreachable" and "the server accepted us and never replied".
-		logTunnelFailure(err, destFQDN, cfg)
+		logTunnelFailure(err, dest, cfg)
 		clientConn.Write([]byte{socks5Ver, replyForTunnelError(err), 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
 		return
 	}
@@ -459,51 +532,66 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Handle based on command
 	if cmd == socks5.AssociateCommand {
-		handleUDPAssociate(clientConn, obfsConn, destFQDN, cfg)
+		handleUDPAssociate(clientConn, obfsConn, dest, cfg, wireReq)
 		return
 	}
 
 	// Handle normal CONNECT
 	// Read CONNECT response from server, still under the handshake deadline.
-	connectResp := make([]byte, 512)
-	rn, err := obfsConn.Read(connectResp)
+	// The reply is read by its format and nothing past it: a target that
+	// answers and closes at once sends the reply, its bytes and the FIN in one
+	// batch, and one Read of that batch is data and io.EOF together.
+	connectResp, err := readSOCKSReply(obfsConn)
 	if err != nil {
 		wrapped := &tunnelError{phase: phaseConnectReply, err: err}
-		logTunnelFailure(wrapped, destFQDN, cfg)
+		logTunnelFailure(wrapped, dest, cfg)
 		clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0x00, 0x01, 0, 0, 0, 0, 0, 0}) //nolint:errcheck
 		return
 	}
 	// The tunnel is up: relayed traffic must not inherit the setup deadline.
 	clearDeadline(obfsConn)
+	if connectResp[1] == 0x00 {
+		tuneStream(obfsConn, cfg.TunnelDeadTimeout)
+	}
 
 	// Forward CONNECT response to client
-	if _, err := clientConn.Write(connectResp[:rn]); err != nil {
+	if _, err := clientConn.Write(connectResp); err != nil {
 		return
 	}
 
-	if rn >= 2 && connectResp[1] != 0x00 {
+	if connectResp[1] != 0x00 {
+		minutes.tcpClosed(closedByServer)
+		logTCPClosed(obfs.LogIDOf(obfsConn), dest, cfg, time.Since(setupStart), 0, 0, 0, closedByServer, nil,
+			"reply", connectResp[1])
 		return
 	}
 
 	// Step 6: Bidirectional relay
-	slog.Info("TCP Tunnel established", "domain", destFQDN, "server", cfg.ServerAddr,
-		"transport", cfg.effectiveTransport())
-
-	var wg sync.WaitGroup
-	wg.Add(2)
+	relayStart := time.Now()
+	ends := make(chan bool, 2)
+	var up, down copyResult
 
 	go func() {
-		defer wg.Done()
-		relayCopy(obfsConn, clientConn)
+		up = relayCopy(obfsConn, clientConn)
 		endWrite(obfsConn)
+		ends <- true
 	}()
 	go func() {
-		defer wg.Done()
-		relayCopy(clientConn, obfsConn)
+		down = relayCopy(clientConn, obfsConn)
 		endWrite(clientConn)
+		ends <- false
 	}()
 
-	wg.Wait()
+	firstUp := <-ends
+	<-ends
+	first := down
+	if firstUp {
+		first = up
+	}
+	closedBy := relayClosedBy(first, firstUp)
+	minutes.tcpClosed(closedBy)
+	logTCPClosed(obfs.LogIDOf(obfsConn), dest, cfg, relayStart.Sub(setupStart), time.Since(relayStart),
+		up.n, down.n, closedBy, first.err)
 }
 
 // relayBuffers backs both directions of every tunnel. Plain io.Copy reaches
@@ -517,10 +605,27 @@ var relayBuffers = sync.Pool{New: func() any {
 
 // relayCopy hides ReaderFrom/WriterTo so that io.CopyBuffer uses the pooled
 // buffer instead of handing the copy to the socket.
-func relayCopy(dst io.Writer, src io.Reader) {
+func relayCopy(dst io.Writer, src io.Reader) copyResult {
 	buf := relayBuffers.Get().(*[]byte)
 	defer relayBuffers.Put(buf)
-	_, _ = io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, *buf)
+	r := readErr{Reader: src}
+	n, err := io.CopyBuffer(struct{ io.Writer }{dst}, &r, *buf)
+	return copyResult{n: n, err: err, reading: r.err != nil && errors.Is(err, r.err)}
+}
+
+// readErr remembers the error of the source, so a relay can tell a failed
+// read from a failed write.
+type readErr struct {
+	io.Reader
+	err error
+}
+
+func (r *readErr) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err != nil && err != io.EOF {
+		r.err = err
+	}
+	return n, err
 }
 
 // endWrite tells the other end that this side has nothing more to send.
@@ -591,8 +696,6 @@ func checkRouting(clientConn net.Conn, destFQDN string, routes *domainMatcher) b
 	return false
 }
 
-// dialObfsTunnel establishes an obfuscated connection to the server and forwards
-// the SOCKS5 handshake through the encrypted tunnel.
 // tunnelPhase names the step of tunnel setup where something went wrong. It
 // exists so a failure says "the server accepted the connection and never
 // answered the greeting" instead of a bare i/o timeout.
@@ -662,6 +765,7 @@ func replyForTunnelError(err error) byte {
 // user's own machine, where it is the only way to tell which site stalled;
 // docs/design/observability-policy.md governs the server, not the client.
 func logTunnelFailure(err error, dest string, cfg clientParams) {
+	minutes.setupFailed(tunnelPhaseOf(err))
 	attrs := []any{
 		"phase", string(tunnelPhaseOf(err)),
 		"dest", dest,
@@ -691,18 +795,18 @@ func logTunnelFailure(err error, dest string, cfg clientParams) {
 // Two things produce exactly that picture: a PSK that does not match, and a
 // clock too far out for the epoch window (plan task Ф5-3). Neither is
 // detectable from this side, so the hint names both rather than guessing.
-// It is printed only past the dial phase, where the server has already
-// accepted the connection - before that, the network is the likelier story.
+// It is printed only for a server that has not answered anything yet: past the
+// dial phase, where it has accepted the connection (before that the network is
+// the likelier story), and before the reply to the greeting. That reply is
+// the proof - it was decrypted and answered - so a silence later on, at the
+// authentication or at the reply to CONNECT (where the server may simply be
+// dialling a slow target), says nothing about the PSK or the clock.
 func setupHint(err error, cfg clientParams) string {
 	if cfg.PSK == "" {
 		return ""
 	}
 	switch tunnelPhaseOf(err) {
-	case phaseAuthRejected:
-		// The server answered. Naming the PSK and the clock here would
-		// send the operator after the two things this failure rules out.
-		return ""
-	case phaseGreeting, phaseAuth, phaseConnect, phaseConnectReply:
+	case phaseGreeting:
 		return fmt.Sprintf("the server accepted the connection and then went quiet: check OBFS_PSK and OBFS_NODE_ID, "+
 			"and check this machine's clock - the tunnel binds its keys to the hour and tolerates about %d "+
 			"hours of skew (local time is now %s); a server older than 2.0 is also silent",
@@ -711,6 +815,28 @@ func setupHint(err error, cfg clientParams) string {
 		return ""
 	}
 }
+
+// maxTunnelDeadTimeout is what a socket option in milliseconds can hold.
+const maxTunnelDeadTimeout = math.MaxInt32 * time.Millisecond
+
+func checkTunnelDeadTimeout(d time.Duration) error {
+	if d < 0 || d > 0 && d < time.Second || d > maxTunnelDeadTimeout {
+		return fmt.Errorf("%s: want 0 or between 1s and %s", d, maxTunnelDeadTimeout)
+	}
+	return nil
+}
+
+// tuneStream bounds how long the tunnel of a CONNECT stream may keep data
+// unacknowledged. A refused option is said once, at debug level.
+func tuneStream(c net.Conn, d time.Duration) {
+	if err := tcptune.ForStream(c, d); err != nil {
+		streamTuneSaid.Do(func() {
+			slog.Debug("tunnel: could not bound the time a stream may stay unacknowledged", "error", err)
+		})
+	}
+}
+
+var streamTuneSaid sync.Once
 
 // clearDeadline removes the handshake deadline once the tunnel is up. Relayed
 // traffic must not inherit it: a long-lived connection is not a stalled one.
@@ -769,6 +895,8 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 	return conn, nil
 }
 
+// dialObfsTunnel establishes an obfuscated connection to the server and forwards
+// the SOCKS5 handshake through the encrypted tunnel.
 func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	if err := validateAuthMode(cfg); err != nil {
 		return nil, &tunnelError{phase: phaseAuthRejected, err: err}
@@ -945,6 +1073,26 @@ func readSocks5Greeting(r io.Reader) error {
 		return err
 	}
 	return nil
+}
+
+// logDest is the destination as the log names it: the name when the
+// application sent one, otherwise the address. The unspecified address of a
+// UDP ASSOCIATE names nothing and stays empty.
+func logDest(req []byte, fqdn string) string {
+	if fqdn != "" || len(req) < 4 {
+		return fqdn
+	}
+	var addr netip.Addr
+	switch {
+	case req[3] == 0x01 && len(req) >= 8:
+		addr = netip.AddrFrom4([4]byte(req[4:8]))
+	case req[3] == 0x04 && len(req) >= 20:
+		addr = netip.AddrFrom16([16]byte(req[4:20]))
+	}
+	if !addr.IsValid() || addr.IsUnspecified() {
+		return ""
+	}
+	return addr.String()
 }
 
 func readSocks5Request(r io.Reader) ([]byte, byte, string, error) {

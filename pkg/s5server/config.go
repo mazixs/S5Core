@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/mazixs/S5Core/pkg/obfs"
@@ -18,6 +19,11 @@ type Config struct {
 	ListenIP        string
 	RequireAuth     bool
 	AllowedDestFqdn string
+	// DenyPrivateDest refuses destinations on the server's own machine and
+	// network, see socks5.Config.DenyPrivateDest. The zero value allows
+	// everything, so an application embedding the server keeps the behaviour
+	// it had; cmd/s5core turns it on unless ALLOW_PRIVATE_DEST is set.
+	DenyPrivateDest bool
 	AllowedIPs      []string
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
@@ -56,6 +62,7 @@ type Config struct {
 	// Obfuscation settings
 	ObfsEnabled    bool
 	ObfsPort       string // Separate port for obfuscated connections
+	UDPPort        string // Native UDP endpoint; empty disables it
 	ObfsPSK        string
 	ObfsMaxPadding int
 	ObfsMTU        int
@@ -124,7 +131,7 @@ type Config struct {
 	WSMaxJitter time.Duration // max per-frame jitter (default 0)
 
 	// UDPTunnelTCPTuningOff keeps the kernel's own retransmission timer on
-	// the connections of UDP-over-TCP tunnels (command 0x83). By default
+	// the connections of UDP-over-TCP tunnels (commands 0x83 and 0x84). By default
 	// those sockets retransmit sooner and do not double the wait on repeated
 	// loss (internal/tcptune), because every datagram behind a lost segment
 	// waits for that timer. The switch is for a path where it turns out worse.
@@ -142,6 +149,25 @@ type Config struct {
 	// full is refused rather than run. Raise it on a busy server with many
 	// distinct accounts and the memory to spare, lower it on a small box.
 	KDFMemoryBudget int64
+
+	// SessionLog turns on the session journal: one JSON line per connection
+	// and per UDP association, with the account and the destination network,
+	// in a file of its own (SessionLogFile). "abnormal" keeps the failed and
+	// suspicious connections and every association, "all" every connection.
+	// Empty or "off" - the default - writes nothing: the journal holds what
+	// the service log may not (docs/design/observability-policy.md).
+	SessionLog     string
+	SessionLogFile string
+	// The journal rotates itself: past SessionLogMaxSize bytes the file is
+	// moved aside and compressed, SessionLogMaxFiles of those are kept and
+	// none older than SessionLogMaxAge. Zero takes the defaults: 20 MiB, 10
+	// files, 7 days.
+	SessionLogMaxSize  int64
+	SessionLogMaxFiles int
+	SessionLogMaxAge   time.Duration
+	// SessionLogDst is "net" (default: the /24 or /48 and the port of the
+	// address dialled) or "none" (no destination at all).
+	SessionLogDst string
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -165,6 +191,17 @@ func DefaultConfig() Config {
 
 // ValidateConfig checks that the configuration is valid before starting the server.
 func ValidateConfig(cfg Config) error {
+	if cfg.UDPPort != "" {
+		port, err := strconv.Atoi(cfg.UDPPort)
+		// Port 0 would announce an ephemeral port that no firewall or
+		// container mapping opens and that changes on every restart.
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("UDP_PORT must be a port from 1 to 65535; leave it empty to disable native UDP")
+		}
+		if !cfg.ObfsEnabled && !cfg.WSEnabled {
+			return fmt.Errorf("UDP_PORT requires an obfs or ws listener")
+		}
+	}
 	// The client whitelist is read here so that a list that cannot be read
 	// stops NewServer, rather than being read leniently at Start and leaving
 	// an open server behind. One parser, one verdict; see parseWhitelist.
@@ -231,7 +268,7 @@ func ValidateConfig(cfg Config) error {
 	if err := validateTelemetry(cfg.Telemetry); err != nil {
 		return err
 	}
-	return nil
+	return validateSessionLog(cfg)
 }
 
 // validateTelemetry reports the first instrument a Telemetry is missing.

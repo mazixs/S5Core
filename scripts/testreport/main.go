@@ -40,11 +40,96 @@ func property(s string) string {
 	return strings.NewReplacer(":", "%3A", ",", "%2C").Replace(escape(s))
 }
 
+// failure is one finished failing test or package, ready to print.
+type failure struct {
+	title, detail string
+	file, line    string
+}
+
+// collector turns the event stream into failures: it keeps the tail of each
+// test's output and reports each failing package once.
+type collector struct {
+	traces         map[string]*trace
+	failedPackages map[string]bool
+	failed         bool
+}
+
+func newCollector() *collector {
+	return &collector{traces: make(map[string]*trace), failedPackages: make(map[string]bool)}
+}
+
+// add takes one event and returns the failure it completes, if any.
+func (c *collector) add(e event) *failure {
+	key := e.Package + "/" + e.Test
+	t := c.traces[key]
+	if t == nil {
+		t = &trace{kind: "test_failure"}
+		c.traces[key] = t
+	}
+	t.absorb(e)
+	switch e.Action {
+	case "fail", "build-fail":
+		c.failed = true
+		defer delete(c.traces, key)
+		if e.FailedBuild != "" && c.failedPackages[e.FailedBuild] {
+			return nil
+		}
+		if e.Test == "" && c.failedPackages[e.Package] {
+			return nil
+		}
+		c.failedPackages[e.Package] = true
+		if e.Action == "build-fail" {
+			t.kind = "build_failure"
+		} else if e.Test == "" && t.kind == "test_failure" {
+			t.kind = "package_failure"
+		}
+		title := t.kind + ": " + e.Package
+		if e.Test != "" {
+			title += "/" + e.Test
+		}
+		return &failure{title: title, detail: strings.Join(t.lines, "\n"), file: t.file, line: t.line}
+	case "pass", "skip":
+		delete(c.traces, key)
+	}
+	return nil
+}
+
+// absorb keeps the last lines of an event's output, the location of the
+// failure and what kind of failure it looks like.
+func (t *trace) absorb(e event) {
+	for _, line := range strings.Split(strings.TrimSuffix(e.Output, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if len(line) > 2000 {
+			line = line[:2000] + " [truncated]"
+		}
+		t.lines = append(t.lines, line)
+		if len(t.lines) > 20 {
+			t.lines = t.lines[len(t.lines)-20:]
+		}
+		if m := location.FindStringSubmatch(line); m != nil && (t.file == "" || strings.HasSuffix(m[1], "_test.go")) {
+			if path.IsAbs(m[1]) {
+				t.file = m[1]
+			} else {
+				pkg := strings.SplitN(e.Package, " [", 2)[0]
+				t.file = path.Join(strings.TrimPrefix(pkg, "github.com/mazixs/S5Core/"), m[1])
+			}
+			t.line = m[2]
+		}
+		if strings.Contains(line, "WARNING: DATA RACE") || strings.Contains(line, "race detected during execution of test") {
+			t.kind = "data_race"
+		}
+		if strings.HasPrefix(line, "panic:") || strings.HasPrefix(line, "fatal error:") {
+			t.kind = "panic"
+		}
+	}
+}
+
 func report(input io.Reader, output io.Writer, github bool) bool {
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	traces := make(map[string]*trace)
-	failedPackages := make(map[string]bool)
+	c := newCollector()
 	failed := false
 	writeFailed := false
 	print := func(format string, args ...any) {
@@ -69,72 +154,15 @@ func report(input io.Reader, output io.Writer, github bool) bool {
 		if e.Test == "" {
 			print("%s", e.Output)
 		}
-		key := e.Package + "/" + e.Test
-		t := traces[key]
-		if t == nil {
-			t = &trace{kind: "test_failure"}
-			traces[key] = t
-		}
-		for _, line := range strings.Split(strings.TrimSuffix(e.Output, "\n"), "\n") {
-			if line == "" {
-				continue
-			}
-			if len(line) > 2000 {
-				line = line[:2000] + " [truncated]"
-			}
-			t.lines = append(t.lines, line)
-			if len(t.lines) > 20 {
-				t.lines = t.lines[len(t.lines)-20:]
-			}
-			if m := location.FindStringSubmatch(line); m != nil && (t.file == "" || strings.HasSuffix(m[1], "_test.go")) {
-				if path.IsAbs(m[1]) {
-					t.file = m[1]
-				} else {
-					pkg := strings.SplitN(e.Package, " [", 2)[0]
-					t.file = path.Join(strings.TrimPrefix(pkg, "github.com/mazixs/S5Core/"), m[1])
-				}
-				t.line = m[2]
-			}
-			if strings.Contains(line, "WARNING: DATA RACE") || strings.Contains(line, "race detected during execution of test") {
-				t.kind = "data_race"
-			}
-			if strings.HasPrefix(line, "panic:") || strings.HasPrefix(line, "fatal error:") {
-				t.kind = "panic"
-			}
-		}
-		switch e.Action {
-		case "fail", "build-fail":
-			failed = true
-			if e.FailedBuild != "" && failedPackages[e.FailedBuild] {
-				delete(traces, key)
-				continue
-			}
-			if e.Test == "" && failedPackages[e.Package] {
-				delete(traces, key)
-				continue
-			}
-			failedPackages[e.Package] = true
-			if e.Action == "build-fail" {
-				t.kind = "build_failure"
-			} else if e.Test == "" && t.kind == "test_failure" {
-				t.kind = "package_failure"
-			}
-			title := t.kind + ": " + e.Package
-			if e.Test != "" {
-				title += "/" + e.Test
-			}
-			detail := strings.Join(t.lines, "\n")
-			print("\nCI_FAILURE %s\n%s\n", title, detail)
+		if f := c.add(e); f != nil {
+			print("\nCI_FAILURE %s\n%s\n", f.title, f.detail)
 			if github {
-				props := "title=" + property(title)
-				if t.file != "" {
-					props += ",file=" + property(t.file) + ",line=" + t.line
+				props := "title=" + property(f.title)
+				if f.file != "" {
+					props += ",file=" + property(f.file) + ",line=" + f.line
 				}
-				print("::error %s::%s\n", props, escape(detail))
+				print("::error %s::%s\n", props, escape(f.detail))
 			}
-			delete(traces, key)
-		case "pass", "skip":
-			delete(traces, key)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -145,7 +173,7 @@ func report(input io.Reader, output io.Writer, github bool) bool {
 		print("CI_REPORT_ERROR: go test produced no JSON events\n")
 		failed = true
 	}
-	return failed || writeFailed
+	return failed || c.failed || writeFailed
 }
 
 func main() {

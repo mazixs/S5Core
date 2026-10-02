@@ -39,13 +39,17 @@ DEFAULTS = {
     "capture": False,
     "capture_packets": 200000,
 }
+# Settings kept out of DEFAULTS: only a plan that sets one carries it, so the
+# hash of plans written before them stays the same.
+OPTIONAL = {"gauges_ms": 0, "leg_tap": False}
 GUARD = {"max_foreign_cores": 1.5, "load_wait": "120s", "min_free_mb": 1024}
 # network = "wan": the server and the origins on one remote host, client and generator on another, over ssh.
 WAN = {"server": None, "client": None, "server_ip": None, "server_arch": "amd64", "client_arch": "arm64",
        "server_dir": "/root/s5bench", "client_dir": "/opt/tmp/s5bench", "server_memory_max": "300M",
        "origin_memory_max": "256M", "max_foreign_cores": 0}
 ARCHES = ("amd64", "arm64", "arm", "386", "mipsle", "mips")
-SERIES_KEYS = {"name", "title", "network", "variants", "transports", "rounds", "only", "kind", "env", "compare", "group"} | set(DEFAULTS)
+SERIES_KEYS = {"name", "title", "network", "variants", "transports", "rounds", "only", "kind", "env", "compare", "group"} | set(DEFAULTS) | set(OPTIONAL)
+QUEUES = ("fifo", "fq_codel")
 VARIANT_KEYS = {"direct", "ref", "patch", "env", "title"}
 
 
@@ -73,9 +77,11 @@ def _merge_env(*envs):
 def _settings(base, over, where):
     s = dict(base)
     for k, v in over.items():
-        if k not in DEFAULTS:
+        if k not in DEFAULTS and k not in OPTIONAL:
             continue
         s[k] = v
+    if s.get("gauges_ms", 0) and not 50 <= s["gauges_ms"] <= 60000:
+        raise PlanError(f"{where}: gauges_ms is a scrape interval from 50 to 60000 ms, or 0 for none")
     for k in ("scenario_timeout", "hang_grace", "settle", "flush", "soak", "idle"):
         try:
             seconds(s[k])
@@ -106,7 +112,7 @@ def resolve(raw, base_dir):
         if k not in raw:
             raise PlanError(f"missing {k!r}")
     for k in raw.get("defaults", {}):
-        if k not in DEFAULTS:
+        if k not in DEFAULTS and k not in OPTIONAL:
             raise PlanError(f"defaults: unknown key {k!r}")
     for k in raw.get("guard", {}):
         if k not in GUARD:
@@ -158,7 +164,8 @@ def resolve(raw, base_dir):
         if net == "wan" and not wan:
             raise PlanError(f"{where}: network = 'wan' needs a [wan] section")
         if net not in ("loopback", "wan"):
-            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct"}
+            keys = {"rtt_ms", "loss_pct", "rate_mbit", "loss_burst", "loss_outage_ms", "delay_jitter_ms", "delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct", "udp_blackout_after_s", "udp_blackout_for_s",
+                    "uplink_mbit", "queue_kb", "queue", "wake_delay_ms"}
             if not isinstance(net, dict) or set(net) - keys:
                 raise PlanError(f"{where}: network is 'loopback', 'wan' or {{{', '.join(sorted(keys))}}}")
             n = {"rtt_ms": float(net.get("rtt_ms", 0)), "loss_pct": float(net.get("loss_pct", 0)), "rate_mbit": float(net.get("rate_mbit", 0))}
@@ -175,6 +182,11 @@ def resolve(raw, base_dir):
                 n["delay_jitter_ms"] = float(net["delay_jitter_ms"])
                 if not 0 < n["delay_jitter_ms"] <= n["rtt_ms"] / 2:
                     raise PlanError(f"{where}: delay_jitter_ms is above 0 and at most half of rtt_ms (one pass through lo)")
+            blackout = {k for k in ("udp_blackout_after_s", "udp_blackout_for_s") if k in net}
+            if blackout:
+                n |= {k: float(net.get(k, 0)) for k in blackout}
+                if blackout != {"udp_blackout_after_s", "udp_blackout_for_s"} or n["udp_blackout_after_s"] < 0 or n["udp_blackout_for_s"] <= 0:
+                    raise PlanError(f"{where}: UDP blackout needs after_s >= 0 and for_s > 0")
             spike = {k for k in ("delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct") if k in net}
             if spike:
                 n |= {k: float(net.get(k, 0)) for k in ("delay_spike_ms", "delay_spike_len_ms", "delay_spike_pct")}
@@ -182,6 +194,17 @@ def resolve(raw, base_dir):
                     raise PlanError(f"{where}: a spike needs delay_spike_ms and delay_spike_len_ms above 0 and 0 < delay_spike_pct < 100")
                 if "loss_outage_ms" in net:
                     raise PlanError(f"{where}: spikes and loss_outage_ms both change the leg in time; set one")
+            uplink = {k for k in ("uplink_mbit", "queue_kb", "queue") if k in net}
+            if uplink:
+                n |= {"uplink_mbit": float(net.get("uplink_mbit", 0)), "queue_kb": float(net.get("queue_kb", 0)), "queue": net.get("queue", "fifo")}
+                if n["uplink_mbit"] <= 0 or n["queue_kb"] <= 0 or n["queue"] not in QUEUES:
+                    raise PlanError(f"{where}: an uplink bottleneck needs uplink_mbit and queue_kb above 0, queue one of {', '.join(QUEUES)}")
+                if n["rate_mbit"] or n.keys() & {"loss_outage_ms", "delay_spike_ms"}:
+                    raise PlanError(f"{where}: uplink_mbit shapes one direction; it excludes rate_mbit, loss_outage_ms and spikes")
+            if "wake_delay_ms" in net:
+                n["wake_delay_ms"] = float(net["wake_delay_ms"])
+                if n["wake_delay_ms"] <= 0 or n.keys() & {"loss_outage_ms", "delay_spike_ms", "uplink_mbit"}:
+                    raise PlanError(f"{where}: wake_delay_ms is above 0 and excludes loss_outage_ms, spikes and uplink_mbit, which change the same netem")
             net = n
         vs = s.get("variants", list(variants))
         for v in vs:
@@ -247,8 +270,34 @@ def resolve(raw, base_dir):
     if wan:
         plan["wan"] = wan
     plan["hash"] = digest(plan)
-    expand(plan)
+    for b in expand(plan):
+        for c in b["cells"]:
+            if why := blackout_problem(c):
+                over = "" if c["direct"] else f" over {c['transport']}"
+                raise PlanError(f"series {c['series']}: UDP blackout on variant {c['variant']}{over}: {why}")
     return plan
+
+
+# strconv.ParseBool, which reads the client's UDP_NATIVE.
+GO_TRUE = ("1", "t", "T", "TRUE", "true", "True")
+
+
+def blackout_problem(c):
+    """Why a cell cannot drop its native UDP leg, or None. The plan refuses such
+    a cell before the run; the cell checks again before it shapes lo."""
+    net = c["network"]
+    if not isinstance(net, dict) or "udp_blackout_after_s" not in net:
+        return None
+    if c["direct"] or c["shape"] == "all":
+        return "a direct cell has no native UDP leg, and its lo root is a classless netem that takes no filter; list only native UDP variants"
+    if c["transport"] not in TUNNEL_PORT:
+        return f"{c['transport']} has no native UDP leg: only s5client over obfs or wss sends 0x84"
+    port = c["env"]["server"].get("UDP_PORT", "")
+    if not (port.isascii() and port.isdigit() and 1 <= int(port) <= 65535):
+        return f"env.server.UDP_PORT must be the native UDP port from 1 to 65535, got {port!r}"
+    if c["env"]["client"].get("UDP_NATIVE") not in GO_TRUE:
+        return "env.client.UDP_NATIVE is not true: the client stays on 0x83 and the blackout drops nothing"
+    return None
 
 
 def _wan(raw):

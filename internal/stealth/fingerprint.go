@@ -137,14 +137,7 @@ func parseHelloBody(b []byte) (*ClientHello, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: truncated at cipher suites", ErrNotClientHello)
 	}
-	for i := 0; i+1 < len(suites); i += 2 {
-		v := binary.BigEndian.Uint16(suites[i:])
-		if isGREASE(v) {
-			h.HadGREASE = true
-			continue
-		}
-		h.CipherSuites = append(h.CipherSuites, v)
-	}
+	h.CipherSuites = h.appendValues(h.CipherSuites, suites)
 
 	if _, ok = r.vector8(); !ok { // compression methods
 		return nil, fmt.Errorf("%w: truncated at compression", ErrNotClientHello)
@@ -185,14 +178,7 @@ func (h *ClientHello) readExtension(extType uint16, data []byte) {
 		if !ok {
 			return
 		}
-		for i := 0; i+1 < len(list); i += 2 {
-			v := binary.BigEndian.Uint16(list[i:])
-			if isGREASE(v) {
-				h.HadGREASE = true
-				continue
-			}
-			h.SupportedGroups = append(h.SupportedGroups, v)
-		}
+		h.SupportedGroups = h.appendValues(h.SupportedGroups, list)
 	case extECPointFormats:
 		dr := reader{b: data}
 		list, ok := dr.vector8()
@@ -206,14 +192,7 @@ func (h *ClientHello) readExtension(extType uint16, data []byte) {
 		if !ok {
 			return
 		}
-		for i := 0; i+1 < len(list); i += 2 {
-			v := binary.BigEndian.Uint16(list[i:])
-			if isGREASE(v) {
-				h.HadGREASE = true
-				continue
-			}
-			h.SignatureAlgs = append(h.SignatureAlgs, v)
-		}
+		h.SignatureAlgs = h.appendValues(h.SignatureAlgs, list)
 	case extALPN:
 		dr := reader{b: data}
 		list, ok := dr.vector16()
@@ -234,15 +213,22 @@ func (h *ClientHello) readExtension(extType uint16, data []byte) {
 		if !ok {
 			return
 		}
-		for i := 0; i+1 < len(list); i += 2 {
-			v := binary.BigEndian.Uint16(list[i:])
-			if isGREASE(v) {
-				h.HadGREASE = true
-				continue
-			}
-			h.SupportedVersions = append(h.SupportedVersions, v)
-		}
+		h.SupportedVersions = h.appendValues(h.SupportedVersions, list)
 	}
+}
+
+// appendValues appends the 16-bit values of list to dst, dropping GREASE and
+// remembering that it was there.
+func (h *ClientHello) appendValues(dst []uint16, list []byte) []uint16 {
+	for i := 0; i+1 < len(list); i += 2 {
+		v := binary.BigEndian.Uint16(list[i:])
+		if isGREASE(v) {
+			h.HadGREASE = true
+			continue
+		}
+		dst = append(dst, v)
+	}
+	return dst
 }
 
 func parseSNI(data []byte) string {
@@ -478,17 +464,18 @@ func (r *reader) skip(n int) bool {
 
 func (r *reader) vector8() ([]byte, bool) {
 	n, ok := r.u8()
-	if !ok || len(r.b) < int(n) {
-		return nil, false
-	}
-	v := r.b[:n]
-	r.b = r.b[n:]
-	return v, true
+	return r.take(int(n), ok)
 }
 
 func (r *reader) vector16() ([]byte, bool) {
 	n, ok := r.u16()
-	if !ok || len(r.b) < int(n) {
+	return r.take(int(n), ok)
+}
+
+// take is the body of a vector whose length prefix has been read; ok is
+// whether it was.
+func (r *reader) take(n int, ok bool) ([]byte, bool) {
+	if !ok || len(r.b) < n {
 		return nil, false
 	}
 	v := r.b[:n]

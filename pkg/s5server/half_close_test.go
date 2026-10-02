@@ -219,7 +219,7 @@ func collectHalfCloseFailures(t *testing.T, reader sdkmetric.Reader) map[string]
 				if dp.Attributes.Len() != 2 {
 					t.Errorf("%s: expected exactly 2 labels, got %d", m.Name, dp.Attributes.Len())
 				}
-				failures[side.Emit()+"/"+transport.Emit()] += dp.Value
+				failures[side.String()+"/"+transport.String()] += dp.Value
 			}
 		}
 	}

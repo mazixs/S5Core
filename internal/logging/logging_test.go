@@ -8,7 +8,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
+
+// SetLevel replaces the current level; production changes it only through
+// SetLevelFromEnv and ToggleDebug.
+func SetLevel(l slog.Level) { levelVar.Set(l) }
 
 func TestParseLevel(t *testing.T) {
 	cases := []struct {
@@ -209,5 +214,48 @@ func TestToggleDebug(t *testing.T) {
 	SetLevel(slog.LevelWarn)
 	if got := ToggleDebug(); got != slog.LevelDebug {
 		t.Fatalf("ToggleDebug() из warn = %v, want debug", got)
+	}
+}
+
+func TestTheServiceLogWritesUTC(t *testing.T) {
+	var buf bytes.Buffer
+	prev := time.Local
+	time.Local = time.FixedZone("UTC+3", 3*3600)
+	defer func() { time.Local = prev }()
+
+	New(&buf).Info("line")
+	var rec struct{ Time string }
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(rec.Time, "Z") {
+		t.Fatalf("time %q, want UTC", rec.Time)
+	}
+}
+
+// A duration is written as text in the JSON line, not as nanoseconds, and a
+// line without one is untouched (docs/plan/draft.md, Ч-15).
+func TestADurationIsWrittenAsText(t *testing.T) {
+	var buf bytes.Buffer
+	logger := New(&buf)
+	logger.Info("flush started", "interval", time.Minute, "retry_in", 1500*time.Millisecond, "n", 3)
+	logger.Info("plain", "n", 3)
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("%d lines: %q", len(lines), buf.String())
+	}
+	var first, second map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &second); err != nil {
+		t.Fatal(err)
+	}
+	if first["interval"] != "1m0s" || first["retry_in"] != "1.5s" || first["n"] != float64(3) {
+		t.Errorf("first line %v", first)
+	}
+	if second["n"] != float64(3) || second["msg"] != "plain" {
+		t.Errorf("second line %v", second)
 	}
 }

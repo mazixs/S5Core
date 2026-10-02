@@ -1,0 +1,23 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/obfs
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkFramingOnly/NoPadding/1400B         	  471264	       496.5 ns/op	2819.89 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/1400B         	  472333	       491.6 ns/op	2847.75 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/1400B         	  474946	       498.4 ns/op	2808.71 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/4KiB          	  221392	      1066 ns/op	3843.47 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/4KiB          	  228654	      1069 ns/op	3831.82 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/4KiB          	  226923	      1053 ns/op	3891.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/32KiB         	   29145	      8152 ns/op	4019.85 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/32KiB         	   28354	      8123 ns/op	4034.06 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/NoPadding/32KiB         	   29482	      8089 ns/op	4051.15 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/1400B        	  431179	       581.1 ns/op	2409.10 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/1400B        	  430113	       569.0 ns/op	2460.27 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/1400B        	  438816	       560.3 ns/op	2498.44 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/4KiB         	  174166	      1377 ns/op	2975.36 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/4KiB         	  174229	      1416 ns/op	2892.13 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/4KiB         	  168064	      1399 ns/op	2927.82 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/32KiB        	   23956	      9959 ns/op	3290.27 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/32KiB        	   24349	      9935 ns/op	3298.29 MB/s	       0 B/op	       0 allocs/op
+BenchmarkFramingOnly/Padding256/32KiB        	   24628	      9712 ns/op	3373.80 MB/s	       0 B/op	       0 allocs/op
+PASS

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -39,43 +40,43 @@ func TestDialFallbackCancelsBlackhole(t *testing.T) {
 	})
 }
 
-// Short budgets may expire before every blackholed address is attempted:
-// exhausting the list must not take precedence over viable attempt durations.
+// All attempts share one budget. This test used to hold the race to two
+// attempts in flight, each with a share of the budget, and so to four sockets
+// in 10s and two in 1s. Since Н-5 (docs/plan/v2.3-rc6.md) the addresses start
+// 250ms apart, or budget/(n+1) apart when that is shorter, every first attempt
+// keeps the whole budget and each address opens its own backups, under one
+// limit of six sockets that keeps a place for every address not yet tried:
+// with four silent addresses that is a, b, c and d with backups of a and b.
 func TestDialAllAttemptsShareBudget(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		budget time.Duration
-		calls  int
+		starts map[string][]time.Duration
 	}{
-		{"enough_time_for_all", 10 * time.Second, 4},
-		{"short_budget", time.Second, 2},
+		{"enough_time_for_all", 10 * time.Second, map[string][]time.Duration{
+			"a": millis(0, 500), "b": millis(250, 750), "c": millis(500), "d": millis(750),
+		}},
+		{"short_budget", time.Second, map[string][]time.Duration{
+			"a": millis(0, 500), "b": millis(200, 700), "c": millis(400), "d": millis(600),
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), tc.budget)
 				defer cancel()
-				var mu sync.Mutex
-				calls, active, peak := 0, 0, 0
-				dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
-					mu.Lock()
-					calls++
-					active++
-					peak = max(peak, active)
-					mu.Unlock()
-					defer func() { mu.Lock(); active--; mu.Unlock() }()
-					<-ctx.Done()
-					return nil, ctx.Err()
-				}
-				start := time.Now()
-				_, err := dialResolved(ctx, dial, []dialCandidate{{ctx: ctx, addr: "a"}, {ctx: ctx, addr: "b"}, {ctx: ctx, addr: "c"}, {ctx: ctx, addr: "d"}})
+				d := newScriptDial(func(ctx context.Context, _ string, _ int) (net.Conn, error) { return hole(ctx) })
+				_, err := dialResolved(ctx, d.dial, candidatesFor(ctx, "a", "b", "c", "d"))
 				synctest.Wait()
-				if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != tc.budget {
-					t.Fatalf("elapsed=%v err=%v", time.Since(start), err)
+				if !errors.Is(err, context.DeadlineExceeded) || time.Since(d.origin) != tc.budget {
+					t.Fatalf("elapsed=%v err=%v", time.Since(d.origin), err)
 				}
-				mu.Lock()
-				defer mu.Unlock()
-				if calls != tc.calls || active != 0 || peak > 2 {
-					t.Fatalf("calls=%d active=%d peak=%d", calls, active, peak)
+				for addr, want := range tc.starts {
+					if got := d.at(addr); !slices.Equal(got, want) {
+						t.Fatalf("%s dialled at %v, want %v", addr, got, want)
+					}
+				}
+				if active, peak := d.counts(); len(d.all()) != dialSocketLimit || active != 0 || peak != dialSocketLimit {
+					t.Fatalf("calls=%d active=%d peak=%d", len(d.all()), active, peak)
 				}
 			})
 		})
@@ -113,8 +114,11 @@ func TestDialClosesLateWinningSocket(t *testing.T) {
 }
 
 // A large DNS answer must not cancel the only reachable address before a
-// normal connection delay has elapsed. Fast failures in the other lane
-// should not shorten the working attempt's lifetime.
+// normal connection delay has elapsed. Fast failures of the other addresses
+// do not shorten the working attempt's lifetime. A refusal reached the
+// destination, so the refused addresses fill the six sockets and the rest of
+// a large answer is not tried (Н-5 of docs/plan/v2.3-rc6.md; before it every
+// address was tried, two at a time).
 func TestDialLargeAddressSetPreservesWorkingCandidate(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
@@ -170,7 +174,7 @@ func TestDialLargeAddressSetPreservesWorkingCandidate(t *testing.T) {
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				if active != 0 || peak > 2 || calls != tc.count {
+				if active != 0 || peak > dialSocketLimit || calls != dialSocketLimit {
 					t.Fatalf("active=%d peak=%d calls=%d", active, peak, calls)
 				}
 			})

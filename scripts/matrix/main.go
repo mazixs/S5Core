@@ -50,8 +50,10 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1", "origin listen IP with -serve")
 	allow := flag.String("allow", "", "comma-separated source prefixes the origins answer besides loopback")
 	originFile := flag.String("origin", "", "use remote origins described by this file instead of local ones")
-	source := flag.String("source", "", "local IP of every connection to the SOCKS5 proxy, TCP and UDP")
+	source := flag.String("source", "", "local IP of every connection to the SOCKS5 proxy, TCP and UDP, or to the origins when measuring directly")
 	control := flag.Bool("control", true, "run a direct control stream beside a proxied game session")
+	wakeOn := flag.String("wake-on", "", "JSON argv run when a game stream resumes after a pause, before its first tick")
+	wakeOff := flag.String("wake-off", "", "JSON argv run shortly after that tick")
 	flag.Parse()
 
 	if *source != "" {
@@ -60,6 +62,17 @@ func main() {
 		}
 	}
 	p := &prober{socks: *socks, dial: dialer(*socks), maxInRow: *inRow, slow: time.Duration(*slowMs) * time.Millisecond, control: *control}
+	for _, w := range []struct {
+		flag string
+		dst  *[]string
+	}{{*wakeOn, &p.wakeOn}, {*wakeOff, &p.wakeOff}} {
+		if w.flag != "" {
+			must(json.Unmarshal([]byte(w.flag), w.dst))
+		}
+	}
+	if (len(p.wakeOn) == 0) != (len(p.wakeOff) == 0) {
+		must(fmt.Errorf("-wake-on and -wake-off go together"))
+	}
 	suite := p.suite(*scale)
 	var chosen []scenario
 	for _, s := range suite {
@@ -174,7 +187,22 @@ func (p *prober) suite(scale float64) []scenario {
 		{"udp/sweep-20mbit", func() stats { return p.udpStream(sweepN(20), 1200, 20) }},
 		{"udp/sweep-40mbit", func() stats { return p.udpStream(sweepN(40), 1200, 40) }},
 		// An hour at scale 1 of 64 ticks a second, 200 bytes each way (game.go).
-		{"game/64hz-200b", func() stats { return p.game(n(64*3600), 64, 200) }},
+		{"game/64hz-200b", func() stats { return p.game(n(64*3600), 64, 200, gameShape{}) }},
+		{"game/128hz-200b", func() stats { return p.game(n(128*3600), 128, 200, gameShape{}) }},
+		// The same stream beside a bulk upload through the same proxy, and
+		// with pauses longer than the tail of an LTE radio (docs/research/path-degradation.md).
+		{"game/64hz-200b-upload", func() stats {
+			return p.game(n(64*3600), 64, 200, gameShape{bulkOff: 20 * time.Second, bulkOn: 40 * time.Second})
+		}},
+		{"game/64hz-200b-wake", func() stats {
+			return p.game(n(64*3600), 64, 200, gameShape{on: 10 * time.Second, pause: 15 * time.Second})
+		}},
+		// Around the native UDP limit (docs/veil-spec.md, section 10.7) and the
+		// 1001-byte DPI rule of docs/research/path-degradation.md.
+		{"game/64hz-1001b", func() stats { return p.game(n(64*3600), 64, 1001, gameShape{}) }},
+		{"game/64hz-1300b", func() stats { return p.game(n(64*3600), 64, 1300, gameShape{}) }},
+		{"game/64hz-1364b", func() stats { return p.game(n(64*3600), 64, 1364, gameShape{}) }},
+		{"game/64hz-1400b", func() stats { return p.game(n(64*3600), 64, 1400, gameShape{}) }},
 	}
 }
 

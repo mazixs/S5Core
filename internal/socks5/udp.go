@@ -103,21 +103,6 @@ func parseUDPHeaderInto(payload []byte, addr *AddrSpec) (int, error) {
 	return headerLen, nil
 }
 
-// udpHeaderLen is how many bytes the header for src takes: RSV(2) + FRAG(1)
-// + ATYP(1) + address + PORT(2).
-func udpHeaderLen(src *AddrSpec) int {
-	switch {
-	case src.FQDN != "":
-		return 4 + 1 + len(src.FQDN) + 2
-	case src.IP.To4() != nil:
-		return 4 + net.IPv4len + 2
-	case src.IP.To16() != nil:
-		return 4 + net.IPv6len + 2
-	default:
-		return 4 + net.IPv4len + 2
-	}
-}
-
 // AppendUDPHeader appends the SOCKS5 UDP header (RFC 1928, Section 7) for src
 // to dst and returns the extended slice.
 //
@@ -185,12 +170,4 @@ func AppendUDPHeaderFromAddr(dst []byte, addr *net.UDPAddr) []byte {
 func AppendUDPHeaderFromAddrPort(dst []byte, addr netip.AddrPort) []byte {
 	dst = append(dst, 0x00, 0x00, 0x00)
 	return appendIP(dst, addr.Addr(), addr.Port())
-}
-
-// BuildUDPHeader constructs a SOCKS5 UDP header (RFC 1928, Section 7)
-// and the datagram behind it, in one new slice.
-func BuildUDPHeader(src *AddrSpec, data []byte) []byte {
-	out := make([]byte, 0, udpHeaderLen(src)+len(data))
-	out = AppendUDPHeader(out, src)
-	return append(out, data...)
 }

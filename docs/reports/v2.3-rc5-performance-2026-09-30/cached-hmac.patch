@@ -1,0 +1,100 @@
+--- a/pkg/nativeudp/nativeudp.go
++++ b/pkg/nativeudp/nativeudp.go
+@@ -5,8 +5,10 @@
+ import (
+ 	"crypto/rand"
+ 	"crypto/sha256"
++	"encoding"
+ 	"encoding/binary"
+ 	"errors"
++	"hash"
+ 	"log/slog"
+ 	"net"
+ 	"net/netip"
+@@ -129,32 +131,59 @@
+ 
+ // tagger is HMAC-SHA256 for exactly eight bytes. Fixed-size blocks avoid
+ // constructing a hash.Hash and allocating on every game datagram.
+-type tagger struct{ inner, outer [64]byte }
++type tagHash interface {
++	hash.Hash
++	encoding.BinaryMarshaler
++	encoding.BinaryUnmarshaler
++}
++
++// Audit prototype: reuse SHA-256 states after the keyed HMAC prefix.
++// It is mutable and must stay under the existing sendMu or recvMu.
++type tagger struct {
++	inner, outer           tagHash
++	innerState, outerState []byte
++	counter                [8]byte
++	scratch                [32]byte
++}
+ 
+ func newTagger(key [32]byte) tagger {
+-	var t tagger
+-	for i := range t.inner {
++	var ipad, opad [64]byte
++	for i := range ipad {
+ 		var b byte
+ 		if i < len(key) {
+ 			b = key[i]
+ 		}
+-		t.inner[i] = b ^ 0x36
+-		t.outer[i] = b ^ 0x5c
++		ipad[i] = b ^ 0x36
++		opad[i] = b ^ 0x5c
++	}
++	t := tagger{inner: sha256.New().(tagHash), outer: sha256.New().(tagHash)}
++	_, _ = t.inner.Write(ipad[:])
++	_, _ = t.outer.Write(opad[:])
++	var err error
++	t.innerState, err = t.inner.MarshalBinary()
++	if err != nil {
++		panic(err)
++	}
++	t.outerState, err = t.outer.MarshalBinary()
++	if err != nil {
++		panic(err)
+ 	}
+ 	return t
+ }
+-
+ func (t *tagger) tag(counter uint64) [8]byte {
+-	var inner [72]byte
+-	copy(inner[:64], t.inner[:])
+-	binary.BigEndian.PutUint64(inner[64:], counter)
+-	sum := sha256.Sum256(inner[:])
+-	var outer [96]byte
+-	copy(outer[:64], t.outer[:])
+-	copy(outer[64:], sum[:])
+-	sum = sha256.Sum256(outer[:])
++	if err := t.inner.UnmarshalBinary(t.innerState); err != nil {
++		panic(err)
++	}
++	binary.BigEndian.PutUint64(t.counter[:], counter)
++	_, _ = t.inner.Write(t.counter[:])
++	t.inner.Sum(t.scratch[:0])
++	if err := t.outer.UnmarshalBinary(t.outerState); err != nil {
++		panic(err)
++	}
++	_, _ = t.outer.Write(t.scratch[:])
++	t.outer.Sum(t.scratch[:0])
+ 	var result [8]byte
+-	copy(result[:], sum[:8])
++	copy(result[:], t.scratch[:8])
+ 	return result
+ }
+ 
+@@ -214,10 +243,7 @@
+ 		}
+ 		pad = 1 + int(draw[0])%space
+ 	}
+-	var padding [32]byte
+-	if _, err := rand.Read(padding[:pad]); err != nil {
+-		return nil, err
+-	}
++	var padding [32]byte // Audit prototype: zero plaintext padding; random length is unchanged.
+ 	dst = append(dst, t[:]...)
+ 	dst = append(dst, kind)
+ 	dst = append(dst, data...)

@@ -1,0 +1,3939 @@
+{
+ "date": "2026-09-26",
+ "scope": "plan stages D-1 and D-2 (docs/plan/game-fixes.md): local Linux netns, tc netem/tbf/fq_codel on lo, 50 ms RTT, i7-11700K, Linux 7.0",
+ "before": {
+  "ref": "3ed23e9",
+  "variant": "native-before",
+  "note": "release candidate before audit finding F3; its server has no native path counters"
+ },
+ "after": {
+  "ref": "ea9155e",
+  "variants": [
+   "native",
+   "tcp"
+  ],
+  "note": "worktree marked dirty by scripts and docs only; cmd/, internal/, pkg/ equal HEAD"
+ },
+ "control": "raw: direct UDP of the same batch, through the same queue or wake at the same time",
+ "excluded": {
+  "bench/runs/degradation-bloat-3mbit-1": "clean_* windows counted before the generator waited for the queue to drain; load_* agree with the runs below"
+ },
+ "runs": [
+  {
+   "plan": "degradation-bloat-3mbit",
+   "hash": "32da349e6ad9f827",
+   "networks": {
+    "fifo128": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 128.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 3.0
+    },
+    "fifo256": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 3.0
+    },
+    "fqcodel256": {
+     "loss_pct": 0.0,
+     "queue": "fq_codel",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 3.0
+    }
+   },
+   "builds": {
+    "native": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    },
+    "native-before": {
+     "ref": "3ed23e9",
+     "commit": "3ed23e919db34520e8d0c740a8db881b8635bbc6",
+     "dirty": false
+    },
+    "tcp": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    }
+   },
+   "batches": {
+    "bloat/r1": {
+     "foreign_cores": 1.64,
+     "noisy": false,
+     "start": {
+      "load_cores": 0.65,
+      "mem_mb": 17871,
+      "quiet": true
+     },
+     "finished": "2026-09-26T17:06:54",
+     "seconds": 156.5
+    }
+   },
+   "series": {
+    "fifo128": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9599,
+       "errors": 0,
+       "p50_ms": 312.849,
+       "p99_ms": 390.559,
+       "max_ms": 395.755,
+       "loss_pct": 0.01,
+       "p999_ms": 394.503,
+       "freezes": 0,
+       "longest_gap_ms": 49.245,
+       "breaks": 0,
+       "load_loss_pct": 0.017,
+       "load_p50_ms": 336.633,
+       "load_p99_ms": 391.351,
+       "load_max_ms": 395.755,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.185,
+       "clean_p99_ms": 50.304,
+       "clean_max_ms": 53.177,
+       "bulk_MBps": 0.363,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5893,
+        "tcp_up_rest": 16
+       },
+       "drain_ms": [
+        5250,
+        7328
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": -0.19,
+        "load_p99_ms": 0.169,
+        "clean_p99_ms": 0.197,
+        "max_ms": -0.146,
+        "load_max_ms": -0.146,
+        "loss_pct": 0.01,
+        "load_loss_pct": 0.017
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 308.594,
+       "p99_ms": 390.665,
+       "max_ms": 395.878,
+       "loss_pct": 0,
+       "p999_ms": 394.348,
+       "freezes": 0,
+       "longest_gap_ms": 37.046,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 323.836,
+       "load_p99_ms": 390.765,
+       "load_max_ms": 394.836,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.184,
+       "clean_p99_ms": 50.31,
+       "clean_max_ms": 53.153,
+       "bulk_MBps": 0.419,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5906,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        12469,
+        16734
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": -0.084,
+        "load_p99_ms": -0.417,
+        "clean_p99_ms": 0.203,
+        "max_ms": -0.023,
+        "load_max_ms": -1.065,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 294.357,
+       "p99_ms": 390.749,
+       "max_ms": 395.901,
+       "loss_pct": 0,
+       "p999_ms": 395.145,
+       "freezes": 0,
+       "longest_gap_ms": 39.145,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 336.232,
+       "load_p99_ms": 391.182,
+       "load_max_ms": 395.901,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.057,
+       "clean_p99_ms": 50.107,
+       "clean_max_ms": 50.931,
+       "bulk_MBps": 0.362,
+       "bulk_errors": 0,
+       "drain_ms": [
+        1516,
+        1516
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 289.894,
+       "p99_ms": 395.463,
+       "max_ms": 792.158,
+       "loss_pct": 0,
+       "p999_ms": 713.744,
+       "freezes": 5,
+       "longest_gap_ms": 416.642,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 332.686,
+       "load_p99_ms": 507.216,
+       "load_max_ms": 792.158,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.184,
+       "clean_p99_ms": 50.337,
+       "clean_max_ms": 54.579,
+       "bulk_MBps": 0.369,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5734
+       },
+       "drain_ms": [
+        6047,
+        7562
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 4.714,
+        "load_p99_ms": 116.034,
+        "clean_p99_ms": 0.23,
+        "max_ms": 396.257,
+        "load_max_ms": 396.257,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    },
+    "fifo256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9595,
+       "errors": 0,
+       "p50_ms": 554.746,
+       "p99_ms": 740.284,
+       "max_ms": 746.97,
+       "loss_pct": 0.052,
+       "p999_ms": 743.779,
+       "freezes": 0,
+       "longest_gap_ms": 41.168,
+       "breaks": 0,
+       "load_loss_pct": 0.087,
+       "load_p50_ms": 584.125,
+       "load_p99_ms": 741.257,
+       "load_max_ms": 746.97,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.168,
+       "clean_p99_ms": 50.279,
+       "clean_max_ms": 51.315,
+       "bulk_MBps": 0.409,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5863,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        8734,
+        17078
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": -0.004,
+        "load_p99_ms": 0.119,
+        "clean_p99_ms": 0.174,
+        "max_ms": 1.327,
+        "load_max_ms": 1.327,
+        "loss_pct": 0.031,
+        "load_loss_pct": 0.07
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9597,
+       "errors": 0,
+       "p50_ms": 568.909,
+       "p99_ms": 740.335,
+       "max_ms": 745.82,
+       "loss_pct": 0.031,
+       "p999_ms": 743.842,
+       "freezes": 0,
+       "longest_gap_ms": 49.209,
+       "breaks": 0,
+       "load_loss_pct": 0.052,
+       "load_p50_ms": 638.76,
+       "load_p99_ms": 741.599,
+       "load_max_ms": 745.82,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.184,
+       "clean_p99_ms": 50.306,
+       "clean_max_ms": 53.806,
+       "bulk_MBps": 0.396,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5859,
+        "tcp_up_rest": 16
+       },
+       "drain_ms": [
+        7531,
+        9141
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9593,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.047,
+        "load_p99_ms": 0.461,
+        "clean_p99_ms": 0.201,
+        "max_ms": 0.177,
+        "load_max_ms": 0.177,
+        "loss_pct": 0.01,
+        "load_loss_pct": 0.035
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9598,
+       "errors": 0,
+       "p50_ms": 538.082,
+       "p99_ms": 740.288,
+       "max_ms": 745.643,
+       "loss_pct": 0.021,
+       "p999_ms": 744.617,
+       "freezes": 0,
+       "longest_gap_ms": 40.179,
+       "breaks": 0,
+       "load_loss_pct": 0.017,
+       "load_p50_ms": 637.763,
+       "load_p99_ms": 741.138,
+       "load_max_ms": 745.643,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.053,
+       "clean_p99_ms": 50.105,
+       "clean_max_ms": 54.297,
+       "bulk_MBps": 0.392,
+       "bulk_errors": 0,
+       "drain_ms": [
+        3406,
+        4547
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 545.514,
+       "p99_ms": 1298.544,
+       "max_ms": 1467.867,
+       "loss_pct": 0,
+       "p999_ms": 1407.705,
+       "freezes": 18,
+       "longest_gap_ms": 745.612,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 611.511,
+       "load_p99_ms": 1322.267,
+       "load_max_ms": 1467.867,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.184,
+       "clean_p99_ms": 50.294,
+       "clean_max_ms": 52.936,
+       "bulk_MBps": 0.396,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5636
+       },
+       "drain_ms": [
+        9297,
+        11656
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 558.256,
+        "load_p99_ms": 581.129,
+        "clean_p99_ms": 0.189,
+        "max_ms": 722.224,
+        "load_max_ms": 722.224,
+        "loss_pct": -0.021,
+        "load_loss_pct": -0.017
+       }
+      }
+     }
+    },
+    "fqcodel256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.675,
+       "p99_ms": 58.949,
+       "max_ms": 62.023,
+       "loss_pct": 0,
+       "p999_ms": 59.029,
+       "freezes": 0,
+       "longest_gap_ms": 24.702,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.506,
+       "load_p99_ms": 58.964,
+       "load_max_ms": 62.023,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.188,
+       "clean_p99_ms": 58.904,
+       "clean_max_ms": 59.957,
+       "bulk_MBps": 0.386,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5941,
+        "tcp_up_rest": 12
+       },
+       "drain_ms": [
+        16,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.344,
+        "load_p99_ms": 0.353,
+        "clean_p99_ms": 3.699,
+        "max_ms": 2.893,
+        "load_max_ms": 2.893,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.372,
+       "p99_ms": 58.954,
+       "max_ms": 60.616,
+       "loss_pct": 0,
+       "p999_ms": 59.026,
+       "freezes": 0,
+       "longest_gap_ms": 24.725,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.548,
+       "load_p99_ms": 58.97,
+       "load_max_ms": 60.616,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.18,
+       "clean_p99_ms": 58.865,
+       "clean_max_ms": 59.058,
+       "bulk_MBps": 0.378,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5940,
+        "tcp_up_rest": 13
+       },
+       "drain_ms": [
+        47,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.349,
+        "load_p99_ms": 0.359,
+        "clean_p99_ms": 3.66,
+        "max_ms": 1.486,
+        "load_max_ms": 1.486,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.031,
+       "p99_ms": 58.605,
+       "max_ms": 59.13,
+       "loss_pct": 0,
+       "p999_ms": 58.632,
+       "freezes": 0,
+       "longest_gap_ms": 24.305,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.493,
+       "load_p99_ms": 58.611,
+       "load_max_ms": 59.13,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.057,
+       "clean_p99_ms": 55.205,
+       "clean_max_ms": 58.724,
+       "bulk_MBps": 0.352,
+       "bulk_errors": 0,
+       "drain_ms": [
+        0,
+        0
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.809,
+       "p99_ms": 58.99,
+       "max_ms": 59.664,
+       "loss_pct": 0,
+       "p999_ms": 59.543,
+       "freezes": 0,
+       "longest_gap_ms": 24.811,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.505,
+       "load_p99_ms": 59.052,
+       "load_max_ms": 59.655,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.193,
+       "clean_p99_ms": 58.742,
+       "clean_max_ms": 59.664,
+       "bulk_MBps": 0.382,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5765
+       },
+       "drain_ms": [
+        0,
+        16
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.385,
+        "load_p99_ms": 0.441,
+        "clean_p99_ms": 3.537,
+        "max_ms": 0.534,
+        "load_max_ms": 0.525,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    }
+   },
+   "source_run": "bench/runs/degradation-bloat-3mbit-2",
+   "uptime_load1_before_after": [
+    0.92,
+    2.26
+   ]
+  },
+  {
+   "plan": "degradation-bloat-3mbit",
+   "hash": "32da349e6ad9f827",
+   "networks": {
+    "fifo128": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 128.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 3.0
+    },
+    "fifo256": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 3.0
+    },
+    "fqcodel256": {
+     "loss_pct": 0.0,
+     "queue": "fq_codel",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 3.0
+    }
+   },
+   "builds": {
+    "native": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    },
+    "native-before": {
+     "ref": "3ed23e9",
+     "commit": "3ed23e919db34520e8d0c740a8db881b8635bbc6",
+     "dirty": false
+    },
+    "tcp": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    }
+   },
+   "batches": {
+    "bloat/r1": {
+     "foreign_cores": 2.05,
+     "noisy": false,
+     "start": {
+      "load_cores": 1.19,
+      "mem_mb": 17204,
+      "quiet": true
+     },
+     "finished": "2026-09-26T17:19:05",
+     "seconds": 156.5
+    }
+   },
+   "series": {
+    "fifo128": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 297.069,
+       "p99_ms": 390.594,
+       "max_ms": 395.887,
+       "loss_pct": 0,
+       "p999_ms": 394.407,
+       "freezes": 0,
+       "longest_gap_ms": 49.307,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 333.191,
+       "load_p99_ms": 391.311,
+       "load_max_ms": 395.887,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.2,
+       "clean_p99_ms": 50.368,
+       "clean_max_ms": 52.87,
+       "bulk_MBps": 0.382,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5905,
+        "tcp_up_rest": 11
+       },
+       "drain_ms": [
+        7391,
+        7562
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": -0.49,
+        "load_p99_ms": 0.038,
+        "clean_p99_ms": 0.251,
+        "max_ms": 0.648,
+        "load_max_ms": 0.648,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9599,
+       "errors": 0,
+       "p50_ms": 322.806,
+       "p99_ms": 390.689,
+       "max_ms": 396.295,
+       "loss_pct": 0.01,
+       "p999_ms": 394.691,
+       "freezes": 0,
+       "longest_gap_ms": 49.317,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 335.895,
+       "load_p99_ms": 391.296,
+       "load_max_ms": 396.295,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.184,
+       "clean_p99_ms": 50.328,
+       "clean_max_ms": 54.919,
+       "bulk_MBps": 0.389,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5900,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        10422,
+        10672
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9595,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": -0.395,
+        "load_p99_ms": 0.023,
+        "clean_p99_ms": 0.211,
+        "max_ms": 1.056,
+        "load_max_ms": 1.056,
+        "loss_pct": 0.01,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 293.398,
+       "p99_ms": 391.084,
+       "max_ms": 395.239,
+       "loss_pct": 0,
+       "p999_ms": 394.226,
+       "freezes": 0,
+       "longest_gap_ms": 39.198,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 337.687,
+       "load_p99_ms": 391.273,
+       "load_max_ms": 395.239,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.057,
+       "clean_p99_ms": 50.117,
+       "clean_max_ms": 54.028,
+       "bulk_MBps": 0.363,
+       "bulk_errors": 0,
+       "drain_ms": [
+        1641,
+        1641
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 266.718,
+       "p99_ms": 542.022,
+       "max_ms": 792.601,
+       "loss_pct": 0,
+       "p999_ms": 744.777,
+       "freezes": 7,
+       "longest_gap_ms": 426.156,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 310.916,
+       "load_p99_ms": 603.057,
+       "load_max_ms": 792.601,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.206,
+       "clean_p99_ms": 50.339,
+       "clean_max_ms": 54.311,
+       "bulk_MBps": 0.351,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5713
+       },
+       "drain_ms": [
+        6078,
+        5500
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 150.938,
+        "load_p99_ms": 211.784,
+        "clean_p99_ms": 0.222,
+        "max_ms": 397.362,
+        "load_max_ms": 397.362,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    },
+    "fifo256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9593,
+       "errors": 0,
+       "p50_ms": 476.315,
+       "p99_ms": 739.839,
+       "max_ms": 745.785,
+       "loss_pct": 0.073,
+       "p999_ms": 744.103,
+       "freezes": 0,
+       "longest_gap_ms": 49.404,
+       "breaks": 0,
+       "load_loss_pct": 0.122,
+       "load_p50_ms": 565.647,
+       "load_p99_ms": 740.602,
+       "load_max_ms": 745.785,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.185,
+       "clean_p99_ms": 50.307,
+       "clean_max_ms": 53.265,
+       "bulk_MBps": 0.374,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5869,
+        "tcp_up_rest": 16
+       },
+       "drain_ms": [
+        6844,
+        8156
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": -0.218,
+        "load_p99_ms": -0.57,
+        "clean_p99_ms": 0.188,
+        "max_ms": -1.154,
+        "load_max_ms": -1.154,
+        "loss_pct": 0.063,
+        "load_loss_pct": 0.105
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9597,
+       "errors": 0,
+       "p50_ms": 560.189,
+       "p99_ms": 740.547,
+       "max_ms": 745.942,
+       "loss_pct": 0.031,
+       "p999_ms": 744.008,
+       "freezes": 0,
+       "longest_gap_ms": 37.157,
+       "breaks": 0,
+       "load_loss_pct": 0.035,
+       "load_p50_ms": 619.663,
+       "load_p99_ms": 741.429,
+       "load_max_ms": 745.942,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.188,
+       "clean_p99_ms": 50.358,
+       "clean_max_ms": 55.652,
+       "bulk_MBps": 0.391,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5862,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        12484,
+        7766
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9593,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.49,
+        "load_p99_ms": 0.257,
+        "clean_p99_ms": 0.239,
+        "max_ms": -0.997,
+        "load_max_ms": -0.997,
+        "loss_pct": 0.021,
+        "load_loss_pct": 0.018
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9599,
+       "errors": 0,
+       "p50_ms": 459.641,
+       "p99_ms": 740.057,
+       "max_ms": 746.939,
+       "loss_pct": 0.01,
+       "p999_ms": 743.945,
+       "freezes": 0,
+       "longest_gap_ms": 39.17,
+       "breaks": 0,
+       "load_loss_pct": 0.017,
+       "load_p50_ms": 610.192,
+       "load_p99_ms": 741.172,
+       "load_max_ms": 746.939,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.055,
+       "clean_p99_ms": 50.119,
+       "clean_max_ms": 54.435,
+       "bulk_MBps": 0.388,
+       "bulk_errors": 0,
+       "drain_ms": [
+        3797,
+        3406
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 543.974,
+       "p99_ms": 1350.84,
+       "max_ms": 1500.837,
+       "loss_pct": 0,
+       "p999_ms": 1471.246,
+       "freezes": 19,
+       "longest_gap_ms": 771.082,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 572.932,
+       "load_p99_ms": 1394.364,
+       "load_max_ms": 1500.837,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.196,
+       "clean_p99_ms": 50.335,
+       "clean_max_ms": 50.583,
+       "bulk_MBps": 0.388,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5520
+       },
+       "drain_ms": [
+        8281,
+        11984
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 610.783,
+        "load_p99_ms": 653.192,
+        "clean_p99_ms": 0.216,
+        "max_ms": 753.898,
+        "load_max_ms": 753.898,
+        "loss_pct": -0.01,
+        "load_loss_pct": -0.017
+       }
+      }
+     }
+    },
+    "fqcodel256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.988,
+       "p99_ms": 58.95,
+       "max_ms": 59.107,
+       "loss_pct": 0,
+       "p999_ms": 59.016,
+       "freezes": 0,
+       "longest_gap_ms": 24.673,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.558,
+       "load_p99_ms": 58.964,
+       "load_max_ms": 59.107,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.2,
+       "clean_p99_ms": 57.937,
+       "clean_max_ms": 59.061,
+       "bulk_MBps": 0.383,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5942,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        16,
+        16
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.345,
+        "load_p99_ms": 0.354,
+        "clean_p99_ms": 2.708,
+        "max_ms": 0.438,
+        "load_max_ms": 0.438,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.063,
+       "p99_ms": 58.95,
+       "max_ms": 59.636,
+       "loss_pct": 0,
+       "p999_ms": 59.025,
+       "freezes": 0,
+       "longest_gap_ms": 24.987,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.555,
+       "load_p99_ms": 58.967,
+       "load_max_ms": 59.539,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.201,
+       "clean_p99_ms": 57.958,
+       "clean_max_ms": 59.636,
+       "bulk_MBps": 0.345,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5944,
+        "tcp_up_rest": 13
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.345,
+        "load_p99_ms": 0.357,
+        "clean_p99_ms": 2.729,
+        "max_ms": 0.967,
+        "load_max_ms": 0.87,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.15,
+       "p99_ms": 58.605,
+       "max_ms": 58.669,
+       "loss_pct": 0,
+       "p999_ms": 58.632,
+       "freezes": 0,
+       "longest_gap_ms": 24.343,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.496,
+       "load_p99_ms": 58.61,
+       "load_max_ms": 58.669,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.06,
+       "clean_p99_ms": 55.229,
+       "clean_max_ms": 58.61,
+       "bulk_MBps": 0.352,
+       "bulk_errors": 0,
+       "drain_ms": [
+        0,
+        31
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 51.445,
+       "p99_ms": 58.985,
+       "max_ms": 59.806,
+       "loss_pct": 0,
+       "p999_ms": 59.646,
+       "freezes": 0,
+       "longest_gap_ms": 25.1,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 53.5,
+       "load_p99_ms": 59.129,
+       "load_max_ms": 59.806,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.195,
+       "clean_p99_ms": 58.066,
+       "clean_max_ms": 59.649,
+       "bulk_MBps": 0.334,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5765
+       },
+       "drain_ms": [
+        0,
+        16
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.38,
+        "load_p99_ms": 0.519,
+        "clean_p99_ms": 2.837,
+        "max_ms": 1.137,
+        "load_max_ms": 1.137,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    }
+   },
+   "source_run": "bench/runs/degradation-bloat-3mbit-3",
+   "uptime_load1_before_after": [
+    1.99,
+    3.15
+   ]
+  },
+  {
+   "plan": "degradation-bloat-20mbit",
+   "hash": "cd1d731f81bec50e",
+   "networks": {
+    "fifo128": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 128.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 20.0
+    },
+    "fifo256": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 20.0
+    },
+    "fqcodel256": {
+     "loss_pct": 0.0,
+     "queue": "fq_codel",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 20.0
+    }
+   },
+   "builds": {
+    "native": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    },
+    "native-before": {
+     "ref": "3ed23e9",
+     "commit": "3ed23e919db34520e8d0c740a8db881b8635bbc6",
+     "dirty": false
+    },
+    "tcp": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    }
+   },
+   "batches": {
+    "bloat/r1": {
+     "foreign_cores": 1.42,
+     "noisy": false,
+     "start": {
+      "load_cores": 1.11,
+      "mem_mb": 17867,
+      "quiet": true
+     },
+     "finished": "2026-09-26T17:10:06",
+     "seconds": 156.5
+    }
+   },
+   "series": {
+    "fifo128": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9599,
+       "errors": 0,
+       "p50_ms": 80.879,
+       "p99_ms": 100.438,
+       "max_ms": 101.827,
+       "loss_pct": 0.01,
+       "p999_ms": 101.609,
+       "freezes": 0,
+       "longest_gap_ms": 31.646,
+       "breaks": 0,
+       "load_loss_pct": 0.017,
+       "load_p50_ms": 86.765,
+       "load_p99_ms": 100.843,
+       "load_max_ms": 101.827,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.194,
+       "clean_p99_ms": 50.354,
+       "clean_max_ms": 54.303,
+       "bulk_MBps": 2.191,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5937,
+        "tcp_up_rest": 14
+       },
+       "drain_ms": [
+        1391,
+        1594
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": -0.031,
+        "load_p99_ms": 0.117,
+        "clean_p99_ms": 0.159,
+        "max_ms": 0.248,
+        "load_max_ms": 0.248,
+        "loss_pct": -0.011,
+        "load_loss_pct": -0.018
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 80.308,
+       "p99_ms": 100.473,
+       "max_ms": 101.69,
+       "loss_pct": 0,
+       "p999_ms": 101.611,
+       "freezes": 0,
+       "longest_gap_ms": 31.6,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 86.927,
+       "load_p99_ms": 100.903,
+       "load_max_ms": 101.69,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.187,
+       "clean_p99_ms": 50.347,
+       "clean_max_ms": 55.115,
+       "bulk_MBps": 2.166,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5933,
+        "tcp_up_rest": 13
+       },
+       "drain_ms": [
+        1312,
+        1031
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.004,
+        "load_p99_ms": 0.177,
+        "clean_p99_ms": 0.152,
+        "max_ms": 0.111,
+        "load_max_ms": 0.111,
+        "loss_pct": -0.021,
+        "load_loss_pct": -0.035
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9598,
+       "errors": 0,
+       "p50_ms": 79.523,
+       "p99_ms": 100.469,
+       "max_ms": 101.579,
+       "loss_pct": 0.021,
+       "p999_ms": 101.293,
+       "freezes": 0,
+       "longest_gap_ms": 32.222,
+       "breaks": 0,
+       "load_loss_pct": 0.035,
+       "load_p50_ms": 86.219,
+       "load_p99_ms": 100.726,
+       "load_max_ms": 101.579,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.058,
+       "clean_p99_ms": 50.195,
+       "clean_max_ms": 52.474,
+       "bulk_MBps": 2.394,
+       "bulk_errors": 0,
+       "drain_ms": [
+        391,
+        406
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 81.087,
+       "p99_ms": 100.78,
+       "max_ms": 101.988,
+       "loss_pct": 0,
+       "p999_ms": 101.826,
+       "freezes": 0,
+       "longest_gap_ms": 32.022,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 87.12,
+       "load_p99_ms": 101.179,
+       "load_max_ms": 101.988,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.19,
+       "clean_p99_ms": 50.344,
+       "clean_max_ms": 54.4,
+       "bulk_MBps": 2.18,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5758
+       },
+       "drain_ms": [
+        1328,
+        1594
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.311,
+        "load_p99_ms": 0.453,
+        "clean_p99_ms": 0.149,
+        "max_ms": 0.409,
+        "load_max_ms": 0.409,
+        "loss_pct": -0.021,
+        "load_loss_pct": -0.035
+       }
+      }
+     }
+    },
+    "fifo256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 121.238,
+       "p99_ms": 153.012,
+       "max_ms": 155.356,
+       "loss_pct": 0,
+       "p999_ms": 153.665,
+       "freezes": 0,
+       "longest_gap_ms": 32.103,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.379,
+       "load_p99_ms": 153.069,
+       "load_max_ms": 155.356,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.168,
+       "clean_p99_ms": 50.332,
+       "clean_max_ms": 53.752,
+       "bulk_MBps": 2.194,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5922,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        1453,
+        1484
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.229,
+        "load_p99_ms": -0.072,
+        "clean_p99_ms": 0.224,
+        "max_ms": 1.361,
+        "load_max_ms": 1.361,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 121.902,
+       "p99_ms": 152.896,
+       "max_ms": 154.689,
+       "loss_pct": 0,
+       "p999_ms": 153.637,
+       "freezes": 0,
+       "longest_gap_ms": 32.196,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.383,
+       "load_p99_ms": 153.009,
+       "load_max_ms": 154.069,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.174,
+       "clean_p99_ms": 50.343,
+       "clean_max_ms": 54.704,
+       "bulk_MBps": 2.245,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5922,
+        "tcp_up_rest": 14
+       },
+       "drain_ms": [
+        2859,
+        1984
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.113,
+        "load_p99_ms": -0.132,
+        "clean_p99_ms": 0.235,
+        "max_ms": 0.694,
+        "load_max_ms": 0.074,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 119.809,
+       "p99_ms": 152.783,
+       "max_ms": 153.995,
+       "loss_pct": 0,
+       "p999_ms": 153.816,
+       "freezes": 0,
+       "longest_gap_ms": 31.631,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.743,
+       "load_p99_ms": 153.141,
+       "load_max_ms": 153.995,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.054,
+       "clean_p99_ms": 50.108,
+       "clean_max_ms": 54.283,
+       "bulk_MBps": 2.409,
+       "bulk_errors": 0,
+       "drain_ms": [
+        547,
+        547
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 122.223,
+       "p99_ms": 153.421,
+       "max_ms": 154.62,
+       "loss_pct": 0,
+       "p999_ms": 153.901,
+       "freezes": 0,
+       "longest_gap_ms": 31.736,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.768,
+       "load_p99_ms": 153.497,
+       "load_max_ms": 154.62,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.174,
+       "clean_p99_ms": 50.339,
+       "clean_max_ms": 54.882,
+       "bulk_MBps": 2.231,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5744
+       },
+       "drain_ms": [
+        1891,
+        2547
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.638,
+        "load_p99_ms": 0.356,
+        "clean_p99_ms": 0.231,
+        "max_ms": 0.625,
+        "load_max_ms": 0.625,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    },
+    "fqcodel256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.192,
+       "p99_ms": 51.381,
+       "max_ms": 53.729,
+       "loss_pct": 0,
+       "p999_ms": 51.655,
+       "freezes": 0,
+       "longest_gap_ms": 19.402,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.315,
+       "load_p99_ms": 51.401,
+       "load_max_ms": 53.729,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.174,
+       "clean_p99_ms": 50.935,
+       "clean_max_ms": 53.395,
+       "bulk_MBps": 2.065,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5945,
+        "tcp_up_rest": 14
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.097,
+        "load_p99_ms": 0.112,
+        "clean_p99_ms": 0.717,
+        "max_ms": 1.119,
+        "load_max_ms": 1.119,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.204,
+       "p99_ms": 51.379,
+       "max_ms": 54.166,
+       "loss_pct": 0,
+       "p999_ms": 51.971,
+       "freezes": 0,
+       "longest_gap_ms": 19.16,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.325,
+       "load_p99_ms": 51.395,
+       "load_max_ms": 52.893,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.186,
+       "clean_p99_ms": 50.936,
+       "clean_max_ms": 54.166,
+       "bulk_MBps": 2.079,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5942,
+        "tcp_up_rest": 14
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.095,
+        "load_p99_ms": 0.106,
+        "clean_p99_ms": 0.718,
+        "max_ms": 1.556,
+        "load_max_ms": 0.283,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.068,
+       "p99_ms": 51.284,
+       "max_ms": 52.61,
+       "loss_pct": 0,
+       "p999_ms": 51.344,
+       "freezes": 0,
+       "longest_gap_ms": 18.4,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.227,
+       "load_p99_ms": 51.289,
+       "load_max_ms": 52.61,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.055,
+       "clean_p99_ms": 50.218,
+       "clean_max_ms": 52.4,
+       "bulk_MBps": 2.273,
+       "bulk_errors": 0,
+       "drain_ms": [
+        0,
+        0
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.207,
+       "p99_ms": 51.469,
+       "max_ms": 54.271,
+       "loss_pct": 0,
+       "p999_ms": 52.026,
+       "freezes": 0,
+       "longest_gap_ms": 19.368,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.386,
+       "load_p99_ms": 51.499,
+       "load_max_ms": 54.271,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.191,
+       "clean_p99_ms": 50.962,
+       "clean_max_ms": 53.657,
+       "bulk_MBps": 2.079,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5763
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.185,
+        "load_p99_ms": 0.21,
+        "clean_p99_ms": 0.744,
+        "max_ms": 1.661,
+        "load_max_ms": 1.661,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    }
+   },
+   "source_run": "bench/runs/degradation-bloat-20mbit-1",
+   "uptime_load1_before_after": [
+    2.06,
+    1.78
+   ]
+  },
+  {
+   "plan": "degradation-bloat-20mbit",
+   "hash": "cd1d731f81bec50e",
+   "networks": {
+    "fifo128": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 128.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 20.0
+    },
+    "fifo256": {
+     "loss_pct": 0.0,
+     "queue": "fifo",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 20.0
+    },
+    "fqcodel256": {
+     "loss_pct": 0.0,
+     "queue": "fq_codel",
+     "queue_kb": 256.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "uplink_mbit": 20.0
+    }
+   },
+   "builds": {
+    "native": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    },
+    "native-before": {
+     "ref": "3ed23e9",
+     "commit": "3ed23e919db34520e8d0c740a8db881b8635bbc6",
+     "dirty": false
+    },
+    "tcp": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    }
+   },
+   "batches": {
+    "bloat/r1": {
+     "foreign_cores": 1.65,
+     "noisy": false,
+     "start": {
+      "load_cores": 2.6,
+      "mem_mb": 17506,
+      "quiet": true
+     },
+     "finished": "2026-09-26T17:13:10",
+     "seconds": 156.5
+    }
+   },
+   "series": {
+    "fifo128": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 80.671,
+       "p99_ms": 100.482,
+       "max_ms": 101.77,
+       "loss_pct": 0,
+       "p999_ms": 101.629,
+       "freezes": 0,
+       "longest_gap_ms": 32.426,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 86.772,
+       "load_p99_ms": 100.874,
+       "load_max_ms": 101.77,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.191,
+       "clean_p99_ms": 50.298,
+       "clean_max_ms": 52.982,
+       "bulk_MBps": 2.177,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5939,
+        "tcp_up_rest": 12
+       },
+       "drain_ms": [
+        1141,
+        1312
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.217,
+        "load_p99_ms": 0.182,
+        "clean_p99_ms": 0.182,
+        "max_ms": -0.124,
+        "load_max_ms": -0.124,
+        "loss_pct": -0.042,
+        "load_loss_pct": -0.069
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 80.935,
+       "p99_ms": 100.459,
+       "max_ms": 102.154,
+       "loss_pct": 0,
+       "p999_ms": 101.583,
+       "freezes": 0,
+       "longest_gap_ms": 33.466,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 86.903,
+       "load_p99_ms": 100.784,
+       "load_max_ms": 102.154,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.181,
+       "clean_p99_ms": 50.301,
+       "clean_max_ms": 53.277,
+       "bulk_MBps": 2.199,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5934,
+        "tcp_up_rest": 13
+       },
+       "drain_ms": [
+        1188,
+        2531
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.194,
+        "load_p99_ms": 0.092,
+        "clean_p99_ms": 0.185,
+        "max_ms": 0.26,
+        "load_max_ms": 0.26,
+        "loss_pct": -0.042,
+        "load_loss_pct": -0.069
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9596,
+       "errors": 0,
+       "p50_ms": 79.571,
+       "p99_ms": 100.265,
+       "max_ms": 101.894,
+       "loss_pct": 0.042,
+       "p999_ms": 101.283,
+       "freezes": 0,
+       "longest_gap_ms": 32.848,
+       "breaks": 0,
+       "load_loss_pct": 0.069,
+       "load_p50_ms": 86.187,
+       "load_p99_ms": 100.692,
+       "load_max_ms": 101.894,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.055,
+       "clean_p99_ms": 50.116,
+       "clean_max_ms": 52.612,
+       "bulk_MBps": 2.398,
+       "bulk_errors": 0,
+       "drain_ms": [
+        500,
+        500
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 81.118,
+       "p99_ms": 100.835,
+       "max_ms": 102.043,
+       "loss_pct": 0,
+       "p999_ms": 101.883,
+       "freezes": 0,
+       "longest_gap_ms": 31.976,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 86.764,
+       "load_p99_ms": 101.218,
+       "load_max_ms": 102.043,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.188,
+       "clean_p99_ms": 50.297,
+       "clean_max_ms": 52.273,
+       "bulk_MBps": 2.199,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5759
+       },
+       "drain_ms": [
+        1578,
+        1328
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.57,
+        "load_p99_ms": 0.526,
+        "clean_p99_ms": 0.181,
+        "max_ms": 0.149,
+        "load_max_ms": 0.149,
+        "loss_pct": -0.042,
+        "load_loss_pct": -0.069
+       }
+      }
+     }
+    },
+    "fifo256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 121.821,
+       "p99_ms": 152.914,
+       "max_ms": 155.461,
+       "loss_pct": 0,
+       "p999_ms": 153.69,
+       "freezes": 0,
+       "longest_gap_ms": 34.125,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.384,
+       "load_p99_ms": 153.039,
+       "load_max_ms": 155.461,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.188,
+       "clean_p99_ms": 50.323,
+       "clean_max_ms": 53.542,
+       "bulk_MBps": 2.228,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5920,
+        "tcp_up_rest": 16
+       },
+       "drain_ms": [
+        1797,
+        2438
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": -0.22,
+        "load_p99_ms": -0.325,
+        "clean_p99_ms": 0.223,
+        "max_ms": 0.973,
+        "load_max_ms": 0.973,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9599,
+       "errors": 0,
+       "p50_ms": 121.854,
+       "p99_ms": 153.016,
+       "max_ms": 156.864,
+       "loss_pct": 0.01,
+       "p999_ms": 153.641,
+       "freezes": 0,
+       "longest_gap_ms": 31.622,
+       "breaks": 0,
+       "load_loss_pct": 0.017,
+       "load_p50_ms": 130.404,
+       "load_p99_ms": 153.052,
+       "load_max_ms": 156.864,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.188,
+       "clean_p99_ms": 50.307,
+       "clean_max_ms": 53.062,
+       "bulk_MBps": 2.22,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5922,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        2047,
+        1812
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9595,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": -0.118,
+        "load_p99_ms": -0.312,
+        "clean_p99_ms": 0.207,
+        "max_ms": 2.376,
+        "load_max_ms": 2.376,
+        "loss_pct": 0.01,
+        "load_loss_pct": 0.017
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 120.313,
+       "p99_ms": 153.134,
+       "max_ms": 154.488,
+       "loss_pct": 0,
+       "p999_ms": 153.691,
+       "freezes": 0,
+       "longest_gap_ms": 31.63,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.754,
+       "load_p99_ms": 153.364,
+       "load_max_ms": 154.488,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.055,
+       "clean_p99_ms": 50.1,
+       "clean_max_ms": 51.395,
+       "bulk_MBps": 2.421,
+       "bulk_errors": 0,
+       "drain_ms": [
+        828,
+        859
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 122.291,
+       "p99_ms": 153.461,
+       "max_ms": 322.865,
+       "loss_pct": 0,
+       "p999_ms": 229.48,
+       "freezes": 2,
+       "longest_gap_ms": 184.562,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 130.756,
+       "load_p99_ms": 153.634,
+       "load_max_ms": 322.865,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.193,
+       "clean_p99_ms": 50.323,
+       "clean_max_ms": 53.827,
+       "bulk_MBps": 2.209,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5753
+       },
+       "drain_ms": [
+        2281,
+        1609
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.327,
+        "load_p99_ms": 0.27,
+        "clean_p99_ms": 0.223,
+        "max_ms": 168.377,
+        "load_max_ms": 168.377,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    },
+    "fqcodel256": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.217,
+       "p99_ms": 51.39,
+       "max_ms": 54.018,
+       "loss_pct": 0,
+       "p999_ms": 51.78,
+       "freezes": 0,
+       "longest_gap_ms": 19.708,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.342,
+       "load_p99_ms": 51.414,
+       "load_max_ms": 53.679,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.192,
+       "clean_p99_ms": 50.947,
+       "clean_max_ms": 54.018,
+       "bulk_MBps": 2.106,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5941,
+        "tcp_up_rest": 15
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.102,
+        "load_p99_ms": 0.12,
+        "clean_p99_ms": 0.728,
+        "max_ms": 0.395,
+        "load_max_ms": 0.056,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.21,
+       "p99_ms": 51.389,
+       "max_ms": 53.73,
+       "loss_pct": 0,
+       "p999_ms": 51.801,
+       "freezes": 0,
+       "longest_gap_ms": 18.228,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.325,
+       "load_p99_ms": 51.418,
+       "load_max_ms": 53.73,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.191,
+       "clean_p99_ms": 50.487,
+       "clean_max_ms": 52.877,
+       "bulk_MBps": 2.076,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 5941,
+        "tcp_up_rest": 12
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 9596,
+         "native_sent": 9596,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.101,
+        "load_p99_ms": 0.124,
+        "clean_p99_ms": 0.268,
+        "max_ms": 0.107,
+        "load_max_ms": 0.107,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.07,
+       "p99_ms": 51.288,
+       "max_ms": 53.623,
+       "loss_pct": 0,
+       "p999_ms": 51.446,
+       "freezes": 0,
+       "longest_gap_ms": 19.303,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.228,
+       "load_p99_ms": 51.294,
+       "load_max_ms": 53.623,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.057,
+       "clean_p99_ms": 50.219,
+       "clean_max_ms": 52.884,
+       "bulk_MBps": 2.267,
+       "bulk_errors": 0,
+       "drain_ms": [
+        0,
+        0
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 9600,
+       "errors": 0,
+       "p50_ms": 50.202,
+       "p99_ms": 51.433,
+       "max_ms": 53.14,
+       "loss_pct": 0,
+       "p999_ms": 51.855,
+       "freezes": 0,
+       "longest_gap_ms": 18.023,
+       "breaks": 0,
+       "load_loss_pct": 0,
+       "load_p50_ms": 50.371,
+       "load_p99_ms": 51.488,
+       "load_max_ms": 53.14,
+       "clean_loss_pct": 0,
+       "clean_p50_ms": 50.188,
+       "clean_p99_ms": 50.313,
+       "clean_max_ms": 51.647,
+       "bulk_MBps": 2.063,
+       "bulk_errors": 0,
+       "load": {
+        "windows": 3,
+        "server": {},
+        "server_first_s": {},
+        "server_before": {},
+        "udp_up_packets": 0,
+        "tcp_up_rest": 5766
+       },
+       "drain_ms": [
+        0,
+        0
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.145,
+        "load_p99_ms": 0.194,
+        "clean_p99_ms": 0.094,
+        "max_ms": -0.483,
+        "load_max_ms": -0.483,
+        "loss_pct": 0,
+        "load_loss_pct": 0
+       }
+      }
+     }
+    }
+   },
+   "source_run": "bench/runs/degradation-bloat-20mbit-2",
+   "uptime_load1_before_after": [
+    1.95,
+    3.33
+   ]
+  },
+  {
+   "plan": "degradation-wake",
+   "hash": "a1bb5627720fc5a7",
+   "networks": {
+    "healthy": {
+     "loss_pct": 0.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "wake_delay_ms": 260.0
+    },
+    "blackout": {
+     "loss_pct": 0.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "udp_blackout_after_s": 49.0,
+     "udp_blackout_for_s": 55.0,
+     "wake_delay_ms": 260.0
+    }
+   },
+   "builds": {
+    "native": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    },
+    "native-before": {
+     "ref": "3ed23e9",
+     "commit": "3ed23e919db34520e8d0c740a8db881b8635bbc6",
+     "dirty": false
+    },
+    "tcp": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    }
+   },
+   "batches": {
+    "wake/r1": {
+     "foreign_cores": 1.86,
+     "noisy": false,
+     "start": {
+      "load_cores": 1.49,
+      "mem_mb": 17126,
+      "quiet": true
+     },
+     "finished": "2026-09-26T16:57:50",
+     "seconds": 141.3
+    }
+   },
+   "series": {
+    "blackout": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 2560,
+       "errors": 0,
+       "p50_ms": 50.229,
+       "p99_ms": 218.591,
+       "max_ms": 310.298,
+       "loss_pct": 0,
+       "p999_ms": 310.249,
+       "freezes": 3,
+       "longest_gap_ms": 310.281,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 8102,
+         "udp_up_packets": 75,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 86,
+         "tcp_up_bytes": 33622,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 83,
+         "tcp_up_bytes": 32448,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "path_lost": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "path_lost": [
+          50.77
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "udp_blackout": {
+        "applied": true,
+        "duration_s": 40.405
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 2510,
+       "errors": 0,
+       "p50_ms": 50.227,
+       "p99_ms": 169.758,
+       "max_ms": 310.331,
+       "loss_pct": 1.953,
+       "p999_ms": 310.239,
+       "freezes": 3,
+       "longest_gap_ms": 821.39,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 95,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 92
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 821.4,
+         "gap": 821.4,
+         "lost_1s": 50,
+         "server": {
+          "from_client_tcp_route": 32.0,
+          "to_client_tcp_route": 32.0,
+          "route_to_tcp": 1.0
+         },
+         "tcp_up_packets": 44,
+         "tcp_up_bytes": 15638,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {
+          "from_client_tcp_route": 82.0,
+          "to_client_tcp_route": 82.0
+         },
+         "tcp_up_packets": 83,
+         "tcp_up_bytes": 33270,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "path_lost": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 1276,
+         "native_sent": 1326,
+         "tcp_received": 1234,
+         "tcp_sent_other": 1234,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "path_lost": [
+          51.45
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 1234.0,
+        "route_to_tcp": 1.0,
+        "to_client_tcp_route": 1234.0
+       },
+       "udp_blackout": {
+        "applied": true,
+        "duration_s": 40.291
+       }
+      }
+     }
+    },
+    "healthy": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.222,
+       "p99_ms": 231.7,
+       "max_ms": 310.384,
+       "loss_pct": 0,
+       "p999_ms": 310.262,
+       "freezes": 5,
+       "longest_gap_ms": 310.28,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 7697,
+         "udp_up_packets": 75,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 92
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 8285,
+         "udp_up_packets": 75,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 92
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 13,
+         "tcp_up_bytes": 7885,
+         "udp_up_packets": 75,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 100.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 13,
+         "tcp_up_bytes": 7806,
+         "udp_up_packets": 75,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 125.11,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 8057,
+         "udp_up_packets": 74,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 91
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 14.977,
+        "max_ms": 0.28,
+        "loss_pct": 0,
+        "first_echo": [
+         0.1,
+         0.2,
+         0.1,
+         0.2,
+         0.2
+        ]
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.219,
+       "p99_ms": 216.207,
+       "max_ms": 310.383,
+       "loss_pct": 0,
+       "p999_ms": 310.278,
+       "freezes": 5,
+       "longest_gap_ms": 310.316,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 96,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 96,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 95,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 100.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 95,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 125.11,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 95,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 3836,
+         "native_sent": 3836,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": -0.516,
+        "max_ms": 0.279,
+        "loss_pct": 0,
+        "first_echo": [
+         0.1,
+         0.2,
+         0.1,
+         0.2,
+         0.2
+        ]
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.063,
+       "p99_ms": 216.723,
+       "max_ms": 310.104,
+       "loss_pct": 0,
+       "p999_ms": 310.094,
+       "freezes": 5,
+       "longest_gap_ms": 310.101,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 50.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 75.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 100.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 125.01,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        }
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.234,
+       "p99_ms": 217.184,
+       "max_ms": 310.334,
+       "loss_pct": 0,
+       "p999_ms": 310.283,
+       "freezes": 5,
+       "longest_gap_ms": 310.319,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 82,
+         "tcp_up_bytes": 33726,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 82,
+         "tcp_up_bytes": 32342,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 82,
+         "tcp_up_bytes": 31777,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 100.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 82,
+         "tcp_up_bytes": 33688,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 125.11,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 84,
+         "tcp_up_bytes": 32223,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        }
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 0.461,
+        "max_ms": 0.23,
+        "loss_pct": 0,
+        "first_echo": [
+         0.2,
+         0.2,
+         0.1,
+         0.2,
+         0.2
+        ]
+       }
+      }
+     }
+    }
+   },
+   "source_run": "bench/runs/degradation-wake-1",
+   "uptime_load1_before_after": [
+    1.02,
+    1.86
+   ]
+  },
+  {
+   "plan": "degradation-wake",
+   "hash": "a1bb5627720fc5a7",
+   "networks": {
+    "healthy": {
+     "loss_pct": 0.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "wake_delay_ms": 260.0
+    },
+    "blackout": {
+     "loss_pct": 0.0,
+     "rate_mbit": 0.0,
+     "rtt_ms": 50.0,
+     "udp_blackout_after_s": 49.0,
+     "udp_blackout_for_s": 55.0,
+     "wake_delay_ms": 260.0
+    }
+   },
+   "builds": {
+    "native": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    },
+    "native-before": {
+     "ref": "3ed23e9",
+     "commit": "3ed23e919db34520e8d0c740a8db881b8635bbc6",
+     "dirty": false
+    },
+    "tcp": {
+     "ref": "worktree",
+     "commit": "ea9155ed3398cff2c8e19b3567d5b6f42bcd0618",
+     "dirty": true
+    }
+   },
+   "batches": {
+    "wake/r1": {
+     "foreign_cores": 1.94,
+     "noisy": false,
+     "start": {
+      "load_cores": 2.36,
+      "mem_mb": 17488,
+      "quiet": true
+     },
+     "finished": "2026-09-26T17:15:40",
+     "seconds": 141.3
+    }
+   },
+   "series": {
+    "blackout": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 2560,
+       "errors": 0,
+       "p50_ms": 50.21,
+       "p99_ms": 218.009,
+       "max_ms": 310.87,
+       "loss_pct": 0,
+       "p999_ms": 310.193,
+       "freezes": 3,
+       "longest_gap_ms": 310.87,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 7927,
+         "udp_up_packets": 74,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.9,
+         "gap": 310.9,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 84,
+         "tcp_up_bytes": 32661,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 82,
+         "tcp_up_bytes": 33247,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "path_lost": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "path_lost": [
+          50.59
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "udp_blackout": {
+        "applied": true,
+        "duration_s": 40.424
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 2508,
+       "errors": 0,
+       "p50_ms": 50.207,
+       "p99_ms": 158.881,
+       "max_ms": 310.235,
+       "loss_pct": 2.031,
+       "p999_ms": 310.173,
+       "freezes": 3,
+       "longest_gap_ms": 853.41,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 94,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 853.4,
+         "gap": 853.4,
+         "lost_1s": 52,
+         "server": {
+          "from_client_tcp_route": 30.0,
+          "to_client_tcp_route": 30.0,
+          "route_to_tcp": 1.0
+         },
+         "tcp_up_packets": 41,
+         "tcp_up_bytes": 14111,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {
+          "from_client_tcp_route": 82.0,
+          "to_client_tcp_route": 82.0
+         },
+         "tcp_up_packets": 82,
+         "tcp_up_bytes": 31378,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "path_lost": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 1276,
+         "native_sent": 1328,
+         "tcp_received": 1232,
+         "tcp_sent_other": 1232,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "path_lost": [
+          51.48
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 1232.0,
+        "route_to_tcp": 1.0,
+        "to_client_tcp_route": 1232.0
+       },
+       "udp_blackout": {
+        "applied": true,
+        "duration_s": 40.303
+       }
+      }
+     }
+    },
+    "healthy": {
+     "r1": {
+      "native-before": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.24,
+       "p99_ms": 231.559,
+       "max_ms": 310.449,
+       "loss_pct": 0,
+       "p999_ms": 310.3,
+       "freezes": 5,
+       "longest_gap_ms": 310.45,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 13,
+         "tcp_up_bytes": 7737,
+         "udp_up_packets": 74,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 92
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.4,
+         "gap": 310.4,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 7815,
+         "udp_up_packets": 73,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 13,
+         "tcp_up_bytes": 7639,
+         "udp_up_packets": 74,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 100.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 13,
+         "tcp_up_bytes": 7400,
+         "udp_up_packets": 74,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 125.11,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 14,
+         "tcp_up_bytes": 7856,
+         "udp_up_packets": 74,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 94
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {},
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 15.571,
+        "max_ms": 0.28,
+        "loss_pct": 0,
+        "first_echo": [
+         0.1,
+         0.3,
+         0.1,
+         0.0,
+         0.2
+        ]
+       }
+      },
+      "native": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.232,
+       "p99_ms": 216.466,
+       "max_ms": 310.381,
+       "loss_pct": 0,
+       "p999_ms": 310.308,
+       "freezes": 5,
+       "longest_gap_ms": 310.335,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 94,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 95,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 94,
+         "steady_tcp_up_packets": 1,
+         "steady_udp_up_packets": 92
+        },
+        {
+         "at_s": 100.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 0,
+         "tcp_up_bytes": 0,
+         "udp_up_packets": 94,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 93
+        },
+        {
+         "at_s": 125.11,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 1,
+         "tcp_up_bytes": 391,
+         "udp_up_packets": 94,
+         "steady_tcp_up_packets": 0,
+         "steady_udp_up_packets": 92
+        }
+       ],
+       "client": {
+        "events": {
+         "carrying": 1,
+         "verified": 1
+        },
+        "stats": {
+         "native_received": 3836,
+         "native_sent": 3836,
+         "tcp_received": 4,
+         "tcp_sent_other": 4,
+         "tcp_sent_oversize": 0,
+         "tunnel_drops": 0
+        },
+        "event_at_s": {
+         "carrying": [
+          0.17
+         ],
+         "verified": [
+          0.16
+         ]
+        }
+       },
+       "server_total": {
+        "from_client_tcp_route": 4.0,
+        "to_client_tcp_route": 4.0
+       },
+       "vs_direct": {
+        "p99_ms": 0.478,
+        "max_ms": 0.212,
+        "loss_pct": 0,
+        "first_echo": [
+         0.1,
+         0.2,
+         0.1,
+         0.1,
+         0.2
+        ]
+       }
+      },
+      "raw": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.073,
+       "p99_ms": 215.988,
+       "max_ms": 310.169,
+       "loss_pct": 0,
+       "p999_ms": 310.108,
+       "freezes": 5,
+       "longest_gap_ms": 310.17,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 50.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 75.02,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 100.02,
+         "first_echo": 310.2,
+         "gap": 310.2,
+         "lost_1s": 0
+        },
+        {
+         "at_s": 125.01,
+         "first_echo": 310.1,
+         "gap": 310.1,
+         "lost_1s": 0
+        }
+       ]
+      },
+      "tcp": {
+       "status": "ok",
+       "n": 3840,
+       "errors": 0,
+       "p50_ms": 50.262,
+       "p99_ms": 218.802,
+       "max_ms": 310.671,
+       "loss_pct": 0,
+       "p999_ms": 310.311,
+       "freezes": 5,
+       "longest_gap_ms": 310.347,
+       "breaks": 0,
+       "wake_errors": 0,
+       "resumes": [
+        {
+         "at_s": 25.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 81,
+         "tcp_up_bytes": 32083,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 50.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 81,
+         "tcp_up_bytes": 34136,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 75.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 81,
+         "tcp_up_bytes": 33411,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 100.12,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 81,
+         "tcp_up_bytes": 33540,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        },
+        {
+         "at_s": 125.11,
+         "first_echo": 310.3,
+         "gap": 310.3,
+         "lost_1s": 0,
+         "server": {},
+         "tcp_up_packets": 83,
+         "tcp_up_bytes": 31865,
+         "udp_up_packets": 0,
+         "steady_tcp_up_packets": 90,
+         "steady_udp_up_packets": 0
+        }
+       ],
+       "server_total": {},
+       "vs_direct": {
+        "p99_ms": 2.814,
+        "max_ms": 0.502,
+        "loss_pct": 0,
+        "first_echo": [
+         0.2,
+         0.2,
+         0.2,
+         0.1,
+         0.2
+        ]
+       }
+      }
+     }
+    }
+   },
+   "source_run": "bench/runs/degradation-wake-2",
+   "uptime_load1_before_after": [
+    3.15,
+    2.15
+   ]
+  }
+ ]
+}

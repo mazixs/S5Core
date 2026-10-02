@@ -1,0 +1,350 @@
+{
+  "date": "2026-09-25",
+  "scope": "local Linux netns/netem, 10 minutes per cell, 56 concurrent cells",
+  "plan_hash": "e6b9a586539c5fcb",
+  "source_run": "bench/runs/game-loss-20260925-092811",
+  "series": {
+    "clean": {
+      "direct": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 50.078,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 50.212,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 50.233,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 50.266,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 50.226,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "loss05": {
+      "direct": {
+        "ticks": 38025,
+        "loss_pct": 0.9765625,
+        "p99_ms": 50.079,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 101.813,
+        "freezes": 2,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 37995,
+        "loss_pct": 1.0546875,
+        "p99_ms": 50.218,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 116.097,
+        "freezes": 12,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 38035,
+        "loss_pct": 0.9505208333333334,
+        "p99_ms": 50.221,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "loss1": {
+      "direct": {
+        "ticks": 37641,
+        "loss_pct": 1.9765625,
+        "p99_ms": 50.077,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 116.177,
+        "freezes": 22,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 37614,
+        "loss_pct": 2.046875,
+        "p99_ms": 50.222,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 129.207,
+        "freezes": 44,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 37633,
+        "loss_pct": 1.9973958333333333,
+        "p99_ms": 50.233,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "loss2": {
+      "direct": {
+        "ticks": 36878,
+        "loss_pct": 3.9635416666666665,
+        "p99_ms": 50.09,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 134.3,
+        "freezes": 74,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 36938,
+        "loss_pct": 3.8072916666666665,
+        "p99_ms": 50.227,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 165.856,
+        "freezes": 194,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 36835,
+        "loss_pct": 4.075520833333333,
+        "p99_ms": 50.226,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "loss5": {
+      "direct": {
+        "ticks": 34686,
+        "loss_pct": 9.671875,
+        "p99_ms": 50.085,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 218.984,
+        "freezes": 657,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 34605,
+        "loss_pct": 9.8828125,
+        "p99_ms": 50.239,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 242.277,
+        "freezes": 939,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 34711,
+        "loss_pct": 9.606770833333334,
+        "p99_ms": 50.261,
+        "freezes": 0,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "fade1": {
+      "direct": {
+        "ticks": 37764,
+        "loss_pct": 1.65625,
+        "p99_ms": 50.085,
+        "freezes": 26,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 146.941,
+        "freezes": 90,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 37766,
+        "loss_pct": 1.6510416666666667,
+        "p99_ms": 50.234,
+        "freezes": 25,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 174.896,
+        "freezes": 137,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 37762,
+        "loss_pct": 1.6614583333333333,
+        "p99_ms": 50.22,
+        "freezes": 27,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "fade3": {
+      "direct": {
+        "ticks": 36421,
+        "loss_pct": 5.153645833333333,
+        "p99_ms": 50.086,
+        "freezes": 107,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 217.571,
+        "freezes": 356,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 36452,
+        "loss_pct": 5.072916666666667,
+        "p99_ms": 50.231,
+        "freezes": 105,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 242.253,
+        "freezes": 409,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 36456,
+        "loss_pct": 5.0625,
+        "p99_ms": 50.218,
+        "freezes": 102,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    },
+    "fade200": {
+      "direct": {
+        "ticks": 38046,
+        "loss_pct": 0.921875,
+        "p99_ms": 50.096,
+        "freezes": 19,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_obfs": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 131.506,
+        "freezes": 22,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_obfs": {
+        "ticks": 38050,
+        "loss_pct": 0.9114583333333334,
+        "p99_ms": 50.238,
+        "freezes": 19,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "tcp_wss": {
+        "ticks": 38400,
+        "loss_pct": 0,
+        "p99_ms": 127.177,
+        "freezes": 22,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      },
+      "native_wss": {
+        "ticks": 38048,
+        "loss_pct": 0.9166666666666666,
+        "p99_ms": 50.222,
+        "freezes": 19,
+        "breaks": 0,
+        "idle_tcp_failed": 0
+      }
+    }
+  },
+  "build": {
+    "commit": "24ab51e69f1a67c661d2d35364f4be39c3c19fae",
+    "dirty": true,
+    "s5core_sha256": "b3c0dffc055191f02773f2dbe162711a1ae46b7b833de5fddfb319ebac3e9742",
+    "s5client_sha256": "668e0c9be619981fef4d92b1016fafd1d5d68fde0782c9655fc79fca586f1e86"
+  }
+}

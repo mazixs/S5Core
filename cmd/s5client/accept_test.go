@@ -8,15 +8,29 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/acceptretry"
 )
 
 type exhaustedListener struct {
 	net.Listener
 	calls int
+	at    []time.Time
 	err   error
 }
 
-func (l *exhaustedListener) Accept() (net.Conn, error) { l.calls++; return nil, l.err }
+// errSpinning ends a loop that retries without waiting, so a broken backoff
+// fails the test at once instead of hanging the bubble.
+var errSpinning = errors.New("accept retried without waiting")
+
+func (l *exhaustedListener) Accept() (net.Conn, error) {
+	l.calls++
+	l.at = append(l.at, time.Now())
+	if l.calls > 64 {
+		return nil, errSpinning
+	}
+	return nil, l.err
+}
 
 func TestAcceptExhaustionBacksOffAndShutdownInterruptsWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -27,6 +41,14 @@ func TestAcceptExhaustionBacksOffAndShutdownInterruptsWait(t *testing.T) {
 		go func() { _, err := acceptWithBackoff(ctx, ln); done <- err }()
 		time.Sleep(3 * time.Second)
 		synctest.Wait()
+		select {
+		case err := <-done:
+			t.Fatalf("returned before shutdown: %v", err)
+		default:
+		}
+		if gap := ln.at[1].Sub(ln.at[0]); gap != acceptretry.First {
+			t.Fatalf("first retry after %v, want %v", gap, acceptretry.First)
+		}
 		if ln.calls > 12 || ln.calls < 8 {
 			t.Fatalf("accept calls in 3s: %d", ln.calls)
 		}

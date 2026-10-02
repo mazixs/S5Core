@@ -33,7 +33,7 @@ type Options struct {
 	// nothing: a counter that reaches 1 is already past a limit of 0, so the
 	// setting documented as "off" banned a source after one wrong password
 	// and held it for BanTime. Behind one NAT that is every subscriber of an
-	// operator, locked out by one typo (R06 in docs/fix-plan.md).
+	// operator, locked out by one typo (R06, fixed in 2.0.0).
 	MaxRetries int
 	// BanTime is how long a source stays banned, and how long the per-account
 	// counter remembers.

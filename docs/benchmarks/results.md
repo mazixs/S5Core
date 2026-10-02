@@ -24,7 +24,7 @@ applicable new tunnels. Bounded TLS session reuse preserves trust checks.
 DNS caching and PGO were evaluated and left disabled without sufficient benefit.
 
 See the [changelog](../../CHANGELOG.md#210---2026-09-22), [evidence and limitations](../reports/performance-implementation-2026-09-22.md)
-and [reproduction guide](../performance-validation.md). These are lab and ARM
+and [reproduction guide](performance-validation.md). These are lab and ARM
 loopback results, not production WAN acceptance or a completed canary. Older
 measurements below retain their original workloads and are not directly comparable.
 
@@ -155,6 +155,8 @@ PROFILE_CONNS=8 PROFILE_MB=1024 go test -tags loadtest -run TestObfsRelayProfile
 go tool pprof -list='Read$' -sample_index=alloc_space bench/profiles/obfs-relay.alloc
 ```
 
+The test writes the profile to `bench/profiles/`: local data, not in the repository.
+
 #### On ARM: measured on a router, 19.09.2026
 
 Most numbers above come from an x86 desktop, but the machine that matters for a
@@ -225,8 +227,8 @@ undetectability.
 #### Rules for changing these numbers
 
 - A change on the hot path (`pkg/obfs`, framing, buffers) is accompanied by a
-  `benchstat` comparison before and after. `CLAUDE.md` has required this all
-  along; task Ф2-2 made it executable by adding the benchmarks and
+  `benchstat` comparison before and after. This was always the convention;
+  task Ф2-2 made it executable by adding the benchmarks and
   `scripts/bench.sh`.
 - A change to the frame format is accompanied by a run of the stealth checklist.
 - Any number added to this section carries its command and its machine.

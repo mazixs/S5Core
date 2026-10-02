@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-25",
+  "scope": "local amd64 process, 1000 registered native UDP sessions, before/after runtime.GC; not a production capacity test",
+  "sessions": 1000,
+  "receive_window_ahead": 512,
+  "heap_delta_bytes": 44359160,
+  "approx_bytes_per_session": 44359,
+  "registration_time_ms": 179.5,
+  "removal_time_ms_for_1000_after_bounded_cleanup": 39.411
+}

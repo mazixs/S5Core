@@ -79,7 +79,8 @@ func readReply(c net.Conn) (*net.UDPAddr, error) {
 
 // proxySource is the local address of every connection to the proxy, TCP and
 // UDP, so netem can tell the client-proxy leg from the proxy-origin one; nil
-// leaves the choice to the kernel.
+// leaves the choice to the kernel. A direct run binds to it too, so that a
+// queue can tell its two directions apart.
 var proxySource net.IP
 
 func proxyDialer() *net.Dialer {
@@ -92,11 +93,10 @@ func proxyDialer() *net.Dialer {
 
 // dialer returns a TCP dial function: direct when socks is empty.
 func dialer(socks string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	d := proxyDialer()
 	if socks == "" {
-		var d net.Dialer
 		return d.DialContext
 	}
-	d := proxyDialer()
 	return func(ctx context.Context, _, addr string) (net.Conn, error) {
 		c, err := d.DialContext(ctx, "tcp", socks)
 		if err != nil {
@@ -154,6 +154,8 @@ func listenPacket(ctx context.Context, socks string) (net.PacketConn, error) {
 		if proxySource != nil {
 			bind = &net.UDPAddr{IP: proxySource}
 		}
+	} else if proxySource != nil {
+		bind = &net.UDPAddr{IP: proxySource}
 	}
 	udp, err := net.ListenUDP("udp", bind)
 	if err != nil {

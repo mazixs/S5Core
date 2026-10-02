@@ -1,0 +1,116 @@
+{
+  "date": "2026-09-25",
+  "scope": "WAN ARM64 router to isolated VPS test units with concurrent direct control; no production rollout",
+  "acceptance": {
+    "loss_delta_max_pp": 0.3,
+    "p99_delta_max_ms": 1,
+    "freezes_max": "control plus 10%",
+    "breaks_max": 0
+  },
+  "runs": [
+    {
+      "build": "pre-window-and-probe-fix",
+      "source_run": "wan-native-game-hour-20260925-094742",
+      "duration_s": 3602.236,
+      "ticks": 230391,
+      "loss_pct": 0.003906,
+      "control_loss_pct": 0.059028,
+      "p50_ms": 53.428,
+      "control_p50_ms": 51.814,
+      "p99_ms": 56.405,
+      "control_p99_ms": 54.052,
+      "p99_delta_ms": 2.353,
+      "freezes": 8,
+      "control_freezes": 8,
+      "breaks": 0,
+      "idle_tcp_ok": 89,
+      "idle_tcp_failed": 0,
+      "native_udp_accepted": 230630.0,
+      "native_udp_auth_drops": 0.0,
+      "native_udp_tag_drops": 0.0,
+      "native_udp_replay_drops": 0.0,
+      "resources": {
+        "client": {
+          "cpu_s": 35.05,
+          "rss_start_kb": 7740,
+          "rss_end_kb": 12556,
+          "rss_peak_kb": 12724
+        },
+        "server": {
+          "cpu_s": 92.82,
+          "rss_start_kb": 16504,
+          "rss_end_kb": 20164,
+          "rss_peak_kb": 20164
+        }
+      },
+      "minute_count": 60,
+      "minute_p50_delta_ms": {
+        "min": 1.488,
+        "median": 1.543,
+        "max": 1.838
+      },
+      "minute_p99_delta_ms": {
+        "min": 0.128,
+        "median": 2.264,
+        "max": 3.946
+      },
+      "host_cleanup_confirmed": true
+    },
+    {
+      "build": "42d0f48 final game-testing candidate",
+      "source_run": "wan-native-game-hour-20260925-110032",
+      "status": "ok",
+      "duration_s": 3602.236,
+      "ticks": 230386,
+      "loss_pct": 0.006076,
+      "control_loss_pct": 0.054253,
+      "p50_ms": 52.563,
+      "control_p50_ms": 52.333,
+      "p99_ms": 55.489,
+      "control_p99_ms": 54.404,
+      "p99_delta_ms": 1.085,
+      "freezes": 10,
+      "control_freezes": 10,
+      "breaks": 0,
+      "idle_tcp_ok": 89,
+      "idle_tcp_failed": 0,
+      "native_udp_accepted": 230632.0,
+      "native_udp_auth_drops": 0.0,
+      "native_udp_tag_drops": 0.0,
+      "native_udp_replay_drops": 0.0,
+      "native_udp_sessions_after": 0.0,
+      "resources": {
+        "client": {
+          "cpu_s": 39.77,
+          "rss_start_kb": 7716,
+          "rss_end_kb": 12624,
+          "rss_peak_kb": 12624
+        },
+        "server": {
+          "cpu_s": 85.31,
+          "rss_start_kb": 18628,
+          "rss_end_kb": 22228,
+          "rss_peak_kb": 22228
+        }
+      },
+      "minute_count": 60,
+      "minute_p50_delta_ms": {
+        "min": 0.177,
+        "median": 0.227,
+        "max": 0.302
+      },
+      "minute_p99_delta_ms": {
+        "min": 0.282,
+        "median": 1.116,
+        "max": 1.82
+      },
+      "acceptance": {
+        "loss": true,
+        "p99": false,
+        "freezes": true,
+        "breaks": true
+      },
+      "host_cleanup_confirmed": true
+    }
+  ]
+}

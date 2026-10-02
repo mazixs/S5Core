@@ -1,0 +1,44 @@
+# Drop only the native client-server UDP leg. TCP stays reachable so the game
+# stream can prove 0x83 fallback without reopening its SOCKS5 association.
+name = "game-native-blackout"
+description = "native UDP startup and mid-session blackout fallback"
+base = "native"
+candidate = "native"
+
+[defaults]
+auth = "none"
+scale = 0.016666667
+scenario_timeout = "3m"
+hang_grace = "20s"
+settle = "2s"
+retries = 0
+sample_s = 5
+
+[variants.native]
+ref = "worktree"
+title = "native UDP with 0x83 fallback"
+[variants.native.env.server]
+UDP_PORT = "41443"
+[variants.native.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[guard]
+max_foreign_cores = 4.0
+load_wait = "120s"
+
+[[series]]
+name = "blocked-start"
+network = { rtt_ms = 50, udp_blackout_after_s = 0, udp_blackout_for_s = 55 }
+transports = ["obfs"]
+compare = []
+group = "startup-check"
+only = ["=game/64hz-200b"]
+
+[[series]]
+name = "blocked-mid"
+network = { rtt_ms = 50, udp_blackout_after_s = 10, udp_blackout_for_s = 12 }
+transports = ["obfs"]
+compare = []
+group = "mid-check"
+only = ["=game/64hz-200b"]

@@ -37,6 +37,9 @@ type stats struct {
 	Extra    map[string]float64 `json:"extra,omitempty"`
 	FirstErr string             `json:"first_error,omitempty"`
 	Series   []gameWindow       `json:"series,omitempty"`
+	// Marks are per-event values of a game session: when each resume or bulk
+	// upload happened (Unix seconds) and what each resume looked like.
+	Marks map[string][]float64 `json:"marks,omitempty"`
 }
 
 // sample collects one metric of a scenario. An operation that fails because
@@ -125,6 +128,8 @@ type prober struct {
 	maxInRow int
 	slow     time.Duration
 	control  bool
+	// wakeOn and wakeOff change the path when a paused game stream resumes.
+	wakeOn, wakeOff []string
 
 	ctx    context.Context
 	cancel context.CancelFunc

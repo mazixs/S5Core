@@ -1,9 +1,13 @@
 package tcptune
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"net"
+	"strings"
 	"testing"
+	"time"
 )
 
 type netConnWrapper struct{ net.Conn }
@@ -59,6 +63,21 @@ func TestAPipeHasNoSocket(t *testing.T) {
 	}
 }
 
+func debugLogger(w *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+func TestTheTunerSaysThereIsNoSocket(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	var log bytes.Buffer
+	Tuner(debugLogger(&log))(a)
+	if out := log.String(); !strings.Contains(out, "no socket to tune") {
+		t.Fatalf("log: %q", out)
+	}
+}
+
 func TestAWrapperCycleEnds(t *testing.T) {
 	var loop cycle
 	loop.next = &loop
@@ -73,3 +92,15 @@ type cycle struct {
 }
 
 func (c *cycle) NetConn() net.Conn { return c.next }
+
+func TestAStreamBoundNeedsASocketOnlyWhenAskedFor(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	if err := ForStream(a, 0); err != nil {
+		t.Fatalf("zero leaves the kernel's rule and asks nothing of the connection: %v", err)
+	}
+	if err := ForStream(netConnWrapper{a}, time.Second); !errors.Is(err, ErrNoSocket) {
+		t.Fatalf("a pipe has no socket: %v", err)
+	}
+}

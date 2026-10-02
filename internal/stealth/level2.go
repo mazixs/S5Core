@@ -170,13 +170,12 @@ type IntervalReport struct {
 	Samples   int
 	TopBucket float64
 	TopShare  float64
-	Bucket    float64
 }
 
 // Intervals buckets gaps (in seconds) and reports the most common bucket. A
 // keepalive with a fixed period puts nearly everything in one bucket.
 func Intervals(gaps []float64, bucket float64) IntervalReport {
-	r := IntervalReport{Samples: len(gaps), Bucket: bucket}
+	r := IntervalReport{Samples: len(gaps)}
 	if len(gaps) == 0 || bucket <= 0 {
 		return r
 	}

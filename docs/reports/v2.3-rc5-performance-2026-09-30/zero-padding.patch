@@ -1,0 +1,14 @@
+--- a/pkg/nativeudp/nativeudp.go
++++ b/pkg/nativeudp/nativeudp.go
+@@ -214,10 +214,7 @@
+ 		}
+ 		pad = 1 + int(draw[0])%space
+ 	}
+-	var padding [32]byte
+-	if _, err := rand.Read(padding[:pad]); err != nil {
+-		return nil, err
+-	}
++	var padding [32]byte // Audit prototype: zero plaintext padding; random length is unchanged.
+ 	dst = append(dst, t[:]...)
+ 	dst = append(dst, kind)
+ 	dst = append(dst, data...)
