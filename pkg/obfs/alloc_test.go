@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestHotPathIsAllocationFree is the CI gate that makes the CLAUDE.md rule
+// TestHotPathIsAllocationFree is the CI gate that makes the convention
 // "check buffer changes with benchmarks" enforceable instead of advisory.
 //
 // It is deliberately written against allocations and not against nanoseconds:

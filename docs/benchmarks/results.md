@@ -227,8 +227,8 @@ undetectability.
 #### Rules for changing these numbers
 
 - A change on the hot path (`pkg/obfs`, framing, buffers) is accompanied by a
-  `benchstat` comparison before and after. `CLAUDE.md` has required this all
-  along; task Ф2-2 made it executable by adding the benchmarks and
+  `benchstat` comparison before and after. This was always the convention;
+  task Ф2-2 made it executable by adding the benchmarks and
   `scripts/bench.sh`.
 - A change to the frame format is accompanied by a run of the stealth checklist.
 - Any number added to this section carries its command and its machine.
