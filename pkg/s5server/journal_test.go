@@ -18,12 +18,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/veil"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -40,10 +42,12 @@ var journalFields = map[string]bool{
 	"reload": true, "failed": true, "dropped": true,
 	"conn": true, "account": true, "auth": true, "transport": true, "client": true, "cmd": true,
 	"dst_net": true, "dst_port": true, "dst_kind": true, "result": true, "stage": true,
-	"closed_by": true, "reason": true, "dial_ms": true, "dial_tries": true, "dial_backups": true,
+	"end": true, "server_timeouts": true, "resets": true, "dial_ms": true, "dial_tries": true, "dial_backups": true,
 	"dial_backup_won": true, "first_byte_ms": true, "dur_ms": true, "up": true, "down": true,
 	"dgram_up": true, "dgram_down": true, "rotations": true, "answered": true,
-	"assocs": true,
+	"native_up": true, "native_down": true, "path_moves": true, "tunnel_drops": true,
+	"assocs": true, "rcvbuf_drops": true,
+	"tcp_rtt_ms": true, "tcp_unacked": true, "tcp_retransmits": true, "tcp_since_data_ms": true, "tcp_since_ack_ms": true,
 }
 
 func readJournal(t *testing.T, path string) []map[string]any {
@@ -212,9 +216,9 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 	}
 	echoPort := float64(netip.MustParseAddrPort(echo).Port())
 	check(ids[0], map[string]any{"account": "alice", "auth": "key", "transport": "obfs", "cmd": "connect",
-		"result": "ok", "dst_net": "127.0.0.0/24", "dst_port": echoPort, "dst_kind": "name", "dial_tries": float64(1)})
+		"result": "ok", "end": "client", "dst_net": "127.0.0.0/24", "dst_port": echoPort, "dst_kind": "name", "dial_tries": float64(1)})
 	check(ids[1], map[string]any{"account": "bob", "auth": "password", "result": "ok", "dst_kind": "ip"})
-	check(ids[2], map[string]any{"account": "unknown", "result": "auth_failed", "stage": "auth"})
+	check(ids[2], map[string]any{"account": "unknown", "result": "auth_failed", "stage": "auth", "end": "auth_failed"})
 	if _, ok := byConn[ids[2]]["auth"]; ok {
 		t.Error("a refused login carries an auth method")
 	}
@@ -515,6 +519,261 @@ func TestTheMinuteSummaryIsWrittenOnlyForABusyMinute(t *testing.T) {
 		cancel()
 		_ = j.Close()
 	})
+}
+
+// A CONNECT and an association say how they ended in the same field, and a
+// connection that failed before the relay says it with its outcome: one key to
+// group the whole journal by.
+func TestEveryEndOfASessionIsNamedInOneField(t *testing.T) {
+	file := &failingFile{}
+	j := &sessionJournal{Journal: logging.NewJournal(file, "b00710ad"), all: true, dst: true}
+	for _, e := range []*socks5.ConnEnd{
+		{Command: socks5.CmdConnect, Result: socks5.ResultOK, ClosedBy: socks5.ClosedByClient},
+		{Command: socks5.CmdConnect, Result: socks5.ResultOK, ClosedBy: socks5.ClosedByServerTimeout},
+		{Command: socks5.CmdConnect, Result: socks5.ResultDialTimeout, Stage: "dial"},
+		{Command: socks5.AssociationNative, Result: socks5.ResultOK, ClosedBy: socks5.EndedByTimeout},
+		{Command: socks5.AssociationTunnel, Result: socks5.ResultAccount, ClosedBy: socks5.EndedByAccount},
+	} {
+		j.connEnd("0123456789ab", "obfs", "", e, nil)
+	}
+	j.Flush()
+	file.mu.Lock()
+	raw := file.buf.String()
+	file.mu.Unlock()
+	var got []string
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("%q: %v", line, err)
+		}
+		if _, ok := m["closed_by"]; ok {
+			t.Errorf("a line still carries closed_by: %s", line)
+		}
+		if _, ok := m["reason"]; ok {
+			t.Errorf("a line still carries reason: %s", line)
+		}
+		end, _ := m["end"].(string)
+		got = append(got, end)
+	}
+	want := []string{"client", "server_timeout", "dial_timeout", "timeout", "account"}
+	if !slices.Equal(got, want) {
+		t.Errorf("end = %v, want %v", got, want)
+	}
+}
+
+// What the kernel says of the socket answers the one question a closed-for-
+// silence connection leaves: was the path dead or the client quiet. The state
+// is written for the ends that ask it and for no other, so an ordinary line
+// does not grow by five fields.
+func TestOnlyASilentEndCarriesTheStateOfItsSocket(t *testing.T) {
+	file := &failingFile{}
+	j := &sessionJournal{Journal: logging.NewJournal(file, "b00710ad"), all: true, dst: true}
+	tcp := &tcptune.Info{RTT: 43 * time.Millisecond, Unacked: 7, Retransmits: 3,
+		SinceData: 31 * time.Second, SinceAck: 29 * time.Second}
+	for _, by := range []string{socks5.ClosedByClient, socks5.ClosedByServerTimeout, socks5.ClosedByReset} {
+		j.connEnd("0123456789ab", "obfs", "", &socks5.ConnEnd{
+			Command: socks5.CmdConnect, Result: socks5.ResultOK, ClosedBy: by,
+		}, tcp)
+	}
+	j.connEnd("0123456789ac", "obfs", "", &socks5.ConnEnd{
+		Command: socks5.CmdConnect, Result: socks5.ResultOK, ClosedBy: socks5.ClosedByServerTimeout,
+	}, nil)
+	j.connEnd("0123456789ad", "obfs", "", &socks5.ConnEnd{
+		Command: socks5.AssociationTunnel, Result: socks5.ResultOK, ClosedBy: socks5.EndedByTimeout,
+	}, tcp)
+	j.Flush()
+	file.mu.Lock()
+	raw := file.buf.String()
+	file.mu.Unlock()
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("%d lines, want 5: %q", len(lines), raw)
+	}
+	for i, wantState := range []bool{false, true, true, false, true} {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(lines[i]), &m); err != nil {
+			t.Fatalf("%q: %v", lines[i], err)
+		}
+		_, has := m["tcp_unacked"]
+		if has != wantState {
+			t.Errorf("line %d (end %v): state present = %v, want %v: %s", i, m["end"], has, wantState, lines[i])
+		}
+		if wantState && (m["tcp_rtt_ms"] != float64(43) || m["tcp_unacked"] != float64(7) ||
+			m["tcp_retransmits"] != float64(3) || m["tcp_since_data_ms"] != float64(31000) ||
+			m["tcp_since_ack_ms"] != float64(29000)) {
+			t.Errorf("line %d has the wrong numbers: %s", i, lines[i])
+		}
+	}
+}
+
+// A native association says what it carried natively, and no other line does:
+// a 0x83 association has no native path to report on.
+func TestOnlyANativeAssociationReportsItsPath(t *testing.T) {
+	file := &failingFile{}
+	j := &sessionJournal{Journal: logging.NewJournal(file, "b00710ad"), all: true, dst: true}
+	j.connEnd("0123456789ab", "obfs", "", &socks5.ConnEnd{
+		Command: socks5.AssociationNative, Result: socks5.ResultOK, ClosedBy: socks5.EndedByClient,
+		DatagramsUp: 30, DatagramsDown: 40, NativeUp: 25, NativeDown: 31, PathMoves: 2, TunnelDrops: 3,
+	}, nil)
+	j.connEnd("0123456789ac", "obfs", "", &socks5.ConnEnd{
+		Command: socks5.AssociationTunnel, Result: socks5.ResultOK, ClosedBy: socks5.EndedByClient,
+	}, nil)
+	j.Flush()
+	file.mu.Lock()
+	raw := file.buf.String()
+	file.mu.Unlock()
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("%d lines, want 2: %q", len(lines), raw)
+	}
+	var native, tunnel map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &native); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &tunnel); err != nil {
+		t.Fatal(err)
+	}
+	for field, want := range map[string]float64{"native_up": 25, "native_down": 31, "path_moves": 2, "tunnel_drops": 3} {
+		if native[field] != want {
+			t.Errorf("%s = %v, want %v: %s", field, native[field], want, lines[0])
+		}
+		if _, ok := tunnel[field]; ok {
+			t.Errorf("a 0x83 association carries %s: %s", field, lines[1])
+		}
+	}
+}
+
+// The service log says when connections go silent together, without a name:
+// a minute with a burst of server timeouts is the signature of a dead path.
+func TestAWarningNamesAMinuteOfSilentConnections(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		out := &lockedBuffer{}
+		logger := slog.New(slog.NewJSONHandler(out, nil))
+		file := &failingFile{}
+		j := &sessionJournal{Journal: logging.NewJournal(file, "b00710ad"), all: true, dst: true}
+		m := newMinuteSummaryWith(func() (uint64, bool) { return 0, false })
+		ctx, cancel := context.WithCancel(context.Background())
+		go m.run(ctx, logger, func() *sessionJournal { return j }, "b00710ad")
+
+		silent := func(account string) *socks5.ConnEnd {
+			return &socks5.ConnEnd{Command: socks5.CmdConnect, Result: socks5.ResultOK,
+				ClosedBy: socks5.ClosedByServerTimeout, Account: account}
+		}
+		for range silentBurst - 1 {
+			m.record(silent("alice"), true)
+		}
+		m.record(&socks5.ConnEnd{Command: socks5.CmdConnect, Result: socks5.ResultOK,
+			ClosedBy: socks5.ClosedByReset, Account: "alice"}, true)
+		time.Sleep(MinuteInterval)
+		synctest.Wait()
+		if strings.Contains(out.String(), "silent_burst") {
+			t.Fatalf("%d silent connections were called a burst: %s", silentBurst-1, out.String())
+		}
+		if !strings.Contains(out.String(), `"server_timeouts":2`) || !strings.Contains(out.String(), `"resets":1`) {
+			t.Errorf("the summary does not count the causes: %s", out.String())
+		}
+
+		out.Reset()
+		m.record(silent("alice"), true)
+		m.record(silent("bob"), true)
+		m.record(silent("bob"), true)
+		time.Sleep(MinuteInterval)
+		synctest.Wait()
+		var warn map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			var l map[string]any
+			if err := json.Unmarshal([]byte(line), &l); err != nil {
+				t.Fatalf("%q: %v", line, err)
+			}
+			if l["event"] == "silent_burst" {
+				warn = l
+			}
+		}
+		if warn == nil || warn["level"] != "WARN" || warn["server_timeouts"] != float64(silentBurst) {
+			t.Fatalf("no warning for a burst: %s", out.String())
+		}
+		if strings.Contains(out.String(), "alice") || strings.Contains(out.String(), "bob") {
+			t.Error("the service log names an account")
+		}
+
+		j.Flush()
+		file.mu.Lock()
+		accounts := file.buf.String()
+		file.mu.Unlock()
+		if !strings.Contains(accounts, `"account":"alice","conns":1,"failed":0,"assocs":0,"dial_backups":0,"server_timeouts":1,"resets":0`) ||
+			!strings.Contains(accounts, `"account":"bob","conns":2,"failed":0,"assocs":0,"dial_backups":0,"server_timeouts":2,"resets":0`) {
+			t.Errorf("account lines: %s", accounts)
+		}
+		cancel()
+		_ = j.Close()
+	})
+}
+
+// The kernel counts the datagrams it dropped on a full receive buffer once
+// for the whole network namespace, so the count alone does not say when. A
+// minute in which it grew is written to the service log and the journal with
+// the growth, and a minute in which it did not writes nothing.
+func TestAMinuteThatDroppedDatagramsSaysSo(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		out := &lockedBuffer{}
+		logger := slog.New(slog.NewJSONHandler(out, nil))
+		file := &failingFile{}
+		j := &sessionJournal{Journal: logging.NewJournal(file, "b00710ad"), all: true, dst: true}
+		var count atomic.Uint64
+		count.Store(100)
+		m := newMinuteSummaryWith(func() (uint64, bool) { return count.Load(), true })
+		ctx, cancel := context.WithCancel(context.Background())
+		go m.run(ctx, logger, func() *sessionJournal { return j }, "b00710ad")
+
+		minute := func() {
+			time.Sleep(MinuteInterval)
+			synctest.Wait()
+		}
+		minute()
+		if strings.Contains(out.String(), "udp_rcvbuf_drops") {
+			t.Fatalf("a minute without drops was reported: %s", out.String())
+		}
+
+		count.Store(175)
+		minute()
+		var line map[string]any
+		for _, l := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			line = nil
+			if err := json.Unmarshal([]byte(l), &line); err != nil {
+				t.Fatalf("%q: %v", l, err)
+			}
+		}
+		if line["event"] != "udp_rcvbuf_drops" || line["level"] != "WARN" || line["rcvbuf_drops"] != float64(75) {
+			t.Fatalf("the growth of the count is not in the log: %s", out.String())
+		}
+
+		out.Reset()
+		minute()
+		count.Store(50)
+		minute()
+		count.Store(52)
+		minute()
+		if !strings.Contains(out.String(), `"rcvbuf_drops":2`) || strings.Count(out.String(), "udp_rcvbuf_drops") != 1 {
+			t.Errorf("a count that restarted must not count the minute it restarted in: %s", out.String())
+		}
+
+		j.Flush()
+		file.mu.Lock()
+		written := file.buf.String()
+		file.mu.Unlock()
+		if strings.Count(written, `"event":"udp_rcvbuf_drops"`) != 2 || !strings.Contains(written, `"rcvbuf_drops":75`) {
+			t.Errorf("the journal does not hold the minutes with drops: %s", written)
+		}
+		cancel()
+		_ = j.Close()
+	})
+}
+
+func TestWithoutACountTheKernelGivesNoMinuteSaysNothing(t *testing.T) {
+	m := newMinuteSummaryWith(func() (uint64, bool) { return 0, false })
+	if n := m.newDrops(); n != 0 {
+		t.Fatalf("drops %d without a count", n)
+	}
 }
 
 func benchEnd() *socks5.ConnEnd {

@@ -760,7 +760,8 @@ def environments(spec, psk, users, cert, key, client_cert=None, host="127.0.0.1"
                OBFS_ENABLED="true", OBFS_PORT=str(PORTS["obfs"]), OBFS_PSK=psk,
                WS_ENABLED="true", WS_ADDR=f"{listen}:{PORTS['wss']}", WS_CERT_FILE=cert, WS_KEY_FILE=key,
                METRICS_PORT=str(PORTS["metrics"]), METRICS_BIND_ADDR="127.0.0.1",
-               TRAFFIC_FLUSH_INTERVAL=go_duration(seconds(st["flush"])), LOG_LEVEL="warn", REQUIRE_AUTH="false")
+               TRAFFIC_FLUSH_INTERVAL=go_duration(seconds(st["flush"])), LOG_LEVEL="warn", REQUIRE_AUTH="false",
+               ALLOW_PRIVATE_DEST="true")
     cli = dict(GOMAXPROCS=str(st["client_procs"]), CLIENT_LISTEN_ADDR=f"127.0.0.1:{PORTS['client']}",
                SERVER_ADDR=f"{host}:{PORTS['obfs']}", OBFS_PSK=psk, LOG_LEVEL="warn", TRANSPORT="obfs")
     if spec["transport"] == "wss":

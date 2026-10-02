@@ -19,6 +19,11 @@ type Config struct {
 	ListenIP        string
 	RequireAuth     bool
 	AllowedDestFqdn string
+	// DenyPrivateDest refuses destinations on the server's own machine and
+	// network, see socks5.Config.DenyPrivateDest. The zero value allows
+	// everything, so an application embedding the server keeps the behaviour
+	// it had; cmd/s5core turns it on unless ALLOW_PRIVATE_DEST is set.
+	DenyPrivateDest bool
 	AllowedIPs      []string
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration

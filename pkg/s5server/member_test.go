@@ -169,7 +169,7 @@ func dialMember(t *testing.T, port string, scheme veil.Scheme) net.Conn {
 	if err != nil {
 		t.Fatalf("obfs wrap: %v", err)
 	}
-	_ = tunnel.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = tunnel.SetDeadline(time.Now().Add(answerWithin))
 	return tunnel
 }
 

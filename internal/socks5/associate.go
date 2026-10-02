@@ -201,7 +201,11 @@ func (a *plainAssociation) fromClient(ctx, assocCtx context.Context) {
 	buf := make([]byte, 65535)
 	meter := newUDPMeter(a.acct)
 	question := newDatagramQuestion(req)
+	var said atomic.Bool
 	dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+		if s.refuseDatagram(dest.Addr(), &said) {
+			return true
+		}
 		nw, err := a.targetConn.WriteToUDPAddrPort(payload, dest)
 		if err != nil || nw <= 0 {
 			return true
@@ -689,7 +693,11 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	// dispatcher: the datagrams and lookups it may queue are the
 	// association's. It closes after both readers, when the handler returns.
 	meter := newUDPMeter(acct)
+	var said atomic.Bool
 	t.dispatcher = newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
+		if s.refuseDatagram(dest.Addr(), &said) {
+			return true
+		}
 		nw, err := egress.current().WriteToUDPAddrPort(payload, dest)
 		if err != nil {
 			return true
@@ -751,6 +759,7 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	kind := AssociationTunnel
 	if nativeSession != nil {
 		kind = AssociationNative
+		req.end.pathEnded(t.path.moves.Load(), t.fallback.Dropped())
 	}
 	s.associationEnded(req, kind, err, egress)
 	return err
@@ -889,6 +898,7 @@ func (t *udpTunnel) answers() {
 			err := nativeSession.Send(frame[2:])
 			if err == nil {
 				count.AnswersNative.Add(1)
+				req.end.nativeDatagram(true)
 				udpBufPool.Put(framePtr)
 				if st := meter.outbound(n); st != SessionAllowed {
 					t.stop(s.endOfAssociation(req, st))
@@ -1022,6 +1032,7 @@ func (t *udpTunnel) fromNative() {
 			return
 		}
 		t.count.ClientNative.Add(1)
+		t.req.end.nativeDatagram(false)
 		t.path.Heard(counter)
 		t.dispatcher.submit(&question.dest, packet[hdrLen:])
 	}

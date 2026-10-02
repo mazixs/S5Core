@@ -1,6 +1,8 @@
 // Package tcptune sets TCP options on the socket of a UDP-over-TCP tunnel
-// (0x83 and 0x84) so that a lost segment is retransmitted sooner. CONNECT
-// relays are left alone. Why and what it buys: docs/benchmarks/game-tuning.md.
+// (0x83 and 0x84) so that a lost segment is retransmitted sooner, bounds how
+// long the socket of a CONNECT tunnel may keep data unacknowledged
+// (ForStream), and reads the kernel's state of a tunnel's socket (InfoOf).
+// Why and what it buys: docs/benchmarks/game-tuning.md, docs/plan/draft.md (Ч-29).
 package tcptune
 
 import (
@@ -9,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // maxWrappers bounds the walk down the connection wrappers, like obfs.IdentityOf.
@@ -18,7 +21,7 @@ const maxWrappers = 10
 // connection: a pipe in a test, or a wrapper that hides what it wraps.
 var ErrNoSocket = errors.New("tcptune: no socket under the connection")
 
-var errUnsupported = errors.New("tcptune: the options are Linux only")
+var errUnsupported = errors.New("tcptune: the option is not supported on this system")
 
 // Socket walks the wrappers (NetConn, then Unwrap) down to the connection
 // that owns a file descriptor. Every layer between the tunnel and the
@@ -43,6 +46,35 @@ func Socket(c net.Conn) (syscall.Conn, error) {
 		}
 	}
 	return nil, ErrNoSocket
+}
+
+// ForStream makes the kernel close the connection under c, with ETIMEDOUT,
+// once data sent on it has gone unacknowledged for d. Without it a dead path
+// is noticed only after tcp_retries2, up to a quarter of an hour, and the
+// application waits that long for a socket that cannot deliver. Zero leaves
+// the kernel's rule. An error means the option was not set.
+func ForStream(c net.Conn, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	sc, err := Socket(c)
+	if err != nil {
+		return err
+	}
+	return setDeadAfter(sc, d)
+}
+
+// control runs f on the file descriptor under sc.
+func control(sc syscall.Conn, f func(fd uintptr) error) error {
+	raw, err := sc.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var ferr error
+	if err := raw.Control(func(fd uintptr) { ferr = f(fd) }); err != nil {
+		return err
+	}
+	return ferr
 }
 
 // Skipped names the options the kernel refused, with its reason. An option

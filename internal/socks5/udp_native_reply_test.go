@@ -212,15 +212,18 @@ func nativeAnswers(t *testing.T, native *scriptedNative) (*net.UDPConn, netip.Ad
 
 func nativeAnswersCounted(t *testing.T, native *scriptedNative, counters *NativeCounters) (*net.UDPConn, netip.AddrPort, net.Conn) {
 	t.Helper()
+	return nativeAnswersWith(t, native, &Config{NativeCounters: counters})
+}
+
+func nativeAnswersWith(t *testing.T, native *scriptedNative, conf *Config) (*net.UDPConn, netip.AddrPort, net.Conn) {
+	t.Helper()
 	target, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = target.Close() })
-	reply, conn, _ := nativeRequest(t, &Config{
-		NativeUDP:      func(net.Conn) (NativeAssociation, error) { return native, nil },
-		NativeCounters: counters,
-	})
+	conf.NativeUDP = func(net.Conn) (NativeAssociation, error) { return native, nil }
+	reply, conn, _ := nativeRequest(t, conf)
 	if reply[1] != successReply {
 		t.Fatalf("reply %x, want success", reply)
 	}

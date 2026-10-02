@@ -59,6 +59,7 @@ func TestServerFromEnv_WSSEndToEnd(t *testing.T) {
 	t.Setenv("PROXY_PORT", "19083")
 	t.Setenv("PROXY_LISTEN_IP", "127.0.0.1")
 	t.Setenv("REQUIRE_AUTH", "false")
+	t.Setenv("ALLOW_PRIVATE_DEST", "true")
 	t.Setenv("OBFS_ENABLED", "true")
 	t.Setenv("OBFS_PORT", "19444")
 	t.Setenv("OBFS_PSK", envTestPSK)
@@ -165,11 +166,11 @@ func assertTransportsVisible(t *testing.T, reader sdkmetric.Reader) {
 					iter := dp.Attributes.Iter()
 					for iter.Next() {
 						kv := iter.Attribute()
-						buildLabels[string(kv.Key)] = kv.Value.Emit()
+						buildLabels[string(kv.Key)] = kv.Value.String()
 					}
 				case "s5core_connections_total":
 					if v, ok := dp.Attributes.Value("transport"); ok {
-						connByTransport[v.Emit()] += dp.Value
+						connByTransport[v.String()] += dp.Value
 					}
 				}
 			}

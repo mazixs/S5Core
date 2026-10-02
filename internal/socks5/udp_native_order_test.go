@@ -245,3 +245,59 @@ func TestTheCountersSayWhichPathEachDatagramTook(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// The record of a native association says what it carried by the native path,
+// how often its answers left it and what its stream dropped, so that one line
+// of the journal tells whether the path worked for that association alone
+// (docs/plan/draft.md, Ч-30).
+func TestTheRecordOfAnAssociationSaysWhatItCarriedNative(t *testing.T) {
+	ended := make(chan *ConnEnd, 1)
+	native := newScriptedNative()
+	target, relay, conn := nativeAnswersWith(t, native, &Config{
+		OnConnEnd: func(_ net.Conn, e *ConnEnd) { ended <- e },
+	})
+	if !answersGo(t, native, target, relay, conn, "native") {
+		t.Fatal("the answer did not go native")
+	}
+	signalLoss(t, native, conn, 5)
+	if answersGo(t, native, target, relay, conn, "route") {
+		t.Fatal("an answer after the loss signal went native")
+	}
+	_ = conn.Close()
+
+	select {
+	case e := <-ended:
+		if e.Command != AssociationNative || e.NativeUp != 1 || e.NativeDown != 1 || e.PathMoves != 1 || e.TunnelDrops != 0 {
+			t.Fatalf("native up/down %d/%d, moves %d, drops %d, want 1/1, 1, 0",
+				e.NativeUp, e.NativeDown, e.PathMoves, e.TunnelDrops)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the association never reported its end")
+	}
+}
+
+// An association the client closes is a session that went well: it used to be
+// counted as a failed one, so every healthy association was a failure in the
+// session metric (docs/plan/draft.md, Ч-17).
+func TestAnAssociationTheClientClosesIsASessionThatWentWell(t *testing.T) {
+	type outcome struct{ ok bool }
+	sessions := make(chan outcome, 1)
+	native := newScriptedNative()
+	_, _, conn := nativeAnswersWith(t, native, &Config{
+		ObservePhase: func(p Phase, _ time.Duration, ok bool) {
+			if p == PhaseSession {
+				sessions <- outcome{ok}
+			}
+		},
+	})
+	_ = conn.Close()
+
+	select {
+	case o := <-sessions:
+		if !o.ok {
+			t.Fatal("an association closed by the client was counted as a failed session")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the session phase never ended")
+	}
+}

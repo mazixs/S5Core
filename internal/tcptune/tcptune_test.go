@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 type netConnWrapper struct{ net.Conn }
@@ -91,3 +92,15 @@ type cycle struct {
 }
 
 func (c *cycle) NetConn() net.Conn { return c.next }
+
+func TestAStreamBoundNeedsASocketOnlyWhenAskedFor(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	if err := ForStream(a, 0); err != nil {
+		t.Fatalf("zero leaves the kernel's rule and asks nothing of the connection: %v", err)
+	}
+	if err := ForStream(netConnWrapper{a}, time.Second); !errors.Is(err, ErrNoSocket) {
+		t.Fatalf("a pipe has no socket: %v", err)
+	}
+}

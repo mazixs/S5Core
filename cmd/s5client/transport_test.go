@@ -458,8 +458,23 @@ func TestTheSilentServerHintIsNotPrintedForARejection(t *testing.T) {
 		t.Errorf("a rejection carried the silent-server hint: %s", hint)
 	}
 
-	silent := &tunnelError{phase: phaseAuth, err: os.ErrDeadlineExceeded}
+	silent := &tunnelError{phase: phaseGreeting, err: os.ErrDeadlineExceeded}
 	if hint := setupHint(silent, cfg); hint == "" {
 		t.Error("a silent server carried no hint at all")
+	}
+}
+
+// The reply to the greeting is the proof that the PSK, the node id and the
+// clock match. Silence after it is a slow target or a path, not a key, and the
+// hint would send the operator after the wrong thing (item Ч-22).
+func TestTheSilentServerHintStopsAtTheGreetingReply(t *testing.T) {
+	cfg := baseParams("")
+	cfg.PSK = "0123456789abcdef0123456789abcdef"
+
+	for _, phase := range []tunnelPhase{phaseAuth, phaseConnect, phaseConnectReply} {
+		err := &tunnelError{phase: phase, err: os.ErrDeadlineExceeded}
+		if hint := setupHint(err, cfg); hint != "" {
+			t.Errorf("phase %s carried the hint: %s", phase, hint)
+		}
 	}
 }

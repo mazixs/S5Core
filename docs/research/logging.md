@@ -2,6 +2,8 @@
 
 Исследование от 01.10.2026. Документ сводит практики прокси и relay-серверов (Envoy, HAProxy, nginx stream, Squid, Dante, 3proxy, Xray, sing-box, Tailscale, wireguard-go), цену логирования в Go с собственным замером `log/slog` и предлагает дизайн логов S5Core. Код не менялся. Поводом стал разбор жалоб за 30.09-01.10.2026 (обрывы Discord, зависания YouTube, Ч-26 в [`../plan/draft.md`](../plan/draft.md)). Его тормозили пять вещей. Клиентский лог затирался при перезапуске (в шаблонах клиента уже исправлено). INFO-лог сервера содержал только строки ротации UDP-сокета. Метрики накопительные, без истории и без адресата. В строке ротации и в отказе dial нет сети назначения. Клиентский обрыв нечем связать с серверной сессией.
 
+Схема полей ниже - исследование от 01.10.2026. В 2.3.0 причина конца стала одним полем `end` вместо `closed_by` у CONNECT и `reason` у ассоциации, а счетчики `server_timeouts` и `resets` и Warn `silent_burst` добавлены в сводку и в `account_minute`: действующий набор полей - в [`../design/observability-policy.md`](../design/observability-policy.md).
+
 Пометки, как в соседних документах: [не подтверждено] - первоисточник не открыт или прочитан только в выдаче поиска; [расчет] - арифметика по числам источника или замера; [вывод] - заключение автора; [замер] - собственный микробенчмарк, раздел 2.2. Номера в квадратных скобках ведут к списку источников.
 
 ## Резюме
@@ -226,7 +228,7 @@
 | `transport`, `client` | слушатель; версия из `hello` за оградой `versionLabels` | уже есть | ноль |
 | `cmd` | `connect`, `associate`, `tunnel`, `native`, `bind` | `handleRequest` | ноль |
 | `dst_net`, `dst_port`, `dst_kind` | сеть `/24` или `/48` фактически набранного адреса, порт, `ip` или `name` (имя не пишется) | `dialResolved` | одно `netip.Prefix` при закрытии |
-| `result` | закрытое множество: `ok`, `auth_failed`, `rules_denied`, `resolve_failed`, `dial_timeout`, `dial_refused`, `dial_unreachable`, `reply_failed`, `account`, `shutdown`, `error` | `ConnError.Stage/Kind` + ответ SOCKS5 | ноль |
+| `result` | закрытое множество: `ok`, `auth_failed`, `rules_denied`, `private_dest`, `resolve_failed`, `dial_timeout`, `dial_refused`, `dial_unreachable`, `reply_failed`, `account`, `shutdown`, `error` | `ConnError.Stage/Kind` + ответ SOCKS5 | ноль |
 | `closed_by` | `client`, `target`, `server_timeout`, `account`, `shutdown`, `reset` | первый `relay.Result`, как `association_end.go` | ноль |
 | `stage` | только при `result != ok`: `greeting`, `auth`, `request`, `dial`, `relay` | `ConnError.Stage` | ноль |
 | `dial_ms`, `dial_tries`, `dial_backups`, `dial_backup_won` | время dial, число адресов, открытые запасные сокеты, соединился ли запасной | `dialResolved`, счетчики в `dialCandidate` | 2-3 поля в структуре на dial |

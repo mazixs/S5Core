@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -260,6 +261,14 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		}
 	}
 
+	if req.Command == ConnectCommand && s.config.DenyPrivateDest && !s.leavePublicDestinations(req) {
+		failure := &ConnError{Stage: "request", Op: "private_dest", Kind: FailurePolicy, Err: errors.New("destination is the server's own network")}
+		if err := sendReply(conn, ruleFailure, nil); err != nil {
+			return errors.Join(failure, connFailure("request", "reply_write", err))
+		}
+		return failure
+	}
+
 	// Switch on the command
 	switch req.Command {
 	case ConnectCommand:
@@ -277,6 +286,25 @@ func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) err
 		}
 		return failure
 	}
+}
+
+// leavePublicDestinations drops the private addresses a CONNECT would dial and
+// reports whether any is left. A name may resolve to a private address and a
+// public one: the public one is dialled, and the request is refused only when
+// nothing else remains. An address that cannot be read is not public.
+func (s *Server) leavePublicDestinations(req *Request) bool {
+	if len(req.dialCandidates) == 0 {
+		ip, ok := netip.AddrFromSlice(req.DestAddr.IP)
+		return ok && !s.deniedDestination(ip)
+	}
+	kept := req.dialCandidates[:0]
+	for _, c := range req.dialCandidates {
+		if ap, err := netip.ParseAddrPort(c.addr); err == nil && !s.deniedDestination(ap.Addr()) {
+			kept = append(kept, c)
+		}
+	}
+	req.dialCandidates = kept
+	return len(kept) > 0
 }
 
 // handleConnect dials the destination, answers the client and relays until

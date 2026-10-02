@@ -180,7 +180,8 @@ class Stand:
                                  "-mgmt", hostport(MGMT_B, PORT["mgmt"]), *echo], {})
         srv = dict(PROXY_LISTEN_IP=a["b1"], PROXY_PORT=str(PORT["plain"]), OBFS_ENABLED="true",
                    OBFS_PORT=str(PORT["obfs"]), OBFS_PSK=PSK, UDP_PORT=str(PORT["udp"]),
-                   METRICS_BIND_ADDR=MGMT_B, METRICS_PORT=str(PORT["metrics"]), REQUIRE_AUTH="false", LOG_LEVEL="info")
+                   METRICS_BIND_ADDR=MGMT_B, METRICS_PORT=str(PORT["metrics"]), REQUIRE_AUTH="false",
+                   ALLOW_PRIVATE_DEST="true", LOG_LEVEL="info")
         self.spawn("server", "B", [binaries["s5core"]], srv)
         if not (self.wait_tcp("B", MGMT_B, PORT["mgmt"]) and self.wait_tcp("B", MGMT_B, PORT["metrics"])
                 and self.wait_tcp("B", a["b1"], PORT["obfs"])):

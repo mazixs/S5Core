@@ -47,10 +47,10 @@ func sessionCounts(t *testing.T, reader sdkmetric.Reader) map[string]int64 {
 				if dp.Attributes.Len() != 3 {
 					t.Errorf("%s: want exactly 3 labels, got %d", m.Name, dp.Attributes.Len())
 				}
-				if transport.Emit() == "" {
+				if transport.String() == "" {
 					t.Errorf("%s: a data point has no transport", m.Name)
 				}
-				counts[region.Emit()+"/"+state.Emit()] += dp.Value
+				counts[region.String()+"/"+state.String()] += dp.Value
 			}
 		}
 	}
@@ -83,7 +83,7 @@ func sessionTransitions(t *testing.T, reader sdkmetric.Reader) map[string]int64 
 				if dp.Attributes.Len() != 5 {
 					t.Errorf("%s: want exactly 5 labels, got %d", m.Name, dp.Attributes.Len())
 				}
-				key := region.Emit() + "/" + from.Emit() + "->" + to.Emit()
+				key := region.String() + "/" + from.String() + "->" + to.String()
 				if illegal.AsBool() {
 					key = "illegal/" + key
 				}

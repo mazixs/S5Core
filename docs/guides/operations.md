@@ -34,7 +34,7 @@ Available metrics:
 | `first_byte` | success reply is sent to the client | destination sends its first byte |
 | `session` | SOCKS handler is entered | handler returns |
 
-`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average.
+`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average. A UDP association that the client closed (the normal end) is a `session` that is `ok`; any other end of an association is `fail`.
 
 Measure an actual HTTPS response from the client with the probe:
 

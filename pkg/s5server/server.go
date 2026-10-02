@@ -128,9 +128,10 @@ func NewServer(cfg Config) (*Server, error) {
 	var server *Server
 	nativeCounters := new(socks5.NativeCounters)
 	socks5conf := &socks5.Config{
-		Logger:         cfg.Logger,
-		Dial:           cfg.Dial,
-		NativeCounters: nativeCounters,
+		Logger:          cfg.Logger,
+		Dial:            cfg.Dial,
+		DenyPrivateDest: cfg.DenyPrivateDest,
+		NativeCounters:  nativeCounters,
 		// A node without UDP_PORT, or a listener without obfs keys, answers
 		// 0x84 with port 0: the client then stays on 0x83 without another
 		// connection.
