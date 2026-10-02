@@ -4,15 +4,18 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # Пробный прогон: те же проверки, сборка образа и бинарей, но без push в
+  # реестр и без GitHub Release. Запуск: gh workflow run release.yml --ref <ветка>.
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   checks:
     runs-on: ubuntu-24.04
-    container: golang:1.26.6
+    timeout-minutes: 30
+    container: golang:1.26.8
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,6 +38,10 @@ jobs:
   build-and-push-docker:
     needs: checks
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -43,6 +50,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Login to GitHub Container Registry
+        if: github.event_name == 'push'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -54,29 +62,33 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha
-            type=raw,value=latest,enable=${{ !startsWith(github.ref, 'refs/tags/v0.') && !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/v0.') && !contains(github.ref_name, '-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: true
+          push: ${{ github.event_name == 'push' }}
           build-args: |
             VERSION=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ci
+          cache-to: type=gha,mode=max,scope=ci
 
   create-github-release:
     needs: [checks, build-and-push-docker]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -84,7 +96,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.8'
           cache: true
 
       - name: Build binaries
@@ -111,8 +123,18 @@ jobs:
           for f in dist/*; do
             go version -m "$f" | grep -q 'CGO_ENABLED=0' || { echo "$f is built with cgo"; exit 1; }
           done
+          (cd dist && sha256sum -- * > SHA256SUMS)
+
+      - name: Keep the binaries of a dry run
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-dry-run
+          path: dist/
+          retention-days: 3
 
       - name: Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*
