@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-02
+
 ### Upgrade notes
 
 - `s5core` now refuses destinations on the server's own machine and network:
@@ -360,6 +362,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tooling
 
+- Release builds use Go 1.26.8 and the check job golangci-lint v2.14.0.
+  `scripts/pre-commit.sh` fails when the Go version differs between `go.mod`,
+  the two workflows, the Dockerfile and the script itself.
+- `scripts/smoke` starts the real `s5core` and `s5client` built by
+  `scripts/pre-commit.sh` with the release flags, moves a 4 MiB download and
+  a 1 MiB upload through them over SOCKS5 and echoes UDP datagrams through an
+  association that must go native. It then reads the server's metrics and the
+  logs of both processes: the stamped version, the client counted by build, no
+  rejected handshake besides the ordinary disconnect bucket, no WARN or ERROR,
+  and both processes exit on SIGTERM.
+- `scripts/metrics` turns the test run, the cover profile and the release
+  binaries into `summary.md` (shown on the job page in CI) and
+  `metrics.json`, and checks them against `scripts/budgets.txt`: a floor of
+  coverage in total and for the packages the protocol lives in, and a size
+  ceiling for each of the 12 release binaries. A broken budget fails CI.
+- CI builds the multi-arch image on every pull request without pushing it,
+  cancels superseded runs of a pull request and gives its jobs a time limit.
+  Workflows are read-only unless a job asks for more. The release workflow has
+  a dry run (`workflow_dispatch`: the same checks, the image and the binaries,
+  nothing pushed or published) and publishes `SHA256SUMS` with the binaries.
+  Dependabot proposes updates of the actions monthly.
 - `scripts/pre-commit.sh` builds every target listed in the release workflow,
   reading them from `.github/workflows/release.yml`, so a build that breaks on
   one of them fails before a tag instead of in the release job.
@@ -809,7 +832,8 @@ Highlights:
 Last release of the 1.x line. See the field report in
 `docs/reports/v1.4.4-field-run.md`.
 
-[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/mazixs/S5Core/releases/tag/v2.3.0
 [2.2.0]: https://github.com/mazixs/S5Core/releases/tag/v2.2.0
 [2.1.0]: https://github.com/mazixs/S5Core/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mazixs/S5Core/releases/tag/v2.0.0
