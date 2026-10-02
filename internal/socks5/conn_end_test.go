@@ -26,6 +26,7 @@ func TestTheEndOfAConnectionHasAClosedName(t *testing.T) {
 		{&ConnError{Stage: "greeting", Kind: FailureAuth}, ResultAuthFailed, "greeting"},
 		{&ConnError{Stage: "greeting", Kind: FailureProtocol}, ResultError, "greeting"},
 		{&ConnError{Stage: "request", Op: "rules", Kind: FailurePolicy}, ResultRulesDenied, "request"},
+		{&ConnError{Stage: "request", Op: "private_dest", Kind: FailurePolicy}, ResultPrivateDest, "request"},
 		{&ConnError{Stage: "request", Op: "reply_write"}, ResultReplyFailed, "request"},
 		{&ConnError{Stage: "dial", Op: "resolve"}, ResultResolveFailed, "dial"},
 		{&ConnError{Stage: "dial", Err: syscall.ECONNREFUSED}, ResultDialRefused, "dial"},

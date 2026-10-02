@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/netip"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/signals"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
@@ -102,6 +104,14 @@ type clientParams struct {
 	// kernel's timer, for a path where that turns out better.
 	UDPTunnelTCPTuning bool `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
 	UDPNative          bool `env:"UDP_NATIVE" envDefault:"false"`
+	// TunnelDeadTimeout closes the tunnel of a CONNECT stream once what the
+	// client sent on it has gone unacknowledged this long. A path that lost
+	// its state (a NAT, a provider) swallows the segments, and the kernel
+	// would keep retransmitting for up to a quarter of an hour while the
+	// application waits. It is above READ_TIMEOUT and WRITE_TIMEOUT of the
+	// server, which gives up on a silent or a stuck stream by then anyway.
+	// Zero leaves the kernel's rule.
+	TunnelDeadTimeout time.Duration `env:"TUNNEL_DEAD_TIMEOUT" envDefault:"45s"`
 
 	// How long a shutdown waits for connections that are still carrying
 	// traffic before it stops waiting.
@@ -277,6 +287,11 @@ func prepare(cfg *clientParams) bool {
 		// which is the one shape the interval exists to avoid.
 		slog.Error("KEEPALIVE_MAX must be at least KEEPALIVE_MIN",
 			"min", cfg.KeepaliveMin, "max", cfg.KeepaliveMax)
+		return false
+	}
+
+	if err := checkTunnelDeadTimeout(cfg.TunnelDeadTimeout); err != nil {
+		slog.Error("TUNNEL_DEAD_TIMEOUT is not usable", "error", err)
 		return false
 	}
 
@@ -523,8 +538,10 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Handle normal CONNECT
 	// Read CONNECT response from server, still under the handshake deadline.
-	connectResp := make([]byte, 512)
-	rn, err := obfsConn.Read(connectResp)
+	// The reply is read by its format and nothing past it: a target that
+	// answers and closes at once sends the reply, its bytes and the FIN in one
+	// batch, and one Read of that batch is data and io.EOF together.
+	connectResp, err := readSOCKSReply(obfsConn)
 	if err != nil {
 		wrapped := &tunnelError{phase: phaseConnectReply, err: err}
 		logTunnelFailure(wrapped, dest, cfg)
@@ -533,13 +550,16 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	}
 	// The tunnel is up: relayed traffic must not inherit the setup deadline.
 	clearDeadline(obfsConn)
+	if connectResp[1] == 0x00 {
+		tuneStream(obfsConn, cfg.TunnelDeadTimeout)
+	}
 
 	// Forward CONNECT response to client
-	if _, err := clientConn.Write(connectResp[:rn]); err != nil {
+	if _, err := clientConn.Write(connectResp); err != nil {
 		return
 	}
 
-	if rn >= 2 && connectResp[1] != 0x00 {
+	if connectResp[1] != 0x00 {
 		minutes.tcpClosed(closedByServer)
 		logTCPClosed(obfs.LogIDOf(obfsConn), dest, cfg, time.Since(setupStart), 0, 0, 0, closedByServer, nil,
 			"reply", connectResp[1])
@@ -568,8 +588,6 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	if firstUp {
 		first = up
 	}
-	// Whatever came in the read of the reply is the target's.
-	down.n += int64(max(rn-socksReplyLen(connectResp[:rn]), 0))
 	closedBy := relayClosedBy(first, firstUp)
 	minutes.tcpClosed(closedBy)
 	logTCPClosed(obfs.LogIDOf(obfsConn), dest, cfg, relayStart.Sub(setupStart), time.Since(relayStart),
@@ -777,18 +795,18 @@ func logTunnelFailure(err error, dest string, cfg clientParams) {
 // Two things produce exactly that picture: a PSK that does not match, and a
 // clock too far out for the epoch window (plan task Ф5-3). Neither is
 // detectable from this side, so the hint names both rather than guessing.
-// It is printed only past the dial phase, where the server has already
-// accepted the connection - before that, the network is the likelier story.
+// It is printed only for a server that has not answered anything yet: past the
+// dial phase, where it has accepted the connection (before that the network is
+// the likelier story), and before the reply to the greeting. That reply is
+// the proof - it was decrypted and answered - so a silence later on, at the
+// authentication or at the reply to CONNECT (where the server may simply be
+// dialling a slow target), says nothing about the PSK or the clock.
 func setupHint(err error, cfg clientParams) string {
 	if cfg.PSK == "" {
 		return ""
 	}
 	switch tunnelPhaseOf(err) {
-	case phaseAuthRejected:
-		// The server answered. Naming the PSK and the clock here would
-		// send the operator after the two things this failure rules out.
-		return ""
-	case phaseGreeting, phaseAuth, phaseConnect, phaseConnectReply:
+	case phaseGreeting:
 		return fmt.Sprintf("the server accepted the connection and then went quiet: check OBFS_PSK and OBFS_NODE_ID, "+
 			"and check this machine's clock - the tunnel binds its keys to the hour and tolerates about %d "+
 			"hours of skew (local time is now %s); a server older than 2.0 is also silent",
@@ -797,6 +815,28 @@ func setupHint(err error, cfg clientParams) string {
 		return ""
 	}
 }
+
+// maxTunnelDeadTimeout is what a socket option in milliseconds can hold.
+const maxTunnelDeadTimeout = math.MaxInt32 * time.Millisecond
+
+func checkTunnelDeadTimeout(d time.Duration) error {
+	if d < 0 || d > 0 && d < time.Second || d > maxTunnelDeadTimeout {
+		return fmt.Errorf("%s: want 0 or between 1s and %s", d, maxTunnelDeadTimeout)
+	}
+	return nil
+}
+
+// tuneStream bounds how long the tunnel of a CONNECT stream may keep data
+// unacknowledged. A refused option is said once, at debug level.
+func tuneStream(c net.Conn, d time.Duration) {
+	if err := tcptune.ForStream(c, d); err != nil {
+		streamTuneSaid.Do(func() {
+			slog.Debug("tunnel: could not bound the time a stream may stay unacknowledged", "error", err)
+		})
+	}
+}
+
+var streamTuneSaid sync.Once
 
 // clearDeadline removes the handshake deadline once the tunnel is up. Relayed
 // traffic must not inherit it: a long-lived connection is not a stalled one.

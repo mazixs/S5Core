@@ -120,6 +120,13 @@ type Config struct {
 	// associations go.
 	NativeCounters *NativeCounters
 
+	// DenyPrivateDest refuses a destination that is the server's own machine
+	// or the network behind it (see privateDestination), by whatever name or
+	// address the client asked: the check is made on the address that is
+	// dialled, after the name is resolved, for CONNECT and for every datagram
+	// of the UDP commands. The zero value allows everything, as before.
+	DenyPrivateDest bool
+
 	// Optional function for dialing out
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 
@@ -175,6 +182,7 @@ type Server struct {
 	config      *Config
 	authMethods map[uint8]Authenticator
 	dialHistory *dialHistory
+	own         *ownAddresses
 }
 
 // New creates a new Server and potentially returns an error
@@ -206,6 +214,7 @@ func New(conf *Config) (*Server, error) {
 	server := &Server{
 		config:      conf,
 		dialHistory: newDialHistory(),
+		own:         newOwnAddresses(),
 	}
 
 	server.authMethods = make(map[uint8]Authenticator)
@@ -368,8 +377,12 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	}
 	defer func() { _ = conn.Close() }()
 
+	// An association ends when the client closes its connection, and that is
+	// how a healthy one ends: it is not a failed session (docs/plan/draft.md,
+	// Ч-17).
+	var association bool
 	sessionPhase := s.startPhase(PhaseSession)
-	defer func() { sessionPhase.end(err == nil) }()
+	defer func() { sessionPhase.end(err == nil || association && associationEnd(err) == EndedByClient) }()
 
 	handshake := s.startPhase(PhaseHandshake)
 	defer func() { handshake.end(false) }()
@@ -452,6 +465,7 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	request.AuthContext = authContext
 	request.session = sess
 	request.end = end
+	association = isAssociation(request.Command)
 	if end != nil {
 		end.Command = commandName(request.Command)
 		end.DstName = request.DestAddr != nil && request.DestAddr.FQDN != ""

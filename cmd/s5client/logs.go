@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -212,24 +211,4 @@ func (m *minuteCounts) run(ctx context.Context, boot string) {
 			m.emit(boot)
 		}
 	}
-}
-
-// socksReplyLen is the length of the SOCKS5 reply at the start of b, or
-// len(b) when b does not hold a whole one.
-func socksReplyLen(b []byte) int {
-	if len(b) < 5 {
-		return len(b)
-	}
-	n := 4 + 2
-	switch b[3] {
-	case addrIPv4:
-		n += net.IPv4len
-	case addrIPv6:
-		n += net.IPv6len
-	case addrFQDN:
-		n += 1 + int(b[4])
-	default:
-		return len(b)
-	}
-	return min(n, len(b))
 }

@@ -138,6 +138,7 @@ We provide practical helper scripts in the `scripts/` directory to help you test
 - **`check_proxy.sh`**: A comprehensive health-check script that automatically tests TCP connectivity, proxy authentication, retrieves IP Geo-information, checks Prometheus endpoints, and validates DNS resolution behavior.
 - **`vpn_test.sh`**: Creates a **full transparent VPN** using `tun2socks`. It intercepts all L3 traffic (TCP and UDP) on your system using a `tun0` interface, routes it to the local `s5client`, and encrypts it through the obfs tunnel to the server. Verify DNS, WebRTC and IPv6 routing on the target machine before relying on leak protection. Ensure you edit the config variables at the top of the scripts before running them!
 - **`s5vpn-win.ps1`**: Windows 11 full-tunnel wrapper around `tun2socks` and local `s5client`. It builds `s5client`, creates a Wintun adapter, routes all IPv4 traffic through the local SOCKS endpoint, keeps the obfuscated hop between `s5client` and `s5core:28479`, disables physical IPv6 during the session, and restores the original routes on `stop`.
+- **`journal_report.py`**: A Markdown report from the session journal of the server (`SESSION_LOG_FILE`, rotated `.gz` files included): hours and accounts, clusters of silent ends, slow dials, long streams, UDP paths, and the join with the client log by the `conn` id (`--client-log`). It reads files only and prints no address. Its tests (`python3 -m unittest discover -s scripts/tests`, and `scripts/matrix/tests` for the benchmark pipeline) are not part of `scripts/pre-commit.sh`: run them by hand after a change.
 
 ### Windows Full-Tunnel (`s5vpn-win.ps1`)
 
@@ -207,5 +208,23 @@ What the script does:
 - removes the ordinary default route during the session and restores it on `stop`.
 
 This keeps the obfuscation intact: `tun2socks` talks only to local `s5client`, and only `s5client` talks to the remote obfuscated port.
+
+#### Latency in a full tunnel: `ping` does not measure it
+
+While a full tunnel is up, `ping` to any address answers in 0.1-1 ms, including
+addresses that do not exist: the ICMP echo is answered by the network stack
+inside `tun2socks` and never enters the tunnel, and SOCKS5 carries no ICMP. Seen
+on `tun2socks` 2.7.0 on Linux; the Windows build was not checked. An
+application that picks a region or a server by ICMP sees every choice equally
+close and picks at random.
+
+What does measure the path:
+
+- the time to the first byte through the tunnel: `curl -o /dev/null -s -w '%{time_starttransfer}\n' https://host/` (it has to come from the target; the TCP handshake with the application may be completed locally by `tun2socks`, so the connect time is not a measure either);
+- the server's session journal: `dial_ms` is the server's own connect to the
+  target, `first_byte_ms` the wait for its first answer
+  ([observability policy](../design/observability-policy.md));
+- `ping` to the server's own address, which the script pins outside the
+  tunnel, gives the path to the server and nothing past it.
 
 [Documentation index](../README.md) · [Project home](../../README.md)

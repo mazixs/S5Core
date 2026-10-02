@@ -2,8 +2,10 @@ package tcptune
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -142,5 +144,37 @@ func TestTheTunerSaysTheSocketIsClosed(t *testing.T) {
 	Tuner(debugLogger(&log))(c)
 	if out := log.String(); !strings.Contains(out, "could not tune the socket") || !strings.Contains(out, "use of closed network connection") {
 		t.Fatalf("log: %q", out)
+	}
+}
+
+func TestAStreamIsClosedWhenNothingIsAcknowledged(t *testing.T) {
+	c, _ := tcpPair(t)
+	if err := ForStream(netConnWrapper{c}, 500*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readOpt(t, c, unix.TCP_USER_TIMEOUT); err != nil || got != 500 {
+		t.Fatalf("TCP_USER_TIMEOUT = %d (%v), want 500", got, err)
+	}
+
+	// The peer never reads, so its window closes. Linux 5.1 and newer counts
+	// the time spent on a zero window against the option as well, which gets
+	// ETIMEDOUT without a path that loses segments: that needs root.
+	werr := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 1<<20)
+		for {
+			if _, err := c.Write(buf); err != nil {
+				werr <- err
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-werr:
+		if !errors.Is(err, syscall.ETIMEDOUT) {
+			t.Fatalf("the stream ended with %v, want ETIMEDOUT", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("a stream that nothing acknowledges was still open after 20 s")
 	}
 }

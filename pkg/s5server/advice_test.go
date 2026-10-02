@@ -371,10 +371,10 @@ func collectClientConnections(t *testing.T, reader sdkmetric.Reader) map[string]
 				if !ok {
 					t.Errorf("%s: no transport label", m.Name)
 				}
-				if strings.ContainsAny(version.Emit(), ":/ @") {
-					t.Errorf("%s: client_version %q looks like something other than a build", m.Name, version.Emit())
+				if strings.ContainsAny(version.String(), ":/ @") {
+					t.Errorf("%s: client_version %q looks like something other than a build", m.Name, version.String())
 				}
-				counts[version.Emit()+"/"+transport.Emit()] += dp.Value
+				counts[version.String()+"/"+transport.String()] += dp.Value
 			}
 		}
 	}

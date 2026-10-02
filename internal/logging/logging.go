@@ -164,6 +164,7 @@ type counting struct{ slog.Handler }
 // client on a laptop and of a server in a container must line up as written.
 func (h counting) Handle(ctx context.Context, r slog.Record) error {
 	r.Time = r.Time.UTC()
+	r = durationsAsText(r)
 	err := h.Handler.Handle(ctx, r)
 	if err != nil {
 		serviceDropped.Add(1)
@@ -171,6 +172,30 @@ func (h counting) Handle(ctx context.Context, r slog.Record) error {
 		serviceLines[levelIndex(r.Level)].Add(1)
 	}
 	return err
+}
+
+// durationsAsText gives a duration attribute of the line as text ("1m0s"):
+// the JSON handler writes it as bare nanoseconds ("interval":60000000000).
+// A line without one is passed on as it is, which costs nothing measurable,
+// where a ReplaceAttr on the handler doubled the cost of every line.
+func durationsAsText(r slog.Record) slog.Record {
+	has := false
+	r.Attrs(func(a slog.Attr) bool {
+		has = a.Value.Kind() == slog.KindDuration
+		return !has
+	})
+	if !has {
+		return r
+	}
+	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Value.Kind() == slog.KindDuration {
+			a = slog.String(a.Key, a.Value.Duration().String())
+		}
+		out.AddAttrs(a)
+		return true
+	})
+	return out
 }
 
 func (h counting) WithAttrs(as []slog.Attr) slog.Handler { return counting{h.Handler.WithAttrs(as)} }

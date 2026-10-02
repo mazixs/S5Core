@@ -28,6 +28,7 @@ type params struct {
 	Password         string        `env:"PROXY_PASSWORD" envDefault:""`
 	Port             string        `env:"PROXY_PORT" envDefault:"1080"`
 	AllowedDestFqdn  string        `env:"ALLOWED_DEST_FQDN" envDefault:""`
+	AllowPrivateDest bool          `env:"ALLOW_PRIVATE_DEST" envDefault:"false"`
 	AllowedIPs       []string      `env:"ALLOWED_IPS" envSeparator:"," envDefault:""`
 	ListenIP         string        `env:"PROXY_LISTEN_IP" envDefault:"0.0.0.0"`
 	RequireAuth      bool          `env:"REQUIRE_AUTH" envDefault:"true"`
@@ -233,6 +234,7 @@ func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger)
 		ListenIP:              cfg.ListenIP,
 		RequireAuth:           cfg.RequireAuth,
 		AllowedDestFqdn:       cfg.AllowedDestFqdn,
+		DenyPrivateDest:       !cfg.AllowPrivateDest,
 		AllowedIPs:            cfg.AllowedIPs,
 		ReadTimeout:           cfg.ReadTimeout,
 		WriteTimeout:          cfg.WriteTimeout,

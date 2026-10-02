@@ -75,7 +75,7 @@ func requirePhaseLabels(t *testing.T, metricName string, set attribute.Set, with
 	for iter.Next() {
 		kv := iter.Attribute()
 		n++
-		key, value := string(kv.Key), kv.Value.Emit()
+		key, value := string(kv.Key), kv.Value.String()
 		switch {
 		case key == "phase":
 			phase = value

@@ -7,9 +7,11 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/session"
+	"github.com/mazixs/S5Core/internal/tcptune"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -118,6 +120,10 @@ type metricsConn struct {
 	// alongside another label.
 	transportName string
 	closeOnce     sync.Once
+	// tcp is the state of the socket underneath as Close found it. The
+	// connection is closed, and so the socket unreadable, by the time the
+	// journal writes why the server ended it.
+	tcp atomic.Pointer[tcptune.Info]
 }
 
 // NetConn hands back the connection underneath. The obfuscation layer is
@@ -213,6 +219,9 @@ func (c *metricsConn) Close() error {
 		// drives this on every path, including the forced close the relay
 		// uses to unblock a stuck half.
 		c.sess.Close()
+		if info, ok := tcptune.InfoOf(c.Conn); ok {
+			c.tcp.Store(&info)
+		}
 	})
 	return c.Conn.Close()
 }

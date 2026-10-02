@@ -25,6 +25,25 @@ import (
 
 const testPSK = "01234567890123456789012345678901" // 32 bytes
 
+// The first login of an account runs Argon2id, to migrate a plaintext password
+// or to verify a hash the cache has not seen: 0.24 s alone, and over 3 s when
+// race, atomic coverage and every other package compete for the CPU. The
+// deadline only has to tell a hung server from a slow one.
+const answerWithin = 15 * time.Second
+
+// requireRefused fails unless err is an answer that said no: a deadline that
+// ran out is a server that hung, and must not pass for a refusal.
+func requireRefused(t *testing.T, err error, what string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected %s", what)
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		t.Fatalf("%s: the server did not answer: %v", what, err)
+	}
+}
+
 // testUsersFile creates a temp users.json and returns its path.
 func testUsersFile(t *testing.T) string {
 	t.Helper()
@@ -294,7 +313,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		conn.SetDeadline(time.Now().Add(answerWithin))
 
 		if err := socks5Connect(conn, "alice", "secret1", echoAddr); err != nil {
 			t.Fatalf("handshake: %v", err)
@@ -321,7 +340,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		conn.SetDeadline(time.Now().Add(answerWithin))
 
 		if err := socks5Connect(conn, "bob", "secret2", echoAddr); err != nil {
 			t.Fatalf("handshake: %v", err)
@@ -336,12 +355,10 @@ func TestIntegration_FullSuite(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		conn.SetDeadline(time.Now().Add(answerWithin))
 
 		err = socks5Connect(conn, "alice", "WRONGPASS", echoAddr)
-		if err == nil {
-			t.Fatal("expected auth failure for wrong password")
-		}
+		requireRefused(t, err, "auth failure for wrong password")
 		t.Logf("✓ Wrong password correctly rejected: %v", err)
 	})
 
@@ -352,12 +369,10 @@ func TestIntegration_FullSuite(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		conn.SetDeadline(time.Now().Add(answerWithin))
 
 		err = socks5Connect(conn, "nonexistent", "anypass", echoAddr)
-		if err == nil {
-			t.Fatal("expected auth failure for unknown user")
-		}
+		requireRefused(t, err, "auth failure for unknown user")
 		t.Logf("✓ Unknown username correctly rejected: %v", err)
 	})
 
@@ -368,12 +383,10 @@ func TestIntegration_FullSuite(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		conn.SetDeadline(time.Now().Add(answerWithin))
 
 		err = socks5Connect(conn, "expired", "secret3", echoAddr)
-		if err == nil {
-			t.Fatal("expected auth failure for expired user")
-		}
+		requireRefused(t, err, "auth failure for expired user")
 		t.Logf("✓ Expired user correctly rejected: %v", err)
 	})
 
@@ -384,12 +397,10 @@ func TestIntegration_FullSuite(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		conn.SetDeadline(time.Now().Add(answerWithin))
 
 		err = socks5Connect(conn, "disabled", "secret4", echoAddr)
-		if err == nil {
-			t.Fatal("expected auth failure for disabled user")
-		}
+		requireRefused(t, err, "auth failure for disabled user")
 		t.Logf("✓ Disabled user correctly rejected: %v", err)
 	})
 
@@ -409,7 +420,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("obfs wrap: %v", err)
 		}
-		obfsConn.SetDeadline(time.Now().Add(3 * time.Second))
+		obfsConn.SetDeadline(time.Now().Add(answerWithin))
 
 		if err := socks5Connect(obfsConn, "alice", "secret1", echoAddr); err != nil {
 			t.Fatalf("obfs handshake: %v", err)
@@ -497,12 +508,10 @@ func TestIntegration_FullSuite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("obfs wrap: %v", err)
 		}
-		obfsConn.SetDeadline(time.Now().Add(3 * time.Second))
+		obfsConn.SetDeadline(time.Now().Add(answerWithin))
 
 		err = socks5Connect(obfsConn, "alice", "WRONG", echoAddr)
-		if err == nil {
-			t.Fatal("expected auth failure via obfs with wrong password")
-		}
+		requireRefused(t, err, "auth failure via obfs with wrong password")
 		t.Logf("✓ Wrong auth via obfs correctly rejected: %v", err)
 	})
 
@@ -617,7 +626,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dial: %v", err)
 			}
-			conn.SetDeadline(time.Now().Add(3 * time.Second))
+			conn.SetDeadline(time.Now().Add(answerWithin))
 
 			start := time.Now()
 			err = socks5Connect(conn, "alice", "secret1", echoAddr)
@@ -652,7 +661,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 			if err != nil {
 				t.Fatalf("obfs wrap: %v", err)
 			}
-			obfsConn.SetDeadline(time.Now().Add(3 * time.Second))
+			obfsConn.SetDeadline(time.Now().Add(answerWithin))
 
 			start := time.Now()
 			err = socks5Connect(obfsConn, "alice", "secret1", echoAddr)
@@ -792,7 +801,7 @@ func TestIntegration_NoUsersFile_LegacyMode(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.SetDeadline(time.Now().Add(answerWithin))
 
 	if err := socks5Connect(conn, "legacy", "pass", echoAddr); err != nil {
 		t.Fatalf("legacy auth: %v", err)
@@ -802,12 +811,10 @@ func TestIntegration_NoUsersFile_LegacyMode(t *testing.T) {
 	// Ensure unknown user fails
 	conn2, _ := net.DialTimeout("tcp", "127.0.0.1:"+port, time.Second)
 	defer conn2.Close()
-	conn2.SetDeadline(time.Now().Add(3 * time.Second))
+	conn2.SetDeadline(time.Now().Add(answerWithin))
 
 	err = socks5Connect(conn2, "hacker", "pass", echoAddr)
-	if err == nil {
-		t.Fatal("expected failure for unknown user in legacy mode")
-	}
+	requireRefused(t, err, "failure for unknown user in legacy mode")
 	t.Logf("✓ Legacy mode rejects unknown users: %v", err)
 }
 

@@ -23,6 +23,7 @@ It is a key-derivation context, not a registration or provisioning step.
 | `PROXY_PASS` | String | *Empty* | Alias for `PROXY_PASSWORD`, which is what the client calls it. Accepted with a warning so that an `.env` copied from the client still starts the server; `PROXY_PASSWORD` wins if both are set. |
 | `ALLOWED_IPS` | String | *Empty* | Comma-separated list of client IP addresses allowed to connect, on every listener. Single addresses only, v4 or v6: a network in CIDR form is refused by name, as is any entry that is not an address, and the server does not start. Empty means no restriction - which is why a list that cannot be read is an error rather than an empty list. On the WebSocket transport it gates the tunnel, not the decoy site: the decoy keeps answering everyone, because a site that answers only a few addresses is itself a signature. |
 | `ALLOWED_DEST_FQDN` | String | *Empty* | Regex allow-list for destinations. Empty allows everything. Anchored to the whole destination unless the pattern anchors itself; names are matched without regard to case - see [Destination allow-list](#destination-allow-list). |
+| `ALLOW_PRIVATE_DEST` | Boolean | `false` | Let clients reach the machine the server runs on and the network behind it. Off by default: a destination that is loopback, link-local (a cloud's metadata service, `169.254.169.254`), private (RFC 1918, `fc00::/7`), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or one of the server's own interface addresses is refused, whatever name or address the client asked for - see [Private destinations](#private-destinations). |
 | `READ_TIMEOUT` | Duration | `30s` | Idle timeout for the relay phase: how long a connection may stay silent once traffic is flowing. Inbound data and successful outbound stream writes refresh the pending read deadline. A blocked write retains its separate `WRITE_TIMEOUT`; setup, incomplete-frame and quota-grace budgets remain absolute. |
 | `WRITE_TIMEOUT` | Duration | `30s` | Idle timeout for writes in the relay phase. |
 | `HANDSHAKE_TIMEOUT` | Duration | `15s` | Absolute budget for the setup phase: version byte, authentication and the reply to `CONNECT`. Unlike the idle timeouts it is not refreshed by traffic, so a client that dribbles one byte per second is dropped instead of being kept alive. |
@@ -110,6 +111,55 @@ naming them: `ALLOWED_DEST_FQDN='203\.0\.113\.\d+'`.
 query does not leave the host and the name does not appear in the resolver's
 logs or in the traffic of whoever is watching the server.
 
+#### Private destinations
+
+A proxy that connects wherever it is asked is also a way into the machine it
+runs on. Without a rule, an authenticated client could open the server's own
+loopback (a metrics port, a database, an admin panel), the metadata service of
+a cloud (`169.254.169.254`, where the machine's credentials are kept) or any
+host of the network behind the server. `ALLOW_PRIVATE_DEST=false`, the default,
+closes that:
+
+- the check is made on the **address the destination resolves to**, not on what
+  the client wrote, so a name that points to `127.0.0.1` and an address written
+  as `::ffff:10.0.0.1` are refused like the plain literal;
+- besides those ranges, multicast and the addresses of the server's own
+  interfaces are refused, the public one included on a machine that holds it:
+  a connection to it leaves by the loopback, where a firewall that guards the
+  machine from outside usually lets it reach every service the machine runs.
+  The list is re-read once a minute. The IPv4 address inside a NAT64 address
+  (`64:ff9b::/96`) is checked as well, and only that prefix: a network-specific
+  NAT64 prefix is an ordinary public IPv6 address to the server;
+- it covers `CONNECT` and the UDP datagrams of every UDP command (`0x03`, the
+  tunnel `0x83` and native `0x84`), where the address of every datagram is
+  checked before it is sent;
+- a refused `CONNECT` is answered with "connection not allowed by ruleset"
+  (`0x02`), a refused datagram is dropped, as a filtered one would be, and the
+  log says so once per association: a game whose UDP stopped after an upgrade
+  is found by that line. In the session journal and in
+  `s5core_connections_ended_total` a refused `CONNECT` is `private_dest`, not
+  `rules_denied`, so the two settings are told apart.
+
+Set `ALLOW_PRIVATE_DEST=true` when clients are meant to reach the inner
+network: a server inside a company network, a lab, a test stand. The two settings are
+independent: `ALLOWED_DEST_FQDN` narrows what is allowed and never lifts the
+ban, so a pattern that names a private address needs `ALLOW_PRIVATE_DEST=true`
+as well. In a
+container, "private" includes the addresses of the Docker network, so a server
+that is meant to reach a neighbouring container needs the switch too.
+
+Two limits to know. The server's own addresses are those of the machine the
+process sees: in a container on a bridge network that is the container's, not
+the host's, so the host's public address is not refused by this check - the
+host's firewall (the `DOCKER-USER` and `INPUT` chains) is what guards the
+host's services from a container, as it does from any other. And the reply
+tells a refused address from an unresolvable name (`0x02` against `0x04`), so a
+client can find out that a name resolves into the private range; on a server
+whose resolver knows an inner zone, that includes the names of the zone.
+
+An application embedding the server through `pkg/s5server` keeps the old
+behaviour: `Config.DenyPrivateDest` is false unless the application sets it.
+
 > `TLS_FINGERPRINT` is a **client-side** setting: it selects the TLS Client Hello the client imitates. Setting it on the server changes nothing, so the server logs a warning if it finds it - believing your server traffic is shaped when it is not is worse than not shaping it.
 
 > TLS session resumption follows from the same choice. A browser preset never resumes: every WSS connection is a full handshake with the preset's JA4. Without `TLS_FINGERPRINT` the client resumes TLS 1.3 sessions, and connections opened before a fresh ticket arrives offer the same ticket, whose identity is sent in clear text - an observer can link those connections to one client. Set `TLS_FINGERPRINT` where that matters.
@@ -139,6 +189,7 @@ logs or in the traffic of whoever is watching the server.
 | `HANDSHAKE_TIMEOUT` | Duration | `15s` | Separate budgets of this duration cover the local SOCKS5 handshake and remote tunnel setup (transport dial including WSS, greeting, authentication and CONNECT reply). Each deadline is cleared when its phase finishes. A non-positive value still gives the local handshake a 15s limit; established idle tunnels are unaffected. |
 | `SHUTDOWN_TIMEOUT` | Duration | `10s` | How long a shutdown waits for connections that are still carrying traffic. Before this the wait had no end, so a client asked to stop kept running for as long as one tunnel stayed open. |
 | `UDP_TUNNEL_TCP_TUNING` | Boolean | `true` | The client half of the server setting of the same name: the same socket options on the tunnel that carries a UDP association, for the client-to-server direction. On an older kernel, as on many routers, only `TCP_THIN_LINEAR_TIMEOUTS` applies. |
+| `TUNNEL_DEAD_TIMEOUT` | Duration | `45s` | How long the tunnel of a `CONNECT` stream may keep what the client sent on it unacknowledged before the kernel closes it (`TCP_USER_TIMEOUT` on Linux, `TCP_MAXRTMS` on Windows). A path that lost its state - a NAT, a provider - swallows the segments of streams already open, and without this the kernel retransmits for up to a quarter of an hour while the application waits. The server closes a stream that is silent for `READ_TIMEOUT` (30 s) anyway, so the default is above that and above `WRITE_TIMEOUT`: raise it together with them. The stream ends with `closed_by=timeout` at WARN and the application reconnects. It counts data that is waiting for an acknowledgement (the keepalive frames are such data, and with the kernel's own TCP keepalive an idle dead tunnel is closed without them) and, on Linux 5.1 and newer, time spent against a peer's zero window. Accepted values: `0` or from `1s` up to about 596 hours. `0` leaves the kernel's rule; other systems than Linux and Windows keep the kernel's rule too. UDP tunnels (`0x83`, `0x84`) are not affected: they keep the kernel's timeout on purpose ([game session tuning](../benchmarks/game-tuning.md)). |
 | `UDP_NATIVE` | Boolean | `false` | Set `true` on clients selected for native UDP game testing when the server has `UDP_PORT`. The client then sends command `0x84`. A 2.3 node without `UDP_PORT` answers with port 0 and the association uses `0x83` on the same connection; the client remembers such a node for 10 minutes, by transport and the address it dials (`WS_URL` or `SERVER_ADDR`), and opens its next associations with `0x83` directly. A 2.2 server refuses the command, and the client asks again with `0x83` on a new connection by the same transport. It remembers that server for 10 minutes only when the retry is accepted: a 2.3 server whose rules refuse UDP answers `0x84` with the same refusal (`0x02`), so the refusal goes to the application and the next association asks for `0x84` again. Until the UDP probe succeeds, application datagrams use `0x83`. After that a datagram goes natively while the client hears the server: the path is verified, and a server packet came less than a second ago or fewer than two probes in a row are unanswered (the second counts as unanswered after 250 ms or twice the smoothed probe round trip, whichever is longer). A datagram sent while the client does not hear the server uses `0x83`, and once it stops hearing, the client tells the server by TCP to answer by TCP too - at that moment while datagrams flow either way, with the next datagram otherwise. The server places the client's words by the client's datagram counter, not by arrival, so a notice and a native datagram that overtake each other leave the answers where the later one put them. Datagrams that go by TCP have one writer per association, with a queue of 1024 frames and 2 MiB of buffers, which holds a wave of game answers twice over ([burst stand](../benchmarks/udp-burst-2026-09-28.md)); a frame that waited 250 ms is dropped, as UDP would drop it, so a large datagram waiting for the send buffer holds up neither probes nor native datagrams. After three probes in a row go unanswered (about 2 s), the association moves to `0x83`; the client repeats the notice with every retry probe (1-10 s) until the path is back, so a native datagram that arrives late cannot keep the answers on the dead path. A later answered probe brings native back, and the probe after it tells the server that the client hears it, which moves the answers back to native for an application that only listens. The notice carries the counter of the client's next datagram and the server replies with its own, so a path that lost more than 512 datagrams in a row still comes back. When a path that was never verified goes unanswered by the same rule, the client logs one Info line with the address its probes go to: the host of the tunnel connection, which behind a front on another host, as with WSS, is the front's address. Native carries a datagram up to the limit the client finds on the path at the start of each association: at most 1374 bytes of SOCKS5 UDP datagram, 1366-1374 on a 1500-byte path. A longer one is dropped both ways, so a QUIC stack settles below the limit; the eighth dropped in one direction moves long datagrams to `0x83` to the end of the association ([limit of native](../design/transports.md#native-udp-for-games)). The closing `UDP Tunnel closed` line counts the association's datagrams by path: `native_sent`, `tcp_sent_oversize` (longer than the limit, after the eighth dropped), `tcp_sent_other` (path not verified or lost, server not heard, or a failed send), `native_received`, `tcp_received`, and `tunnel_drops` for frames the TCP writer dropped; `native_limit` (on the wire) and `size_probes` show the search, `dropped_oversize_sent` and `dropped_oversize_received` the dropped long datagrams. The server counts the same in `s5core_native_udp_datagrams_total` and the two metrics next to it ([metrics policy](../design/observability-policy.md)). |
 | `KEEPALIVE_MIN` | Duration | `10s` | Lower bound of the idle interval after which the client sends a frame carrying nothing, so that nothing on the path drops the connection for being silent. `0` disables it. See [Keepalive](../design/transports.md#keepalive) for the measurements the range comes from. |
 | `KEEPALIVE_MAX` | Duration | `20s` | Upper bound of the same interval. A fresh draw is made for every frame: a fixed period would identify the protocol without anyone having to decrypt it. Must be at least `KEEPALIVE_MIN`. |

@@ -250,7 +250,7 @@ func requireCleanLabels(t *testing.T, metricName string, set attribute.Set) stri
 	for iter.Next() {
 		kv := iter.Attribute()
 		n++
-		key, value := string(kv.Key), kv.Value.Emit()
+		key, value := string(kv.Key), kv.Value.String()
 		switch key {
 		case "reason":
 			reason = value

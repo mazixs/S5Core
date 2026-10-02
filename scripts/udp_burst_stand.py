@@ -144,7 +144,7 @@ def run(a):
     origin = free_port(socket.SOCK_DGRAM)
     senv = dict(PROXY_LISTEN_IP="127.0.0.1", PROXY_PORT=str(plain), OBFS_ENABLED="true",
                 OBFS_PORT=str(obfs), OBFS_PSK=psk, UDP_PORT=str(obfs), METRICS_PORT=str(mport),
-                METRICS_BIND_ADDR="127.0.0.1", REQUIRE_AUTH="false", LOG_LEVEL="info")
+                METRICS_BIND_ADDR="127.0.0.1", REQUIRE_AUTH="false", ALLOW_PRIVATE_DEST="true", LOG_LEVEL="info")
     cenv = dict(CLIENT_LISTEN_ADDR=f"127.0.0.1:{cport}", SERVER_ADDR=f"127.0.0.1:{obfs}",
                 OBFS_PSK=psk, TRANSPORT="obfs", UDP_NATIVE="true" if a.path == "native" else "false",
                 LOG_LEVEL="info")

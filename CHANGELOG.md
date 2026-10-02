@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- `s5core` now refuses destinations on the server's own machine and network:
+  loopback, link-local (including a cloud's metadata service at
+  `169.254.169.254`), private, carrier-grade NAT, multicast and unspecified
+  addresses, the IPv4 address inside an IPv4-mapped or NAT64 (`64:ff9b::/96`)
+  one, and the addresses of the server's own interfaces, for `CONNECT` and
+  for UDP datagrams. The check is made on the address the
+  destination resolves to, so a name pointing at `127.0.0.1` is refused too.
+  A deployment whose clients reach an inner network on purpose must set
+  `ALLOW_PRIVATE_DEST=true`
+  ([configuration](docs/guides/configuration.md#private-destinations)). The
+  SDK keeps its behaviour: `s5server.Config.DenyPrivateDest` is false unless
+  the application sets it.
+
 ### Added
 
 - Opt-in native UDP for SOCKS5 UDP associations: set `UDP_PORT` on a server
@@ -145,7 +160,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SESSION_LOG_FILE` stops the server at startup: the file is opened with
   `O_NOFOLLOW` (on Windows, which has none, a check before opening refuses
   a link), so the journal is never appended to a file someone else chose
-  and rotation never moves a directory into the archive.
+  and rotation never moves a directory into the archive. Connections and
+  associations name how they ended in the same field, `end`, from one closed
+  set; a UDP association also carries what each of its paths did (`native_up`,
+  `native_down`, `path_moves`, `tunnel_drops`), and a connection that ended
+  for silence (`server_timeout`, `reset`, `timeout`) carries five numbers of
+  the kernel's state of its socket (`tcp_rtt_ms`, `tcp_unacked`,
+  `tcp_retransmits`, `tcp_since_data_ms`, `tcp_since_ack_ms`, Linux), which
+  tell a dead path of the client from an idle application. A minute counts its
+  silent ends, and a burst of them across accounts is one rate-limited
+  `silent_burst` warning in the service log. A minute in which the kernel
+  dropped UDP datagrams for want of receive buffer writes `udp_rcvbuf_drops`
+  with the count. `scripts/journal_report.py` turns the journal into a
+  Markdown report and joins it with the log of the client by `conn`.
 - `LOG_FILE` on the client: JSON in the file, `LOG_CONSOLE_LEVEL` (warn) on
   the console, a file of its own for each run with the last `LOG_KEEP` (40)
   in `archive/` next to it, and a note when the last run ended without its
@@ -160,6 +187,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- OpenTelemetry SDK 1.46.0 (was 1.40.0), which fixes GO-2026-6505, the leak of
+  an exporter endpoint into the logs; `govulncheck` reported it for the code
+  of `s5core`. The names of the exported metrics are the same. Since 1.44 the
+  SDK caps one instrument at 2000 series and folds the rest into
+  `otel.metric.overflow`; every label of ours comes from a closed set, far
+  below that. Only `cmd/s5core` imports the SDK, so an application that embeds
+  `pkg/s5server` keeps the SDK and its limit of its own choosing.
 - A CONNECT to one address no longer spends the whole `DIAL_TIMEOUT` on one
   socket. While every attempt is unanswered, the server opens another socket
   to the same address at 0.5, 1.5, 3, 5 and 7 s and keeps whichever connects
@@ -221,6 +255,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `obfs.Role` is an alias of it; code that embeds the SDK and names the
   roles by `RoleClient` and `RoleServer` does not change.
 
+- The client closes the tunnel of a `CONNECT` stream when nothing it sent on
+  it has been acknowledged for `TUNNEL_DEAD_TIMEOUT` (default 45 s, `0` leaves
+  the kernel's rule): `TCP_USER_TIMEOUT` on Linux, `TCP_MAXRTMS` on Windows
+  (not measured there yet). A path that loses its state - a home router's NAT,
+  a provider - swallows the segments of streams already open, the server
+  closes them after `READ_TIMEOUT` and the client's kernel went on
+  retransmitting for up to a quarter of an hour, so applications waited on
+  sockets that could not deliver. The stream now ends with `closed_by=timeout`
+  at WARN and the application reconnects. Raise it together with the server's
+  `READ_TIMEOUT` if that was raised.
+
 ### Performance
 
 - The server's `0x83` path no longer allocates per datagram, as the client's
@@ -232,6 +277,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The client lost the successful reply to `CONNECT` when the end of the
+  stream arrived together with it: a target that answers and closes at once
+  sends the reply, its bytes and the FIN in one batch, and one `Read` of that
+  batch is data and `io.EOF` together. The reply is now read by its format and
+  nothing past it, and the application gets its bytes.
+- A UDP association was recorded as a failed session (`outcome="fail"` of the
+  `session` phase of `s5core_connection_phase_seconds`), because it ends with
+  the client closing its connection, which for a connection is an error. An
+  association the client closed is now `ok`; one that ended any other way is
+  still `fail`.
+- The JSON log wrote durations as a number of nanoseconds; it writes them as
+  text (`1.5s`).
 - Bursts of UDP answers overflowed the receive buffer of the server's
   sockets. The kernel gives a UDP socket `net.core.rmem_default`, 212 992
   bytes on every node measured, which holds about 90 game datagrams, and a

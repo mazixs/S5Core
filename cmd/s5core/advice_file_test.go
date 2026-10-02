@@ -103,6 +103,7 @@ func startAdvisingServer(t *testing.T, adviceFile string) (port, echo string) {
 	t.Setenv("PROXY_LISTEN_IP", "127.0.0.1")
 	t.Setenv("PROXY_PORT", reserveTestPort(t))
 	t.Setenv("REQUIRE_AUTH", "false")
+	t.Setenv("ALLOW_PRIVATE_DEST", "true")
 	t.Setenv("OBFS_ENABLED", "true")
 	t.Setenv("OBFS_PORT", port)
 	t.Setenv("OBFS_PSK", envTestPSK)

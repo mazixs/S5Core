@@ -19,6 +19,8 @@ import (
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
+	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -48,6 +50,13 @@ const (
 
 // MinuteInterval is how often the summaries are written.
 const MinuteInterval = time.Minute
+
+// silentBurst is the number of connections the server closes for a silent
+// client within one minute that is worth a warning. On the node it was measured
+// on, a quiet path closed at most one in four hours; the day a home path died
+// it closed 4, 32 and 21 in three minutes. Resets are not counted: a client
+// that quits closes dozens at once.
+const silentBurst = 3
 
 func sessionLogOn(cfg Config) bool {
 	return cfg.SessionLog == SessionLogAbnormal || cfg.SessionLog == SessionLogAll
@@ -177,21 +186,56 @@ type minuteSummary struct {
 	rotations atomic.Int64
 	gaveUp    atomic.Int64
 	backups   atomic.Int64
+	timeouts  atomic.Int64
+	resets    atomic.Int64
 
-	// accounts is kept only while a journal is open.
-	mu       sync.Mutex
-	accounts map[string]*accountMinute
+	// accounts is kept only while a journal is open. The same lock guards
+	// lastDrops: the kernel's count of datagrams dropped on a full receive
+	// buffer is one number for the whole network namespace, so the minute it
+	// grew in is the only thing that places it.
+	mu        sync.Mutex
+	accounts  map[string]*accountMinute
+	readDrops func() (uint64, bool)
+	lastDrops uint64
+	dropsOK   bool
 }
 
 type accountMinute struct {
-	conns, failed, assocs, backups, up, down int64
+	conns, failed, assocs, backups, timeouts, resets, up, down int64
 }
 
 func newMinuteSummary() *minuteSummary {
-	return &minuteSummary{
-		results:  make([]atomic.Int64, len(socks5.Results())),
-		accounts: map[string]*accountMinute{},
+	return newMinuteSummaryWith(udpbuf.ReceiveDrops)
+}
+
+func newMinuteSummaryWith(readDrops func() (uint64, bool)) *minuteSummary {
+	m := &minuteSummary{
+		results:   make([]atomic.Int64, len(socks5.Results())),
+		accounts:  map[string]*accountMinute{},
+		readDrops: readDrops,
 	}
+	m.lastDrops, m.dropsOK = readDrops()
+	return m
+}
+
+// newDrops is how many datagrams the kernel dropped on a full receive buffer
+// since the last call; zero where the kernel does not say.
+func (m *minuteSummary) newDrops() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.dropsOK {
+		return 0
+	}
+	n, ok := m.readDrops()
+	if !ok {
+		return 0
+	}
+	last := m.lastDrops
+	m.lastDrops = n
+	if n < last {
+		return 0
+	}
+	return int64(n - last)
 }
 
 func (m *minuteSummary) record(e *socks5.ConnEnd, perAccount bool) {
@@ -209,6 +253,15 @@ func (m *minuteSummary) record(e *socks5.ConnEnd, perAccount bool) {
 		}
 	}
 	m.backups.Add(int64(e.DialBackups))
+	// An association spells a reset the same way (EndedByReset), so one case
+	// counts both.
+	end := e.End()
+	switch end {
+	case socks5.ClosedByServerTimeout:
+		m.timeouts.Add(1)
+	case socks5.ClosedByReset:
+		m.resets.Add(1)
+	}
 	if !perAccount {
 		return
 	}
@@ -226,6 +279,12 @@ func (m *minuteSummary) record(e *socks5.ConnEnd, perAccount bool) {
 		a.assocs++
 	}
 	a.backups += int64(e.DialBackups)
+	switch end {
+	case socks5.ClosedByServerTimeout:
+		a.timeouts++
+	case socks5.ClosedByReset:
+		a.resets++
+	}
 	a.up += e.Up
 	a.down += e.Down
 	m.mu.Unlock()
@@ -243,6 +302,7 @@ func (m *minuteSummary) emit(logger *slog.Logger, j *sessionJournal, boot string
 		}
 	}
 	assocs, rotations, gaveUp, backups := m.assocs.Swap(0), m.rotations.Swap(0), m.gaveUp.Swap(0), m.backups.Swap(0)
+	timeouts, resets := m.timeouts.Swap(0), m.resets.Swap(0)
 	if conns > 0 {
 		logger.LogAttrs(context.Background(), slog.LevelInfo, "Minute summary",
 			slog.String("event", "minute"),
@@ -253,7 +313,27 @@ func (m *minuteSummary) emit(logger *slog.Logger, j *sessionJournal, boot string
 			slog.Int64("dial_backups", backups),
 			slog.Int64("udp_rotations", rotations),
 			slog.Int64("udp_rotations_gave_up", gaveUp),
+			slog.Int64("server_timeouts", timeouts),
+			slog.Int64("resets", resets),
 		)
+	}
+	if timeouts >= silentBurst {
+		logger.LogAttrs(context.Background(), slog.LevelWarn, "Connections went silent together",
+			slog.String("event", "silent_burst"),
+			slog.String("boot", boot),
+			slog.Int64("server_timeouts", timeouts),
+			slog.Int64("conns", conns),
+		)
+	}
+	if drops := m.newDrops(); drops > 0 {
+		logger.LogAttrs(context.Background(), slog.LevelWarn, "Datagrams were dropped on a full UDP receive buffer",
+			slog.String("event", "udp_rcvbuf_drops"),
+			slog.String("boot", boot),
+			slog.Int64("rcvbuf_drops", drops),
+		)
+		if j != nil {
+			j.Write("WARN", "udp_rcvbuf_drops", func(l *logging.Line) { l.Int("rcvbuf_drops", drops) })
+		}
 	}
 
 	m.mu.Lock()
@@ -276,6 +356,8 @@ func (m *minuteSummary) emit(logger *slog.Logger, j *sessionJournal, boot string
 			l.Int("failed", a.failed)
 			l.Int("assocs", a.assocs)
 			l.Int("dial_backups", a.backups)
+			l.Int("server_timeouts", a.timeouts)
+			l.Int("resets", a.resets)
 			l.Int("up", a.up)
 			l.Int("down", a.down)
 		})
@@ -372,7 +454,7 @@ func dstNet(a netip.Addr) netip.Prefix {
 }
 
 // connEnd writes the line of one connection, or of one association.
-func (j *sessionJournal) connEnd(id, transport, client string, e *socks5.ConnEnd) {
+func (j *sessionJournal) connEnd(id, transport, client string, e *socks5.ConnEnd, tcp *tcptune.Info) {
 	udp := e.Kind() == socks5.KindUDP
 	event := "conn_end"
 	if udp {
@@ -406,13 +488,7 @@ func (j *sessionJournal) connEnd(id, transport, client string, e *socks5.ConnEnd
 		if e.Stage != "" {
 			l.Str("stage", e.Stage)
 		}
-		if e.ClosedBy != "" {
-			if udp {
-				l.Str("reason", e.ClosedBy)
-			} else {
-				l.Str("closed_by", e.ClosedBy)
-			}
-		}
+		l.Str("end", e.End())
 		if e.DialTries > 0 {
 			l.Ms("dial_ms", e.DialTime)
 			l.Int("dial_tries", int64(e.DialTries))
@@ -434,8 +510,28 @@ func (j *sessionJournal) connEnd(id, transport, client string, e *socks5.ConnEnd
 				l.Int("rotations", e.Rotations)
 				l.Bool("answered", e.Answered)
 			}
+			if e.Command == socks5.AssociationNative {
+				l.Int("native_up", e.NativeUp)
+				l.Int("native_down", e.NativeDown)
+				l.Int("path_moves", e.PathMoves)
+				l.Int("tunnel_drops", e.TunnelDrops)
+			}
+		}
+		if tcp != nil && silentEnd(e.End()) {
+			l.Ms("tcp_rtt_ms", tcp.RTT)
+			l.Int("tcp_unacked", int64(tcp.Unacked))
+			l.Int("tcp_retransmits", int64(tcp.Retransmits))
+			l.Ms("tcp_since_data_ms", tcp.SinceData)
+			l.Ms("tcp_since_ack_ms", tcp.SinceAck)
 		}
 	})
+}
+
+// silentEnd says whether the connection ended without the peer closing it:
+// the ends after which the one question is whether the path was still carrying
+// traffic. The state of the socket answers it.
+func silentEnd(end string) bool {
+	return end == socks5.ClosedByServerTimeout || end == socks5.ClosedByReset || end == socks5.EndedByTimeout
 }
 
 func (j *sessionJournal) close() {
@@ -473,7 +569,11 @@ func (s *Server) connEnded(conn net.Conn, e *socks5.ConnEnd) {
 	if build := obfs.ClientBuildOf(conn); build != "" {
 		client = sanitizeVersion(build)
 	}
-	j.connEnd(id, transport, client, e)
+	var tcp *tcptune.Info
+	if mc, ok := conn.(*metricsConn); ok {
+		tcp = mc.tcp.Load()
+	}
+	j.connEnd(id, transport, client, e, tcp)
 }
 
 // openJournal opens the session journal, if one is configured, and writes

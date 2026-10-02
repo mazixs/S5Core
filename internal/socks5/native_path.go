@@ -16,7 +16,10 @@ import (
 type answerPath struct {
 	native atomic.Bool
 	count  *NativeCounters
-	mu     sync.Mutex
+	// moves counts this association's own moves to the stream, which count
+	// holds for the whole server.
+	moves atomic.Int64
+	mu    sync.Mutex
 	// heard is the highest counter of a native datagram or heard probe, lost
 	// the highest next of a loss signal; each only once it has come.
 	heard, lost       uint64
@@ -70,5 +73,6 @@ func (p *answerPath) Gone() {
 func (p *answerPath) toTCP() {
 	if p.native.Swap(false) {
 		p.count.ToTCP.Add(1)
+		p.moves.Add(1)
 	}
 }

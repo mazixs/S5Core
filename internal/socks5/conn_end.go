@@ -20,6 +20,7 @@ const (
 	ResultOK              = "ok"
 	ResultAuthFailed      = "auth_failed"
 	ResultRulesDenied     = "rules_denied"
+	ResultPrivateDest     = "private_dest"
 	ResultResolveFailed   = "resolve_failed"
 	ResultDialTimeout     = "dial_timeout"
 	ResultDialRefused     = "dial_refused"
@@ -32,7 +33,7 @@ const (
 
 // Results is the closed set of ConnEnd.Result.
 func Results() []string {
-	return []string{ResultOK, ResultAuthFailed, ResultRulesDenied, ResultResolveFailed,
+	return []string{ResultOK, ResultAuthFailed, ResultRulesDenied, ResultPrivateDest, ResultResolveFailed,
 		ResultDialTimeout, ResultDialRefused, ResultDialUnreachable, ResultReplyFailed,
 		ResultAccount, ResultShutdown, ResultError}
 }
@@ -81,6 +82,10 @@ func commandName(cmd uint8) string {
 		return AssociationNative
 	}
 	return CmdUnknown
+}
+
+func isAssociation(cmd uint8) bool {
+	return cmd == AssociateCommand || cmd == UDPTunnelCommand || cmd == UDPNativeCommand
 }
 
 // How the account was established.
@@ -155,12 +160,47 @@ type ConnEnd struct {
 	// ever answered on it.
 	Rotations int64
 	Answered  bool
+	// What a native association carried by the native path, each way; the
+	// rest of its datagrams went by the stream. PathMoves is how often the
+	// answers left the native path for the stream, TunnelDrops the frames
+	// the stream's writer did not write.
+	NativeUp, NativeDown int64
+	PathMoves            int64
+	TunnelDrops          int64
 
 	Started  time.Time
 	Duration time.Duration
 
 	dgram     assocTotals
+	native    nativeTotals
 	targetSet atomic.Bool
+}
+
+// nativeTotals counts datagrams on the native path as they pass: a datagram
+// is one atomic add here, not a lock.
+type nativeTotals struct {
+	up, down atomic.Int64
+}
+
+func (e *ConnEnd) nativeDatagram(down bool) {
+	if e == nil {
+		return
+	}
+	if down {
+		e.native.down.Add(1)
+		return
+	}
+	e.native.up.Add(1)
+}
+
+// pathEnded records what the stream and the answers' path did over the
+// association.
+func (e *ConnEnd) pathEnded(moves int64, drops uint64) {
+	if e == nil {
+		return
+	}
+	e.PathMoves = moves
+	e.TunnelDrops = int64(drops)
 }
 
 // assocTotals is filled by the meters of an association as they flush, so a
@@ -251,6 +291,16 @@ func (e *ConnEnd) RotationOutcome() string {
 	return RotationClosed
 }
 
+// End is the one cause of the end, the same field on a CONNECT and on an
+// association: who closed it once the relay ran, otherwise the outcome of the
+// setup that failed.
+func (e *ConnEnd) End() string {
+	if e.ClosedBy != "" {
+		return e.ClosedBy
+	}
+	return e.Result
+}
+
 // Kind is the metric's coarse name for Command: connect, udp, bind or none.
 func (e *ConnEnd) Kind() string {
 	switch e.Command {
@@ -282,6 +332,8 @@ func (e *ConnEnd) finish(err error) {
 	e.Down += e.dgram.down.Load()
 	e.DatagramsUp = e.dgram.upN.Load()
 	e.DatagramsDown = e.dgram.downN.Load()
+	e.NativeUp = e.native.up.Load()
+	e.NativeDown = e.native.down.Load()
 	if e.Result != "" {
 		return
 	}
@@ -310,6 +362,8 @@ func connResult(err error) (result, stage string) {
 		switch ce.Op {
 		case "rules":
 			return ResultRulesDenied, ce.Stage
+		case "private_dest":
+			return ResultPrivateDest, ce.Stage
 		case "reply_write":
 			return ResultReplyFailed, ce.Stage
 		}
