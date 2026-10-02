@@ -7,8 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-02
+
+### Upgrade notes
+
+- `s5core` now refuses destinations on the server's own machine and network:
+  loopback, link-local (including a cloud's metadata service at
+  `169.254.169.254`), private, carrier-grade NAT, multicast and unspecified
+  addresses, the IPv4 address inside an IPv4-mapped or NAT64 (`64:ff9b::/96`)
+  one, and the addresses of the server's own interfaces, for `CONNECT` and
+  for UDP datagrams. The check is made on the address the
+  destination resolves to, so a name pointing at `127.0.0.1` is refused too.
+  A deployment whose clients reach an inner network on purpose must set
+  `ALLOW_PRIVATE_DEST=true`
+  ([configuration](docs/guides/configuration.md#private-destinations)). The
+  SDK keeps its behaviour: `s5server.Config.DenyPrivateDest` is false unless
+  the application sets it.
+
 ### Added
 
+- Opt-in native UDP for SOCKS5 UDP associations: set `UDP_PORT` on a server
+  with an obfs or ws listener and `UDP_NATIVE=true` on selected clients. The
+  client verifies the UDP path
+  with probes before using it and keeps probing it: after three unanswered
+  probes, about 2 s, it moves the association to `0x83`. The server picks the
+  way of its answers by what the client says, not by the way of its last
+  datagram: a native datagram or a probe from a client that hears it moves
+  them to native, the client's notice by TCP moves them back, and a datagram
+  by `0x83` moves nothing. The client hears the server while the path is
+  verified and either a packet of the server came within a second or fewer
+  than two probes in a row are unanswered, so one lost probe, a jump of the
+  round trip or the first datagram after a pause keeps the data native. It
+  sends the notice as soon as it stops hearing the server, and it says it
+  hears the server again with its first probe once the path answers, so an
+  application that only listens gets its answers by the working way in both
+  directions. The notice and the probes are placed by the client's datagram
+  counter rather than by arrival: TCP and UDP deliver in either order, and a
+  late notice no longer overrules a newer native datagram. The TCP stream of
+  a native association has one writer on each side, with a queue of 1024
+  datagrams and the notice ahead of it (a queue of 64 lost a quarter of a
+  burst of game answers that went by TCP on a node with one vCPU,
+  [burst stand](docs/benchmarks/udp-burst-2026-09-28.md#откат-на-tcp)), so a write that waits for the send
+  buffer holds neither the probes nor the datagrams that go native; a
+  datagram that waited longer than 250 ms is dropped, as UDP would drop it.
+  It repeats the notice with every retry probe until the path is back: a
+  native datagram sent just before the loss can reach the server after it and
+  move the answers back to the dead path. The notice and the server's reply
+  carry the counters of both sides, so more than 512 datagrams lost in a row,
+  a second of a broken path above 512 Hz, no longer leave the association on
+  `0x83` until it ends. The server answers probes through a queue, so a write
+  that waits does not stop the reception of other sessions. An answer the server fails to send
+  by native goes by TCP and leaves native in place; only an association
+  whose native side is gone moves the answers. ICMP errors on the native
+  socket do not end the probes. A path that is never verified is logged once,
+  at Info, with the address the probes go to: behind a front on another
+  host, as with WSS, that is the front's address. A 2.3 node without
+  `UDP_PORT` answers with port 0 and carries the association by `0x83` on the
+  same connection; only a server that predates the command, which refuses
+  it, costs a second connection, by the same transport. The client remembers
+  a server without native UDP for 10 minutes, by transport and address, and
+  asks it for `0x83` directly: `WS_URL` and `SERVER_ADDR` may reach different
+  nodes. A server whose
+  rules refuse UDP answers as a 2.2 one does, so it is remembered only when
+  the retry by `0x83` is accepted. The server moves its answers to
+  a new client address only after two verified datagrams in a row from it,
+  each the newest it has seen, so a copied or held-back datagram sent from
+  elsewhere does not take them. On Linux a server with a
+  wildcard `PROXY_LISTEN_IP` answers from the address the client wrote to,
+  which moves by the same rule; on other systems set a specific one.
+  `UDP_PORT=0` is a configuration error rather than a random port. The wire format and current test scope
+  are in [the specification](docs/veil-spec.md#106-native-udp-команда-0x84).
+- Native UDP keeps within the limit of the path. At the start of each
+  association the client finds how long a datagram the path carries both
+  ways, with 7-15 probes of chosen sizes (about 8 KB each way on a 1500-byte
+  path), and tells the server; both ends then keep every native datagram,
+  padding included, within that limit. On Linux the native sockets set DF and
+  ignore the PMTU cache, so a datagram longer than the path is lost rather
+  than fragmented, and a forged PTB does not lower the limit. A datagram
+  longer than the limit is dropped both ways rather than sent by `0x83`, so a
+  QUIC stack that searches for its packet size settles below the limit: on
+  the narrow link bench quic-go sends 99.7-100% of its packets natively and
+  uploads at 38-45 MB/s, against 1.1-1.6 MB/s when long packets went by
+  `0x83`. The eighth long datagram dropped in one direction moves long
+  datagrams to `0x83` for the rest of the association, with one Info line,
+  so an application that keeps sending them still gets them through. On a
+  1500-byte path the limit falls in 1392-1400 bytes on the wire rather than
+  a constant 1400, so an application with a constant packet of 1357-1364
+  bytes to an IPv4 address (1345-1352 to IPv6) goes by `0x83` after its
+  eighth. A path under 1248 bytes on the wire does not carry the smallest
+  QUIC packet to an IPv6 address, and the client says so in one Info line.
+  A 2.3.0-rc1 server does not search, and the client keeps the limit of 1400
+  bytes with it; a 2.3.0-rc1 client behind a narrow link loses server
+  answers longer than the path, which used to arrive fragmented
+  ([bench](docs/benchmarks/mtu-native-2026-09-26.md#после-м-2),
+  [specification](docs/veil-spec.md#107-предел-размера-native)).
+- Native UDP server metrics count accepted packets, drops by tag, replay and
+  authentication, read errors of the shared socket, after which it keeps
+  reading, and active associations with fixed label sets. The path of every
+  datagram of a native association is counted as well, by direction and by
+  why it went by TCP (too big for native, the answers on TCP, a failed
+  native write), with the moves of the answers between the two and the
+  datagrams the TCP stream dropped
+  ([labels](docs/design/observability-policy.md)); the client logs its half
+  of the same numbers when the association ends. The
+  [local game-loss curve](docs/benchmarks/nativeudp-game-loss-2026-09-25.md)
+  and UDP blackout checks passed. The isolated [one-hour WAN/ARM field runs](docs/benchmarks/data-2026-09-25/nativeudp-wan-hour-2026-09-25.json)
+  had no disconnects; the final candidate's p99 exceeded its direct-path
+  acceptance limit by 0.085 ms. This is not production deployment evidence.
+- The end of every UDP association is visible on both sides. The server
+  counts it in `s5core_udp_associations_ended_total{kind, reason}`: `kind` is
+  `associate`, `tunnel` or `native`, `reason` is `client`, `reset`,
+  `timeout`, `account`, `shutdown` or `error`, and all 18 series exist from
+  the start ([labels](docs/design/observability-policy.md)). The client's
+  closing `UDP Tunnel closed` line names who ended the association
+  (`closed_by`: `application`, `tunnel` or `local`) with the datagrams and
+  bytes it carried each way, and is written at Warn unless the application
+  ended it or when one direction carried less than a hundredth of the other
+  (`quiet`), so a client logging at Warn shows a game that lost its
+  association. While an association carries traffic, the client also writes
+  `UDP Tunnel running` once a minute with its totals so far: a client that is
+  killed, as the Windows full tunnel stops it, used to lose the only line of
+  its longest associations.
 - Experimental `s5client` builds for MIPS routers (MT7621, MT7628 and
   similar): `s5client-linux-mipsle-softfloat` and
   `s5client-linux-mips-softfloat`. They have no FPU and no AES instructions,
@@ -18,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are not guaranteed. No server setting is needed. How to pick the binary:
   [router guide](docs/guides/testing.md#s5client-on-a-router).
 - `UDP_TUNNEL_TCP_TUNING` on the server and the client, on by default: the TCP
-  socket of a `0x83` UDP tunnel, and no other, gets thin-stream linear
+  socket of a `0x83` or `0x84` UDP tunnel, and no other, gets thin-stream linear
   timeouts and, on Linux 6.15 and later, a 20 ms floor for its retransmission
   timer. The cap of the timer is left to the kernel on purpose: Linux derives
   from it when a connection that keeps retransmitting is closed, and a lower
@@ -28,6 +147,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as on most routers, keeps its UDP with the linear timeouts alone. `false`
   keeps the kernel's timer
   ([what it buys and what it costs](docs/benchmarks/game-tuning.md)).
+- A session journal on the server, off by default: `SESSION_LOG=abnormal`
+  writes one JSON line for each connection that ended badly, `all` for every
+  one, to `SESSION_LOG_FILE` only, never to stdout. A line carries the
+  account, the network of the target (/24 or /48 and the port, never a
+  name; `SESSION_LOG_DST=none` leaves it out), the bytes, the duration, who
+  ended it and the dial attempts, and never the address of the client. The
+  file is rotated by size and age by the server itself, mode 0600
+  ([policy](docs/design/observability-policy.md#журнал-сессий)). New
+  metrics: `s5core_connections_ended_total`, `s5core_dial_outcomes_total`,
+  `s5core_udp_egress_rotations_total`, `s5core_log_lines_total` and
+  `s5core_log_dropped_total`, all with closed labels. A symbolic link, a
+  directory or any other file that is not a regular one at the path of
+  `SESSION_LOG_FILE` stops the server at startup: the file is opened with
+  `O_NOFOLLOW` (on Windows, which has none, a check before opening refuses
+  a link), so the journal is never appended to a file someone else chose
+  and rotation never moves a directory into the archive. Connections and
+  associations name how they ended in the same field, `end`, from one closed
+  set; a UDP association also carries what each of its paths did (`native_up`,
+  `native_down`, `path_moves`, `tunnel_drops`), and a connection that ended
+  for silence (`server_timeout`, `reset`, `timeout`) carries five numbers of
+  the kernel's state of its socket (`tcp_rtt_ms`, `tcp_unacked`,
+  `tcp_retransmits`, `tcp_since_data_ms`, `tcp_since_ack_ms`, Linux), which
+  tell a dead path of the client from an idle application. A minute counts its
+  silent ends, and a burst of them across accounts is one rate-limited
+  `silent_burst` warning in the service log. A minute in which the kernel
+  dropped UDP datagrams for want of receive buffer writes `udp_rcvbuf_drops`
+  with the count. `scripts/journal_report.py` turns the journal into a
+  Markdown report and joins it with the log of the client by `conn`.
+- `LOG_FILE` on the client: JSON in the file, `LOG_CONSOLE_LEVEL` (warn) on
+  the console, a file of its own for each run with the last `LOG_KEEP` (40)
+  in `archive/` next to it, and a note when the last run ended without its
+  closing line. Every relayed TCP connection ends in one `TCP Tunnel closed`
+  line with its bytes, duration and who ended it, and a busy minute in one
+  summary line. The client and the server name a connection by the same
+  `conn` id, derived from the session secret under its own HKDF label,
+  `log-id` ([specification](docs/veil-spec.md)), so a line on one side finds
+  its line on the other; nothing on the wire changes. `LOG_FILE` is opened
+  under the same rule as `SESSION_LOG_FILE`: a path that is not a regular
+  file is an error at startup.
+
+### Changed
+
+- OpenTelemetry SDK 1.46.0 (was 1.40.0), which fixes GO-2026-6505, the leak of
+  an exporter endpoint into the logs; `govulncheck` reported it for the code
+  of `s5core`. The names of the exported metrics are the same. Since 1.44 the
+  SDK caps one instrument at 2000 series and folds the rest into
+  `otel.metric.overflow`; every label of ours comes from a closed set, far
+  below that. Only `cmd/s5core` imports the SDK, so an application that embeds
+  `pkg/s5server` keeps the SDK and its limit of its own choosing.
+- A CONNECT to one address no longer spends the whole `DIAL_TIMEOUT` on one
+  socket. While every attempt is unanswered, the server opens another socket
+  to the same address at 0.5, 1.5, 3, 5 and 7 s and keeps whichever connects
+  first. A retransmission keeps the source port, so on a path that spreads
+  flows over parallel links by their ports, a flow hashed onto a link that
+  drops everything never connected. Measured on such a path from a node to
+  the servers of a game, at the same time as a direct control from the same
+  host: 62% of direct connects got through and 240 of 240 through this
+  build, and a connect that met the hole waited 1.1 s on average and never
+  7 s ([numbers](docs/field/nodes.md)). A destination that answers still
+  gets one socket. A refusal of the first socket is reported at once. A
+  refusal of a backup may come from a firewall or a balancer on that
+  socket's own path, so it takes a second one, from another port, to end
+  the dial: a closed port behind such a hole answers with a refusal from
+  1.5 s, not with a timeout after `DIAL_TIMEOUT`. Any other failure of a
+  backup, such as a local bind error, leaves the answer to the first
+  socket. No socket is opened once the budget is spent or the server
+  stops, and a connection that arrives after that is closed.
+  The share of connects a backup saved shows in the dial phase of
+  `s5core_connection_phase_seconds`: on the node with the hole, a build
+  with backups at 1, 3 and 7 s saved 215 of the 1277 connects of a client in
+  an evening, and 4 did not connect.
+- The first backup socket of a dial is timed by the history of the
+  destination's network instead of always at 0.5 s. The server remembers, per
+  /24 (per /48 for IPv6), how long a first attempt took to connect on its own
+  and under 0.5 s, and opens the first backup to that network at one and a
+  half times that average, never before 100 ms (the minimum connection attempt
+  delay of RFC 8305) and never after the default. A dial that a backup
+  rescued, or a first attempt that connected on a retransmitted SYN, is not
+  recorded: that is the hole's time, not the path's. Each address of a name
+  is timed by the history of its own network. The table holds 1024 networks. On the node with
+  the hole, dials longer than 0.5 s went from 8.4% (66 of 782) in a morning
+  on rc4 to 1.1% (32 of 2896) in a day on this build, and the player's entry
+  into a match from 13-14 s to 6-7 s ([numbers](docs/field/nodes.md)).
+- A UDP association (`0x83`, `0x84`) whose socket to the targets has never
+  heard an answer changes that socket: once at least two datagrams went out,
+  the socket has been open for a second and nothing came back, the server
+  opens a new socket, on a new port, and closes the old one, at most four
+  times, checked every 250 ms. On the same path the port a socket draws can
+  put every flow of the association on the link that drops everything, and a
+  new socket is a new draw. After the first answer the socket is never
+  changed: a new draw would move the flows that work into the hole. The
+  first answer after a change is one Info line with the number of changes,
+  each change a Debug line. In a day on that node 32 associations answered
+  after one change, 23 of them in an evening of play. A probe that sends
+  everything within its first second gets nothing from this, as nothing more
+  goes out on the new socket: 40% of a game's region-list probes through
+  that node stay unanswered with or without it.
+
+- Cleanup of the server's logs and types. A server without `USERS_FILE`
+  no longer writes `User store reloaded successfully` or
+  `Failed to reload users` on `SIGHUP`: it has no file to re-read, and the
+  failure line marked every reload of such a server as failed. The service
+  lines of the server carry their time in UTC, as the session journal does,
+  so lines of servers in different zones compare without conversion. The
+  `Server stopped cleanly` line is gone: `Server stopped`
+  (`event=process_stop`) takes its place with the uptime, the connections
+  served and those still open. `veil.Role` is a `uint8` instead of an `int`, and
+  `obfs.Role` is an alias of it; code that embeds the SDK and names the
+  roles by `RoleClient` and `RoleServer` does not change.
+
+- The client closes the tunnel of a `CONNECT` stream when nothing it sent on
+  it has been acknowledged for `TUNNEL_DEAD_TIMEOUT` (default 45 s, `0` leaves
+  the kernel's rule): `TCP_USER_TIMEOUT` on Linux, `TCP_MAXRTMS` on Windows
+  (not measured there yet). A path that loses its state - a home router's NAT,
+  a provider - swallows the segments of streams already open, the server
+  closes them after `READ_TIMEOUT` and the client's kernel went on
+  retransmitting for up to a quarter of an hour, so applications waited on
+  sockets that could not deliver. The stream now ends with `closed_by=timeout`
+  at WARN and the application reconnects. Raise it together with the server's
+  `READ_TIMEOUT` if that was raised.
 
 ### Performance
 
@@ -40,6 +279,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The client lost the successful reply to `CONNECT` when the end of the
+  stream arrived together with it: a target that answers and closes at once
+  sends the reply, its bytes and the FIN in one batch, and one `Read` of that
+  batch is data and `io.EOF` together. The reply is now read by its format and
+  nothing past it, and the application gets its bytes.
+- A UDP association was recorded as a failed session (`outcome="fail"` of the
+  `session` phase of `s5core_connection_phase_seconds`), because it ends with
+  the client closing its connection, which for a connection is an error. An
+  association the client closed is now `ok`; one that ended any other way is
+  still `fail`.
+- The JSON log wrote durations as a number of nanoseconds; it writes them as
+  text (`1.5s`).
+- Bursts of UDP answers overflowed the receive buffer of the server's
+  sockets. The kernel gives a UDP socket `net.core.rmem_default`, 212 992
+  bytes on every node measured, which holds about 90 game datagrams, and a
+  game server sends a wave of some 450 within 5-10 ms: a server late to read
+  by a few milliseconds lost 250-440 of every burst, 5% of a match on a clean
+  path. On a stand with the same burst, a node with one vCPU lost 17-22% of
+  every burst before and none after
+  ([burst stand](docs/benchmarks/udp-burst-2026-09-28.md)).
+  Every relay UDP socket of the server and the client now asks for 2 MiB, and
+  both log at startup what the kernel gave, at Warn when `net.core.rmem_max`
+  caps it. Without `CAP_NET_ADMIN`, as in the Docker image, the ceiling is a
+  host setting, and compose `sysctls` cannot set it
+  ([Docker guide](docs/guides/docker.md#game-udp-loses-answers-in-bursts)).
+  The datagrams the kernel drops on a full buffer are counted in
+  `s5core_udp_receive_buffer_drops_total`, from the server's network
+  namespace: the host's counter does not see a container's drops.
+- A CONNECT to a name with several addresses, none of which connected, was
+  answered by whichever address failed first, and at the end of
+  `DIAL_TIMEOUT` by the address started last, whatever the others had met:
+  a refusal of the first address could turn into a timeout, and the same
+  destination could get a different reply code from one attempt to the
+  next. The first address in the resolver's order now names the failure, as
+  in `net.Dialer`, unless it only says this host has no route for its
+  family, and an address still unanswered at the end of the budget is
+  reported as a timeout. A dial ended by the server's stop or by the
+  context of an embedding application is reported as cancelled, not as the
+  refusal an address met before it.
 - The client's test servers accepted AES only. On a processor without AES
   instructions the client picks ChaCha, so three tests failed or hung there
   while passing in CI. They now accept both ciphers like a real server, and a
@@ -68,9 +346,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LOG_LEVEL_FILE` is read with a 4 KiB bound, as `TRANSPORT_ADVICE_FILE`
   already was: the reload runs on the signal goroutine, and a path that never
   ends, such as `/dev/zero`, stopped every later `SIGHUP` from being handled.
+- `scripts/s5vpn-win.ps1` passed tun2socks its flags with one dash.
+  tun2socks 2.7.0 parses them with pflag, reads `-interface` as a bundle of
+  short flags and exits with its usage, so the script waited 12 s and said
+  only that no adapter appeared. The flags now have two dashes, which the
+  earlier versions accept too, and `s5client` or tun2socks exiting right
+  after start is reported at once, with the end of its log.
+- The Linux amd64 binaries attached to a release were linked dynamically and
+  needed glibc 2.34 or newer, in 2.2.0 and in the 2.3.0 release candidates:
+  the release job builds that one target natively, where cgo is on by
+  default. The other targets, the Docker image and the builds tested in the
+  field were static already. The job now builds every target with
+  `CGO_ENABLED=0` and `-trimpath` and fails if a binary comes out with cgo,
+  and `scripts/pre-commit.sh` builds the targets the same way.
 
 ### Tooling
 
+- Release builds use Go 1.26.8 and the check job golangci-lint v2.14.0.
+  `scripts/pre-commit.sh` fails when the Go version differs between `go.mod`,
+  the two workflows, the Dockerfile and the script itself.
+- `scripts/smoke` starts the real `s5core` and `s5client` built by
+  `scripts/pre-commit.sh` with the release flags, moves a 4 MiB download and
+  a 1 MiB upload through them over SOCKS5 and echoes UDP datagrams through an
+  association that must go native. It then reads the server's metrics and the
+  logs of both processes: the stamped version, the client counted by build, no
+  rejected handshake besides the ordinary disconnect bucket, no WARN or ERROR,
+  and both processes exit on SIGTERM.
+- `scripts/metrics` turns the test run, the cover profile and the release
+  binaries into `summary.md` (shown on the job page in CI) and
+  `metrics.json`, and checks them against `scripts/budgets.txt`: a floor of
+  coverage in total and for the packages the protocol lives in, and a size
+  ceiling for each of the 12 release binaries. A broken budget fails CI.
+- CI builds the multi-arch image on every pull request without pushing it,
+  cancels superseded runs of a pull request and gives its jobs a time limit.
+  Workflows are read-only unless a job asks for more. The release workflow has
+  a dry run (`workflow_dispatch`: the same checks, the image and the binaries,
+  nothing pushed or published) and publishes `SHA256SUMS` with the binaries.
+  Dependabot proposes updates of the actions monthly.
 - `scripts/pre-commit.sh` builds every target listed in the release workflow,
   reading them from `.github/workflows/release.yml`, so a build that breaks on
   one of them fails before a tag instead of in the release job.
@@ -105,6 +417,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection that carried the traffic). `cmd/udpshape` measures which UDP
   datagram shapes cross a path, each direction on its own
   ([results](docs/field/udp-shapes.md)).
+- `scripts/matrix/mtu_stand.py` with its helper `mtuprobe` is a narrow link
+  stand without root: four network namespaces in `unshare -Urnm`, the narrow
+  link between two routers so that a large packet always meets one that can
+  answer PTB, and PTB either passing or dropped by nft. It measures native
+  UDP against direct UDP by size, with the fragments, reassemblies and PTB of
+  every namespace, quic-go through native, and bulk TCP through a black hole
+  at `tcp_mtu_probing` 0, 1 and 2
+  ([results](docs/benchmarks/mtu-native-2026-09-26.md)).
+- `scripts/matrix` networks take a narrow uplink with its queue
+  (`uplink_mbit`, `queue_kb`, `queue` of `fifo` or `fq_codel`) and a wake-up
+  delay for the first packets after a pause (`wake_delay_ms`), with game
+  scenarios for each: `game/64hz-200b-upload` runs a bulk upload through the
+  same client next to the game, `game/64hz-200b-wake` pauses the flow for
+  15 s. A cell can poll the server's metrics and count the packets of every
+  tunnel connection and of native UDP on its leg
+  ([results](docs/benchmarks/degradation-2026-09-26.md)).
+- `scripts/matrix` has game scenarios with datagrams near the native UDP
+  limit, `game/64hz-1001b`, `-1300b`, `-1364b` and `-1400b`
+  ([field results](docs/field/nodes.md)). The WAN stand dates its
+  certificate an hour back, so a client clock a few seconds behind the server
+  no longer fails the first connections of a wss cell.
+- `scripts/udp_burst_stand.py` replays the burst of a game server (a wave of
+  450 datagrams within 5 ms, then a tail) through native UDP, `0x83` or plain
+  `0x03` in a network namespace, and names the socket that dropped each lost
+  datagram. `--server-user` runs the server without capabilities, as in the
+  Docker image, and `--cut-native` cuts the native path in the middle of the
+  run, so the answers go by the TCP queue
+  ([results](docs/benchmarks/udp-burst-2026-09-28.md)).
+- The em dash check of `scripts/pre-commit.sh` skips files that git ignores,
+  which CI does not have.
+- Three timing tests no longer fail under the load of a full `-race` run in
+  the CI container: the test of the hub's resync limit took the time between
+  two resyncs to be under the limit, the test of the constant-time member
+  lookup measured the two sizes while the load of other packages changed
+  between them, and the test of a stream longer than `READ_TIMEOUT` gave the
+  33 s stream 40 s, which a CPU quota stretched past.
+- The client tests that start a tunnel server no longer fail when a port
+  found free is taken before the server listens on it, or when a CPU quota
+  stretches the start past 2 s: the helper waits for each listener of the
+  server, reports the error of a start that ended early, and starts the
+  server again on new ports after `EADDRINUSE`.
+- Every client test that runs a UDP association handler ends it with the
+  test. A handler still running after its test wrote its closing line into
+  the logs the next test captured, and a test that counts closing lines
+  failed on it in the release checks of v2.3.0-rc4. The test of a quiet
+  direction reads each answer before it writes the next: the 300 written at
+  once overflowed the application's socket under `GOMAXPROCS=1`.
 
 ## [2.2.0] - 2026-09-24
 
@@ -296,7 +655,7 @@ documents H01-H05 and the subsequent R01 address-budget correction.
   profiles, 4/16/64 request concurrency, UDP under simulated loss, full race
   checks and both release binaries across all five supported platform targets.
 
-See the [validation guide](docs/performance-validation.md) for reproduction.
+See the [validation guide](docs/benchmarks/performance-validation.md) for reproduction.
 Publication of these changes is not a production deployment: representative
 WAN/VPS acceptance, peak-load budgets and a limited canary remain outstanding.
 
@@ -473,7 +832,8 @@ Highlights:
 Last release of the 1.x line. See the field report in
 `docs/reports/v1.4.4-field-run.md`.
 
-[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/mazixs/S5Core/releases/tag/v2.3.0
 [2.2.0]: https://github.com/mazixs/S5Core/releases/tag/v2.2.0
 [2.1.0]: https://github.com/mazixs/S5Core/releases/tag/v2.1.0
 [2.0.0]: https://github.com/mazixs/S5Core/releases/tag/v2.0.0

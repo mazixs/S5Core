@@ -114,34 +114,6 @@ func TestALoadFailureDoesNotCloseThePort(t *testing.T) {
 	}
 }
 
-// The errors that are worth retrying are the ones about this moment rather
-// than about the socket. Each of them used to be fatal to the listener.
-func TestEveryMomentaryKernelErrorIsRetried(t *testing.T) {
-	for _, errno := range []syscall.Errno{
-		syscall.EMFILE, syscall.ENFILE, syscall.ENOBUFS,
-		syscall.ENOMEM, syscall.ECONNABORTED, syscall.EINTR, syscall.EAGAIN,
-	} {
-		if !recoverableAcceptError(errno) {
-			t.Errorf("%v (%d) ends the listener, but the next accept can succeed", errno, uint(errno))
-		}
-		if !recoverableAcceptError(&net.OpError{Op: "accept", Err: errno}) {
-			t.Errorf("%v wrapped in net.OpError - the form Accept actually returns - is not recognised", errno)
-		}
-	}
-
-	// The opposite: a closed listener never comes back, and retrying it is
-	// a spin at full speed.
-	if recoverableAcceptError(net.ErrClosed) {
-		t.Error("a closed listener is treated as retryable, which spins the accept loop")
-	}
-	if recoverableAcceptError(&net.OpError{Op: "accept", Err: net.ErrClosed}) {
-		t.Error("a closed listener wrapped in net.OpError is treated as retryable")
-	}
-	if recoverableAcceptError(errors.New("some other failure")) {
-		t.Error("an unknown failure is retried, so a permanent one loops forever")
-	}
-}
-
 // A failure to accept says nothing about the connections already being
 // served. The loop used to close every one of them on any Accept error, so
 // one EMFILE dropped every established session on the node.

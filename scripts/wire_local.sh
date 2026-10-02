@@ -72,7 +72,7 @@ say "==> Поднимаю узлы"
 run_node "${NET}-target" '/bin5/wirebench -serve :5301'
 
 # Сервер: обфускация на 47832, SOCKS5 открытым текстом на 2190 для контроля.
-run_node "${NET}-server" "PROXY_PORT=2190 PROXY_LISTEN_IP=0.0.0.0 REQUIRE_AUTH=true \
+run_node "${NET}-server" "PROXY_PORT=2190 PROXY_LISTEN_IP=0.0.0.0 REQUIRE_AUTH=true ALLOW_PRIVATE_DEST=true \
   PROXY_USER=$USER_NAME PROXY_PASSWORD=$PASSWORD \
   OBFS_ENABLED=true OBFS_PORT=47832 OBFS_PSK=$PSK OBFS_NODE_ID=localbench \
   METRICS_BIND_ADDR=127.0.0.1 LOG_LEVEL=warn /bin5/s5core"

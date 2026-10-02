@@ -39,7 +39,7 @@ func (p *PermitCommand) Allow(ctx context.Context, req *Request) (context.Contex
 		return ctx, p.EnableConnect
 	case BindCommand:
 		return ctx, p.EnableBind
-	case AssociateCommand, UDPTunnelCommand:
+	case AssociateCommand, UDPTunnelCommand, UDPNativeCommand:
 		return ctx, p.EnableAssociate
 	}
 

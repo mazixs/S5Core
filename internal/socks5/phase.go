@@ -96,11 +96,21 @@ func (t *phaseTimer) end(ok bool) {
 type firstByteReader struct {
 	io.Reader
 	timer *phaseTimer
+	// end, when set, gets the same wait counted from since.
+	end   *ConnEnd
+	since time.Time
+	seen  bool
 }
 
 func (r *firstByteReader) Read(p []byte) (int, error) {
 	n, err := r.Reader.Read(p)
 	if n > 0 {
+		if !r.seen {
+			r.seen = true
+			if r.end != nil {
+				r.end.FirstByte = time.Since(r.since)
+			}
+		}
 		r.timer.end(true)
 	} else if err != nil {
 		// The destination closed or failed without sending anything: still a

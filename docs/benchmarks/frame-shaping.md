@@ -126,12 +126,49 @@ Split into its parts:
 The shaper itself is free. Everything above the plain number is the frames it
 asks for: one syscall each.
 
-**That cost cannot be optimised away.** Batching the frames of one write into a
-single write to the socket would put them in one TLS record, of the original
-length, and there would be nothing left hidden. The syscall per frame *is* the
-disguise. `TestPlanningAFrameCostsNothing` guards the part that can regress -
-the plan staying allocation-free - and the comment on `Write` says why the
-rest must not be "fixed".
+**That cost cannot be optimised away by joining plaintext frames.** Joining
+them before TLS would produce one record of roughly the original write
+length. Buffering separate encrypted TLS records below TLS would keep their
+individual lengths, but could put their sum in one TCP packet. The game
+packet capture below measures why that second option is also a poor fit for
+short writes. `TestPlanningAFrameCostsNothing` guards the cut plan against
+regression; the per-frame writes remain deliberate.
+
+### Packet lengths on a game stream (25 September 2026)
+
+A 30-second WSS game capture at 64 ticks/s and 200-byte application payloads
+gives a second view of the same cost. After removing loopback duplicates and
+the opening second, 3,198 client-to-server TLS application packets contain
+1,599 groups of two records. The median packet is 259 bytes; the most common
+length appears in 37 packets (1.2%). The server-to-client side has the same
+two-record shape. [Derived capture counts](data-2026-09-25/wss-packet-shape-2026-09-25.json)
+identify the local run; the raw pcap remains under ignored `bench/runs/`.
+
+If both records of each short game write were put in one socket write, their
+TCP payloads would sum to a median 459-byte packet. This is a calculation
+from records less than 5 ms apart, **not a capture of a modified sender**.
+The sum directly tracks the size of the obfuscated write, undoing the
+shaper's cut for an observer of small packet lengths. TCP may merge or split
+writes on another path, so this remains a local shape argument.
+
+The same stream over a real path (26 September 2026, an ARM router client and
+a node at RTT 52 ms, WSS with `UDP_NATIVE=false`, 2 minutes) keeps the shape.
+The TCP counters of the server socket (`ss -ti`, `data_segs_in` and
+`data_segs_out` over the run) give 2.00 data segments per tick in each
+direction, 211 bytes per segment from the client and 208 to it: the two
+records of a write leave as two segments and arrive as two. The game itself
+lost no ticks (0% against 0.026% for the direct control), with a median of
+51.9 ms against 53.0 ms direct; a lower median than direct on this path is
+the route taken by the flow, not a gain of the tunnel (see
+[`nativeudp-game-loss-2026-09-25.md`](nativeudp-game-loss-2026-09-25.md)).
+
+A separate bulk capture initially showed 40-60 KiB loopback packets because
+the interface used a 64 KiB MTU. With MTU 1500 and GSO/GRO/TSO off, 3,034
+of 3,592 server-to-client bulk packets are exactly 1500 bytes. This is the
+TCP segment ceiling; its mode says little about inner frame lengths. The
+small game packets are the reason to keep per-frame writes in WSS. The
+native UDP data path removes the game latency pressure from WSS when the UDP
+leg is available. No change to the WSS shaper is made for 2.3.
 
 ## Against the 10% budget
 

@@ -1,0 +1,141 @@
+package nativeudp
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"github.com/mazixs/S5Core/pkg/veil"
+	"sync"
+	"testing"
+)
+
+func BenchmarkAuditNativeCost(b *testing.B) {
+	for _, cipher := range []veil.Cipher{veil.CipherAES, veil.CipherChaCha} {
+		for _, size := range []int{200, 928, 1280} {
+			b.Run(fmt.Sprintf("%s/%d/Seal", cipher, size), func(b *testing.B) {
+				keys, err := veil.DeriveDatagram(bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40), veil.Context{Cipher: cipher}, veil.RoleClient)
+				if err != nil {
+					b.Fatal(err)
+				}
+				s := NewSession(keys)
+				payload := make([]byte, size)
+				var wire [MaxWire]byte
+				b.ReportAllocs()
+				b.SetBytes(int64(size))
+				b.ResetTimer()
+				for range b.N {
+					if _, err := s.Seal(wire[:0], KindData, payload); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			b.Run(fmt.Sprintf("%s/%d/SealOpen", cipher, size), func(b *testing.B) {
+				keys, err := veil.DeriveDatagram(bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40), veil.Context{Cipher: cipher}, veil.RoleClient)
+				if err != nil {
+					b.Fatal(err)
+				}
+				other, err := veil.DeriveDatagram(bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40), veil.Context{Cipher: cipher}, veil.RoleServer)
+				if err != nil {
+					b.Fatal(err)
+				}
+				s, r := NewSession(keys), NewSession(other)
+				payload := make([]byte, size)
+				var wire [MaxWire]byte
+				b.ReportAllocs()
+				b.SetBytes(int64(size))
+				b.ResetTimer()
+				for range b.N {
+					p, err := s.Seal(wire[:0], KindData, payload)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if _, err := r.Open(p); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+func BenchmarkAuditTag(b *testing.B) {
+	t := newTagger([32]byte{7})
+	var got [8]byte
+	b.ReportAllocs()
+	for i := range b.N {
+		got = t.tag(uint64(i))
+	}
+	if got == [8]byte{} {
+		b.Fatal("zero tag")
+	}
+}
+
+func TestAuditTagMatchesReference(t *testing.T) {
+	for k := range 128 {
+		var key [32]byte
+		for i := range key {
+			key[i] = byte(k*17 + i*31)
+		}
+		tag := newTagger(key)
+		for c := range 256 {
+			counter := uint64(c) * 0x0101010101010101
+			var raw [8]byte
+			binary.BigEndian.PutUint64(raw[:], counter)
+			reference := hmac.New(sha256.New, key[:])
+			_, _ = reference.Write(raw[:])
+			got := tag.tag(counter)
+			if !bytes.Equal(got[:], reference.Sum(nil)[:8]) {
+				t.Fatalf("key=%d counter=%d", k, counter)
+			}
+		}
+	}
+	t.Log("32768 tag values match crypto/hmac with SHA-256")
+}
+
+func TestAuditConcurrentCodecDirections(t *testing.T) {
+	a, b := pair(t)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, ends := range [][2]*Session{{a, b}, {b, a}} {
+		wg.Go(func() {
+			var wire [MaxWire]byte
+			payload := bytes.Repeat([]byte{13}, 200)
+			for range 2000 {
+				raw, err := ends[0].Seal(wire[:0], KindData, payload)
+				if err != nil {
+					errs <- err
+					return
+				}
+				got, err := ends[1].Open(raw)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if !bytes.Equal(got.Data, payload) {
+					errs <- fmt.Errorf("payload changed")
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
+var auditSessionSink *Session
+
+func BenchmarkAuditSessionSetup(b *testing.B) {
+	keys, err := veil.DeriveDatagram(bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40), veil.Context{}, veil.RoleClient)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		auditSessionSink = NewSession(keys)
+	}
+}

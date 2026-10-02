@@ -1,11 +1,12 @@
-//go:build !linux
+//go:build !linux && !windows
 
 package tcptune
 
-import "errors"
+import (
+	"syscall"
+	"time"
+)
 
-var errNotLinux = errors.New("tcptune: only Linux has these options")
+func set(syscall.Conn) (Skipped, error) { return nil, errUnsupported }
 
-func apply(_ uintptr, skipped Skipped) {
-	skipped["TCP_THIN_LINEAR_TIMEOUTS"] = errNotLinux
-}
+func setDeadAfter(syscall.Conn, time.Duration) error { return errUnsupported }

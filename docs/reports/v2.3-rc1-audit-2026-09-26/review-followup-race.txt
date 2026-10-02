@@ -1,0 +1,13 @@
+=== RUN   TestAuditOneLostProbeAt50msRTT
+    audit_probe_rtt_test.go:44: probe RTT=50ms, input=100Hz, one lost probe: up=true diverted=5/200 interval=1.68s..1.72s signals=[1.68s]
+--- PASS: TestAuditOneLostProbeAt50msRTT (0.00s)
+=== RUN   TestAuditSizeSelectionKeepsLargeTrafficOnTCP
+    audit_size_selection_linux_test.go:23: probe payload=1200 accepted=true TCP bytes up=0 down=0
+    audit_size_selection_linux_test.go:23: probe payload=1364 accepted=true TCP bytes up=0 down=0
+    audit_size_selection_linux_test.go:23: probe payload=1365 accepted=true TCP bytes up=1377 down=1377
+    audit_size_selection_linux_test.go:23: probe payload=1400 accepted=true TCP bytes up=1412 down=1412
+    audit_size_selection_linux_test.go:42: selected=1400: 100/100 delivered, TCP bytes up=141200 down=141200, expected=141200 each way
+    audit_size_selection_linux_test.go:49: small control packet remains native after the selected-size flow
+--- PASS: TestAuditSizeSelectionKeepsLargeTrafficOnTCP (1.08s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	2.096s

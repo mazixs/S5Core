@@ -130,6 +130,10 @@ type Half struct {
 	// stream, so the smallest configuration the package documents was also
 	// one it could not run (review finding R12).
 	CloseDst func()
+
+	// Copied is what Run wrote to Dst in all, for the session's final line.
+	// It is set as Run returns and is read after that, never during.
+	Copied int64
 }
 
 // closeDst passes on the end of the stream, if there is anyone to pass it to.
@@ -157,20 +161,23 @@ func (h *Half) Run() error {
 	// The fast path is for a half that neither counts nor checks: there is
 	// nothing to do on the flush boundary, so there is no reason to have one.
 	if h.Counter == nil && h.Status == nil {
-		_, err := io.CopyBuffer(h.Dst, h.Src, buf)
+		n, err := io.CopyBuffer(h.Dst, h.Src, buf)
+		h.Copied = n
 		h.closeDst()
 		return err
 	}
 
-	var accumulated int64
+	var accumulated, copied int64
 	flush := func() {
 		if h.Counter != nil && accumulated > 0 {
 			h.Counter.Add(accumulated)
 		}
+		copied += accumulated
 		accumulated = 0
 	}
 	finish := func(e error) error {
 		flush()
+		h.Copied = copied
 		h.closeDst()
 		return e
 	}

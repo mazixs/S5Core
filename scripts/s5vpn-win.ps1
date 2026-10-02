@@ -186,9 +186,36 @@ function Get-ListenEndpoint([string]$ListenAddr) {
     }
 }
 
-function Wait-TcpPort([string]$TargetHost, [int]$Port, [int]$TimeoutSeconds) {
+function Get-LogTail([string[]]$Paths, [int]$Lines = 20) {
+    $tail = foreach ($path in $Paths) {
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            Get-Content -LiteralPath $path -Tail $Lines -ErrorAction SilentlyContinue
+        }
+    }
+    return (@($tail) -join [Environment]::NewLine)
+}
+
+function Join-LogTail([string]$Message, [string[]]$Logs) {
+    $tail = Get-LogTail -Paths $Logs
+    if ([string]::IsNullOrWhiteSpace($tail)) {
+        return $Message
+    }
+    return $Message + [Environment]::NewLine + $tail
+}
+
+# A process that exits at start (a flag it does not know, a bad setting) is
+# reported at once and in its own words, not when the wait for it times out.
+function Assert-StillRunning($Process, [string]$Name, [string[]]$Logs) {
+    if ($null -eq $Process -or -not $Process.HasExited) {
+        return
+    }
+    throw (Join-LogTail -Message "$Name exited right after start (exit code $($Process.ExitCode))." -Logs $Logs)
+}
+
+function Wait-TcpPort([string]$TargetHost, [int]$Port, [int]$TimeoutSeconds, $Process = $null, [string]$Name = "", [string[]]$Logs = @()) {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
+        Assert-StillRunning -Process $Process -Name $Name -Logs $Logs
         try {
             $client = New-Object Net.Sockets.TcpClient
             $iar = $client.BeginConnect($TargetHost, $Port, $null, $null)
@@ -203,7 +230,8 @@ function Wait-TcpPort([string]$TargetHost, [int]$Port, [int]$TimeoutSeconds) {
         Start-Sleep -Milliseconds 250
     }
 
-    throw "Timed out waiting for TCP $TargetHost`:$Port."
+    Assert-StillRunning -Process $Process -Name $Name -Logs $Logs
+    throw (Join-LogTail -Message "Timed out waiting for TCP $TargetHost`:$Port." -Logs $Logs)
 }
 
 function Assert-CommandAvailable([string]$Name) {
@@ -343,19 +371,22 @@ function Start-ProcessWithEnvironment {
 
         $argumentString = Join-ArgumentString $Arguments
         if ([string]::IsNullOrWhiteSpace($argumentString)) {
-            return Start-Process -FilePath $FilePath `
+            $proc = Start-Process -FilePath $FilePath `
+                -WorkingDirectory $WorkingDirectory `
+                -RedirectStandardOutput $StdOutPath `
+                -RedirectStandardError $StdErrPath `
+                -PassThru
+        } else {
+            $proc = Start-Process -FilePath $FilePath `
+                -ArgumentList $argumentString `
                 -WorkingDirectory $WorkingDirectory `
                 -RedirectStandardOutput $StdOutPath `
                 -RedirectStandardError $StdErrPath `
                 -PassThru
         }
-
-        return Start-Process -FilePath $FilePath `
-            -ArgumentList $argumentString `
-            -WorkingDirectory $WorkingDirectory `
-            -RedirectStandardOutput $StdOutPath `
-            -RedirectStandardError $StdErrPath `
-            -PassThru
+        # Without an open handle ExitCode reads as empty once the process is gone.
+        $null = $proc.Handle
+        return $proc
     } finally {
         foreach ($key in $Environment.Keys) {
             [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], "Process")
@@ -363,9 +394,10 @@ function Start-ProcessWithEnvironment {
     }
 }
 
-function Wait-ForTunInterface([string]$Name, [int]$TimeoutSeconds) {
+function Wait-ForTunInterface([string]$Name, [int]$TimeoutSeconds, $Process = $null, [string[]]$Logs = @()) {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
+        Assert-StillRunning -Process $Process -Name "tun2socks" -Logs $Logs
         $adapter = Get-NetAdapter -Name $Name -ErrorAction SilentlyContinue
         if ($adapter) {
             return $adapter
@@ -373,7 +405,8 @@ function Wait-ForTunInterface([string]$Name, [int]$TimeoutSeconds) {
         Start-Sleep -Milliseconds 300
     }
 
-    throw "Timed out waiting for TUN adapter '$Name'."
+    Assert-StillRunning -Process $Process -Name "tun2socks" -Logs $Logs
+    throw (Join-LogTail -Message "Timed out waiting for TUN adapter '$Name'." -Logs $Logs)
 }
 
 function Set-TunInterface {
@@ -612,7 +645,8 @@ function Start-S5Client {
     $State.S5ClientStdout = $stdout
     $State.S5ClientStderr = $stderr
 
-    Wait-TcpPort -TargetHost $endpoint.Host -Port $endpoint.Port -TimeoutSeconds 12
+    Wait-TcpPort -TargetHost $endpoint.Host -Port $endpoint.Port -TimeoutSeconds 12 `
+        -Process $proc -Name "s5client" -Logs @($stderr, $stdout)
 }
 
 function Start-Tun2Socks {
@@ -628,24 +662,27 @@ function Start-Tun2Socks {
     $stderr = Join-Path $LogsRoot "tun2socks.stderr.log"
     # tun2socks only talks to the local s5client SOCKS endpoint.
     # The obfuscated hop stays between s5client and the remote server.
+    # Two dashes: tun2socks 2.7.0 parses flags with pflag, where "-interface"
+    # is a bundle of short flags; the flag package of earlier versions takes
+    # either form.
     $tunArgs = @(
-        "-device", $Config.TunName,
-        "-proxy", ("socks5://{0}" -f $Config.ClientListenAddr),
-        "-interface", $PrimaryRoute.InterfaceAlias
+        "--device", $Config.TunName,
+        "--proxy", ("socks5://{0}" -f $Config.ClientListenAddr),
+        "--interface", $PrimaryRoute.InterfaceAlias
     )
 
-    $proc = Start-Process -FilePath $Config.Tun2SocksExe `
-        -ArgumentList (Join-ArgumentString $tunArgs) `
-        -WorkingDirectory (Split-Path -Parent $Config.Tun2SocksExe) `
-        -RedirectStandardOutput $stdout `
-        -RedirectStandardError $stderr `
-        -PassThru
+    $proc = Start-ProcessWithEnvironment `
+        -FilePath $Config.Tun2SocksExe `
+        -Arguments $tunArgs `
+        -StdOutPath $stdout `
+        -StdErrPath $stderr `
+        -WorkingDirectory (Split-Path -Parent $Config.Tun2SocksExe)
 
     $State.Tun2SocksPid = $proc.Id
     $State.Tun2SocksStdout = $stdout
     $State.Tun2SocksStderr = $stderr
 
-    $adapter = Wait-ForTunInterface -Name $Config.TunName -TimeoutSeconds 12
+    $adapter = Wait-ForTunInterface -Name $Config.TunName -TimeoutSeconds 12 -Process $proc -Logs @($stderr, $stdout)
     $State.TunInterfaceIndex = $adapter.ifIndex
 }
 

@@ -1,0 +1,449 @@
+{
+ "date": "2026-09-29",
+ "scope": "user network namespace on loopback, real binaries of v2.2.0, v2.3.0-rc3 and v2.3.0-rc4, every server with every client; the settings of the test node: USERS_FILE, OBFS_REQUIRE_MEMBER_KEY=true, REQUIRE_AUTH=true, member key on the client (PROXY_AUTH_MODE=member-only), UDP_NATIVE=true, UDP_PORT on the server, OBFS_MTU=1400, OBFS_MAX_PADDING=256",
+ "checks": "per pair: 3 sequential and 8 parallel downloads of 4 MiB with sha256, 2 uploads of 4 MiB closed by SHUT_WR and answered with their sha256, 2 UDP associations of 320 datagrams of 200 bytes at 64 Hz to an echo; then SIGTERM to the client and to the server",
+ "dial_checks": "with the client of v2.3.0-rc4 against each server, DIAL_TIMEOUT 10 s: 'refused' is the reply code and seconds of a CONNECT to a closed port; 'hole_open' and 'hole_closed' are 30 concurrent CONNECTs to an open and to a closed port behind an nftables rule that drops a third of the flows by a hash of the source address and port, counted by reply code and by the time of the reply, in bins that end 0.3 s after each backup of rc4 (0.5, 1.5, 3, 5 and 7 s), the last one holding the replies at the end of the budget; the open port accepts and closes at once; 'blackhole' is a CONNECT to an address that drops every packet: sockets of the server in SYN-SENT at 2 s and 8 s, the reply, and the sockets left after it. Reply codes: 0 success, 1 general failure, 4 host unreachable (the budget ran out), 5 connection refused. Every reply 1 here is the client failing to read a success reply that arrived together with the end of the stream (client_connect_reply_eof, draft finding Ч-22), not a failure of the dial",
+ "build": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags \"-s -w -X github.com/mazixs/S5Core/internal/buildinfo.version=<tag>\" ./cmd/<binary>, go 1.26.6, from the tags v2.2.0 and v2.3.0-rc3 and from the tree of v2.3.0-rc4; the same command gives the same bytes, and the server of v2.3.0-rc4 is the /S5Core of the published image",
+ "binaries_sha256": {
+  "v2.2.0": {
+   "s5core": "b741fade6813ec3412d435dbf03d8b1f0c24b86a29008b0854066b5670081b7b",
+   "s5client": "50835eb2eefd60302141b9564f8852204b61c7deb39064556eef906018738bde"
+  },
+  "v2.3.0-rc3": {
+   "s5core": "2cbfe44b82ae51a65ee13593f45287ea0be3ee9dd0146e250d7f0904d8d96cdc",
+   "s5client": "7d8ac2406b6a7599022323809522883f2baae46d294491f62a2e453eafa4a033"
+  },
+  "v2.3.0-rc4": {
+   "s5core": "cd856176a8b51da776706abb71c757eca72b4984e55e143c0ea1102a263eafb6",
+   "s5client": "26bf63b267da60a4e66c1bcc5606f4b5a004020f161a764ef910eb40b7070fa3"
+  }
+ },
+ "pairs": [
+  {
+   "server": "v2.2.0",
+   "client": "v2.2.0",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x83",
+    "0x83"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0,
+    "client_connect_reply_eof": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.2.0",
+   "client": "v2.3.0-rc3",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x83"
+   ],
+   "no_native_reason": "0x84 refused with 0x2",
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0,
+    "client_connect_reply_eof": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.2.0",
+   "client": "v2.3.0-rc4",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x83"
+   ],
+   "no_native_reason": "0x84 refused with 0x2",
+   "native_datagrams": {},
+   "associations_ended": null,
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 5,
+    "client_connect_reply_eof": 5
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   },
+   "dial": {
+    "refused": [
+     [
+      5,
+      0.001
+     ]
+    ],
+    "hole_open": {
+     "hist": {
+      "rep=0 <0.3s": 14,
+      "rep=1 <0.3s": 5,
+      "rep=4 <99s": 11
+     },
+     "max_s": 10.01
+    },
+    "hole_closed": {
+     "hist": {
+      "rep=4 <99s": 9,
+      "rep=5 <0.3s": 21
+     },
+     "max_s": 10.01
+    },
+    "blackhole": {
+     "syn_sent_at_2.0s": 1,
+     "syn_sent_at_8.0s": 1,
+     "reply": [
+      4,
+      10.0
+     ],
+     "syn_sent_after": 0
+    }
+   }
+  },
+  {
+   "server": "v2.3.0-rc3",
+   "client": "v2.2.0",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x83",
+    "0x83"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {},
+   "associations_ended": {
+    "kind=\"tunnel\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0,
+    "client_connect_reply_eof": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc3",
+   "client": "v2.3.0-rc3",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 640
+   },
+   "associations_ended": {
+    "kind=\"native\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0,
+    "client_connect_reply_eof": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc3",
+   "client": "v2.3.0-rc4",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": {
+    "kind=\"native\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 2,
+    "client_connect_reply_eof": 2
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   },
+   "dial": {
+    "refused": [
+     [
+      5,
+      0.001
+     ]
+    ],
+    "hole_open": {
+     "hist": {
+      "rep=0 <0.3s": 20,
+      "rep=1 <0.3s": 2,
+      "rep=4 <99s": 8
+     },
+     "max_s": 10.01
+    },
+    "hole_closed": {
+     "hist": {
+      "rep=4 <99s": 11,
+      "rep=5 <0.3s": 19
+     },
+     "max_s": 10.0
+    },
+    "blackhole": {
+     "syn_sent_at_2.0s": 1,
+     "syn_sent_at_8.0s": 1,
+     "reply": [
+      4,
+      10.01
+     ],
+     "syn_sent_after": 0
+    }
+   }
+  },
+  {
+   "server": "v2.3.0-rc4",
+   "client": "v2.2.0",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x83",
+    "0x83"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {},
+   "associations_ended": {
+    "kind=\"tunnel\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0,
+    "client_connect_reply_eof": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc4",
+   "client": "v2.3.0-rc3",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": {
+    "kind=\"native\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 0,
+    "client_connect_reply_eof": 0
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   }
+  },
+  {
+   "server": "v2.3.0-rc4",
+   "client": "v2.3.0-rc4",
+   "download_4mib": "3/3",
+   "parallel_download_4mib": "8/8",
+   "upload_4mib_half_close": "2/2",
+   "udp_lost_of_320": [
+    0,
+    0
+   ],
+   "udp_commands": [
+    "0x84",
+    "0x84"
+   ],
+   "no_native_reason": null,
+   "native_datagrams": {
+    "direction=\"from_client\",path=\"native\"": 638,
+    "direction=\"from_client\",path=\"tcp_route\"": 2,
+    "direction=\"to_client\",path=\"native\"": 639,
+    "direction=\"to_client\",path=\"tcp_route\"": 1
+   },
+   "associations_ended": {
+    "kind=\"native\",reason=\"client\"": 2
+   },
+   "receive_buffer_drops": null,
+   "warn_error_lines": {
+    "server": 0,
+    "client": 5,
+    "client_connect_reply_eof": 5
+   },
+   "exit": {
+    "client": 0,
+    "server": 0
+   },
+   "dial": {
+    "refused": [
+     [
+      5,
+      0.001
+     ]
+    ],
+    "hole_open": {
+     "hist": {
+      "rep=0 <0.3s": 19,
+      "rep=0 <0.8s": 5,
+      "rep=0 <1.8s": 1,
+      "rep=1 <0.3s": 2,
+      "rep=1 <0.8s": 3
+     },
+     "max_s": 1.5
+    },
+    "hole_closed": {
+     "hist": {
+      "rep=5 <0.3s": 21,
+      "rep=5 <1.8s": 5,
+      "rep=5 <3.3s": 2,
+      "rep=5 <5.3s": 2
+     },
+     "max_s": 5.0
+    },
+    "blackhole": {
+     "syn_sent_at_2.0s": 3,
+     "syn_sent_at_8.0s": 6,
+     "reply": [
+      4,
+      10.0
+     ],
+     "syn_sent_after": 0
+    }
+   }
+  }
+ ],
+ "hole_check": {
+  "what": "the server and the client of v2.3.0-rc4 (built from the tree of 9d6bc92, which differs from the tag only in tests and documents) in a user network namespace on loopback, DIAL_TIMEOUT 10 s; an nftables rule drops the flows to the target whose jhash of the source address and port mod 3 is 0, three hash seeds; rounds of 50 concurrent CONNECTs to an open port (accepts and holds the connection 3 s) and to a closed port; a CONNECT counts as meeting the hole when its reply took 0.3 s or more; 'replied_at_s' counts those by the time of the reply rounded to 0.1 s, and for the closed port 10.0 is the end of the budget (reply 4), every other reply there is 5",
+  "runs": [
+   {
+    "seed": "0x5c0e",
+    "connects_per_port": 200
+   },
+   {
+    "seed": "0x1234",
+    "connects_per_port": 300
+   },
+   {
+    "seed": "0xbeef",
+    "connects_per_port": 300
+   }
+  ],
+  "open": {
+   "connects": 800,
+   "connected": 800,
+   "met_the_hole": 255,
+   "replied_at_s": {
+    "0.5": 167,
+    "1.5": 61,
+    "3.0": 21,
+    "5.0": 3,
+    "7.0": 3
+   }
+  },
+  "closed": {
+   "connects": 800,
+   "refused": 785,
+   "budget_ended": 15,
+   "met_the_hole": 266,
+   "replied_at_s": {
+    "1.5": 110,
+    "3.0": 89,
+    "5.0": 33,
+    "7.0": 19,
+    "10.0": 15
+   }
+  },
+  "servers_before_rc4": "servers of v2.2.0 and v2.3.0-rc3 answer every CONNECT that meets the hole with reply 4 after 10 s, see dial_checks in pairs"
+ }
+}

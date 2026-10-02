@@ -93,7 +93,7 @@ or the optional `s5client` local listener.
 | Limits | 10000 connections; 256 MiB KDF budget | These are ceilings, not a promise that every host can sustain that load |
 | Relay timeouts | 30 seconds idle; 15 seconds setup | Active traffic refreshes idle timeouts |
 | Keepalive | Client 10-20 seconds; server off | Keep an idle tunnel alive without duplicate heartbeat traffic |
-| Framing | MTU 1400, padding up to 256, no WS jitter | Keep the measured application defaults; tune against your real path |
+| Framing | `OBFS_MTU` 1400, padding up to 256, no WS jitter | Keep the measured application defaults. `OBFS_MTU` caps frames inside the TCP stream and is not the IP MTU, so a narrow path is no reason to change it ([stalls](#tunnel-up-bulk-transfer-stalls)) |
 
 Optional variables use the binary's built-in defaults when absent. The
 [full reference](configuration.md) separates server and client settings so a
@@ -209,6 +209,7 @@ still distroless/nonroot, with no shell or package manager.
 | WSS fails | Check certificate name, expiry, mount permissions and `WS_URL` path |
 | Accounts do not persist | Check directory ownership and writable bind mount, not just file permissions |
 | Idle connections drop | Keep the client keepalive interval below the shortest path idle timeout |
+| Tunnel connects, large transfers stall | An MTU black hole or a cut after the first ~16 KB; tell them apart [below](#tunnel-up-bulk-transfer-stalls) |
 
 `/health` is HTTP liveness, not an authenticated tunnel test. The image has no
 Docker HEALTHCHECK; container state `running` alone is not proof of connectivity.
@@ -216,6 +217,115 @@ Verify an actual request through `s5client`, including DNS (`socks5h://`).
 Changing `.env` requires `docker compose up -d`; a restart or SIGHUP does not
 replace an existing container's environment. File-based reload options are in
 [operations](operations.md).
+
+### Tunnel up, bulk transfer stalls
+
+The tunnel connects and small requests work, but a large download or upload
+stops. Two different causes look exactly like this
+([degradation research](../research/path-degradation.md#4-полисинг-шейпинг-и-dpi-дросселирование),
+[black hole symptoms](../research/mtu.md#8-инциденты-и-симптомы)):
+
+- **MTU black hole.** A link on the path is narrower than the packets, and the
+  ICMP message that should tell the sender (IPv4 "fragmentation needed", IPv6
+  "packet too big") is filtered. Full-size segments of the tunnel's own TCP
+  connection vanish while small ones pass. It does not depend on the
+  destination behind the tunnel, and a smaller MSS or `tcp_mtu_probing` fixes it.
+- **Cut after the first ~16 KB.** Some networks let a connection to certain
+  hosting networks carry about 16 KB and then stall it. It depends on the
+  server's address: the same transfer through a node in another network
+  passes, and a smaller MSS changes nothing.
+
+`OBFS_MTU` plays no part in either: it is the size of a frame inside the TCP
+stream, and the kernel cuts the stream into packets by the MSS on its own.
+
+Native UDP (`UDP_PORT`) finds its own limit on the path at the start of each
+association and does not fragment, so game-sized datagrams keep going
+natively through a black hole. Datagrams longer than that limit are dropped,
+and from the eighth on they go by `0x83`, where the black hole stalls them
+together with the TCP stream ([limit of native](../design/transports.md#native-udp-for-games)).
+
+```bash
+ss -tin dst <peer>          # on the side sending the large data: pmtu, mss, retrans
+ping -M do -s 1472 <server> # from the client; fails while -s 1372 passes: a narrow link
+tracepath -n <server>       # where the path narrows
+```
+
+A stall that turns into a pause of a few seconds once the sending side has
+`tcp_mtu_probing=1` was a black hole; one that stays is not MTU. The server
+sends the downloads, the client the uploads. The full method, with both
+directions and IPv6, is in [MTU diagnostics](../research/mtu-diagnostics.md#7-методика-клиент---роутер---провайдер---сервер).
+
+Linux leaves `net.ipv4.tcp_mtu_probing` at `0`, and a connection in a black
+hole retransmits the same full-size segment until it gives up. `1` makes the
+kernel probe smaller segments only after it has detected a black hole, which
+is what Cloudflare advises for servers; `2` starts every connection at
+`tcp_base_mss` (1024 bytes by default) and pays for it on every path. The value
+belongs to the network namespace, so the container sets its own without host
+networking and leaves the host as it is. Add to the `s5core` service, or to a
+local override:
+
+```yaml
+    sysctls:
+      net.ipv4.tcp_mtu_probing: 1
+```
+
+It works with the read-only root, dropped capabilities and non-root user of the
+base file. On a 1500 path `1` changes nothing (the probing counters stay at
+zero), and through a black hole it costs each new connection about 3.3 seconds
+(four retransmission timeouts) before data flows
+([narrow link bench](../benchmarks/mtu-native-2026-09-26.md#tcp-через-черную-дыру)):
+a workaround, not a fix, so MSS clamping on the narrow link is better where
+you control it. `2` is not advised yet: on the bench a download through the
+tunnel still waited 3.3 seconds, and why is open. Without Docker, set
+`net.ipv4.tcp_mtu_probing = 1` in a file under `/etc/sysctl.d/`. The client
+side, including a router, is in the [router guide](testing.md#s5client-on-a-router).
+
+### Game UDP loses answers in bursts
+
+A game server answers in bursts: six times in a ten-minute match it sent a
+wave of some 450 datagrams within 5-10 ms, then more at about 2000 a second.
+The kernel gives every UDP socket `net.core.rmem_default` of receive buffer,
+212 992 bytes on every node measured, and counts a game datagram at about
+2.3 KB of memory, so a socket holds about 90 of them. A reader that forwards
+each datagram before it takes the next does not keep up with such a wave,
+so the buffer has to hold it: without that a node lost 250-440 datagrams of
+every burst, 5% of what a match sent, on a path that lost nothing. The
+host's counters did not show it: the drops happen in the container's network
+namespace.
+
+Every UDP socket the server relays through asks for 2 MiB: the sockets of
+`0x03` and `0x83` associations and the native UDP socket. Memory is taken as
+datagrams arrive, so a quiet socket costs nothing more. Without
+`CAP_NET_ADMIN`, which the base file drops, the kernel caps the request at
+`net.core.rmem_max`, usually 212 992 as well. The server says at startup
+which one it got, in the kernel's accounting, which is twice the request and
+what `ss -uam` shows as `rb`: 4 MiB when full, and 425 984 with the usual
+ceiling, about 185 datagrams, twice the default but short of a burst:
+
+```text
+level=INFO msg="UDP receive buffer" bytes=4194304
+level=WARN msg="UDP receive buffer below what answer bursts need, set net.core.rmem_max=2097152 on the host" bytes=425984 rmem_max=212992
+```
+
+Raise the ceiling on the host and restart the container, because a socket
+takes its size when it opens:
+
+```bash
+echo 'net.core.rmem_max = 2097152' | sudo tee /etc/sysctl.d/60-s5core-udp.conf
+sudo sysctl --system
+docker compose restart s5core
+```
+
+Compose `sysctls` does not do it: unlike `tcp_mtu_probing`, `net.core.rmem_max`
+is one value for the whole host, and a container sees it but may not write
+it, so Docker fails the start with `open sysctl net.core.rmem_max file:
+permission denied`. Datagrams dropped on a full buffer are counted in
+`s5core_udp_receive_buffer_drops_total`, the kernel's `RcvbufErrors` of the
+container's namespace: a number that grows with the game is this, and one
+that stays at zero while the game loses answers points to the path.
+
+The client asks for the same 2 MiB on its UDP sockets and logs the same line.
+Run as root, it gets them regardless of `rmem_max`.
 
 Docker references: [environment interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/),
 [local log rotation](https://docs.docker.com/engine/logging/drivers/local/),

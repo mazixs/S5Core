@@ -56,6 +56,10 @@ def net_title(net):
         parts.append(f"всплески +{net['delay_spike_ms']:g} мс по {net['delay_spike_len_ms']:g} мс, {net['delay_spike_pct']:g}% времени")
     if net["rate_mbit"]:
         parts.append(f"{net['rate_mbit']:g} Мбит/с")
+    if net.get("uplink_mbit"):
+        parts.append(f"аплинк {net['uplink_mbit']:g} Мбит/с, очередь {net['queue']} {net['queue_kb']:g} КБ")
+    if net.get("wake_delay_ms"):
+        parts.append(f"пробуждение +{net['wake_delay_ms']:g} мс")
     return "netem: " + ", ".join(parts)
 
 

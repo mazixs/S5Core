@@ -257,8 +257,7 @@ func (s *Store) collectAccountsLocked() []UserAccount {
 }
 
 // FlushTraffic applies all unflushed traffic deltas to the account
-// structs and resets the atomic counters. Call under write lock or
-// when no concurrent AddTraffic calls are expected.
+// structs and resets the atomic counters.
 func (s *Store) FlushTraffic() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -457,12 +456,6 @@ func (s *Store) SessionStatus(username string) SessionStatus {
 	return SessionAllowed
 }
 
-// SessionAllowed reports whether a user may keep transferring. It is the
-// boolean view of SessionStatus, kept for callers that do not care why.
-func (s *Store) SessionAllowed(username string) bool {
-	return s.SessionStatus(username) == SessionAllowed
-}
-
 // SetVerifyObserver installs a callback reporting which path answered each
 // password check. Nil disables reporting. It must be set before the store
 // starts serving connections.
@@ -598,18 +591,6 @@ func (s *Store) commitMigratedHash(username, password, hash string, migrating *u
 	return s.filePath, true
 }
 
-// AddTraffic atomically increments the traffic counter for a user.
-// This is designed for the hot path and uses lock-free atomics.
-func (s *Store) AddTraffic(username string, bytes int64) {
-	s.mu.RLock()
-	entry, ok := s.users[username]
-	s.mu.RUnlock()
-
-	if ok {
-		entry.trafficDelta.Add(bytes)
-	}
-}
-
 // TrafficCounterFor returns a raw *atomic.Int64 pointer for the given user.
 // This allows lock-free traffic counting on the TCP hot path by resolving
 // the pointer once at connection setup. Returns nil if user not found.
@@ -690,13 +671,6 @@ func (s *Store) RemoveUser(username string) error {
 	delete(s.users, username)
 	s.verifier.forget(username)
 	return nil
-}
-
-// UserCount returns the number of loaded users.
-func (s *Store) UserCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.users)
 }
 
 // validateUsers checks for duplicate usernames and IDs.

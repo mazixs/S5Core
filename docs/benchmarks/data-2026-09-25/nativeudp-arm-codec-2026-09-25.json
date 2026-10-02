@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-25",
+  "scope": "ARMv8 router, isolated codec benchmark after the first WAN run; no network or application relay",
+  "command": "GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c ./pkg/nativeudp; nativeudp.test -test.run ^$ -test.bench BenchmarkCodecRoundTrip -test.benchmem -test.benchtime=3s",
+  "benchmark": "BenchmarkCodecRoundTrip-3",
+  "iterations": 127280,
+  "ns_per_round_trip": 28599,
+  "bytes_per_op": 0,
+  "allocs_per_op": 0
+}

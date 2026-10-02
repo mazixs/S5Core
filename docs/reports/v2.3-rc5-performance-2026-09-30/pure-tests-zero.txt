@@ -1,0 +1,34 @@
+=== RUN   TestAuditTagMatchesReference
+    audit_cost_test.go:55: 32768 tag values match crypto/hmac with SHA-256
+--- PASS: TestAuditTagMatchesReference (0.02s)
+=== RUN   TestAuditConcurrentCodecDirections
+--- PASS: TestAuditConcurrentCodecDirections (0.00s)
+=== RUN   TestPaddingNeverTakesADatagramPastTheLimit
+--- PASS: TestPaddingNeverTakesADatagramPastTheLimit (0.04s)
+=== RUN   TestTheLimitStaysWithinTheRangeOfTheSearch
+--- PASS: TestTheLimitStaysWithinTheRangeOfTheSearch (0.00s)
+=== RUN   TestAProbeOfASizeIsAnsweredAtItsSize
+--- PASS: TestAProbeOfASizeIsAnsweredAtItsSize (0.00s)
+=== RUN   TestAnAnswerIsNeverLongerThanItsProbe
+--- PASS: TestAnAnswerIsNeverLongerThanItsProbe (0.00s)
+=== RUN   TestAProbeOfAnOlderClientGetsAnEmptyAnswer
+--- PASS: TestAProbeOfAnOlderClientGetsAnEmptyAnswer (0.00s)
+=== RUN   TestTheSearchFindsTheLimitOfThePath
+--- PASS: TestTheSearchFindsTheLimitOfThePath (0.02s)
+=== RUN   TestALostProbeNeverTakesTheLimitPastThePath
+--- PASS: TestALostProbeNeverTakesTheLimitPastThePath (0.00s)
+=== RUN   TestARoundWithoutItsControlDecidesNothing
+--- PASS: TestARoundWithoutItsControlDecidesNothing (0.00s)
+=== RUN   TestProbesAndAnswersHaveNoConstantShape
+--- PASS: TestProbesAndAnswersHaveNoConstantShape (0.01s)
+=== RUN   TestFixedTagMatchesHMAC
+--- PASS: TestFixedTagMatchesHMAC (0.00s)
+=== RUN   TestLostOutOfOrderReplayAndForgery
+--- PASS: TestLostOutOfOrderReplayAndForgery (0.00s)
+=== RUN   TestRecoversAfterHighRateOutage
+--- PASS: TestRecoversAfterHighRateOutage (0.00s)
+=== RUN   TestAResyncRecoversFromMoreLostThanTheWindow
+--- PASS: TestAResyncRecoversFromMoreLostThanTheWindow (0.00s)
+=== RUN   TestGameDatagramsHaveNoFixedPrefixOrLength
+--- PASS: TestGameDatagramsHaveNoFixedPrefixOrLength (0.00s)
+PASS

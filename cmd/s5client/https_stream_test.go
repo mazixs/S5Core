@@ -284,7 +284,10 @@ func TestHTTPSDefaultReadTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 	tr := streamTransport(t, paths["plain"], false)
-	client := &http.Client{Transport: tr, Timeout: 40 * time.Second}
+	// The timeout only ends a stalled stream. The origin's pauses stretch on
+	// a busy machine: 34.8 s of 33 on a CI runner, twice as long under a CPU
+	// quota, which a 40 s timeout cut.
+	client := &http.Client{Transport: tr, Timeout: 90 * time.Second}
 	start := time.Now()
 	r, e := client.Get(server.URL)
 	if e != nil {

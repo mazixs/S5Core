@@ -17,7 +17,7 @@ func TestTheClientTunesItsUDPTunnel(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			handleUDPAssociate(clientSide, obfsSide, "example.com", clientParams{UDPTunnelTCPTuning: on})
+			handleUDPAssociate(clientSide, obfsSide, "example.com", clientParams{UDPTunnelTCPTuning: on}, nil)
 		}()
 		if _, err := tunnel.Write(udpTunnelReply); err != nil {
 			t.Fatal(err)

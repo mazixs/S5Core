@@ -1,13 +1,13 @@
-# Game session on a lossy client-server leg: how UDP-over-TCP (0x83, obfs and wss)
-# degrades against native UDP (plain SOCKS5, 0x03) and the path without a proxy.
+# Game session on a lossy client-server leg: native encrypted UDP, 0x83,
+# plain SOCKS5 UDP and the path without a proxy.
 # RTT 50 ms as on the measured field node, random loss 0-5% and outages in time
 # (a fade drops everything for a spell; loss_pct is then the share of time).
-# Ten minutes per cell. The series form one group: all 32 cells run at once,
+# Ten minutes per cell. The series form one group: all 56 cells run at once,
 # unpinned, since a 64 Hz stream loads a core by a few percent. About 12 minutes.
 name = "game-loss"
-description = "игровая сессия под потерями: 0x83 против нативного UDP"
-base = "cur"
-candidate = "cur"
+description = "игровая сессия под потерями: native UDP и 0x83 против прямого пути"
+base = "tcp"
+candidate = "native"
 
 [defaults]
 auth = "none"
@@ -22,9 +22,19 @@ sample_s = 60
 direct = true
 title = "без прокси"
 
-[variants.cur]
+[variants.tcp]
 ref = "worktree"
-title = "рабочее дерево"
+title = "0x83"
+[variants.tcp.env.client]
+UDP_NATIVE = "false"
+
+[variants.native]
+ref = "worktree"
+title = "native UDP"
+[variants.native.env.server]
+UDP_PORT = "41443"
+[variants.native.env.client]
+UDP_NATIVE = "true"
 
 [guard]
 max_foreign_cores = 4.0

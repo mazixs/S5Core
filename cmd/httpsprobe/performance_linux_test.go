@@ -230,7 +230,7 @@ func TestPerformanceProcesses(t *testing.T) {
 			_, op, _ := net.SplitHostPort(obfsAddr)
 			_, mp, _ := net.SplitHostPort(metrics)
 			psk := "0123456789abcdef0123456789abcdef"
-			serverEnv := []string{"PROXY_LISTEN_IP=127.0.0.1", "PROXY_PORT=" + pp, "REQUIRE_AUTH=false", "OBFS_ENABLED=true", "OBFS_PORT=" + op, "OBFS_PSK=" + psk, "OBFS_MAX_PADDING=256", "OBFS_MTU=1400", "WS_ENABLED=true", "WS_ADDR=" + wsAddr, "WS_CERT_FILE=" + cert, "WS_KEY_FILE=" + key, "WS_MIN_FRAME=256", "WS_MAX_FRAME=4096", "METRICS_PORT=" + mp, "METRICS_BIND_ADDR=127.0.0.1", "TRAFFIC_FLUSH_INTERVAL=250ms"}
+			serverEnv := []string{"PROXY_LISTEN_IP=127.0.0.1", "PROXY_PORT=" + pp, "REQUIRE_AUTH=false", "ALLOW_PRIVATE_DEST=true", "OBFS_ENABLED=true", "OBFS_PORT=" + op, "OBFS_PSK=" + psk, "OBFS_MAX_PADDING=256", "OBFS_MTU=1400", "WS_ENABLED=true", "WS_ADDR=" + wsAddr, "WS_CERT_FILE=" + cert, "WS_KEY_FILE=" + key, "WS_MIN_FRAME=256", "WS_MAX_FRAME=4096", "METRICS_PORT=" + mp, "METRICS_BIND_ADDR=127.0.0.1", "TRAFFIC_FLUSH_INTERVAL=250ms"}
 			clientEnv := []string{"CLIENT_LISTEN_ADDR=" + clientAddr, "SERVER_ADDR=" + obfsAddr, "OBFS_PSK=" + psk, "OBFS_MAX_PADDING=256", "OBFS_MTU=1400", "OBFS_FORMAT=v1", "KEEPALIVE_MIN=10s", "KEEPALIVE_MAX=20s", "TRANSPORT=obfs"}
 			if os.Getenv("S5_PERF_TLS_CACHE") == "0" {
 				clientEnv = append(clientEnv, "WS_TLS_SESSION_CACHE=false")

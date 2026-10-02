@@ -1,0 +1,122 @@
+package socks5
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"net"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+type auditBlockConn struct {
+	net.Conn
+	block   atomic.Bool
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *auditBlockConn) Write(p []byte) (int, error) {
+	if c.block.Load() {
+		select {
+		case c.started <- struct{}{}:
+		default:
+		}
+		<-c.release
+	}
+	return c.Conn.Write(p)
+}
+
+func TestAuditFallbackWriteBlocksHealthyNativeReply(t *testing.T) {
+	native := newScriptedNative()
+	server, err := New(&Config{Logger: slog.New(slog.DiscardHandler), NativeUDP: func(net.Conn) (NativeAssociation, error) { return native, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, other := net.Pipe()
+	wrapped := &auditBlockConn{Conn: other, started: make(chan struct{}, 1), release: make(chan struct{})}
+	defer client.Close()
+	defer other.Close()
+	go func() { _ = server.ServeConnContext(context.Background(), wrapped) }()
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	go func() { _, _ = client.Write([]byte{5, 1, 0, 5, UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}) }()
+	var reply [12]byte
+	if _, err := io.ReadFull(client, reply[:]); err != nil {
+		t.Fatal(err)
+	}
+	target, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	native.in <- BuildUDPHeader(&AddrSpec{IP: net.IPv4(127, 0, 0, 1), Port: target.LocalAddr().(*net.UDPAddr).Port}, []byte("hello"))
+	_ = target.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var b [2048]byte
+	_, relay, err := target.ReadFromUDPAddrPort(b[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped.block.Store(true)
+	_, err = target.WriteToUDPAddrPort(make([]byte, 1400), relay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-wrapped.started:
+	case <-time.After(time.Second):
+		t.Fatal("fallback write did not start")
+	}
+	start := time.Now()
+	_, err = target.WriteToUDPAddrPort([]byte("small-native"), relay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-native.sent:
+		close(wrapped.release)
+		t.Fatal("bug not reproduced: small packet bypassed stalled TCP")
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(wrapped.release)
+	_ = readTCPAnswer(t, client)
+	select {
+	case answer := <-native.sent:
+		if !strings.HasSuffix(string(answer), "small-native") {
+			t.Fatalf("wrong answer %q", answer)
+		}
+		t.Logf("healthy native reply waited %s for unrelated oversized TCP fallback write", time.Since(start))
+	case <-time.After(time.Second):
+		t.Fatal("native did not resume after TCP drained")
+	}
+}
+
+func TestAuditLateResyncOverridesNewerNativeRecovery(t *testing.T) {
+	native := newScriptedNative()
+	target, relay, conn := nativeAnswers(t, native)
+	// nativeAnswers has already proven a native data packet was processed.
+	// Deliver the older loss notice after that recovery, as independent TCP
+	// and UDP paths can do. This is the actual production server relay.
+	if _, err := conn.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1}); err != nil {
+		t.Fatal(err)
+	}
+	<-native.resynced
+	var response [10]byte
+	if _, err := io.ReadFull(conn, response[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := target.WriteToUDPAddrPort([]byte("after-recovery"), relay); err != nil {
+		t.Fatal(err)
+	}
+	answer := readTCPAnswer(t, conn)
+	if !strings.HasSuffix(string(answer), "after-recovery") {
+		t.Fatalf("wrong answer %q", answer)
+	}
+	select {
+	case <-native.sent:
+		t.Fatal("unexpected native answer")
+	default:
+	}
+	t.Log("older resync arriving after verified native data moved the server's replies back to TCP")
+}

@@ -1,0 +1,5 @@
+=== RUN   TestAuditQueuedWaveWriteCalls
+    audit_wave_test.go:15: queued frames=900, stream Write calls=900, bytes=846000, drops=0
+--- PASS: TestAuditQueuedWaveWriteCalls (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	0.002s

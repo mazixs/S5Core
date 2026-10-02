@@ -1,0 +1,146 @@
+package main
+
+import (
+	"bytes"
+	"net"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/pkg/s5server"
+)
+
+type auditStreamGate struct {
+	*rerouted
+	lossOnly bool
+	active   atomic.Bool
+	attempts atomic.Int32
+	entered  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+func (c *auditStreamGate) Write(b []byte) (int, error) {
+	isLoss := len(b) == 10 && b[0] == 0 && b[1] == 0
+	if c.active.Load() && ((c.lossOnly && isLoss) || (!c.lossOnly && len(b) > 1400)) {
+		c.attempts.Add(1)
+		select {
+		case c.entered <- struct{}{}:
+		default:
+		}
+		<-c.release
+	}
+	return c.rerouted.Write(b)
+}
+func (c *auditStreamGate) unblock() { c.once.Do(func() { close(c.release) }) }
+
+func newAuditFullRig(t *testing.T, lossOnly bool) (*nativeRig, *auditStreamGate) {
+	t.Helper()
+	udpPort := freeUDPPort(t)
+	addr, cfg := startTunnelServerWith(t, func(c *s5server.Config) { c.UDPPort = strconv.Itoa(udpPort) })
+	hop := newNativeHop(t, udpPort)
+	target := newStreamer(t)
+	cc := clientParams{ServerAddr: addr, PSK: cfg.ObfsPSK, MTU: 1400, MaxPadding: 32, Transport: "obfs", UDPNative: true, HandshakeTimeout: 3 * time.Second}
+	req := []byte{5, socks5.UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}
+	stream, _, err := dialTunnel(cc, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, _ := net.SplitHostPort(addr)
+	p, _ := strconv.Atoi(port)
+	control := &meteredConn{Conn: stream}
+	gate := &auditStreamGate{rerouted: &rerouted{meteredConn: control, remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.2"), Port: p}}, lossOnly: lossOnly, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	t.Cleanup(func() { gate.unblock(); _ = stream.Close() })
+	app, handler := tcpPair(t)
+	go handleUDPAssociate(handler, gate, "", cc, req)
+	reply := readAppReply(t, app)
+	if reply[1] != 0 {
+		t.Fatalf("application refused: %x", reply)
+	}
+	r := &nativeRig{t: t, hop: hop, target: target, app: appSocket(t), local: boundUDPPort(t, reply), control: control}
+	return r, gate
+}
+
+func TestAuditFullClientTCPWriteBlocksNextNativePacket(t *testing.T) {
+	r, gate := newAuditFullRig(t, false)
+	r.verified()
+	gate.active.Store(true)
+	r.send(strings.Repeat("B", 1500))
+	select {
+	case <-gate.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("TCP fallback did not reach gate")
+	}
+	start := time.Now()
+	r.send("short-native")
+	if r.await("short-native", 150*time.Millisecond) {
+		t.Fatal("bug not reproduced: short packet bypassed blocked writer")
+	}
+	gate.unblock()
+	if !r.await("short-native", 3*time.Second) {
+		t.Fatal("short packet did not resume")
+	}
+	t.Logf("real client/hub/server: next short datagram delayed %v by blocked TCP write", time.Since(start))
+}
+
+func TestAuditFullLateLossStrandsReceiveOnly(t *testing.T) {
+	r, gate := newAuditFullRig(t, true)
+	r.verified()
+	// Record the target's relay endpoint without leaving a continuous flow.
+	r.startStream()
+	peer := r.target.peer.Load()
+	r.target.peer.Store(nil)
+	gate.active.Store(true)
+	r.hop.dropDown.Store(true)
+	select {
+	case <-gate.entered:
+	case <-time.After(6 * time.Second):
+		t.Fatal("client emitted no loss signal")
+	}
+	r.hop.dropDown.Store(false)
+	// Actual data must have returned to native while the real signal waits.
+	r.verified()
+	time.Sleep(3 * time.Second)
+	before := r.control.read.Load()
+	gate.unblock()
+	until := time.Now().Add(3 * time.Second)
+	for r.control.read.Load() == before && time.Now().Before(until) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if r.control.read.Load() == before {
+		t.Fatal("no server resync acknowledgement")
+	}
+	// Consume residual pre-failure UDP data before measuring.
+	_ = r.app.SetReadDeadline(time.Now().Add(30 * time.Millisecond))
+	var b [2048]byte
+	for {
+		if _, _, err := r.app.ReadFromUDP(b[:]); err != nil {
+			break
+		}
+	}
+	before = r.control.read.Load()
+	r.target.peer.Store(peer)
+	packets := 0
+	start := time.Now()
+	until = time.Now().Add(23 * time.Second)
+	for time.Now().Before(until) {
+		_ = r.app.SetReadDeadline(time.Now().Add(time.Second))
+		n, _, err := r.app.ReadFromUDP(b[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.HasSuffix(b[:n], []byte("state")) {
+			packets++
+		}
+	}
+	r.target.peer.Store(nil)
+	delta := r.control.read.Load() - before
+	t.Logf("actual delayed loss signals=%d; receive-only %v: packets=%d TCP plaintext bytes=%d (17 bytes per state frame)", gate.attempts.Load(), time.Since(start), packets, delta)
+	if packets < 1000 || delta < int64(packets*17) {
+		t.Fatal("persistent TCP routing not reproduced")
+	}
+}

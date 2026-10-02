@@ -23,6 +23,10 @@ import (
 // maxShutdown is how long SIGTERM to "everything has stopped" may take.
 const maxShutdown = 3 * time.Second
 
+// answerWithin is the deadline for a login that runs Argon2id: over 3 s under
+// race and coverage with every other package competing for the CPU.
+const answerWithin = 15 * time.Second
+
 // oneUserFile writes a users.json with a single account and no traffic used.
 func oneUserFile(t *testing.T) string {
 	t.Helper()
@@ -78,6 +82,7 @@ func TestSIGTERMFlushesTrafficAndStopsEveryGoroutine(t *testing.T) {
 	t.Setenv("PROXY_PORT", "19088")
 	t.Setenv("PROXY_LISTEN_IP", "127.0.0.1")
 	t.Setenv("REQUIRE_AUTH", "true")
+	t.Setenv("ALLOW_PRIVATE_DEST", "true")
 	t.Setenv("USERS_FILE", usersPath)
 	t.Setenv("TRAFFIC_FLUSH_INTERVAL", "1h")
 	t.Setenv("MAX_CONNECTIONS", "100")
@@ -105,7 +110,7 @@ func TestSIGTERMFlushesTrafficAndStopsEveryGoroutine(t *testing.T) {
 	// that has to survive the shutdown.
 	conn := waitForProxy(t, "127.0.0.1:19088")
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(answerWithin))
 	if err := socks5ConnectAuth(conn, "alice", "secret1", echoAddr); err != nil {
 		t.Fatalf("handshake: %v", err)
 	}

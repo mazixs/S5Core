@@ -1,0 +1,8 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditSessionSetup 	    4273	     75242 ns/op	   28536 B/op	      20 allocs/op
+BenchmarkAuditSessionSetup 	    4748	     75764 ns/op	   28536 B/op	      20 allocs/op
+BenchmarkAuditSessionSetup 	    4848	     75807 ns/op	   28536 B/op	      20 allocs/op
+PASS

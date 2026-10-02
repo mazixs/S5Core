@@ -1,0 +1,52 @@
+Diagnostic output excerpt. Endpoint and lifecycle logs omitted.
+go test -race ./cmd/s5client ./internal/socks5 -run '^TestAudit' -v -count=1
+
+=== RUN   TestAuditDelayedSignalStrandsReceiveOnlyOnTCP
+    audit_delayed_signal_test.go:102: 60s after stale signal: client.up=true server.native=false heard probes=6 -> 6 total probes=16 TCP-only packets=6000
+--- PASS: TestAuditDelayedSignalStrandsReceiveOnlyOnTCP (0.02s)
+=== RUN   TestAuditFullClientTCPWriteBlocksNextNativePacket
+    audit_full_path_linux_test.go:87: real client/hub/server: next short datagram delayed 150.429148ms by blocked TCP write
+--- PASS: TestAuditFullClientTCPWriteBlocksNextNativePacket (0.18s)
+=== RUN   TestAuditFullLateLossStrandsReceiveOnly
+    audit_full_path_linux_test.go:142: actual delayed loss signals=1; receive-only 23.004396383s: packets=1473 TCP plaintext bytes=25041 (17 bytes per state frame)
+--- PASS: TestAuditFullLateLossStrandsReceiveOnly (27.60s)
+=== RUN   TestAuditTwoLostHeardProbesStrandReceiveOnly
+=== RUN   TestAuditTwoLostHeardProbesStrandReceiveOnly/probe-400ms
+    audit_lost_heard_test.go:63: lost heard probes=2, 60s receive-only: client up=true told=false server native=true; server packets native=5920 tcp=80
+=== RUN   TestAuditTwoLostHeardProbesStrandReceiveOnly/probe-580ms
+    audit_lost_heard_test.go:63: lost heard probes=2, 60s receive-only: client up=true told=false server native=false; server packets native=0 tcp=6000
+--- PASS: TestAuditTwoLostHeardProbesStrandReceiveOnly (0.10s)
+    --- PASS: TestAuditTwoLostHeardProbesStrandReceiveOnly/probe-400ms (0.09s)
+    --- PASS: TestAuditTwoLostHeardProbesStrandReceiveOnly/probe-580ms (0.02s)
+=== RUN   TestAuditOneLostProbeDivertsVerifiedTraffic
+=== RUN   TestAuditOneLostProbeDivertsVerifiedTraffic/one-way
+    audit_path_policy_test.go:45: one lost probe, continuous replies=false: up=true diverted=1/200 interval=1.58s..1.58s signals=[1.58s]
+=== RUN   TestAuditOneLostProbeDivertsVerifiedTraffic/two-way-control
+    audit_path_policy_test.go:45: one lost probe, continuous replies=true: up=true diverted=0/200 interval=0s..0s signals=[]
+--- PASS: TestAuditOneLostProbeDivertsVerifiedTraffic (0.01s)
+    --- PASS: TestAuditOneLostProbeDivertsVerifiedTraffic/one-way (0.00s)
+    --- PASS: TestAuditOneLostProbeDivertsVerifiedTraffic/two-way-control (0.01s)
+=== RUN   TestAuditFirstPacketAfterHealthyIdleUsesTCP
+    audit_path_policy_test.go:69: no packet or probe losses: first native=false second native=true up=true signals=[5s]
+--- PASS: TestAuditFirstPacketAfterHealthyIdleUsesTCP (0.00s)
+=== RUN   TestAuditOneLostProbeAt50msRTT
+    audit_probe_rtt_test.go:44: probe RTT=50ms, input=100Hz, one lost probe: up=true diverted=5/200 interval=1.68s..1.72s signals=[1.68s]
+--- PASS: TestAuditOneLostProbeAt50msRTT (0.00s)
+=== RUN   TestAuditSizeSelectionKeepsLargeTrafficOnTCP
+    audit_size_selection_linux_test.go:23: probe payload=1200 accepted=true TCP bytes up=0 down=0
+    audit_size_selection_linux_test.go:23: probe payload=1364 accepted=true TCP bytes up=0 down=0
+    audit_size_selection_linux_test.go:23: probe payload=1365 accepted=true TCP bytes up=1377 down=1377
+    audit_size_selection_linux_test.go:23: probe payload=1400 accepted=true TCP bytes up=1412 down=1412
+    audit_size_selection_linux_test.go:42: selected=1400: 100/100 delivered, TCP bytes up=141200 down=141200, expected=141200 each way
+    audit_size_selection_linux_test.go:49: small control packet remains native after the selected-size flow
+--- PASS: TestAuditSizeSelectionKeepsLargeTrafficOnTCP (1.07s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	29.999s
+=== RUN   TestAuditFallbackWriteBlocksHealthyNativeReply
+    audit_native_block_test.go:89: healthy native reply waited 150.327874ms for unrelated oversized TCP fallback write
+--- PASS: TestAuditFallbackWriteBlocksHealthyNativeReply (0.15s)
+=== RUN   TestAuditLateResyncOverridesNewerNativeRecovery
+    audit_native_block_test.go:121: older resync arriving after verified native data moved the server's replies back to TCP
+--- PASS: TestAuditLateResyncOverridesNewerNativeRecovery (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.159s

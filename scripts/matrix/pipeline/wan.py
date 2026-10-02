@@ -200,7 +200,11 @@ tail -n 3 {sd}/origin.log; exit 1""")
         cert, key = os.path.join(self.dir, "cert.pem"), os.path.join(self.dir, "key.pem")
         if not os.path.isfile(cert):
             ip = self.w["server_ip"]
+            # Valid from an hour ago: a client clock seconds behind this host refused a certificate
+            # valid from now, and the first connections of a wss cell failed.
+            since = time.strftime("%Y%m%d%H%M%SZ", time.gmtime(time.time() - 3600))
             subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-days", "30",
+                            "-not_before", since,
                             "-subj", f"/CN={ip}", "-addext", f"subjectAltName=IP:{ip}", "-keyout", key, "-out", cert],
                            check=True, capture_output=True, timeout=30)
             os.chmod(key, 0o600)

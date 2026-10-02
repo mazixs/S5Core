@@ -3,9 +3,14 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/exec"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,7 +33,43 @@ const (
 	// Longer than the server's READ_TIMEOUT (30 s): the channel lives only if
 	// the tunnel keeps it alive.
 	gameIdleEvery = 40 * time.Second
+	// A resume is looked at for this long: its first echo, its longest gap.
+	gameResumeWindow = 3 * time.Second
+	// wakeOff runs this long after the first tick of a resume: long enough
+	// for the proxy to send that tick on, and every packet in between is one
+	// of the first after the pause.
+	gameWakeHold = 20 * time.Millisecond
+	// A tick the stream did not send, because it was paused.
+	tickPaused = -2
+	// After an upload stops, the queue has drained once an echo is back
+	// within this of the stream's fastest one; what the sockets still held
+	// kept the uplink loaded until then.
+	gameDrained = 5 * time.Millisecond
 )
+
+// gameShape is what a session does besides the stream: a pause that lets the
+// radio of a mobile path fall asleep, and a bulk upload beside the stream.
+// Both are laid out in time from the start of the stream.
+type gameShape struct {
+	on, pause       time.Duration // the stream stops for pause after every on
+	bulkOff, bulkOn time.Duration // an upload runs for bulkOn after every bulkOff
+}
+
+func (s gameShape) paused(at time.Duration) bool {
+	return s.pause > 0 && at%(s.on+s.pause) >= s.on
+}
+
+func (s gameShape) loaded(at time.Duration) bool {
+	return s.bulkOn > 0 && at%(s.bulkOff+s.bulkOn) >= s.bulkOff
+}
+
+// resume is one start of the stream after a pause.
+type resume struct {
+	at        time.Time
+	seq       int
+	firstEcho time.Duration // from the first tick to the first echo, 0 while none came
+	gap       time.Duration // the longest wait for an echo within gameResumeWindow
+}
 
 type gameWindow struct {
 	Minute  int     `json:"minute"`
@@ -47,22 +88,29 @@ type gameStream struct {
 	socks    string
 	n, size  int
 	gap      time.Duration
-	rtt      []int32 // microseconds by sequence number, -1 until the echo arrives
+	shape    gameShape
+	rtt      []int32 // microseconds by sequence number, -1 until the echo arrives, tickPaused if not sent
 	offered  int
+	paused   int
 	breaks   int
 	closed   int
 	downtime time.Duration
 	firstErr string
+	wakeErrs int
 
 	mu          sync.Mutex
 	lastArrival time.Time
 	freezes     int
 	maxGap      time.Duration
 	down        time.Time // last echo before a break, zero when none is open
+	resumes     []resume
+	// began gets the time the stream's schedule starts from.
+	began chan time.Time
 }
 
-func newGameStream(p *prober, socks string, n, hz, size int) *gameStream {
-	g := &gameStream{p: p, socks: socks, n: n, size: size, gap: time.Second / time.Duration(hz), rtt: make([]int32, n)}
+func newGameStream(p *prober, socks string, n, hz, size int, shape gameShape) *gameStream {
+	g := &gameStream{p: p, socks: socks, n: n, size: size, gap: time.Second / time.Duration(hz), shape: shape, rtt: make([]int32, n),
+		began: make(chan time.Time, 1)}
 	for i := range g.rtt {
 		g.rtt[i] = -1
 	}
@@ -125,6 +173,13 @@ func (g *gameStream) receive(pc net.PacketConn) {
 				g.freezes++
 			}
 			g.maxGap = max(g.maxGap, gap)
+			if k := len(g.resumes) - 1; k >= 0 && seq >= g.resumes[k].seq && now.Sub(g.resumes[k].at) < gameResumeWindow {
+				r := &g.resumes[k]
+				if r.firstEcho == 0 {
+					r.firstEcho = now.Sub(r.at)
+				}
+				r.gap = max(r.gap, gap)
+			}
 		}
 		g.lastArrival = now
 		if !g.down.IsZero() {
@@ -132,6 +187,20 @@ func (g *gameStream) receive(pc net.PacketConn) {
 			g.down = time.Time{}
 		}
 		g.mu.Unlock()
+	}
+}
+
+// runWake runs one of the commands that put the path to sleep and wake it.
+// A failure is counted, not fatal: the resume is then measured without it.
+func (g *gameStream) runWake(argv []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+	if err != nil {
+		g.mu.Lock()
+		g.wakeErrs++
+		g.mu.Unlock()
+		g.fail(fmt.Errorf("wake %s: %w: %s", argv[0], err, strings.TrimSpace(string(out))))
 	}
 }
 
@@ -150,8 +219,19 @@ func (g *gameStream) run(ctx context.Context) {
 	dst, _ := net.ResolveUDPAddr("udp", g.p.o.UDPEcho)
 	msg := make([]byte, g.size)
 	start := time.Now()
+	g.began <- start
+	var resumed time.Time
+	var wakes sync.WaitGroup
+	defer wakes.Wait()
+	wake := g.socks == g.p.socks && len(g.p.wakeOn) > 0
 	for i := range g.n {
 		at := start.Add(time.Duration(i) * g.gap)
+		if g.shape.paused(time.Duration(i) * g.gap) {
+			g.rtt[i] = tickPaused
+			g.offered++
+			g.paused++
+			continue
+		}
 		// Ticks that fell due while the association was being reopened are
 		// lost, as they are to a game; sending them now would be a burst.
 		if at.Before(opened) {
@@ -166,7 +246,19 @@ func (g *gameStream) run(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		lost := time.Since(later(g.last(), opened)) > gameStall
+		first := i > 0 && g.rtt[i-1] == tickPaused
+		if first {
+			if wake {
+				g.runWake(g.p.wakeOn)
+			}
+			resumed = time.Now()
+			g.mu.Lock()
+			// The pause is not a freeze; the wait for the first echo is.
+			g.lastArrival = resumed
+			g.resumes = append(g.resumes, resume{at: resumed, seq: i})
+			g.mu.Unlock()
+		}
+		lost := time.Since(later(later(g.last(), opened), resumed)) > gameStall
 		select {
 		case <-dead:
 			g.closed++
@@ -192,6 +284,10 @@ func (g *gameStream) run(ctx context.Context) {
 			g.fail(err)
 		}
 		g.offered++
+		if first && wake {
+			wakes.Add(1)
+			time.AfterFunc(gameWakeHold, func() { defer wakes.Done(); g.runWake(g.p.wakeOff) })
+		}
 	}
 	// Late echoes still count; after this they are lost.
 	time.Sleep(2 * time.Second)
@@ -203,16 +299,57 @@ func (g *gameStream) summary() (stats, []gameWindow) {
 	var got []time.Duration
 	var jitter time.Duration
 	spikes, inSpike, prev := 0, false, time.Duration(-1)
+	fastest := time.Duration(-1)
 	for i := range g.offered {
-		if us := atomic.LoadInt32(&g.rtt[i]); us >= 0 {
-			d := time.Duration(us) * time.Microsecond
+		if us := atomic.LoadInt32(&g.rtt[i]); us >= 0 && (fastest < 0 || time.Duration(us)*time.Microsecond < fastest) {
+			fastest = time.Duration(us) * time.Microsecond
+		}
+	}
+	// Ticks sent and echoed while the bulk upload ran, and after it stopped
+	// and its queue drained; the ticks in between are in neither.
+	var load, clean []time.Duration
+	var drains []float64
+	loadSent, cleanSent, drained, offAt := 0, 0, true, 0
+	for i := range g.offered {
+		us := atomic.LoadInt32(&g.rtt[i])
+		if us == tickPaused {
+			continue
+		}
+		d := time.Duration(us) * time.Microsecond
+		loaded := g.shape.loaded(time.Duration(i) * g.gap)
+		switch {
+		case loaded:
+			if !drained && offAt >= 0 {
+				drains = append(drains, -1)
+			}
+			drained, offAt = false, -1
+			loadSent++
+		case !drained:
+			if offAt < 0 {
+				offAt = i
+			}
+			if us >= 0 && d <= fastest+gameDrained {
+				drained = true
+				drains = append(drains, ms(time.Duration(i-offAt)*g.gap))
+			}
+		}
+		if !loaded && drained {
+			cleanSent++
+		}
+		if us >= 0 {
 			got = append(got, d)
+			if loaded {
+				load = append(load, d)
+			} else if drained {
+				clean = append(clean, d)
+			}
 			if prev >= 0 {
 				jitter += max(d-prev, prev-d)
 			}
 			prev = d
 		}
 	}
+	sent := g.offered - g.paused
 	st := stats{N: len(got), FirstErr: g.firstErr}
 	if len(got) == 0 {
 		return st, nil
@@ -236,10 +373,10 @@ func (g *gameStream) summary() (stats, []gameWindow) {
 		}
 		inSpike = over
 	}
-	hours := (time.Duration(g.offered) * g.gap).Hours()
+	hours := (time.Duration(sent) * g.gap).Hours()
 	g.mu.Lock()
 	st.Extra = map[string]float64{
-		"loss_pct":        100 * float64(g.offered-len(got)) / float64(max(g.offered, 1)),
+		"loss_pct":        100 * float64(sent-len(got)) / float64(max(sent, 1)),
 		"p999_ms":         q(0.999),
 		"jitter_ms":       ms(jitter / time.Duration(max(len(got)-1, 1))),
 		"spike_pct":       100 * float64(slow) / float64(len(got)),
@@ -249,6 +386,40 @@ func (g *gameStream) summary() (stats, []gameWindow) {
 		"breaks":          float64(g.breaks),
 		"breaks_closed":   float64(g.closed),
 		"downtime_s":      g.downtime.Seconds(),
+	}
+	if g.shape.bulkOn > 0 {
+		if !drained && offAt >= 0 {
+			drains = append(drains, -1)
+		}
+		st.Marks = map[string][]float64{"bulk_drain_ms": drains}
+		for name, part := range map[string]struct {
+			d    []time.Duration
+			sent int
+		}{"load": {load, loadSent}, "clean": {clean, cleanSent}} {
+			st.Extra[name+"_loss_pct"] = 100 * float64(part.sent-len(part.d)) / float64(max(part.sent, 1))
+			if len(part.d) > 0 {
+				slices.Sort(part.d)
+				pq := func(p float64) float64 { return ms(part.d[int(p*float64(len(part.d)-1))]) }
+				st.Extra[name+"_p50_ms"], st.Extra[name+"_p99_ms"], st.Extra[name+"_max_ms"] = pq(0.5), pq(0.99), pq(1)
+			}
+		}
+	}
+	if g.shape.pause > 0 {
+		st.Extra["wake_errors"] = float64(g.wakeErrs)
+		st.Marks = map[string][]float64{}
+		perSec := int(time.Second / g.gap)
+		for _, r := range g.resumes {
+			lost := 0
+			for i := r.seq; i < min(r.seq+perSec, g.offered); i++ {
+				if atomic.LoadInt32(&g.rtt[i]) == -1 {
+					lost++
+				}
+			}
+			st.Marks["resume_at"] = append(st.Marks["resume_at"], float64(r.at.UnixNano())/1e9)
+			st.Marks["resume_first_echo_ms"] = append(st.Marks["resume_first_echo_ms"], ms(r.firstEcho))
+			st.Marks["resume_gap_ms"] = append(st.Marks["resume_gap_ms"], ms(r.gap))
+			st.Marks["resume_lost_1s"] = append(st.Marks["resume_lost_1s"], float64(lost))
+		}
 	}
 	g.mu.Unlock()
 	if g.p.slow > 0 {
@@ -262,12 +433,18 @@ func (g *gameStream) summary() (stats, []gameWindow) {
 	for from := 0; from < g.offered; from += perMin {
 		to := min(from+perMin, g.offered)
 		var w []time.Duration
+		ticks := 0
 		for i := from; i < to; i++ {
-			if us := atomic.LoadInt32(&g.rtt[i]); us >= 0 {
+			us := atomic.LoadInt32(&g.rtt[i])
+			if us == tickPaused {
+				continue
+			}
+			ticks++
+			if us >= 0 {
 				w = append(w, time.Duration(us)*time.Microsecond)
 			}
 		}
-		gw := gameWindow{Minute: from / perMin, Loss: 100 * float64(to-from-len(w)) / float64(to-from)}
+		gw := gameWindow{Minute: from / perMin, Loss: 100 * float64(ticks-len(w)) / float64(max(ticks, 1))}
 		if len(w) > 0 {
 			slices.Sort(w)
 			gw.P50, gw.P99, gw.Max = ms(w[len(w)/2]), ms(w[int(0.99*float64(len(w)-1))]), ms(w[len(w)-1])
@@ -275,6 +452,64 @@ func (g *gameStream) summary() (stats, []gameWindow) {
 		windows = append(windows, gw)
 	}
 	return st, windows
+}
+
+// bulk uploads through the proxy for bulkOn after every bulkOff from start,
+// until ctx ends: the load of a player who shares the uplink with a backup
+// or a video call. It returns the bytes the socket took and the Unix
+// seconds of each upload's start and end.
+func (p *prober) bulk(ctx context.Context, start time.Time, s gameShape) (moved int64, on, off []float64, errs int, firstErr string) {
+	for k := 0; ; k++ {
+		from := start.Add(time.Duration(k)*(s.bulkOff+s.bulkOn) + s.bulkOff)
+		to := from.Add(s.bulkOn)
+		t := time.NewTimer(time.Until(from))
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
+		on = append(on, float64(time.Now().UnixNano())/1e9)
+		n, err := p.upload(ctx, to)
+		off = append(off, float64(time.Now().UnixNano())/1e9)
+		moved += n
+		if err != nil && ctx.Err() == nil {
+			errs++
+			if firstErr == "" {
+				firstErr = "bulk upload: " + err.Error()
+			}
+		}
+	}
+}
+
+// upload sends one request body to the origin until the deadline, as fast
+// as the path takes it.
+func (p *prober) upload(ctx context.Context, until time.Time) (int64, error) {
+	dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	c, err := p.dial(dctx, "tcp", p.o.HTTP)
+	cancel()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = c.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = c.SetDeadline(time.Now()) })
+	defer stop()
+	_ = c.SetWriteDeadline(until)
+	if _, err := fmt.Fprintf(c, "POST /upload HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n", p.o.HTTP, int64(1)<<40); err != nil {
+		return 0, err
+	}
+	buf := make([]byte, 32<<10)
+	var n int64
+	for {
+		m, err := c.Write(buf)
+		n += int64(m)
+		if err != nil {
+			if errors.Is(err, os.ErrDeadlineExceeded) && (ctx.Err() != nil || !time.Now().Before(until)) {
+				return n, nil
+			}
+			return n, err
+		}
+	}
 }
 
 // idleChannel sends one small echo every gameIdleEvery over one connection
@@ -337,23 +572,38 @@ func later(a, b time.Time) time.Time {
 	return b
 }
 
-func (p *prober) game(n, hz, size int) stats {
+func (p *prober) game(n, hz, size int, shape gameShape) stats {
 	ctx, cancel := context.WithCancel(p.ctx)
 	defer cancel()
-	g := newGameStream(p, p.socks, n, hz, size)
+	g := newGameStream(p, p.socks, n, hz, size, shape)
 	var ctl *gameStream
-	var streams, idle sync.WaitGroup
+	var streams, idle, load sync.WaitGroup
 	if p.socks != "" && p.control {
-		ctl = newGameStream(p, "", n, hz, size)
+		ctl = newGameStream(p, "", n, hz, size, shape)
 		streams.Go(func() { ctl.run(ctx) })
 	}
 	var idleOK, idleFailed int
 	var idleErr string
 	idle.Go(func() { idleOK, idleFailed, idleErr = p.idleChannel(ctx) })
+	var moved int64
+	var bulkOn, bulkOff []float64
+	var bulkErrs int
+	var bulkErr string
+	if shape.bulkOn > 0 {
+		// On the stream's own schedule, which starts once its association is open.
+		load.Go(func() {
+			select {
+			case start := <-g.began:
+				moved, bulkOn, bulkOff, bulkErrs, bulkErr = p.bulk(ctx, start, shape)
+			case <-ctx.Done():
+			}
+		})
+	}
 	g.run(ctx)
 	streams.Wait()
 	cancel()
 	idle.Wait()
+	load.Wait()
 
 	st, windows := g.summary()
 	if st.Extra == nil {
@@ -364,6 +614,22 @@ func (p *prober) game(n, hz, size int) stats {
 	st.Errors += idleFailed
 	if st.FirstErr == "" {
 		st.FirstErr = idleErr
+	}
+	if shape.bulkOn > 0 {
+		var busy float64
+		for i := range min(len(bulkOn), len(bulkOff)) {
+			busy += bulkOff[i] - bulkOn[i]
+		}
+		st.Extra["bulk_MBps"] = float64(moved) / max(busy, 1e-9) / 1e6
+		st.Extra["bulk_errors"] = float64(bulkErrs)
+		st.Errors += bulkErrs
+		if st.FirstErr == "" {
+			st.FirstErr = bulkErr
+		}
+		if st.Marks == nil {
+			st.Marks = map[string][]float64{}
+		}
+		st.Marks["bulk_on_at"], st.Marks["bulk_off_at"] = bulkOn, bulkOff
 	}
 	if ctl != nil {
 		c, cw := ctl.summary()

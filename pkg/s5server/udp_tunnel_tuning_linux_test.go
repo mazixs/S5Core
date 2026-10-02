@@ -2,7 +2,6 @@ package s5server
 
 import (
 	"crypto/tls"
-	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -66,20 +65,6 @@ func (tc *tunedConns) all() []net.Conn {
 	return append([]net.Conn(nil), tc.conns...)
 }
 
-// socksOver runs the no-auth greeting and one request over c and returns the
-// reply code.
-func socksOver(t *testing.T, c net.Conn, command byte, addr []byte) byte {
-	t.Helper()
-	if _, err := c.Write(append([]byte{0x05, 0x01, 0x00, 0x05, command, 0x00}, addr...)); err != nil {
-		t.Fatal(err)
-	}
-	reply := make([]byte, 12)
-	if _, err := io.ReadFull(c, reply); err != nil {
-		t.Fatal(err)
-	}
-	return reply[3]
-}
-
 // The socket under a 0x83 tunnel gets the options on the server, through
 // every wrapper the server stacks on either transport: metering, deadlines,
 // obfuscation, and for wss the WebSocket and TLS as well. A CONNECT relay on
@@ -93,9 +78,9 @@ func TestTheServerTunesTheSocketOfEveryUDPTunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 	echoAddr := startEchoServer(t)
-	const obfsPort = "19471"
+	obfsPort := reservePort(t)
 	srv := startServer(t, Config{
-		Port: "19470", ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		Port: reservePort(t), ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
 		WSEnabled: true, WSAddr: "127.0.0.1:0", WSCertFile: certFile, WSKeyFile: keyFile, WSPath: "/ws",
 		// cmd/s5core always has a limit, and its wrapper sits between the
@@ -175,9 +160,9 @@ func TestTheServerTunesTheSocketOfEveryUDPTunnel(t *testing.T) {
 func TestTheSwitchLeavesTheKernelTimer(t *testing.T) {
 	var tuned tunedConns
 	tuned.hook(t)
-	const obfsPort = "19473"
+	obfsPort := reservePort(t)
 	startServer(t, Config{
-		Port: "19472", ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		Port: reservePort(t), ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
 		UDPTunnelTCPTuningOff: true,
 	})

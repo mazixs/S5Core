@@ -23,13 +23,15 @@ It is a key-derivation context, not a registration or provisioning step.
 | `PROXY_PASS` | String | *Empty* | Alias for `PROXY_PASSWORD`, which is what the client calls it. Accepted with a warning so that an `.env` copied from the client still starts the server; `PROXY_PASSWORD` wins if both are set. |
 | `ALLOWED_IPS` | String | *Empty* | Comma-separated list of client IP addresses allowed to connect, on every listener. Single addresses only, v4 or v6: a network in CIDR form is refused by name, as is any entry that is not an address, and the server does not start. Empty means no restriction - which is why a list that cannot be read is an error rather than an empty list. On the WebSocket transport it gates the tunnel, not the decoy site: the decoy keeps answering everyone, because a site that answers only a few addresses is itself a signature. |
 | `ALLOWED_DEST_FQDN` | String | *Empty* | Regex allow-list for destinations. Empty allows everything. Anchored to the whole destination unless the pattern anchors itself; names are matched without regard to case - see [Destination allow-list](#destination-allow-list). |
+| `ALLOW_PRIVATE_DEST` | Boolean | `false` | Let clients reach the machine the server runs on and the network behind it. Off by default: a destination that is loopback, link-local (a cloud's metadata service, `169.254.169.254`), private (RFC 1918, `fc00::/7`), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or one of the server's own interface addresses is refused, whatever name or address the client asked for - see [Private destinations](#private-destinations). |
 | `READ_TIMEOUT` | Duration | `30s` | Idle timeout for the relay phase: how long a connection may stay silent once traffic is flowing. Inbound data and successful outbound stream writes refresh the pending read deadline. A blocked write retains its separate `WRITE_TIMEOUT`; setup, incomplete-frame and quota-grace budgets remain absolute. |
 | `WRITE_TIMEOUT` | Duration | `30s` | Idle timeout for writes in the relay phase. |
 | `HANDSHAKE_TIMEOUT` | Duration | `15s` | Absolute budget for the setup phase: version byte, authentication and the reply to `CONNECT`. Unlike the idle timeouts it is not refreshed by traffic, so a client that dribbles one byte per second is dropped instead of being kept alive. |
 | `DIAL_TIMEOUT` | Duration | `10s` | Budget for reaching the destination: resolution plus connect, from the moment the request is parsed to the reply to `CONNECT`. It is cut out of `HANDSHAKE_TIMEOUT`, so a destination that never answers no longer holds a slot for the whole setup budget - see [Connection states](operations.md#connection-states). |
 | `FRAME_TIMEOUT` | Duration | `10s` | How long a half-read obfuscation frame may stay half-read. It applies only between a frame header and its body, so it bounds a peer that stops mid-frame without touching a tunnel that is legitimately silent. Ignored on the plain listener, which has no frames. |
 | `QUOTA_GRACE` | Duration | `5s` | How long a session whose account just ran out may keep draining what is already in flight. `0` ends the session where the quota is noticed. Nothing new is sent to the destination either way. |
-| `UDP_TUNNEL_TCP_TUNING` | Boolean | `true` | Retransmit sooner on a connection that has become a UDP tunnel (`0x83`), and only on such a connection: `CONNECT` streams carry bulk traffic and are left as the kernel set them. The socket gets `TCP_THIN_LINEAR_TIMEOUTS` and a retransmission timer floor of 20 ms (`TCP_RTO_MIN_US`). The cap of the timer (`TCP_RTO_MAX_MS`) stays as the kernel set it: Linux derives from the cap how long a connection may retransmit before it is closed, and a cap of 1 s closed tunnels during 200 ms outages. Each side tunes the socket it sends from, so this setting speeds up the server-to-client direction and the client's the other one. An option the kernel lacks is skipped with one debug line: linear timeouts exist since Linux 2.6.34, the floor since 6.15. `false` turns it off without a rebuild. What it buys on a lossy link: [game session tuning](../benchmarks/game-tuning.md). |
+| `UDP_TUNNEL_TCP_TUNING` | Boolean | `true` | Retransmit sooner on a connection that has become a UDP tunnel (`0x83` or `0x84`), and only on such a connection: `CONNECT` streams carry bulk traffic and are left as the kernel set them. The socket gets `TCP_THIN_LINEAR_TIMEOUTS` and a retransmission timer floor of 20 ms (`TCP_RTO_MIN_US`). The cap of the timer (`TCP_RTO_MAX_MS`) stays as the kernel set it: Linux derives from the cap how long a connection may retransmit before it is closed, and a cap of 1 s closed tunnels during 200 ms outages. Each side tunes the socket it sends from, so this setting speeds up the server-to-client direction and the client's the other one. An option the kernel lacks is skipped with one debug line: linear timeouts exist since Linux 2.6.34, the floor since 6.15. `false` turns it off without a rebuild. What it buys on a lossy link: [game session tuning](../benchmarks/game-tuning.md). |
+| `UDP_PORT` | Port | *Empty* | Enables the shared native UDP endpoint for authenticated `0x84` associations. Empty disables it. `0` is rejected at startup, because an ephemeral port is not open in the firewall and changes on every restart; set a port from 1 to 65535. Open the same UDP port in the host firewall and container mapping. It may have the same number as `OBFS_PORT` because the protocols use different sockets. The client probes it and uses `0x83` until a verified UDP reply arrives. On a wildcard `PROXY_LISTEN_IP` the server answers from the address the client writes to, on Linux only; that address moves with the client's, after two newest datagrams in a row, so a copied datagram sent to another address of the host does not move it; on other systems a host with several addresses needs a specific `PROXY_LISTEN_IP`. It requires an obfs or ws listener (`OBFS_ENABLED` or `WS_ENABLED`), because `0x84` is accepted only on those: without one the server does not start and says `UDP_PORT requires an obfs or ws listener`. |
 | `MAX_CONNECTIONS` | Integer | `10000` | Limit for concurrent connections, shared by all three listeners. A connection that arrives at the ceiling is closed immediately and counted in `s5core_connections_rejected_total`. |
 | `FAIL2BAN_RETRIES` | Integer | `5` | Failed authentication attempts from one source before that source is banned. Set to 0 to disable. |
 | `FAIL2BAN_TIME` | Duration | `5m` | How long a source stays banned, and how long the per-account failure counter remembers. |
@@ -37,13 +39,19 @@ It is a key-derivation context, not a registration or provisioning step.
 | `KDF_MEMORY_BUDGET_MB` | Integer | `0` | Memory that concurrent password checks may use, in MiB. Argon2id asks for 64 MiB a run, so `0` (the default, 256 MiB) means four at once plus a queue four deep per running check; a check that finds both full is refused without running and counted as `s5core_auth_verifications_total{path="overloaded"}`. A negative value removes the bound. |
 | `LOG_LEVEL` | String | `info` | `debug`, `info`, `warn` or `error`. `debug` enables protocol diagnostics - see [docs/design/observability-policy.md](../design/observability-policy.md) for what may appear in logs. |
 | `LOG_LEVEL_FILE` | String | *Empty* | Path to a file holding a single level word. Takes precedence over `LOG_LEVEL` and is re-read on `SIGHUP`, which is what lets the level change on a running process. |
+| `SESSION_LOG` | String | `off` | The session journal: one JSON line per connection (`conn_end`) and per UDP association (`assoc_end`), plus `account_minute` per active account and `process_start`/`config_reload`/`process_stop`. `all` writes every connection, `abnormal` only failures, resets, server timeouts, dials that opened a backup socket and connections that got no byte back, and every association. `off` writes nothing. The journal holds account names and destination networks, which the service log never does: read [the journal section of the policy](../design/observability-policy.md#журнал-сессий) before turning it on. |
+| `SESSION_LOG_FILE` | String | *Required unless `SESSION_LOG=off`* | Path of the journal. A file the server creates gets `0600`, and a directory it has to create gets `0700`; an existing file or directory keeps its mode. A path that cannot be opened, or is not a regular file (`/dev/stdout`, a directory, a symbolic link), stops the server at startup. Reopened on `SIGHUP`, for an outside logrotate. In a `read_only` container it needs a volume. |
+| `SESSION_LOG_MAX_SIZE_MB` | Integer | `20` | Size at which the journal is moved to `<name>-<time>.jsonl` next to it and compressed with gzip in the background. `0` means the default. |
+| `SESSION_LOG_MAX_FILES` | Integer | `10` | Rotated journal files kept. `0` means the default: the journal is never kept without a bound. |
+| `SESSION_LOG_MAX_AGE` | Duration | `168h` | Rotated journal files older than this are deleted at the next rotation. `0` means the default. |
+| `SESSION_LOG_DST` | String | `net` | What the journal keeps of the destination: `net` - the `/24` (IPv4) or `/48` (IPv6) of the address dialled and the port, never a host name; `none` - nothing. |
 | `METRICS_PORT` | String | `8080` | Port to expose OpenTelemetry/Prometheus `/metrics` and `/health` endpoints. |
 | `METRICS_BIND_ADDR` | String | `127.0.0.1` | Bind address for the metrics endpoint. **Warning:** do not expose to the public internet without a reverse proxy or firewall. Set to `0.0.0.0` only inside a trusted network or VPN. |
 | `OBFS_ENABLED` | Boolean | `false` | Enable traffic obfuscation on a separate port. |
 | `OBFS_PORT` | String | `1443` | Separate port for obfuscated connections from `s5client`. The default is kept for compatibility; set a port outside the 443 family (see the note in [Dual-Port Mode](sdk.md#with-obfuscation-dual-port-mode)). |
 | `OBFS_PSK` | String | *Empty* | Pre-shared key for obfuscation. **Must be exactly 32 bytes.** |
 | `OBFS_MAX_PADDING` | Integer | `256` | Maximum random padding this side adds to each frame it sends (bytes). Sending-side only: the receiver takes the payload length from the decrypted header and never looks at this setting. Padding is capped at half of what a frame can carry, so a large value here cannot squeeze the payload out of the frame. |
-| `OBFS_MTU` | Integer | `1400` | Largest frame this side puts on the wire, header and tag included. Writes are cut to fit it, and the send and receive buffers are sized from it (16 and 8 frames, capped at 32 and 16 KiB). |
+| `OBFS_MTU` | Integer | `1400` | Largest frame this side puts on the wire, header and tag included. Writes are cut to fit it, and the send and receive buffers are sized from it (16 and 8 frames, capped at 32 and 16 KiB). It is the size of a frame inside the TCP stream, not the IP MTU: the kernel cuts the tunnel's IP packets by the connection's MSS, and one frame may span several segments, so a PPPoE or VPN path is no reason to change it. A tunnel that connects but stalls on large transfers is diagnosed in the [Docker guide](docker.md#tunnel-up-bulk-transfer-stalls). |
 | `KEEPALIVE_MIN` / `KEEPALIVE_MAX` | Duration | `0s` | Make the **server** send a frame carrying nothing after a silence drawn from this range. Off by default: one end holding the path open is enough, and `s5client` is that end. Turn it on when the clients are not `s5client`. Same shape as the client setting - see [Keepalive](../design/transports.md#keepalive). |
 | `OBFS_REPLAY_WINDOW` | Integer | `10000` | How many session prologues the server remembers, shared by every obfuscated listener, so a recorded connection cannot be replayed on a fresh socket. About 16 bytes per entry - a few hundred KB for the whole server, against 82 KB per connection for the per-connection nonce window it replaces. The oldest entry is dropped when the history is full, so this is how many connections a replay must outlive. `0` disables the check. Meaningless on the client, which is the side that draws the salt. |
 | `OBFS_NODE_ID` | String | *Empty* | Binds this node's keys to this node. It is never sent: it goes into the prologue MAC and the key derivation, so a client configured for another node is refused exactly the way noise is. Must match the client's `OBFS_NODE_ID`. Empty is itself an identity - a client with a name set cannot reach a server without one. What it buys: a recording made against one node is worthless against another, so no node needs to know what the others have seen. What it costs: anycast, and moving a client between nodes without editing its configuration. |
@@ -103,6 +111,55 @@ naming them: `ALLOWED_DEST_FQDN='203\.0\.113\.\d+'`.
 query does not leave the host and the name does not appear in the resolver's
 logs or in the traffic of whoever is watching the server.
 
+#### Private destinations
+
+A proxy that connects wherever it is asked is also a way into the machine it
+runs on. Without a rule, an authenticated client could open the server's own
+loopback (a metrics port, a database, an admin panel), the metadata service of
+a cloud (`169.254.169.254`, where the machine's credentials are kept) or any
+host of the network behind the server. `ALLOW_PRIVATE_DEST=false`, the default,
+closes that:
+
+- the check is made on the **address the destination resolves to**, not on what
+  the client wrote, so a name that points to `127.0.0.1` and an address written
+  as `::ffff:10.0.0.1` are refused like the plain literal;
+- besides those ranges, multicast and the addresses of the server's own
+  interfaces are refused, the public one included on a machine that holds it:
+  a connection to it leaves by the loopback, where a firewall that guards the
+  machine from outside usually lets it reach every service the machine runs.
+  The list is re-read once a minute. The IPv4 address inside a NAT64 address
+  (`64:ff9b::/96`) is checked as well, and only that prefix: a network-specific
+  NAT64 prefix is an ordinary public IPv6 address to the server;
+- it covers `CONNECT` and the UDP datagrams of every UDP command (`0x03`, the
+  tunnel `0x83` and native `0x84`), where the address of every datagram is
+  checked before it is sent;
+- a refused `CONNECT` is answered with "connection not allowed by ruleset"
+  (`0x02`), a refused datagram is dropped, as a filtered one would be, and the
+  log says so once per association: a game whose UDP stopped after an upgrade
+  is found by that line. In the session journal and in
+  `s5core_connections_ended_total` a refused `CONNECT` is `private_dest`, not
+  `rules_denied`, so the two settings are told apart.
+
+Set `ALLOW_PRIVATE_DEST=true` when clients are meant to reach the inner
+network: a server inside a company network, a lab, a test stand. The two settings are
+independent: `ALLOWED_DEST_FQDN` narrows what is allowed and never lifts the
+ban, so a pattern that names a private address needs `ALLOW_PRIVATE_DEST=true`
+as well. In a
+container, "private" includes the addresses of the Docker network, so a server
+that is meant to reach a neighbouring container needs the switch too.
+
+Two limits to know. The server's own addresses are those of the machine the
+process sees: in a container on a bridge network that is the container's, not
+the host's, so the host's public address is not refused by this check - the
+host's firewall (the `DOCKER-USER` and `INPUT` chains) is what guards the
+host's services from a container, as it does from any other. And the reply
+tells a refused address from an unresolvable name (`0x02` against `0x04`), so a
+client can find out that a name resolves into the private range; on a server
+whose resolver knows an inner zone, that includes the names of the zone.
+
+An application embedding the server through `pkg/s5server` keeps the old
+behaviour: `Config.DenyPrivateDest` is false unless the application sets it.
+
 > `TLS_FINGERPRINT` is a **client-side** setting: it selects the TLS Client Hello the client imitates. Setting it on the server changes nothing, so the server logs a warning if it finds it - believing your server traffic is shaped when it is not is worse than not shaping it.
 
 > TLS session resumption follows from the same choice. A browser preset never resumes: every WSS connection is a full handshake with the preset's JA4. Without `TLS_FINGERPRINT` the client resumes TLS 1.3 sessions, and connections opened before a fresh ticket arrives offer the same ticket, whose identity is sent in clear text - an observer can link those connections to one client. Set `TLS_FINGERPRINT` where that matters.
@@ -119,7 +176,7 @@ logs or in the traffic of whoever is watching the server.
 | `PROXY_PASS` | String | *Empty* | Password for authenticating with the S5Core server. The server calls the same setting `PROXY_PASSWORD`; it also accepts `PROXY_PASS` and says so in its log. |
 | `OBFS_PSK` | String | *Required* | Pre-shared key. **Must match the server's PSK exactly.** |
 | `OBFS_MAX_PADDING` | Integer | `256` | Padding this side adds to the frames it sends. Independent of the server's setting. |
-| `OBFS_MTU` | Integer | `1400` | Largest frame this side sends, and the size its buffers are built from. Independent of the server's setting: each side reads whatever frame length the other declares. |
+| `OBFS_MTU` | Integer | `1400` | Largest frame this side sends, and the size its buffers are built from. Independent of the server's setting: each side reads whatever frame length the other declares. As on the server, a frame size inside the TCP stream, not the IP MTU: lowering it does not help a narrow path ([Docker guide](docker.md#tunnel-up-bulk-transfer-stalls), [router](testing.md#s5client-on-a-router)), and it does not size native UDP datagrams either. |
 | `OBFS_CIPHER` | String | *Automatic* | `aes` or `chacha`. Empty - the normal setting - lets the client take the one its processor is good at: AES where AES instructions exist, ChaCha20 where they do not. The server accepts either and learns the choice from the prologue, so this does not have to match anything; it is a knob for measuring. On MIPS the automatic choice is ChaCha20, run in pure Go; those builds are experimental ([router guide](testing.md#s5client-on-a-router)). |
 | `OBFS_PROLOGUE` | String | `printable` | How the prologue looks on the wire. `printable` encodes it with base64 and adds a secret-derived pad, so the connection opens with 43-63 printable characters and the first packet is exempt from a fully-encrypted-traffic policy; `raw`, the pre-phase-5 wire, is refused at startup since 2.2. A server still reads both, so 2.0 and 2.1 clients configured with `raw` keep working. |
 | `OBFS_SPLIT_OPENING` | Boolean | `false` | Sends the opening in a packet of its own, ahead of the first frames. The filter measured in `docs/field/stealth.md` classifies first packets of 100 bytes and up, and the opening alone is 43-72 bytes where the client's first write is 125 and up; with a raw prologue, which has no printable exemption, this moved a live tunnel from 14 of 26 connections to 26 of 26. It costs no round trip - the write does not wait for an answer. Off by default: a short packet at a fixed place is a shape of its own, and on the measured path the printable opening passes without one. The server needs no matching setting. |
@@ -132,6 +189,8 @@ logs or in the traffic of whoever is watching the server.
 | `HANDSHAKE_TIMEOUT` | Duration | `15s` | Separate budgets of this duration cover the local SOCKS5 handshake and remote tunnel setup (transport dial including WSS, greeting, authentication and CONNECT reply). Each deadline is cleared when its phase finishes. A non-positive value still gives the local handshake a 15s limit; established idle tunnels are unaffected. |
 | `SHUTDOWN_TIMEOUT` | Duration | `10s` | How long a shutdown waits for connections that are still carrying traffic. Before this the wait had no end, so a client asked to stop kept running for as long as one tunnel stayed open. |
 | `UDP_TUNNEL_TCP_TUNING` | Boolean | `true` | The client half of the server setting of the same name: the same socket options on the tunnel that carries a UDP association, for the client-to-server direction. On an older kernel, as on many routers, only `TCP_THIN_LINEAR_TIMEOUTS` applies. |
+| `TUNNEL_DEAD_TIMEOUT` | Duration | `45s` | How long the tunnel of a `CONNECT` stream may keep what the client sent on it unacknowledged before the kernel closes it (`TCP_USER_TIMEOUT` on Linux, `TCP_MAXRTMS` on Windows). A path that lost its state - a NAT, a provider - swallows the segments of streams already open, and without this the kernel retransmits for up to a quarter of an hour while the application waits. The server closes a stream that is silent for `READ_TIMEOUT` (30 s) anyway, so the default is above that and above `WRITE_TIMEOUT`: raise it together with them. The stream ends with `closed_by=timeout` at WARN and the application reconnects. It counts data that is waiting for an acknowledgement (the keepalive frames are such data, and with the kernel's own TCP keepalive an idle dead tunnel is closed without them) and, on Linux 5.1 and newer, time spent against a peer's zero window. Accepted values: `0` or from `1s` up to about 596 hours. `0` leaves the kernel's rule; other systems than Linux and Windows keep the kernel's rule too. UDP tunnels (`0x83`, `0x84`) are not affected: they keep the kernel's timeout on purpose ([game session tuning](../benchmarks/game-tuning.md)). |
+| `UDP_NATIVE` | Boolean | `false` | Set `true` on clients selected for native UDP game testing when the server has `UDP_PORT`. The client then sends command `0x84`. A 2.3 node without `UDP_PORT` answers with port 0 and the association uses `0x83` on the same connection; the client remembers such a node for 10 minutes, by transport and the address it dials (`WS_URL` or `SERVER_ADDR`), and opens its next associations with `0x83` directly. A 2.2 server refuses the command, and the client asks again with `0x83` on a new connection by the same transport. It remembers that server for 10 minutes only when the retry is accepted: a 2.3 server whose rules refuse UDP answers `0x84` with the same refusal (`0x02`), so the refusal goes to the application and the next association asks for `0x84` again. Until the UDP probe succeeds, application datagrams use `0x83`. After that a datagram goes natively while the client hears the server: the path is verified, and a server packet came less than a second ago or fewer than two probes in a row are unanswered (the second counts as unanswered after 250 ms or twice the smoothed probe round trip, whichever is longer). A datagram sent while the client does not hear the server uses `0x83`, and once it stops hearing, the client tells the server by TCP to answer by TCP too - at that moment while datagrams flow either way, with the next datagram otherwise. The server places the client's words by the client's datagram counter, not by arrival, so a notice and a native datagram that overtake each other leave the answers where the later one put them. Datagrams that go by TCP have one writer per association, with a queue of 1024 frames and 2 MiB of buffers, which holds a wave of game answers twice over ([burst stand](../benchmarks/udp-burst-2026-09-28.md)); a frame that waited 250 ms is dropped, as UDP would drop it, so a large datagram waiting for the send buffer holds up neither probes nor native datagrams. After three probes in a row go unanswered (about 2 s), the association moves to `0x83`; the client repeats the notice with every retry probe (1-10 s) until the path is back, so a native datagram that arrives late cannot keep the answers on the dead path. A later answered probe brings native back, and the probe after it tells the server that the client hears it, which moves the answers back to native for an application that only listens. The notice carries the counter of the client's next datagram and the server replies with its own, so a path that lost more than 512 datagrams in a row still comes back. When a path that was never verified goes unanswered by the same rule, the client logs one Info line with the address its probes go to: the host of the tunnel connection, which behind a front on another host, as with WSS, is the front's address. Native carries a datagram up to the limit the client finds on the path at the start of each association: at most 1374 bytes of SOCKS5 UDP datagram, 1366-1374 on a 1500-byte path. A longer one is dropped both ways, so a QUIC stack settles below the limit; the eighth dropped in one direction moves long datagrams to `0x83` to the end of the association ([limit of native](../design/transports.md#native-udp-for-games)). The closing `UDP Tunnel closed` line counts the association's datagrams by path: `native_sent`, `tcp_sent_oversize` (longer than the limit, after the eighth dropped), `tcp_sent_other` (path not verified or lost, server not heard, or a failed send), `native_received`, `tcp_received`, and `tunnel_drops` for frames the TCP writer dropped; `native_limit` (on the wire) and `size_probes` show the search, `dropped_oversize_sent` and `dropped_oversize_received` the dropped long datagrams. The server counts the same in `s5core_native_udp_datagrams_total` and the two metrics next to it ([metrics policy](../design/observability-policy.md)). |
 | `KEEPALIVE_MIN` | Duration | `10s` | Lower bound of the idle interval after which the client sends a frame carrying nothing, so that nothing on the path drops the connection for being silent. `0` disables it. See [Keepalive](../design/transports.md#keepalive) for the measurements the range comes from. |
 | `KEEPALIVE_MAX` | Duration | `20s` | Upper bound of the same interval. A fresh draw is made for every frame: a fixed period would identify the protocol without anyone having to decrypt it. Must be at least `KEEPALIVE_MIN`. |
 | `WS_URL` | String | *Empty* | `wss://host/path` of the server's WebSocket endpoint. Setting it makes the client use the stealth transport instead of `SERVER_ADDR`. |
@@ -150,6 +209,10 @@ logs or in the traffic of whoever is watching the server.
 | `TRANSPORT_COOLDOWN` | Duration | `5m` | How long a transport that failed to set up (no connection, or a server that accepted it and never answered) is rested while the other one carries the traffic. `0` turns the switch off. A destination refusing `CONNECT` does not count: that is the destination, not the path. |
 | `OBFS_FORMAT` | String | `auto` | The obfuscation wire format. `auto` and `v1` both mean the current one ([docs/veil-spec.md](../veil-spec.md)). `legacy` was removed in 2.2 and stops the client at startup; a fleet still on 1.x servers migrates through 2.1 - [docs/field/migration.md](../field/migration.md). |
 | `LOG_LEVEL` | String | `info` | Same as on the server, including `SIGHUP` reload. On a router, where restarting the client drops every live connection, this is the only way to look at a failure while it is happening. |
+| `LOG_FILE` | String | *Empty* | Writes the log as JSON to this file at `LOG_LEVEL`, and to the console only as short text at `LOG_CONSOLE_LEVEL`. At every start the previous file moves to `archive/` next to it, so each run has a file of its own; within a run the file rotates at `LOG_MAX_SIZE_MB`. The rotation is the client's own, which also works on Windows, where a file the process holds open cannot be renamed from outside. Empty keeps the old behaviour: JSON on stdout. |
+| `LOG_KEEP` | Integer | `40` | Archived files kept in `archive/`, runs and in-run rotations together. `0` keeps all. |
+| `LOG_MAX_SIZE_MB` | Integer | `10` | Size at which the log file rotates within a run. `0` turns it off. |
+| `LOG_CONSOLE_LEVEL` | String | `warn` | Console level when `LOG_FILE` is set. |
 
 > **Certificate verification:** the WebSocket transport verifies the server
 > certificate against the system roots. Until now it did not: the uTLS dialer
@@ -173,7 +236,30 @@ logs or in the traffic of whoever is watching the server.
 > naming the destination and the phase that expired: `dial`, `greeting`, `auth`,
 > `connect` or `connect-reply`.
 
-> **UDP support:** `s5client` transparently handles UDP Associate requests from applications. When an app sends a SOCKS5 UDP Associate command (`0x03`), `s5client` opens a local UDP socket, multiplexes all UDP packets inside the encrypted TCP tunnel (command `0x83`), and the server relays them to the internet as native UDP. No additional configuration is needed. What that costs on a lossy link is measured in [UDP over TCP: what it costs](../design/transports.md#udp-over-tcp-what-it-costs).
+> **UDP support:** `s5client` handles an application's SOCKS5 UDP Associate
+> (`0x03`) through a local UDP socket. With `UDP_PORT` enabled on the server
+> and `UDP_NATIVE=true` on the client, the client probes command `0x84` and
+> moves application datagrams to
+> authenticated native UDP after a verified response. Until then, and whenever
+> that path stops answering, the same association uses the encrypted TCP
+> tunnel (`0x83`). A server without native UDP carries the association by `0x83`,
+> on the same connection for a 2.3 node and on a new one for 2.2. See the [local game-loss results](../benchmarks/nativeudp-game-loss-2026-09-25.md).
+> Every relay UDP socket asks for a 2 MiB receive buffer, and both binaries
+> log at startup what the kernel gave. A server without `CAP_NET_ADMIN` needs
+> `net.core.rmem_max` of at least 2097152 on the host, or bursts of game
+> answers overflow the buffer ([Docker guide](docker.md#game-udp-loses-answers-in-bursts)).
+> While an association carries traffic, the client writes `UDP Tunnel running`
+> once a minute with its age and totals so far (`sent`, `sent_bytes`,
+> `received`, `received_bytes`), so a client that is killed still leaves what
+> its long associations carried. The closing `UDP Tunnel closed` line names
+> `closed_by`: `application` (the application closed its SOCKS5 connection,
+> the normal end), `tunnel` (the connection to the server failed) or `local`
+> (the client's own UDP socket failed). It is written at WARN unless the
+> application ended the association, and also when one direction carried less
+> than a hundredth of the other after at least 100 datagrams (`quiet=sent` or
+> `quiet=received`), so a client logging at WARN still shows a game that lost
+> its association. The server counts the end of every association in
+> `s5core_udp_associations_ended_total{kind, reason}` ([metrics policy](../design/observability-policy.md)).
 
 > **Domain routing examples:** `example.com` (exact match), `*.google.com` (all subdomains + base domain), `*.youtube.com,*.googlevideo.com` (multiple patterns).
 

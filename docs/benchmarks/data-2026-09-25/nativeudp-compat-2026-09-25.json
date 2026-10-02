@@ -1,0 +1,243 @@
+{
+  "date": "2026-09-25",
+  "scope": "local loopback, 64 Hz UDP echo, two associations of 320 ticks per pair, real v2.2.0 and worktree binaries after the review fixes",
+  "note": "v2.2.0 answers 0x84 with 0x02 (its command rule), not 0x07; the client retries 0x83 on either and remembers the server only when the retry is accepted",
+  "pairs": [
+    {
+      "server": "v2.2.0",
+      "client": "worktree, UDP_NATIVE=true",
+      "associations": [
+        {
+          "ticks": 320,
+          "failed": 0
+        },
+        {
+          "ticks": 320,
+          "failed": 0
+        }
+      ],
+      "commands": [
+        "0x84",
+        "0x83"
+      ],
+      "udp_tunnels": 2,
+      "no_native_reason": "0x84 refused with 0x2",
+      "native_verified": 0
+    },
+    {
+      "server": "worktree without UDP_PORT",
+      "client": "worktree, UDP_NATIVE=true",
+      "associations": [
+        {
+          "ticks": 320,
+          "failed": 0
+        },
+        {
+          "ticks": 320,
+          "failed": 0
+        }
+      ],
+      "commands": [
+        "0x84",
+        "0x83"
+      ],
+      "udp_tunnels": 2,
+      "no_native_reason": "no native port",
+      "native_verified": 0
+    },
+    {
+      "server": "worktree with UDP_PORT",
+      "client": "worktree, UDP_NATIVE=true",
+      "associations": [
+        {
+          "ticks": 320,
+          "failed": 0
+        },
+        {
+          "ticks": 320,
+          "failed": 0
+        }
+      ],
+      "commands": [
+        "0x84",
+        "0x84"
+      ],
+      "udp_tunnels": 2,
+      "no_native_reason": null,
+      "native_verified": 2
+    },
+    {
+      "server": "worktree with UDP_PORT",
+      "client": "v2.2.0",
+      "associations": [
+        {
+          "ticks": 320,
+          "failed": 0
+        },
+        {
+          "ticks": 320,
+          "failed": 0
+        }
+      ],
+      "commands": [
+        "0x83",
+        "0x83"
+      ],
+      "udp_tunnels": 2,
+      "no_native_reason": null,
+      "native_verified": 0
+    }
+  ],
+  "review3_check": {
+    "scope": "the same pairs after review 3 (client-said answer path, counter resync on the empty frame, nativeKey by transport)",
+    "binaries": {
+      "worktree_s5core_sha256": "a794812325119b8eabed581fb78327dd2640439a64db5efe928afe6ed0023163",
+      "worktree_s5client_sha256": "7fad6668b54b69a8da20e59a8b6785d6fa878632aa94a147e2bdf8c1ed6a7248",
+      "v220_s5core_sha256": "63bbe12c592ba1209c2405097def2123ef69f5c4fcc683e93893233f89d5a10b",
+      "v220_s5client_sha256": "06e7f8103a3d0c18a60395876990ff182606b6e5dcd4f70a6abda137afd8baf5"
+    },
+    "pairs": [
+      {
+        "server": "v2.2.0",
+        "client": "worktree, UDP_NATIVE=true",
+        "associations": [
+          {
+            "ticks": 320,
+            "failed": 0
+          },
+          {
+            "ticks": 320,
+            "failed": 0
+          }
+        ],
+        "commands": [
+          "0x84",
+          "0x83"
+        ],
+        "udp_tunnels": 2,
+        "no_native_reason": "0x84 refused with 0x2",
+        "native_verified": 0
+      },
+      {
+        "server": "worktree without UDP_PORT",
+        "client": "worktree, UDP_NATIVE=true",
+        "associations": [
+          {
+            "ticks": 320,
+            "failed": 0
+          },
+          {
+            "ticks": 320,
+            "failed": 0
+          }
+        ],
+        "commands": [
+          "0x84",
+          "0x83"
+        ],
+        "udp_tunnels": 2,
+        "no_native_reason": "no native port",
+        "native_verified": 0
+      },
+      {
+        "server": "worktree with UDP_PORT",
+        "client": "worktree, UDP_NATIVE=true",
+        "associations": [
+          {
+            "ticks": 320,
+            "failed": 0
+          },
+          {
+            "ticks": 320,
+            "failed": 0
+          }
+        ],
+        "commands": [
+          "0x84",
+          "0x84"
+        ],
+        "udp_tunnels": 2,
+        "no_native_reason": null,
+        "native_verified": 2
+      },
+      {
+        "server": "worktree with UDP_PORT",
+        "client": "v2.2.0",
+        "associations": [
+          {
+            "ticks": 320,
+            "failed": 0
+          },
+          {
+            "ticks": 320,
+            "failed": 0
+          }
+        ],
+        "commands": [
+          "0x83 (2.2 client)",
+          "0x83 (2.2 client)"
+        ],
+        "udp_tunnels": 2,
+        "no_native_reason": null,
+        "native_verified": 0
+      }
+    ]
+  },
+  "rc1_rc2_check": {
+    "date": "2026-09-26",
+    "scope": "local loopback before the rc2 rollout, real v2.3.0-rc1 (5bcd9a8) and v2.3.0-rc2 (98a864a) binaries, UDP_PORT on the server, UDP_NATIVE=true on the client, two associations of 320 ticks at 64 Hz with 200-byte datagrams per pair",
+    "binaries": {
+      "rc1_s5core_sha256": "9651f14dabfc506ab5f3454b98999021f120c3558c3f80f31898212868753604",
+      "rc1_s5client_sha256": "645512667292cfdad4aa4ea5a42b4f5f4d8fb02a00b95aab21bb173452a491b6",
+      "rc2_s5core_sha256": "8f528f1bffaaebb2c5f41a720f3cc2a01dfccc05d3b176eeb6acfdd25887de4e",
+      "rc2_s5client_sha256": "818d10751e8703368ad2b1c6a1ded494598bb5f1abf27d86e278d6f8a114021a"
+    },
+    "pairs": [
+      {
+        "server": "rc1",
+        "client": "rc1",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 664
+      },
+      {
+        "server": "rc1",
+        "client": "rc2",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 665,
+        "client_native_limit": 1400,
+        "client_size_probes": 0
+      },
+      {
+        "server": "rc2",
+        "client": "rc1",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 665,
+        "datagrams_native_from_client": 638,
+        "datagrams_native_to_client": 639
+      },
+      {
+        "server": "rc2",
+        "client": "rc2",
+        "failed": [
+          0,
+          0
+        ],
+        "native_accepted": 681,
+        "datagrams_native_from_client": 638,
+        "datagrams_native_to_client": 638,
+        "client_native_limit": 1395,
+        "client_size_probes": 7
+      }
+    ],
+    "note": "native_accepted counts every native packet the server took, probes included; the rc2 pair has the 7 size probes of each association on top. A client of rc2 finds no search on an rc1 server and keeps the limit of 1400. The only WARN on every server was the one for running without authentication, a setting of the stand."
+  }
+}

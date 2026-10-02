@@ -1,0 +1,75 @@
+# Radio wake after a pause (plan stage D-2): the stream plays 10 s and rests
+# 15 s. When it resumes, the generator raises the delay of the client-server
+# leg by 260 ms for 20 ms and lowers it back; netem keeps its queue in order,
+# so what is sent in the window and just after waits behind the first packet,
+# as it does behind a radio's promotion. healthy: five resumes on a working
+# path. blackout: native UDP dropped from one second before the second resume
+# to the end, the TCP leg working. About three minutes.
+# Results: docs/benchmarks/degradation-2026-09-26.md.
+name = "degradation-wake"
+description = "пробуждение после паузы 15 с: +260 мс на первых пакетах, исправный путь и отказ UDP"
+base = "native-before"
+candidate = "native"
+
+[defaults]
+auth = "none"
+scale = 0.041666667
+scenario_timeout = "4m"
+hang_grace = "20s"
+settle = "2s"
+retries = 0
+gauges_ms = 200
+leg_tap = true
+
+[variants.raw]
+direct = true
+title = "без прокси"
+
+[variants.native]
+ref = "worktree"
+title = "native UDP"
+[variants.native.env.server]
+UDP_PORT = "41443"
+[variants.native.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[variants.native-before]
+ref = "3ed23e9"
+title = "native UDP до F3"
+[variants.native-before.env.server]
+UDP_PORT = "41443"
+[variants.native-before.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[variants.tcp]
+ref = "worktree"
+title = "0x83"
+[variants.tcp.env.client]
+UDP_NATIVE = "false"
+LOG_LEVEL = "info"
+
+[guard]
+max_foreign_cores = 6.0
+load_wait = "120s"
+
+[[series]]
+name = "healthy"
+title = "RTT 50 мс, пробуждение +260 мс"
+network = { rtt_ms = 50, wake_delay_ms = 260 }
+transports = ["obfs"]
+compare = []
+group = "wake"
+only = ["=game/64hz-200b-wake"]
+
+[[series]]
+name = "blackout"
+title = "RTT 50 мс, пробуждение +260 мс, native UDP отказывает за 1 с до второго возобновления"
+network = { rtt_ms = 50, wake_delay_ms = 260, udp_blackout_after_s = 49, udp_blackout_for_s = 55 }
+variants = ["native", "native-before"]
+transports = ["obfs"]
+compare = []
+group = "wake"
+scale = 0.027777778
+only = ["=game/64hz-200b-wake"]

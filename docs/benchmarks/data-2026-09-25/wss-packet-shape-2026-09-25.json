@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-25",
+  "scope": "local netns capture, WSS control transport; no WAN packet-shape claim",
+  "game": {
+    "source_run": "bench/runs/wss-shape-capture-20260925-095914",
+    "app_payload_bytes": 200,
+    "rtt_ms": 50,
+    "client_to_server": {
+      "tls_app_packets": 3198,
+      "packet_length_mode": 231,
+      "packet_length_mode_count": 37,
+      "packet_length_p50": 259,
+      "inferred_original_writes": 1599,
+      "tls_records_per_write": 2,
+      "inferred_coalesced_packet_p50": 459,
+      "inferred_coalesced_mode": 464,
+      "inferred_coalesced_mode_count": 14
+    },
+    "method": "deduplicate by TCP sequence; group same-direction TLS records less than 5 ms apart; coalesced lengths are calculated, not captured"
+  },
+  "bulk": {
+    "source_run": "bench/runs/wss-bulk-capture-20260925-100527",
+    "loopback_mtu": 1500,
+    "gso_gro_tso": "off",
+    "server_to_client_packets": 3592,
+    "packets_at_mtu": 3034,
+    "packet_p50": 1500,
+    "packet_p99": 1500
+  }
+}

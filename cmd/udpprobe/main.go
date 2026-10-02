@@ -15,6 +15,12 @@
 //
 // Without -socks the packets go straight to the target, which is the control
 // measurement: the same loss, the same path, no tunnel.
+//
+// With -bursts the probe asks the echo side for bursts shaped as a game
+// server's (burst.go) and counts what reaches it, with the drops of every
+// UDP socket of the namespace:
+//
+//	udpprobe -target 10.0.0.2:9999 -socks 127.0.0.1:1080 -bursts 20 -label rc3
 package main
 
 import (
@@ -29,6 +35,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/udpbuf"
 )
 
 func main() {
@@ -40,6 +48,14 @@ func main() {
 	size := flag.Int("size", 60, "packet size in bytes, DNS query sized by default")
 	timeout := flag.Duration("timeout", 2*time.Second, "how long a reply may take before the packet counts as lost")
 	label := flag.String("label", "probe", "name of this run, printed with the results")
+	bursts := flag.Int("bursts", 0, "ask the echo side for this many bursts instead of probing")
+	burstSize := flag.Int("burst-size", 928, "datagram size of a burst")
+	wave := flag.Int("wave", 450, "datagrams in the wave that opens a burst")
+	waveFor := flag.Duration("wave-for", 5*time.Millisecond, "how long the wave takes")
+	tail := flag.Int("tail", 450, "datagrams after the wave")
+	tailEvery := flag.Duration("tail-every", 500*time.Microsecond, "gap between the datagrams of the tail")
+	gap := flag.Duration("gap", 2*time.Second, "pause between bursts")
+	jsonOut := flag.String("json", "", "write the burst report here as JSON")
 	flag.Parse()
 
 	if *echo != "" {
@@ -55,14 +71,33 @@ func main() {
 		os.Exit(2)
 	}
 
-	res, err := probe(settings{
+	base := settings{
 		target:   *target,
 		socks:    *socks,
 		count:    *count,
 		interval: *interval,
 		size:     *size,
 		timeout:  *timeout,
-	})
+	}
+	if *bursts > 0 {
+		rep, err := runBursts(burstSettings{
+			settings: base,
+			ask: burstAsk{size: *burstSize, wave: *wave, waveFor: *waveFor,
+				tail: *tail, tailEvery: *tailEvery},
+			bursts: *bursts,
+			gap:    *gap,
+		}, *label)
+		if err == nil {
+			err = rep.print(*jsonOut)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bursts: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	res, err := probe(base)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "probe: %v\n", err)
 		os.Exit(1)
@@ -70,7 +105,8 @@ func main() {
 	res.print(*label)
 }
 
-// runEcho answers every datagram with its own bytes. It never returns.
+// runEcho answers every datagram with its own bytes, and an ask for a burst
+// with the burst. It never returns.
 func runEcho(addr string) error {
 	var lc net.ListenConfig
 	pc, err := lc.ListenPacket(context.Background(), "udp", addr)
@@ -84,6 +120,14 @@ func runEcho(addr string) error {
 		n, from, err := pc.ReadFrom(buf)
 		if err != nil {
 			return err
+		}
+		if ask, ok := parseBurstAsk(buf[:n]); ok {
+			go func() {
+				if err := sendBurst(pc, from, ask); err != nil {
+					fmt.Fprintf(os.Stderr, "burst %d to %s: %v\n", ask.id, from, err)
+				}
+			}()
+			continue
 		}
 		if _, err := pc.WriteTo(buf[:n], from); err != nil {
 			return err
@@ -244,7 +288,7 @@ collect:
 // a plain UDP socket, or one going through a SOCKS5 UDP association.
 func openPath(s settings, dst *net.UDPAddr) (send func([]byte) (int, error), recv func([]byte) (int, error), cleanup func(), err error) {
 	if s.socks == "" {
-		c, err := net.DialUDP("udp", nil, dst)
+		c, err := udpbuf.DialUDP("udp", nil, dst)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("dial %s: %w", dst, err)
 		}
@@ -255,7 +299,7 @@ func openPath(s settings, dst *net.UDPAddr) (send func([]byte) (int, error), rec
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	c, err := net.DialUDP("udp", nil, relay)
+	c, err := udpbuf.DialUDP("udp", nil, relay)
 	if err != nil {
 		_ = ctrl.Close()
 		return nil, nil, nil, fmt.Errorf("dial relay %s: %w", relay, err)

@@ -34,7 +34,7 @@ Available metrics:
 | `first_byte` | success reply is sent to the client | destination sends its first byte |
 | `session` | SOCKS handler is entered | handler returns |
 
-`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average.
+`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average. A UDP association that the client closed (the normal end) is a `session` that is `ok`; any other end of an association is `fail`.
 
 Measure an actual HTTPS response from the client with the probe:
 
@@ -45,7 +45,7 @@ go run ./cmd/httpsprobe -url https://example.com/ -socks 127.0.0.1:1080 -count 3
 
 Each JSON line contains `started_unix_ns` for trace correlation, `connect_setup_ms` (direct DNS/TCP or proxy TCP plus SOCKS negotiation/CONNECT), `tls_handshake_ms`, `http_first_response_ms` (request start to `httptrace.GotFirstResponseByte`), `total_ms` (through complete body reading and SHA-256), bytes, hash, status, negotiated protocol and connection reuse. `client_dns_ms` covers only local DNS and overlaps setup; remote DNS is part of SOCKS setup and is visible separately in the server metric. Reused requests have no new setup or TLS duration. Failures include partial byte counts and no completed-body hash. The probe verifies certificates, accepts an additional CA with `-ca`, follows no redirects, and limits every request including its body with `-timeout`. `-http2=false` forces HTTP/1.1; `-http2=true` permits HTTP/2 and reports the protocol actually negotiated. For obfs/WSS, point `-socks` at the local s5client listener.
 
-The [performance acceptance guide](../performance-validation.md) describes separate-process A/B runs, diagnostic builds, isolated netem, and release gates.
+The [performance acceptance guide](../benchmarks/performance-validation.md) describes separate-process A/B runs, diagnostic builds, isolated netem, and release gates.
 
 CONNECT retains all addresses supplied by the built-in resolver, removes duplicates and alternates address families. It tries at most two addresses concurrently with staggered starts and one shared DNS/connect budget. Per-attempt shares have a 2-second minimum, capped by the remaining shared budget, as in Go net.Dialer. A short budget may expire before every unresponsive address is tried. Every candidate is checked against `Rules` before dialing a numeric IP; fallback does not resolve the domain again. A legacy custom `NameResolver` still supplies one address. Custom resolvers may additionally implement `MultiNameResolver.ResolveAll`. When an address `Rewriter` is configured, its single returned destination remains authoritative and pre-rewrite addresses are not used as fallback.
 

@@ -1,0 +1,7 @@
+ok  	github.com/mazixs/S5Core/cmd/s5client	41.328s
+ok  	github.com/mazixs/S5Core/internal/socks5	5.417s
+ok  	github.com/mazixs/S5Core/pkg/nativeudp	1.231s
+ok  	github.com/mazixs/S5Core/pkg/s5server	34.866s
+ok  	github.com/mazixs/S5Core/pkg/obfs	16.995s
+ok  	github.com/mazixs/S5Core/pkg/transport/ws	2.420s
+ok  	github.com/mazixs/S5Core/internal/tcptune	1.010s

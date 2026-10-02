@@ -1,0 +1,35 @@
+# A 128 Hz game stream: native UDP comes back after a mid-session UDP blackout.
+name = "game-native-highrate-blackout"
+description = "128 Hz native UDP recovery after a mid-session UDP blackout"
+base = "native"
+candidate = "native"
+
+[defaults]
+auth = "none"
+scale = 0.033333333
+scenario_timeout = "4m"
+hang_grace = "20s"
+settle = "2s"
+retries = 0
+sample_s = 10
+
+[variants.native]
+ref = "worktree"
+title = "native UDP with 0x83 fallback"
+[variants.native.env.server]
+UDP_PORT = "41443"
+[variants.native.env.client]
+UDP_NATIVE = "true"
+LOG_LEVEL = "info"
+
+[guard]
+max_foreign_cores = 4.0
+load_wait = "120s"
+
+[[series]]
+name = "blocked-mid"
+network = { rtt_ms = 50, udp_blackout_after_s = 10, udp_blackout_for_s = 12 }
+transports = ["obfs"]
+compare = []
+group = "mid-check"
+only = ["=game/128hz-200b"]

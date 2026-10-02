@@ -23,6 +23,9 @@ type helloTap struct {
 	addr   string
 	mu     sync.Mutex
 	hellos []*bytes.Buffer
+	// hold, once set, delays the replies of the server on every connection
+	// accepted after that, until it is closed.
+	hold chan struct{}
 }
 
 func tapHellos(t *testing.T, upstream string) *helloTap {
@@ -47,8 +50,15 @@ func tapHellos(t *testing.T, upstream string) *helloTap {
 			rec := &bytes.Buffer{}
 			tap.mu.Lock()
 			tap.hellos = append(tap.hellos, rec)
+			hold := tap.hold
 			tap.mu.Unlock()
-			go func() { _, _ = io.Copy(c, up); _ = c.Close() }()
+			go func() {
+				if hold != nil {
+					<-hold
+				}
+				_, _ = io.Copy(c, up)
+				_ = c.Close()
+			}()
 			go func() {
 				_, _ = io.Copy(up, io.TeeReader(c, lockedWriter{&tap.mu, rec}))
 				_ = up.Close()
@@ -67,6 +77,17 @@ func (w lockedWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.b.Write(p)
+}
+
+// arrived says whether the first TLS record of the i-th client is all here.
+func (tap *helloTap) arrived(i int) bool {
+	tap.mu.Lock()
+	defer tap.mu.Unlock()
+	if i >= len(tap.hellos) {
+		return false
+	}
+	raw := tap.hellos[i].Bytes()
+	return len(raw) >= 5 && len(raw) >= 5+int(binary.BigEndian.Uint16(raw[3:5]))
 }
 
 // hello returns the i-th client's first TLS record and its parse.
@@ -170,6 +191,12 @@ func TestWithoutAFingerprintParallelConnectionsShareATicket(t *testing.T) {
 	roundTrip(t, c)
 	_ = c.Close()
 
+	// The server answers neither connection until both hellos are out: one
+	// that finished first would hand the other its fresh ticket.
+	hold := make(chan struct{})
+	tap.mu.Lock()
+	tap.hold = hold
+	tap.mu.Unlock()
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Go(func() {
@@ -181,13 +208,24 @@ func TestWithoutAFingerprintParallelConnectionsShareATicket(t *testing.T) {
 			_ = c.Close()
 		})
 	}
+	sent := false
+	deadline := time.Now().Add(10 * time.Second)
+	for !sent && time.Now().Before(deadline) {
+		if sent = tap.arrived(1) && tap.arrived(2); !sent {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(hold)
 	wg.Wait()
+	if !sent {
+		t.Fatal("the two parallel connections did not both send their hello")
+	}
 
 	a, _ := tap.hello(t, 1)
 	b, _ := tap.hello(t, 2)
 	idA, idB := pskIdentity(t, a), pskIdentity(t, b)
 	if idA == nil || idB == nil {
-		t.Fatalf("the parallel connections did not resume (identities %d and %d bytes)", len(idA), len(idB))
+		t.Fatalf("the parallel connections did not both resume (identities %d and %d bytes); if crypto/tls now spends tickets only one can, update this record and the NewDialer comment", len(idA), len(idB))
 	}
 	if !bytes.Equal(idA, idB) {
 		t.Error("the two connections offered different tickets; crypto/tls now spends them, update this record and the NewDialer comment")

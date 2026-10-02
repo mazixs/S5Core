@@ -26,13 +26,30 @@ func startUDPAssociate(t testing.TB) (app, tunnel net.Conn, done chan struct{}) 
 	t.Helper()
 	app, clientSide := tcpPair(t)
 	tunnel, obfsSide := tcpPair(t)
+	return app, tunnel, runUDPAssociate(t, clientSide, obfsSide, "example.com", clientParams{}, nil)
+}
 
-	done = make(chan struct{})
+// runUDPAssociate runs the client's UDP handler and ends it with the test.
+// The handler writes its closing line through the process's logger, so one
+// still running after its test put that line into the logs the next test
+// captured.
+func runUDPAssociate(t testing.TB, clientConn, obfsConn net.Conn, dest string, cfg clientParams, req []byte) chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		handleUDPAssociate(clientSide, obfsSide, "example.com", clientParams{})
+		handleUDPAssociate(clientConn, obfsConn, dest, cfg, req)
 	}()
-	return app, tunnel, done
+	t.Cleanup(func() {
+		_ = clientConn.Close()
+		_ = obfsConn.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the UDP handler did not end with its test")
+		}
+	})
+	return done
 }
 
 // readAppReply reads the one SOCKS5 reply the client sends its application.

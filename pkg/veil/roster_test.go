@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -337,23 +338,35 @@ func TestResolvingAMemberDoesNotDependOnHowManyThereAre(t *testing.T) {
 	}
 
 	const (
-		few  = 8
-		many = 32768
+		few      = 8
+		many     = 32768
+		rounds   = 10
+		perRound = 2000
 	)
 
-	measure := func(n int) time.Duration {
+	measure := func(n int) func() time.Duration {
 		server, psk, wire := rosterStand(t, n)
-		result := testing.Benchmark(func(b *testing.B) {
-			for b.Loop() {
+		return func() time.Duration {
+			start := time.Now()
+			for range perRound {
 				if _, err := server.Accept(psk, wire); err != nil {
-					b.Fatal(err)
+					t.Fatal(err)
 				}
 			}
-		})
-		return time.Duration(result.NsPerOp())
+			return time.Since(start) / perRound
+		}
 	}
 
-	small, large := measure(few), measure(many)
+	// The tests of other packages share the machine and their load comes and
+	// goes: measured one after the other, the two sizes met different loads
+	// (4.9x under -race in CI, 1.0x on an idle machine). The sizes take turns,
+	// and each keeps its fastest round.
+	measureFew, measureMany := measure(few), measure(many)
+	small, large := time.Duration(math.MaxInt64), time.Duration(math.MaxInt64)
+	for range rounds {
+		small = min(small, measureFew())
+		large = min(large, measureMany())
+	}
 	if small <= 0 {
 		t.Fatalf("the measurement produced nothing: %v", small)
 	}

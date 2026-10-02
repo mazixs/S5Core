@@ -61,7 +61,7 @@ docker run -d --name s5-target --network "$NET" --cap-add NET_ADMIN \
   -v "$OUT/bin:/bin/s5:ro" "$IMAGE" /bin/s5/udpprobe -echo 0.0.0.0:9999 >/dev/null
 
 docker run -d --name s5-server --network "$NET" \
-  -e REQUIRE_AUTH=false -e PROXY_LISTEN_IP=0.0.0.0 -e PROXY_PORT=1080 \
+  -e REQUIRE_AUTH=false -e ALLOW_PRIVATE_DEST=true -e PROXY_LISTEN_IP=0.0.0.0 -e PROXY_PORT=1080 \
   -e OBFS_ENABLED=true -e OBFS_PORT=1443 -e OBFS_PSK="$PSK" -e LOG_LEVEL=warn \
   -v "$OUT/bin:/bin/s5:ro" "$IMAGE" /bin/s5/s5core >/dev/null
 

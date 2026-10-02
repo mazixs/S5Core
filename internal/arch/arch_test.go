@@ -110,6 +110,24 @@ var rules = []rule{
 		},
 	},
 	{
+		pkg: module + "/internal/acceptretry",
+		why: "the server's SOCKS5 listeners and the client's local listener " +
+			"retry Accept by it, so it may depend on nothing of ours",
+		forbidden: []string{
+			module + "/internal/",
+			module + "/pkg/",
+		},
+	},
+	{
+		pkg: module + "/internal/udpbuf",
+		why: "the codec, the native path and the client open UDP sockets " +
+			"through it, so it may depend on nothing of ours",
+		forbidden: []string{
+			module + "/internal/",
+			module + "/pkg/",
+		},
+	},
+	{
 		pkg: module + "/pkg/obfs",
 		why: "the obfuscation format carries bytes over any transport and " +
 			"knows nothing about what they mean",
