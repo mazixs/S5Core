@@ -1,0 +1,37 @@
+# Бюджеты CI: scripts/metrics сверяет с ними покрытие и размеры бинарей релиза.
+# Покрытие: пол чуть ниже измеренного. Размер: потолок на 10% выше измеренного.
+# Нарушение - красный CI. Если рост оправдан, правится эта строка, причина - в коммите.
+#
+# coverage <total|пакет> <процент>
+# size <имя файла релиза> <байты>
+
+coverage total 74.5
+
+coverage cmd/s5client 75.0
+coverage internal/socks5 88.5
+coverage internal/userstore 89.0
+coverage internal/session 93.5
+coverage internal/relay 93.0
+coverage internal/identity 80.0
+coverage internal/passwordhash 96.0
+coverage internal/tcptune 83.0
+coverage internal/udpbuf 80.5
+coverage pkg/obfs 88.5
+coverage pkg/veil 85.5
+coverage pkg/s5server 87.0
+coverage pkg/nativeudp 89.5
+coverage pkg/transport/ws 90.0
+coverage pkg/transport/tlsdecoy 90.5
+
+size s5client-darwin-amd64 9700000
+size s5client-darwin-arm64 9000000
+size s5client-linux-amd64 9500000
+size s5client-linux-arm64 8800000
+size s5client-linux-mips-softfloat 10300000
+size s5client-linux-mipsle-softfloat 10300000
+size s5client-windows-amd64.exe 9900000
+size s5core-darwin-amd64 16300000
+size s5core-darwin-arm64 15200000
+size s5core-linux-amd64 15900000
+size s5core-linux-arm64 14700000
+size s5core-windows-amd64.exe 16300000
