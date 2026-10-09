@@ -156,7 +156,7 @@ func FuzzReadAddrSpec(f *testing.F) {
 			if errors.Is(err, errUnrecognizedAddrType) != unknown {
 				t.Fatalf("ATYP %x: err=%v", data[:min(1, len(data))], err)
 			}
-			if !unknown && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+			if !unknown && !errors.Is(err, errEmptyDomain) && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 				t.Fatalf("a short address failed with %v, want an EOF", err)
 			}
 			return

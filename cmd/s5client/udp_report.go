@@ -36,7 +36,25 @@ type assocEnd struct {
 // assocStats counts the datagrams of one association both ways, as the
 // application sent and received them.
 type assocStats struct {
-	sent, sentBytes, received, receivedBytes atomic.Uint64
+	sent, sentBytes, received, receivedBytes       atomic.Uint64
+	localIn, sourceDrops, headerDrops, portChanges atomic.Uint64
+	appWriteErrors, appUnknownDrops, streamSent    atomic.Uint64
+}
+
+type assocDiagnostics struct {
+	localIn, sourceDrops, headerDrops, portChanges uint64
+	appWriteErrors, appUnknownDrops, streamSent    uint64
+}
+
+func (s *assocStats) diagnostics() assocDiagnostics {
+	return assocDiagnostics{s.localIn.Load(), s.sourceDrops.Load(), s.headerDrops.Load(), s.portChanges.Load(),
+		s.appWriteErrors.Load(), s.appUnknownDrops.Load(), s.streamSent.Load()}
+}
+
+func (d assocDiagnostics) attrs() []any {
+	return []any{"local_udp_in", d.localIn, "source_drops", d.sourceDrops, "header_drops", d.headerDrops,
+		"app_port_changes", d.portChanges, "app_write_errors", d.appWriteErrors,
+		"app_unknown_drops", d.appUnknownDrops, "tcp_sent", d.streamSent}
 }
 
 func (s *assocStats) addSent(n int) {
@@ -84,20 +102,27 @@ func (t assocTotals) quiet() string {
 // with its totals so far, and nothing for a period that carried nothing, so
 // that a killed client loses at most the last period of each.
 type assocReport struct {
-	stats  *assocStats
-	opened time.Time
-	extra  func() []any
+	stats      *assocStats
+	opened     time.Time
+	extra      func() []any
+	every      time.Duration
+	diagnostic bool
 
-	mu      sync.Mutex
-	last    assocTotals
-	timer   *time.Timer
-	stopped bool
+	mu              sync.Mutex
+	last            assocTotals
+	lastDiagnostics assocDiagnostics
+	timer           *time.Timer
+	stopped         bool
 }
 
-func startAssocReport(stats *assocStats, opened time.Time, extra func() []any) *assocReport {
-	r := &assocReport{stats: stats, opened: opened, extra: extra}
+func startAssocReport(stats *assocStats, opened time.Time, extra func() []any, interval time.Duration) *assocReport {
+	every := interval
+	if every == 0 {
+		every = udpReportEvery
+	}
+	r := &assocReport{stats: stats, opened: opened, extra: extra, every: every, diagnostic: interval > 0}
 	r.mu.Lock()
-	r.timer = time.AfterFunc(udpReportEvery, r.tick)
+	r.timer = time.AfterFunc(every, r.tick)
 	r.mu.Unlock()
 	return r
 }
@@ -108,11 +133,14 @@ func (r *assocReport) tick() {
 	if r.stopped {
 		return
 	}
-	if now := r.stats.totals(); now != r.last {
+	now, diag := r.stats.totals(), r.stats.diagnostics()
+	if now != r.last || diag != r.lastDiagnostics || r.diagnostic && (now != (assocTotals{}) || diag != (assocDiagnostics{})) {
 		attrs := append([]any{"age", time.Since(r.opened).Round(time.Second).String()}, now.attrs()...)
+		delta := now.minus(r.last)
+		attrs = append(attrs, "period", r.every.String(), "sent_period", delta.sent, "received_period", delta.received)
 		// Quiet in this period, not since the start: an upstream that stops
 		// in the tenth minute of a match is buried in nine good ones.
-		if q := now.minus(r.last).quiet(); q != "" {
+		if q := delta.quiet(); q != "" {
 			attrs = append(attrs, "quiet", q)
 		}
 		if r.extra != nil {
@@ -120,8 +148,9 @@ func (r *assocReport) tick() {
 		}
 		slog.Info("UDP Tunnel running", attrs...)
 		r.last = now
+		r.lastDiagnostics = diag
 	}
-	r.timer.Reset(udpReportEvery)
+	r.timer.Reset(r.every)
 }
 
 // stop ends the reports. A line already being written is finished first, so

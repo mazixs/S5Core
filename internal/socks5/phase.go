@@ -90,6 +90,16 @@ func (t *phaseTimer) end(ok bool) {
 	}
 }
 
+// abandon closes the phase for the gauge without recording a duration.
+func (t *phaseTimer) abandon() {
+	if t == nil || !t.done.CompareAndSwap(false, true) {
+		return
+	}
+	if t.count != nil {
+		t.count(t.phase, -1)
+	}
+}
+
 // firstByteReader reports how long the destination took to produce its first
 // byte. It wraps only the read side of the target connection and adds one
 // predictable branch per read.

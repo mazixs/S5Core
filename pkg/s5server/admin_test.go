@@ -6,10 +6,121 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/mazixs/S5Core/internal/identity"
 	"github.com/mazixs/S5Core/internal/userstore"
 )
+
+func TestAnExistingAdminHandleExpiresAndSnapshotsCannotExtendIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		srv := adminServer(t)
+		root, _ := srv.userStore.Lookup("root")
+		until := time.Now().Add(2 * time.Second)
+		from := time.Now().Add(-time.Second)
+		root.ValidFrom, root.ValidUntil = &from, &until
+		body, err := json.Marshal(userstore.UsersFile{Users: []userstore.UserAccount{root}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(srv.cfg.UsersFile, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.ReloadUsers(); err != nil {
+			t.Fatal(err)
+		}
+		admin, err := srv.As("root")
+		if err != nil {
+			t.Fatal(err)
+		}
+		actor, err := admin.Actor()
+		if err != nil {
+			t.Fatal(err)
+		}
+		accounts, err := admin.Accounts()
+		if err != nil {
+			t.Fatal(err)
+		}
+		*actor.Policy.ValidUntil = until.Add(time.Hour)
+		*accounts[0].Policy.ValidUntil = until.Add(time.Hour)
+		*accounts[0].Policy.ValidFrom = until.Add(time.Hour)
+		time.Sleep(3 * time.Second)
+		if admin.Can(ManageAccountsAction) {
+			t.Fatal("expired handle kept permissions")
+		}
+		for _, action := range []func() error{
+			func() error { _, err := admin.Actor(); return err },
+			func() error { _, err := admin.Accounts(); return err },
+			func() error { return admin.AddUser("late", "p") },
+			func() error { return admin.RemoveUser("root") },
+			func() error { return admin.SetRole("root", RoleUser) },
+			func() error { return admin.UpdateWhitelist(nil) },
+			admin.ReloadUsers,
+		} {
+			if err := action(); err == nil {
+				t.Fatal("expired handle executed an operation")
+			}
+		}
+	})
+}
+
+func TestAdminOperationsEnforceTheCurrentValidityWindow(t *testing.T) {
+	for _, state := range []string{"expired", "not yet active"} {
+		t.Run(state, func(t *testing.T) {
+			boundary := time.Now().Add(-time.Hour)
+			root := userstore.UserAccount{ID: "1", Username: "root", Password: "x", Role: "admin", Enabled: true}
+			if state == "expired" {
+				root.ValidUntil = &boundary
+			} else {
+				boundary = time.Now().Add(time.Hour)
+				root.ValidFrom = &boundary
+			}
+			path := filepath.Join(t.TempDir(), "users.json")
+			body, err := json.Marshal(userstore.UsersFile{Users: []userstore.UserAccount{root, {ID: "2", Username: "alice", Password: "x", Enabled: true}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg := DefaultConfig()
+			cfg.RequireAuth, cfg.UsersFile = true, path
+			srv, err := NewServer(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			admin, err := srv.As("root")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := admin.SetRole("alice", RoleAdmin); err == nil {
+				t.Error("inactive admin changed a role")
+			}
+			if _, err := admin.Actor(); err == nil {
+				t.Error("inactive admin has an actor")
+			}
+			if _, err := admin.Role(); err == nil {
+				t.Error("inactive admin has a role")
+			}
+			if _, err := admin.Accounts(); err == nil {
+				t.Error("inactive admin listed accounts")
+			}
+			if admin.Can(ManageServerAction) {
+				t.Error("inactive admin may manage the server")
+			}
+			if err := admin.UpdateWhitelist([]string{"127.0.0.1"}); err == nil {
+				t.Error("inactive admin changed the whitelist")
+			}
+			if err := admin.ReloadUsers(); err == nil {
+				t.Error("inactive admin reloaded accounts")
+			}
+			if srv.userStore.Role("alice") != RoleUser {
+				t.Error("alice gained administrative permissions")
+			}
+		})
+	}
+}
 
 // adminServer builds a server - not started, because none of this touches the
 // network - whose account file holds one account per role.

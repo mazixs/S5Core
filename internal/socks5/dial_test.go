@@ -115,10 +115,8 @@ func TestDialClosesLateWinningSocket(t *testing.T) {
 
 // A large DNS answer must not cancel the only reachable address before a
 // normal connection delay has elapsed. Fast failures of the other addresses
-// do not shorten the working attempt's lifetime. A refusal reached the
-// destination, so the refused addresses fill the six sockets and the rest of
-// a large answer is not tried (Н-5 of docs/plan/v2.3-rc6.md; before it every
-// address was tried, two at a time).
+// do not shorten the working attempt's lifetime. Other candidates can be
+// tried after those failures without cancelling the working attempt.
 func TestDialLargeAddressSetPreservesWorkingCandidate(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
@@ -174,7 +172,7 @@ func TestDialLargeAddressSetPreservesWorkingCandidate(t *testing.T) {
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				if active != 0 || peak > dialSocketLimit || calls != dialSocketLimit {
+				if active != 0 || peak > dialSocketLimit || calls < min(tc.count, dialCandidateLimit) || calls > dialCandidateLimit+dialBackupLimit {
 					t.Fatalf("active=%d peak=%d calls=%d", active, peak, calls)
 				}
 			})

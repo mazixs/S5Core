@@ -2,8 +2,10 @@ package s5server
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mazixs/S5Core/internal/identity"
+	"github.com/mazixs/S5Core/internal/userstore"
 )
 
 // Plan task Ф6-3: management actions used to be available to anyone holding a
@@ -23,15 +25,18 @@ import (
 // returns an *identity.ErrNotAllowed when the role does not have the
 // permission.
 //
-// The handle holds a name, not a role. It used to hold a copy of the
-// identity, which made it a capability: once issued it kept the permissions
+// The handle pins an account incarnation, not a role or a reusable name.
+// Removal/recreation invalidates it even when the new account uses the same
+// ID and name. Ordinary policy and role changes remain visible.
+// It used to hold a copy of the identity, which made it a capability: once issued it kept the permissions
 // it was issued with, so an admin who demoted itself - or an account that was
 // deleted outright - went on managing the server through the handle it
 // already had. A handle is not a session and grants nothing on its own; the
 // store is asked every time.
 type Admin struct {
-	srv  *Server
-	name string
+	srv     *Server
+	name    string
+	account *userstore.Binding
 }
 
 // As returns the management API bound to an account. It fails when
@@ -41,10 +46,11 @@ func (s *Server) As(username string) (*Admin, error) {
 	if s.userStore == nil {
 		return nil, fmt.Errorf("authentication is not enabled, so there is nobody to act as")
 	}
-	if _, ok := s.userStore.Identity(username); !ok {
+	account := s.userStore.Bind(username)
+	if account == nil {
 		return nil, fmt.Errorf("account %q does not exist", username)
 	}
-	return &Admin{srv: s, name: username}, nil
+	return &Admin{srv: s, name: username, account: account}, nil
 }
 
 // Name is the account this handle acts as. It is what the handle holds, and
@@ -59,12 +65,15 @@ func (a *Admin) actor() (Account, error) {
 	if a.srv.userStore == nil {
 		return Account{}, fmt.Errorf("authentication is not enabled")
 	}
-	actor, ok := a.srv.userStore.Identity(a.name)
+	actor, ok := a.account.Identity()
 	if !ok {
 		return Account{}, fmt.Errorf("account %q no longer exists", a.name)
 	}
 	if !actor.Policy.Enabled {
 		return Account{}, fmt.Errorf("account %q is disabled", a.name)
+	}
+	if !actor.Policy.Allows(time.Now()) {
+		return Account{}, fmt.Errorf("account %q is not currently active", a.name)
 	}
 	return actor, nil
 }

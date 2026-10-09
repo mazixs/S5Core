@@ -21,7 +21,9 @@ import (
 func nativeRequest(t *testing.T, conf *Config) ([]byte, net.Conn, <-chan error) {
 	t.Helper()
 	conf.BindIP = net.ParseIP("127.0.0.1")
-	conf.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	if conf.Logger == nil {
+		conf.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	server, err := New(conf)
 	if err != nil {
 		t.Fatal(err)

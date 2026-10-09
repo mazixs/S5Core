@@ -2,9 +2,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
-	"sync"
 	"testing"
 	"time"
 )
@@ -20,28 +20,66 @@ import (
 // handleClient never returned, its deferred Close never ran, the tunnel stayed
 // open, and the WaitGroup a shutdown waits on never reached zero.
 
-// relayPair runs the same two-copy relay handleClient does, and reports
-// whether it finished.
+// relayPair exercises the production relay, including its error handling.
 func relayPair(t *testing.T, app, tunnel net.Conn) chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
 	go func() {
-		defer wg.Done()
-		io.Copy(tunnel, app) //nolint:errcheck
-		endWrite(tunnel)
-	}()
-	go func() {
-		defer wg.Done()
-		io.Copy(app, tunnel) //nolint:errcheck
-		endWrite(app)
-	}()
-	go func() {
-		wg.Wait()
+		relayAfter(app, tunnel, nil)
 		close(done)
 	}()
 	return done
+}
+
+func TestTunnelResetReleasesIdleClientAndPropagatesFailure(t *testing.T) {
+	appSide, appRelay := tcpPair(t)
+	tunnelRelay, tunnelFar := tcpPair(t)
+	done := relayPair(t, appRelay, tunnelRelay)
+	if err := tunnelFar.(*net.TCPConn).SetLinger(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := tunnelFar.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reset tunnel retains a handler while the application stays open")
+	}
+	if err := appSide.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := appSide.Read(make([]byte, 1)); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("application saw %v; tunnel reset must not look like clean EOF", err)
+	}
+}
+
+func TestRelayHalfCloseDeliversTheWholeReply(t *testing.T) {
+	appSide, appRelay := tcpPair(t)
+	tunnelRelay, tunnelFar := tcpPair(t)
+	done := relayPair(t, appRelay, tunnelRelay)
+	if _, err := appSide.Write([]byte("request")); err != nil {
+		t.Fatal(err)
+	}
+	if err := appSide.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := io.ReadAll(tunnelFar); err != nil || string(got) != "request" {
+		t.Fatalf("request %q, %v", got, err)
+	}
+	want := bytes.Repeat([]byte("reply"), 18000)
+	go func() {
+		_, _ = tunnelFar.Write(want)
+		_ = tunnelFar.(*net.TCPConn).CloseWrite()
+	}()
+	if got, err := io.ReadAll(appSide); err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("reply bytes %d/%d, error %v", len(got), len(want), err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("clean half-close did not finish")
+	}
 }
 
 // peerThatFollows stands in for the other end of the tunnel - our own server,

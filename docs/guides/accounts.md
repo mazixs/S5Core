@@ -39,6 +39,9 @@ By defining an optional `USERS_FILE`, you can enable multi-account support with 
 
 ### Example `users.json`
 
+Replace the placeholder password hashes and tunnel keys before use. Generate each
+independent tunnel key with `openssl rand -base64 32`; never reuse an example key.
+
 ```json
 {
   "users": [
@@ -56,14 +59,14 @@ By defining an optional `USERS_FILE`, you can enable multi-account support with 
       "id": "u-002",
       "username": "unlimited_user",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=1$...",
-      "tunnel_key": "9Qm2t0s0cW1Zr7Yb3kF6uH8aJ4nP1xV5dS7gK0lE2oM=",
+      "tunnel_key": "<GENERATE_A_UNIQUE_TUNNEL_KEY>",
       "enabled": true
     },
     {
       "id": "u-003",
       "username": "noc",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=1$...",
-      "tunnel_key": "Zr7Yb3kF6uH8aJ4nP1xV5dS7gK0lE2oM9Qm2t0s0cW1=",
+      "tunnel_key": "<GENERATE_A_UNIQUE_TUNNEL_KEY>",
       "role": "operator",
       "enabled": true
     }
@@ -180,3 +183,24 @@ depending on how the client spelled the address.
 > **On Windows** neither signal exists: there is no `SIGUSR1` at all, and nothing delivers `SIGHUP`. Both binaries build and run there, and both stop cleanly on Ctrl-C, but the configuration they started with is the configuration they keep - reloading means restarting the process, and the log level is whatever `LOG_LEVEL` or `LOG_LEVEL_FILE` said at startup. The signal names live in `internal/signals`, one file per platform, so this is a stated difference rather than a build that fails at release time.
 
 [Documentation index](../README.md) · [Project home](../../README.md)
+
+
+## Reload, counters and external file edits
+
+A live store compares the file digest before saving. An external edit stops
+that save with an explicit error; it is not overwritten. Reload merges SDK
+metadata changes against the last accepted file, preserves spent traffic by
+stable account ID, and reports conflicting field changes. A removal wins over
+an unchanged older copy. A rename retains the live traffic counter.
+
+Spent traffic never decreases merely because an editor saved an older counter.
+Reload therefore cannot be used to reset spend to a smaller value; use a planned
+account rollover for a new quota period. Save includes current spend once, and
+repeated reload does not add it again. A failed final save remains an error and
+does not erase spend in the running process. It cannot guarantee recovery of
+that unsaved spend after a process or machine crash.
+
+On Unix, save syncs the temporary file before rename and the containing
+directory after rename. Windows syncs the file; portable directory fsync is not
+available in this implementation, so Windows crash durability remains a
+separate acceptance item.

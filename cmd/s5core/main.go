@@ -48,7 +48,7 @@ type params struct {
 	ObfsPSK          string        `env:"OBFS_PSK" envDefault:""`
 	ObfsMaxPadding   int           `env:"OBFS_MAX_PADDING" envDefault:"256"`
 	ObfsMTU          int           `env:"OBFS_MTU" envDefault:"1400"`
-	ObfsReplayWindow int           `env:"OBFS_REPLAY_WINDOW" envDefault:"10000"`
+	ObfsReplayWindow int           `env:"OBFS_REPLAY_WINDOW" envDefault:"100000"`
 	// ObfsNodeID binds this node's keys to this node. A prologue minted for
 	// another node does not authenticate here, which is what lets each node
 	// keep its own replay history instead of sharing one (plan task Ф5-4).
@@ -67,11 +67,15 @@ type params struct {
 	// Turn it on for deployments whose clients are not s5client.
 	KeepaliveMin time.Duration `env:"KEEPALIVE_MIN" envDefault:"0s"`
 	KeepaliveMax time.Duration `env:"KEEPALIVE_MAX" envDefault:"0s"`
+	// ObfsTFO accepts data in a SYN on the obfs port; off by default, see
+	// s5server.Config.ObfsTFO.
+	ObfsTFO bool `env:"OBFS_TFO" envDefault:"false"`
 	// UDPTunnelTCPTuning lets the connection of a UDP-over-TCP tunnel
 	// retransmit sooner than the kernel's default (internal/tcptune). Off
 	// keeps the kernel's timer, for a path where that turns out better.
-	UDPTunnelTCPTuning bool   `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
-	UDPPort            string `env:"UDP_PORT" envDefault:""`
+	UDPTunnelTCPTuning     bool          `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
+	UDPPort                string        `env:"UDP_PORT" envDefault:""`
+	UDPDiagnosticsInterval time.Duration `env:"UDP_DIAGNOSTICS_INTERVAL" envDefault:"0"`
 	// WebSocket-over-TLS stealth transport. Until these were read here, about
 	// 700 lines of working transport code were reachable only from the SDK,
 	// while README and .env.example documented them as if the binary had them.
@@ -82,6 +86,7 @@ type params struct {
 	WSPath     string `env:"WS_PATH" envDefault:"/ws"`
 	// WSDecoyUpstream turns the decoy into a reverse proxy to a real site.
 	WSDecoyUpstream string `env:"WS_DECOY_UPSTREAM"`
+	WSEarlyData     string `env:"WS_EARLY_DATA" envDefault:"auto"`
 	// TransportAdvice is sent to every client inside its tunnel: the
 	// transport to use next and the traffic shape to adopt (plan task
 	// Ф5-7). Reloaded on SIGHUP, so moving the fleet is one variable and
@@ -229,56 +234,59 @@ func setupTelemetry() (*s5server.Telemetry, error) {
 
 func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger) (*s5server.Server, error) {
 	serverCfg := s5server.Config{
-		Logger:                logger,
-		Port:                  cfg.Port,
-		ListenIP:              cfg.ListenIP,
-		RequireAuth:           cfg.RequireAuth,
-		AllowedDestFqdn:       cfg.AllowedDestFqdn,
-		DenyPrivateDest:       !cfg.AllowPrivateDest,
-		AllowedIPs:            cfg.AllowedIPs,
-		ReadTimeout:           cfg.ReadTimeout,
-		WriteTimeout:          cfg.WriteTimeout,
-		HandshakeTimeout:      cfg.HandshakeTimeout,
-		DialTimeout:           cfg.DialTimeout,
-		FrameTimeout:          cfg.FrameTimeout,
-		QuotaGrace:            cfg.QuotaGrace,
-		MaxConnections:        cfg.MaxConnections,
-		Fail2BanRetries:       cfg.Fail2BanRetries,
-		Fail2BanTime:          cfg.Fail2BanTime,
-		Telemetry:             telemetry,
-		ObfsEnabled:           cfg.ObfsEnabled,
-		ObfsPort:              cfg.ObfsPort,
-		ObfsPSK:               cfg.ObfsPSK,
-		ObfsMaxPadding:        cfg.ObfsMaxPadding,
-		ObfsMTU:               cfg.ObfsMTU,
-		ObfsKeepaliveMin:      cfg.KeepaliveMin,
-		ObfsKeepaliveMax:      cfg.KeepaliveMax,
-		ObfsReplayWindow:      cfg.ObfsReplayWindow,
-		ObfsNodeID:            cfg.ObfsNodeID,
-		ObfsAcceptNodeIDs:     cfg.ObfsAcceptNodeIDs,
-		ObfsRequireMemberKey:  cfg.ObfsRequireMemberKey,
-		UDPTunnelTCPTuningOff: !cfg.UDPTunnelTCPTuning,
-		UDPPort:               cfg.UDPPort,
-		WSEnabled:             cfg.WSEnabled,
-		WSAddr:                cfg.WSAddr,
-		WSCertFile:            cfg.WSCertFile,
-		WSKeyFile:             cfg.WSKeyFile,
-		WSPath:                cfg.WSPath,
-		WSDecoyUpstream:       cfg.WSDecoyUpstream,
-		TransportAdvice:       cfg.TransportAdvice,
-		WSSubprotocol:         cfg.WSSubprotocol,
-		WSMinFrame:            cfg.WSMinFrame,
-		WSMaxFrame:            cfg.WSMaxFrame,
-		WSMaxJitter:           time.Duration(cfg.WSMaxJitterMs) * time.Millisecond,
-		UsersFile:             cfg.UsersFile,
-		TrafficFlushInterval:  cfg.TrafficFlush,
-		KDFMemoryBudget:       int64(cfg.KDFMemoryBudgetMB) << 20,
-		SessionLog:            cfg.SessionLog,
-		SessionLogFile:        cfg.SessionLogFile,
-		SessionLogMaxSize:     int64(cfg.SessionLogMaxSizeMB) << 20,
-		SessionLogMaxFiles:    cfg.SessionLogMaxFiles,
-		SessionLogMaxAge:      cfg.SessionLogMaxAge,
-		SessionLogDst:         cfg.SessionLogDst,
+		Logger:                 logger,
+		Port:                   cfg.Port,
+		ListenIP:               cfg.ListenIP,
+		RequireAuth:            cfg.RequireAuth,
+		AllowedDestFqdn:        cfg.AllowedDestFqdn,
+		DenyPrivateDest:        !cfg.AllowPrivateDest,
+		AllowedIPs:             cfg.AllowedIPs,
+		ReadTimeout:            cfg.ReadTimeout,
+		WriteTimeout:           cfg.WriteTimeout,
+		HandshakeTimeout:       cfg.HandshakeTimeout,
+		DialTimeout:            cfg.DialTimeout,
+		FrameTimeout:           cfg.FrameTimeout,
+		QuotaGrace:             cfg.QuotaGrace,
+		MaxConnections:         cfg.MaxConnections,
+		Fail2BanRetries:        cfg.Fail2BanRetries,
+		Fail2BanTime:           cfg.Fail2BanTime,
+		Telemetry:              telemetry,
+		ObfsEnabled:            cfg.ObfsEnabled,
+		ObfsPort:               cfg.ObfsPort,
+		ObfsPSK:                cfg.ObfsPSK,
+		ObfsMaxPadding:         cfg.ObfsMaxPadding,
+		ObfsMTU:                cfg.ObfsMTU,
+		ObfsKeepaliveMin:       cfg.KeepaliveMin,
+		ObfsKeepaliveMax:       cfg.KeepaliveMax,
+		ObfsReplayWindow:       cfg.ObfsReplayWindow,
+		ObfsNodeID:             cfg.ObfsNodeID,
+		ObfsAcceptNodeIDs:      cfg.ObfsAcceptNodeIDs,
+		ObfsRequireMemberKey:   cfg.ObfsRequireMemberKey,
+		ObfsTFO:                cfg.ObfsTFO,
+		UDPTunnelTCPTuningOff:  !cfg.UDPTunnelTCPTuning,
+		UDPPort:                cfg.UDPPort,
+		UDPDiagnosticsInterval: cfg.UDPDiagnosticsInterval,
+		WSEnabled:              cfg.WSEnabled,
+		WSAddr:                 cfg.WSAddr,
+		WSCertFile:             cfg.WSCertFile,
+		WSKeyFile:              cfg.WSKeyFile,
+		WSPath:                 cfg.WSPath,
+		WSDecoyUpstream:        cfg.WSDecoyUpstream,
+		WSEarlyData:            cfg.WSEarlyData,
+		TransportAdvice:        cfg.TransportAdvice,
+		WSSubprotocol:          cfg.WSSubprotocol,
+		WSMinFrame:             cfg.WSMinFrame,
+		WSMaxFrame:             cfg.WSMaxFrame,
+		WSMaxJitter:            time.Duration(cfg.WSMaxJitterMs) * time.Millisecond,
+		UsersFile:              cfg.UsersFile,
+		TrafficFlushInterval:   cfg.TrafficFlush,
+		KDFMemoryBudget:        int64(cfg.KDFMemoryBudgetMB) << 20,
+		SessionLog:             cfg.SessionLog,
+		SessionLogFile:         cfg.SessionLogFile,
+		SessionLogMaxSize:      int64(cfg.SessionLogMaxSizeMB) << 20,
+		SessionLogMaxFiles:     cfg.SessionLogMaxFiles,
+		SessionLogMaxAge:       cfg.SessionLogMaxAge,
+		SessionLogDst:          cfg.SessionLogDst,
 	}
 
 	if cfg.TLSFingerprint != "" {

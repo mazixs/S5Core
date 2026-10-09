@@ -435,8 +435,8 @@ func TestStore_LoadFromFile_TooLarge(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for oversized file")
 	}
-	if !strings.Contains(err.Error(), "exceeds limit") {
-		t.Fatalf("expected 'exceeds limit' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("expected size bound in error, got: %v", err)
 	}
 }
 
@@ -489,9 +489,8 @@ func TestStore_Reload_PreservesTrafficDeltaPointer(t *testing.T) {
 	if counter == nil {
 		t.Fatal("TrafficCounterFor returned nil")
 	}
-	// Delta was merged into base and reset
-	if counter.Load() != 0 {
-		t.Errorf("trafficDelta after reload = %d, want 0", counter.Load())
+	if counter != s.TrafficCounterFor("alice") {
+		t.Error("reload replaced the counter still held by an active relay")
 	}
 
 	acc, _ := s.Lookup("alice")
@@ -499,9 +498,10 @@ func TestStore_Reload_PreservesTrafficDeltaPointer(t *testing.T) {
 		t.Errorf("TrafficUsedBytes after reload = %d, want 150", acc.TrafficUsedBytes)
 	}
 
+	before := counter.Load()
 	s.AddTraffic("alice", 25)
-	if counter.Load() != 25 {
-		t.Errorf("trafficDelta after reload add = %d, want 25", counter.Load())
+	if counter.Load() != before+25 {
+		t.Errorf("live counter increment = %d, want 25", counter.Load()-before)
 	}
 
 	acc, _ = s.Lookup("alice")

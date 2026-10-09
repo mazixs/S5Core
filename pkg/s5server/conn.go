@@ -137,16 +137,16 @@ func (c *metricsConn) Session() *session.Session { return c.sess }
 
 func (c *metricsConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
-	if c.telemetry != nil && n > 0 {
-		c.telemetry.BytesIn.Add(context.Background(), int64(n))
+	if c.telemetry != nil && c.telemetry.TCPStreamBytesIn != nil && n > 0 {
+		c.telemetry.TCPStreamBytesIn.Add(context.Background(), int64(n))
 	}
 	return n, err
 }
 
 func (c *metricsConn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
-	if c.telemetry != nil && n > 0 {
-		c.telemetry.BytesOut.Add(context.Background(), int64(n))
+	if c.telemetry != nil && c.telemetry.TCPStreamBytesOut != nil && n > 0 {
+		c.telemetry.TCPStreamBytesOut.Add(context.Background(), int64(n))
 	}
 	return n, err
 }

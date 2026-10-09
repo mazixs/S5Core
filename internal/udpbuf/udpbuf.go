@@ -34,6 +34,20 @@ func ListenUDP(network string, laddr *net.UDPAddr) (*net.UDPConn, error) {
 	return c, nil
 }
 
+// ListenUnicast opens a destination relay socket with SO_BROADCAST disabled.
+// Go's default UDP listener enables it, including on a wildcard bind.
+func ListenUnicast(network string, laddr *net.UDPAddr) (*net.UDPConn, error) {
+	c, err := ListenUDP(network, laddr)
+	if err != nil {
+		return nil, err
+	}
+	if err := disableBroadcast(c); err != nil {
+		_ = c.Close()
+		return nil, err
+	}
+	return c, nil
+}
+
 // DialUDP is net.DialUDP with the receive buffer grown.
 func DialUDP(network string, laddr, raddr *net.UDPAddr) (*net.UDPConn, error) {
 	c, err := net.DialUDP(network, laddr, raddr)

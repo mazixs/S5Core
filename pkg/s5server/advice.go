@@ -29,7 +29,8 @@ import (
 //	TRANSPORT_ADVICE="ws"
 //	TRANSPORT_ADVICE="transport=ws min_frame=512 max_frame=2048 jitter_ms=5 padding=128 keepalive=10s-20s"
 //
-// Empty means no advice is sent. Every number is bounded here so that a typo
+// Empty withdraws the recommendation with a zero-valued advice frame on the
+// next tunnel. Every number is bounded here so that a typo
 // on the server cannot hand a client a shape it will refuse or one that
 // silently breaks its own tunnel.
 func ParseTransportAdvice(raw string) (*obfs.Advice, error) {
@@ -198,10 +199,33 @@ func (s *Server) UpdateTransportAdvice(raw string) error {
 	return nil
 }
 
-// currentAdvice is what a connection accepted now gets. Nil means nothing
-// is sent.
+// currentAdvice is what a connection accepted now gets. A zero-valued frame
+// explicitly withdraws a previous recommendation in a running client. It uses
+// the existing TLV format and is understood by earlier advice-capable clients.
 func (s *Server) currentAdvice() *obfs.Advice {
-	return s.advice.Load()
+	if advice := s.advice.Load(); advice != nil {
+		return advice
+	}
+	return &obfs.Advice{}
+}
+
+// The values of WS_EARLY_DATA.
+const (
+	WSEarlyDataAuto = "auto"
+	WSEarlyDataOff  = "off"
+)
+
+func (c Config) wsEarlyData() bool { return c.WSEarlyData != WSEarlyDataOff }
+
+// wsAdvice is currentAdvice plus what the WS listener can take. The
+// capability rides only on this listener: a client learns it from a tunnel
+// that came through the listener it describes.
+func (s *Server) wsAdvice() *obfs.Advice {
+	a := *s.currentAdvice()
+	if s.cfg.wsEarlyData() {
+		a.Capabilities |= obfs.CapWSEarlyData
+	}
+	return &a
 }
 
 // clientHelloObserver builds the callback the obfuscation layer invokes when

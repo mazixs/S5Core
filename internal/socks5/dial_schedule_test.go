@@ -365,8 +365,8 @@ func TestEveryAddressGetsATryBeforeTheLimit(t *testing.T) {
 
 // The first attempt's failure answers for its own address at once: the next
 // address starts in the same moment, and the failed one opens no backup. A
-// refusal reached the destination, so it keeps its place among the six. When
-// no address connects, the first one's answer names the dial.
+// refusal releases its socket slot. When no address connects, the first one's
+// answer names the dial.
 func TestTheFirstAttemptsFailureAnswersForItsAddressOnly(t *testing.T) {
 	other := &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
 	for _, tc := range []struct {
@@ -376,7 +376,7 @@ func TestTheFirstAttemptsFailureAnswersForItsAddressOnly(t *testing.T) {
 		elapsed time.Duration
 	}{
 		{"both_refuse", func(context.Context) (net.Conn, error) { return nil, other }, millis(0), 0},
-		{"other_is_silent", hole, millis(0, 500, 1500, 3000, 5000), 10 * time.Second},
+		{"other_is_silent", hole, millis(0, 500, 1500, 3000, 5000, 7000), 10 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -660,16 +660,90 @@ func TestAFamilyTheKernelLacksDoesNotNameTheFailure(t *testing.T) {
 	})
 }
 
-// Когда все адреса ответили отказом на шести сокетах, седьмой не стартует и
-// dial заканчивается сразу, а не в конце бюджета.
+// Быстрые отказы освобождают места для всех семи адресов, и dial заканчивается
+// сразу после последнего ответа, а не в конце бюджета.
 func TestSevenRefusedAddressesAnswerAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		d := newScriptDial(func(context.Context, string, int) (net.Conn, error) { return nil, refusal })
 		_, err := dialResolved(ctx, d.dial, candidatesFor(ctx, "a", "b", "c", "d", "e", "f", "g"))
-		if !errors.Is(err, refusal) || time.Since(d.origin) != 0 || len(d.all()) != dialSocketLimit {
-			t.Fatalf("after %v got %v with %d sockets, want the refusal at once after %d sockets", time.Since(d.origin), err, len(d.all()), dialSocketLimit)
+		if !errors.Is(err, refusal) || time.Since(d.origin) != 0 || len(d.all()) != 7 {
+			t.Fatalf("after %v got %v with %d sockets, want seven immediate refusals", time.Since(d.origin), err, len(d.all()))
+		}
+	})
+}
+
+func TestAFastRefusalDoesNotSkipAReachableTailAddress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		addrs := []string{"a", "b", "c", "d", "e", "f", "g"}
+		winner, peer := net.Pipe()
+		defer peer.Close()
+		d := newScriptDial(func(_ context.Context, addr string, _ int) (net.Conn, error) {
+			if addr == addrs[len(addrs)-1] {
+				return winner, nil
+			}
+			return nil, refusal
+		})
+		c, err := dialResolved(ctx, d.dial, candidatesFor(ctx, addrs...))
+		if c != nil {
+			defer c.Close()
+		}
+		if err != nil || c != winner || len(d.all()) != len(addrs) || time.Since(d.origin) != 0 {
+			t.Fatalf("tail candidate: conn=%v err=%v attempts=%d elapsed=%v", c, err, len(d.all()), time.Since(d.origin))
+		}
+	})
+}
+
+func TestDNSCandidateCoverageHasABoundedPolicy(t *testing.T) {
+	for _, live := range []int{dialCandidateLimit - 1, dialCandidateLimit} {
+		t.Run(fmt.Sprint(live+1), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				addrs := make([]string, 64)
+				for i := range addrs {
+					addrs[i] = fmt.Sprintf("192.0.2.%d:443", i+1)
+				}
+				winner, peer := net.Pipe()
+				defer peer.Close()
+				d := newScriptDial(func(_ context.Context, addr string, _ int) (net.Conn, error) {
+					if addr == addrs[live] {
+						return winner, nil
+					}
+					return nil, refusal
+				})
+				c, err := dialResolved(ctx, d.dial, candidatesFor(ctx, addrs...))
+				defer winner.Close()
+				if (live < dialCandidateLimit && (c != winner || err != nil)) || (live >= dialCandidateLimit && (c != nil || !errors.Is(err, refusal))) {
+					t.Fatalf("live candidate %d: conn=%v err=%v", live+1, c, err)
+				}
+				if len(d.all()) != dialCandidateLimit || len(d.at(addrs[dialCandidateLimit])) != 0 {
+					t.Fatalf("candidate budget exceeded: %d attempts", len(d.all()))
+				}
+			})
+		})
+	}
+}
+
+func TestFailedBackupsDoNotCreateAnUnboundedSequence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		d := newScriptDial(func(ctx context.Context, _ string, n int) (net.Conn, error) {
+			if n == 0 {
+				return hole(ctx)
+			}
+			return nil, errors.New("temporary local bind error")
+		})
+		if _, err := dialResolved(ctx, d.dial, candidatesFor(ctx, "a", "b")); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if active, peak := d.counts(); active != 0 || peak > dialSocketLimit || len(d.all()) != 2+dialBackupLimit {
+			t.Fatalf("attempts=%d, active=%d, peak=%d", len(d.all()), active, peak)
 		}
 	})
 }

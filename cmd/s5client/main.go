@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -102,8 +103,9 @@ type clientParams struct {
 	// sooner than the kernel's default (internal/tcptune): every datagram
 	// behind a lost segment waits for the retransmission timer. Off keeps the
 	// kernel's timer, for a path where that turns out better.
-	UDPTunnelTCPTuning bool `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
-	UDPNative          bool `env:"UDP_NATIVE" envDefault:"false"`
+	UDPTunnelTCPTuning     bool          `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
+	UDPNative              bool          `env:"UDP_NATIVE" envDefault:"false"`
+	UDPDiagnosticsInterval time.Duration `env:"UDP_DIAGNOSTICS_INTERVAL" envDefault:"0"`
 	// TunnelDeadTimeout closes the tunnel of a CONNECT stream once what the
 	// client sent on it has gone unacknowledged this long. A path that lost
 	// its state (a NAT, a provider) swallows the segments, and the kernel
@@ -112,6 +114,11 @@ type clientParams struct {
 	// server, which gives up on a silent or a stuck stream by then anyway.
 	// Zero leaves the kernel's rule.
 	TunnelDeadTimeout time.Duration `env:"TUNNEL_DEAD_TIMEOUT" envDefault:"45s"`
+	// FastOpen sends the first write of an obfs tunnel in its SYN (TCP Fast
+	// Open, Linux 4.11 and later), from the second connection to a server
+	// on. Off by default: a SYN with data is a shape a filter can see, and
+	// some paths drop it. It is for measuring what it saves on a given path.
+	FastOpen bool `env:"OBFS_TFO" envDefault:"false"`
 
 	// How long a shutdown waits for connections that are still carrying
 	// traffic before it stops waiting.
@@ -146,6 +153,18 @@ type clientParams struct {
 	// field report behind plan task Ф3-1.
 	DialTimeout      time.Duration `env:"DIAL_TIMEOUT" envDefault:"10s"`
 	HandshakeTimeout time.Duration `env:"HANDSHAKE_TIMEOUT" envDefault:"15s"`
+	// OptimisticConnect answers the application before the server has: a
+	// CONNECT with success before the tunnel exists, its bytes sent behind
+	// the request; a UDP ASSOCIATE with its local port at once, its early
+	// datagrams sent behind the request (docs/veil-spec.md, 10.2). That saves
+	// a round trip per stream and two before the first datagram
+	// (docs/plan/v2.4-rc4.md, decision 1). A refusal then reaches the
+	// application as the end of its connection rather than as a reply code;
+	// off makes both wait for the server and pass its code on.
+	OptimisticConnect bool `env:"OPTIMISTIC_CONNECT" envDefault:"true"`
+	// Prewarm keeps one spare transport open while the client is busy, so
+	// that a new tunnel skips the transport's round trips (prewarm.go).
+	Prewarm bool `env:"PREWARM" envDefault:"true"`
 
 	// The timezone check asks a third party where the server is, which pairs
 	// the client address with the proxy address in someone else's logs and
@@ -183,6 +202,39 @@ type clientParams struct {
 	// reason as rootCAs.
 	policy    *clientPolicy
 	transport transportKind
+	// noFastOpen keeps this attempt off TCP Fast Open whatever FastOpen
+	// says (tfo.go).
+	noFastOpen bool
+	// deferGreeting leaves the server's reply to a pipelined greeting unread
+	// at dial, for the reader of the CONNECT reply to take.
+	deferGreeting bool
+	// requestSent, when set, is told the tunnel the moment the request is
+	// written and before its reply is read: an association writes the
+	// datagrams it already holds behind the request (docs/veil-spec.md,
+	// 10.2).
+	requestSent func(net.Conn)
+	// setup, when set, is the state an association keeps across the tunnels
+	// of its setup (udpSetup).
+	setup tunnelSetup
+	// awaitUpgrade keeps dialServer on the plain upgrade, see waitingForUpgrade.
+	awaitUpgrade bool
+}
+
+// tunnelSetup is what a setup keeps across its tunnels.
+type tunnelSetup interface {
+	// abandoned says the tunnel failed because the application it was for
+	// left and the setup closed it: that tells the transport policy nothing
+	// about the path.
+	abandoned() bool
+	// failure names what the setup itself saw fail on the tunnel, a write
+	// behind the request, instead of the closed connection that followed.
+	failure(err error) error
+	// restart forgets the tunnel of an attempt that is set up again on a
+	// fresh transport (dialObfsTunnel).
+	restart()
+	// spare is told the attempt may be set up again on a fresh transport
+	// until the server answers: it runs on a spare or an early upgrade.
+	spare()
 }
 
 // loadRootCAs reads a PEM file of trusted certificates. The pool replaces the
@@ -243,6 +295,14 @@ func main() {
 // the trust roots, the WebSocket dialer and the transport policy. Every
 // refusal is logged here, with the setting it is about.
 func prepare(cfg *clientParams) bool {
+	if err := validateClientWireConfig(*cfg); err != nil {
+		slog.Error("Invalid client configuration", "error", err)
+		return false
+	}
+	if err := socks5.ValidateUDPDiagnosticsInterval(cfg.UDPDiagnosticsInterval); err != nil {
+		slog.Error("Invalid UDP diagnostics interval", "error", err)
+		return false
+	}
 	if cfg.ServerAddr == "" {
 		slog.Error("SERVER_ADDR is required")
 		return false
@@ -294,6 +354,7 @@ func prepare(cfg *clientParams) bool {
 		slog.Error("TUNNEL_DEAD_TIMEOUT is not usable", "error", err)
 		return false
 	}
+	checkFastOpen(*cfg)
 
 	pool, err := loadRootCAs(cfg.WSCAFile)
 	if err != nil {
@@ -387,6 +448,7 @@ func run(ctx context.Context, cfg clientParams) error {
 	acceptCtx, stopAccept := context.WithCancel(context.Background())
 	defer stopAccept()
 	go minutes.run(acceptCtx, boot)
+	spares.start(acceptCtx, cfg)
 
 	go func() {
 		select {
@@ -501,6 +563,10 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	if cmd == socks5.ConnectCommand && !checkRouting(clientConn, destFQDN, routes) {
 		return
 	}
+	if cmd == socks5.ConnectCommand && cfg.OptimisticConnect {
+		connectOptimistically(clientConn, cfg, connectReq, dest)
+		return
+	}
 
 	setupStart := time.Now()
 	// The policy decides the transport and shape of this attempt (plan task
@@ -514,6 +580,8 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	copy(wireReq, connectReq)
 	if cmd == socks5.AssociateCommand {
 		wireReq[1] = udpCommandFor(attempt)
+		handleUDPAssociate(clientConn, dest, attempt, wireReq)
+		return
 	}
 
 	// Step 4-5: Establish obfs tunnel and forward SOCKS5 request; from here
@@ -529,12 +597,6 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 		return
 	}
 	defer obfsConn.Close()
-
-	// Handle based on command
-	if cmd == socks5.AssociateCommand {
-		handleUDPAssociate(clientConn, obfsConn, dest, cfg, wireReq)
-		return
-	}
 
 	// Handle normal CONNECT
 	// Read CONNECT response from server, still under the handshake deadline.
@@ -552,6 +614,7 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 	clearDeadline(obfsConn)
 	if connectResp[1] == 0x00 {
 		tuneStream(obfsConn, cfg.TunnelDeadTimeout)
+		noteFastOpen(obfsConn)
 	}
 
 	// Forward CONNECT response to client
@@ -568,30 +631,114 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Step 6: Bidirectional relay
 	relayStart := time.Now()
+	r := relayAfter(clientConn, obfsConn, nil)
+	logRelayEnd(obfs.LogIDOf(obfsConn), dest, cfg, relayStart.Sub(setupStart), relayStart, r)
+}
+
+// logRelayEnd counts and logs a relay that ran, by the direction that ended
+// first.
+func logRelayEnd(id, dest string, cfg clientParams, setup time.Duration, relayStart time.Time, r relayResult) {
+	first := r.down
+	if r.firstUp {
+		first = r.up
+	}
+	closedBy := relayClosedBy(first, r.firstUp)
+	minutes.tcpClosed(closedBy)
+	logTCPClosed(id, dest, cfg, setup, time.Since(relayStart), r.up.n, r.down.n, closedBy, first.err)
+}
+
+// relayResult is how a relay ended.
+type relayResult struct {
+	up, down copyResult
+	firstUp  bool
+	// awaitErr ended the downstream before its copy began.
+	awaitErr error
+	// abortedByUp says the upstream failed first and aborted both sockets.
+	abortedByUp bool
+}
+
+// relayAfter preserves a clean half-close until both directions finish. A
+// failed direction aborts both sockets: no idle application can retain a
+// handler, and a truncated tunnel response does not become a clean EOF.
+//
+// A non-nil await runs in the downstream before it starts copying, while the
+// upstream copies from the start; an error from await aborts both sockets.
+// Until await returns, a failed write to the tunnel resets only the
+// application: a server that refuses closes with the early bytes unread, and
+// its reply, still to be read, says more than the reset of the write. A
+// successful await after such a write copies nothing and aborts.
+func relayAfter(clientConn, obfsConn net.Conn, await func() error) (r relayResult) {
 	ends := make(chan bool, 2)
-	var up, down copyResult
+	var state atomic.Int32
+	if await == nil {
+		state.Store(relayCopying)
+	}
+	var abortOnce sync.Once
+	abort := func(byUp bool) {
+		abortOnce.Do(func() {
+			r.abortedByUp = byUp
+			resetConn(clientConn)
+			_ = obfsConn.Close()
+		})
+	}
+	finish := func(dst net.Conn, result copyResult, byUp bool) {
+		if result.err == nil {
+			endWrite(dst)
+			return
+		}
+		if byUp && !result.reading && state.CompareAndSwap(relayAwaiting, relayWriteFailed) {
+			resetConn(clientConn)
+			return
+		}
+		abort(byUp)
+	}
 
 	go func() {
-		up = relayCopy(obfsConn, clientConn)
-		endWrite(obfsConn)
+		r.up = relayCopy(obfsConn, clientConn)
+		finish(obfsConn, r.up, true)
 		ends <- true
 	}()
 	go func() {
-		down = relayCopy(clientConn, obfsConn)
-		endWrite(clientConn)
+		if await != nil {
+			if err := await(); err != nil {
+				r.awaitErr = err
+				abort(false)
+				ends <- false
+				return
+			}
+			if !state.CompareAndSwap(relayAwaiting, relayCopying) {
+				abort(false)
+				ends <- false
+				return
+			}
+		}
+		r.down = relayCopy(clientConn, obfsConn)
+		finish(clientConn, r.down, false)
 		ends <- false
 	}()
 
-	firstUp := <-ends
+	r.firstUp = <-ends
 	<-ends
-	first := down
-	if firstUp {
-		first = up
+	if state.Load() == relayWriteFailed {
+		r.firstUp = true
 	}
-	closedBy := relayClosedBy(first, firstUp)
-	minutes.tcpClosed(closedBy)
-	logTCPClosed(obfs.LogIDOf(obfsConn), dest, cfg, relayStart.Sub(setupStart), time.Since(relayStart),
-		up.n, down.n, closedBy, first.err)
+	return r
+}
+
+// The phases of relayAfter's await.
+const (
+	relayAwaiting int32 = iota
+	relayWriteFailed
+	relayCopying
+)
+
+// resetConn closes a TCP connection with a reset rather than a FIN, so that
+// the application does not take a failure for the end of a complete answer.
+func resetConn(c net.Conn) {
+	if tcp, ok := c.(*net.TCPConn); ok {
+		_ = tcp.SetLinger(0)
+	}
+	_ = c.Close()
 }
 
 // relayBuffers backs both directions of every tunnel. Plain io.Copy reaches
@@ -721,13 +868,28 @@ const (
 type tunnelError struct {
 	phase tunnelPhase
 	err   error
+	// retryable: the setup may be repeated on a fresh transport without the
+	// application or the transport policy hearing of it (mayRetry).
+	retryable bool
+	// deadSpare: the setup failed on a dead spare and is not repeated, since
+	// the server may have got the request, but says nothing of the path
+	// (markSpareFailure).
+	deadSpare bool
 }
 
 func (e *tunnelError) Error() string { return string(e.phase) + ": " + e.err.Error() }
 func (e *tunnelError) Unwrap() error { return e.err }
 
+// tunnelFail is a failure of a step of setup. A Fast Open connection that
+// never reached the server fails at its first read or write, and that is a
+// failure of the dial, whichever step saw it (fastOpenConn).
 func tunnelFail(phase tunnelPhase, format string, args ...any) error {
-	return &tunnelError{phase: phase, err: fmt.Errorf(format, args...)}
+	err := fmt.Errorf(format, args...)
+	var unreached *unreachedError
+	if errors.As(err, &unreached) {
+		phase = phaseDial
+	}
+	return &tunnelError{phase: phase, err: err}
 }
 
 // isTimeout reports whether an error is a deadline or network timeout.
@@ -741,6 +903,9 @@ func isTimeout(err error) bool {
 
 // tunnelPhaseOf returns the phase an error was raised in, or an empty phase.
 func tunnelPhaseOf(err error) tunnelPhase {
+	if phase, ok := earlyPhaseOf(err); ok {
+		return phase
+	}
 	var te *tunnelError
 	if errors.As(err, &te) {
 		return te.phase
@@ -807,7 +972,7 @@ func setupHint(err error, cfg clientParams) string {
 	}
 	switch tunnelPhaseOf(err) {
 	case phaseGreeting:
-		return fmt.Sprintf("the server accepted the connection and then went quiet: check OBFS_PSK and OBFS_NODE_ID, "+
+		return fmt.Sprintf("the server accepted the connection and then went quiet: check OBFS_PSK, OBFS_NODE_ID and OBFS_MEMBER_KEY, "+
 			"and check this machine's clock - the tunnel binds its keys to the hour and tolerates about %d "+
 			"hours of skew (local time is now %s); a server older than 2.0 is also silent",
 			veil.DefaultEpochWindow, time.Now().Format(time.RFC3339))
@@ -872,6 +1037,9 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 		defer cancel()
 	}
 	if cfg.usesWS() {
+		if earlyDataKnown(cfg) {
+			return dialWSEarly(ctx, cfg)
+		}
 		var wsConn *ws.Conn
 		var err error
 		if cfg.wsDialer != nil {
@@ -888,7 +1056,7 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 		return wsConn, nil
 	}
 
-	conn, err := dialOutbound(ctx, "tcp", cfg.ServerAddr)
+	conn, err := dialTCP(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -896,16 +1064,81 @@ var dialServer = func(cfg clientParams) (net.Conn, error) {
 }
 
 // dialObfsTunnel establishes an obfuscated connection to the server and forwards
-// the SOCKS5 handshake through the encrypted tunnel.
+// the SOCKS5 handshake through the encrypted tunnel. A setup on a transport
+// that may be set up again - a spare, or an early upgrade - and that fails in
+// a way that may be repeated (mayRetry) gets one more try on a fresh dial
+// that waits for the 101; with a deferred greeting the tunnel is a
+// replayConn, which does the same where the greeting is read.
 func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
+	var spare *takenSpare
+	conn, again, err := handshakeTunnel(cfg, connectReq, func(cfg clientParams) (net.Conn, bool, error) {
+		c, onSpare, err := spares.take(cfg)
+		switch {
+		case onSpare:
+			spare = newTakenSpare(c)
+			c = spare
+		case isEarly(c), earlyRefused(err):
+		default:
+			return c, false, err
+		}
+		if cfg.setup != nil {
+			cfg.setup.spare()
+		}
+		return c, true, err
+	})
+	if again {
+		err = retryFailure(cfg, err, spare)
+		switch {
+		case mayRetry(err):
+			if spare != nil {
+				minutes.prewarmWasted.Add(1)
+			}
+			slog.Debug("Tunnel setup failed before the server got the request; setting it up again",
+				"transport", cfg.effectiveTransport(), "spare", spare != nil, "error", err)
+			if cfg.setup != nil {
+				cfg.setup.restart()
+			}
+			conn, _, err = handshakeTunnel(waitingForUpgrade(cfg), connectReq, dialFresh)
+			again = false
+		case spare == nil:
+		case !greetingAnswered(err):
+			minutes.prewarmWasted.Add(1)
+		case err != nil || !cfg.greetingDeferred():
+			minutes.prewarmUsed.Add(1)
+		}
+	}
+	if err == nil && again && cfg.greetingDeferred() {
+		return newReplayConn(conn, cfg, connectReq, spare), nil
+	}
+	return conn, err
+}
+
+func dialFresh(cfg clientParams) (net.Conn, bool, error) {
+	conn, err := dialServer(cfg)
+	return conn, false, err
+}
+
+// greetingAnswered says whether a setup got as far as the server's answer to
+// its greeting: it succeeded, or failed after that answer.
+func greetingAnswered(err error) bool {
+	if err == nil {
+		return true
+	}
+	phase := tunnelPhaseOf(err)
+	return phase != phaseDial && phase != phaseGreeting
+}
+
+// handshakeTunnel sets a tunnel up on the transport open returns; onSpare
+// says whether that was a spare.
+func handshakeTunnel(cfg clientParams, connectReq []byte, open func(clientParams) (net.Conn, bool, error)) (_ net.Conn, onSpare bool, _ error) {
 	if err := validateAuthMode(cfg); err != nil {
-		return nil, &tunnelError{phase: phaseAuthRejected, err: err}
+		return nil, onSpare, &tunnelError{phase: phaseAuthRejected, err: err}
 	}
 	// Setup includes the outer transport, obfs and SOCKS negotiation.
 	setupStart := time.Now()
-	serverConn, err := dialServer(cfg)
+	serverConn, onSpare, err := open(cfg)
 	if err != nil {
-		return nil, &tunnelError{phase: phaseDial, err: err}
+		return nil, onSpare, &tunnelError{phase: phaseDial, err: err}
 	}
 
 	// Every read below is covered by one deadline. It is cleared by the caller
@@ -913,14 +1146,14 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 	if cfg.HandshakeTimeout > 0 {
 		if err := serverConn.SetDeadline(setupStart.Add(cfg.HandshakeTimeout)); err != nil {
 			serverConn.Close()
-			return nil, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to set handshake deadline: %w", err)}
+			return nil, onSpare, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to set handshake deadline: %w", err)}
 		}
 	}
 
 	obfsConn, err := wrapTunnel(serverConn, cfg)
 	if err != nil {
 		serverConn.Close()
-		return nil, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to create obfs conn: %w", err)}
+		return nil, onSpare, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to create obfs conn: %w", err)}
 	}
 
 	// Send SOCKS5 greeting with supported auth methods.
@@ -931,7 +1164,7 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 		// existing server configs.
 		if _, err := obfsConn.Write([]byte{socks5Ver, socks5UserPassAuth, 0x00, 0x02}); err != nil {
 			obfsConn.Close()
-			return nil, tunnelFail(phaseGreeting, "failed to send greeting: %w", err)
+			return nil, onSpare, tunnelFail(phaseGreeting, "failed to send greeting: %w", err)
 		}
 	} else {
 		pipelined := make([]byte, 0, 3+len(connectReq))
@@ -939,33 +1172,32 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 		pipelined = append(pipelined, connectReq...)
 		if _, err := obfsConn.Write(pipelined); err != nil {
 			obfsConn.Close()
-			return nil, tunnelFail(phaseGreeting, "failed to send greeting: %w", err)
+			return nil, onSpare, tunnelFail(phaseGreeting, "failed to send greeting: %w", err)
+		}
+		cfg.sentRequest(obfsConn)
+		if cfg.greetingDeferred() {
+			return obfsConn, onSpare, nil
 		}
 	}
 
-	// Read server greeting response
-	var resp [2]byte
-	if _, err := io.ReadFull(obfsConn, resp[:]); err != nil {
+	method, err := readServerGreeting(obfsConn)
+	if err != nil {
 		obfsConn.Close()
-		return nil, tunnelFail(phaseGreeting, "failed to read server greeting: %w", err)
-	}
-	if resp[0] != socks5Ver {
-		obfsConn.Close()
-		return nil, tunnelFail(phaseAuthRejected, "unsupported SOCKS version: 0x%02x", resp[0])
+		return nil, onSpare, err
 	}
 
 	// Handle auth method selected by server
-	switch resp[1] {
+	switch method {
 	case 0x00:
 		if cfg.ProxyUser == "" {
-			return obfsConn, nil
+			return obfsConn, onSpare, nil
 		}
 		// No auth required - proceed
 	case 0x02:
 		// User/pass auth (RFC 1929)
 		if cfg.ProxyUser == "" {
 			obfsConn.Close()
-			return nil, tunnelFail(phaseAuthRejected, "server requires auth but PROXY_USER not set")
+			return nil, onSpare, methodRefused(method)
 		}
 		authReq := buildUserPassAuthPacket(cfg.ProxyUser, cfg.ProxyPass)
 		pipelined := make([]byte, 0, len(authReq)+len(connectReq))
@@ -973,32 +1205,37 @@ func dialObfsTunnel(cfg clientParams, connectReq []byte) (net.Conn, error) {
 		pipelined = append(pipelined, connectReq...)
 		if _, err := obfsConn.Write(pipelined); err != nil {
 			obfsConn.Close()
-			return nil, tunnelFail(phaseAuth, "failed to send auth: %w", err)
+			return nil, onSpare, tunnelFail(phaseAuth, "failed to send auth: %w", err)
 		}
+		cfg.sentRequest(obfsConn)
 		if err := readUserPassAuthResponse(obfsConn); err != nil {
 			obfsConn.Close()
 			phase := phaseAuth
 			if errors.Is(err, errAuthRejected) {
 				phase = phaseAuthRejected
 			}
-			return nil, &tunnelError{phase: phase, err: err}
+			return nil, onSpare, &tunnelError{phase: phase, err: err}
 		}
-		return obfsConn, nil
-	case 0xFF:
-		obfsConn.Close()
-		return nil, tunnelFail(phaseAuthRejected, "server rejected all auth methods")
+		return obfsConn, onSpare, nil
 	default:
 		obfsConn.Close()
-		return nil, tunnelFail(phaseAuthRejected, "unsupported auth method: 0x%02x", resp[1])
+		return nil, onSpare, methodRefused(method)
 	}
 
 	// Forward CONNECT request
 	if _, err := obfsConn.Write(connectReq); err != nil {
 		obfsConn.Close()
-		return nil, tunnelFail(phaseConnect, "failed to send CONNECT: %w", err)
+		return nil, onSpare, tunnelFail(phaseConnect, "failed to send CONNECT: %w", err)
 	}
+	cfg.sentRequest(obfsConn)
 
-	return obfsConn, nil
+	return obfsConn, onSpare, nil
+}
+
+func (cfg clientParams) sentRequest(c net.Conn) {
+	if cfg.requestSent != nil {
+		cfg.requestSent(c)
+	}
 }
 
 // wrapTunnel puts the obfuscation format over the raw transport. It carries
@@ -1020,9 +1257,7 @@ func wrapTunnel(serverConn net.Conn, cfg clientParams) (net.Conn, error) {
 			Transport: string(cfg.effectiveTransport()),
 		},
 	}
-	if cfg.policy != nil {
-		obfsCfg.OnAdvice = cfg.policy.onAdvice
-	}
+	obfsCfg.OnAdvice = adviceFor(cfg)
 	return obfs.NewClientConn(serverConn, obfsCfg)
 }
 
@@ -1045,6 +1280,9 @@ func readUserPassAuthResponse(conn io.Reader) error {
 	var resp [2]byte
 	if _, err := io.ReadFull(conn, resp[:]); err != nil {
 		return fmt.Errorf("failed to read auth response: %w", err)
+	}
+	if resp[0] != 0x01 {
+		return errors.New("invalid proxy auth response version")
 	}
 
 	if resp[1] != 0x00 {
@@ -1124,6 +1362,9 @@ func readSocks5Request(r io.Reader) ([]byte, byte, string, error) {
 		var domainLen [1]byte
 		if _, err := io.ReadFull(r, domainLen[:]); err != nil {
 			return nil, 0, "", err
+		}
+		if domainLen[0] == 0 {
+			return nil, 0, "", errors.New("empty SOCKS5 domain name")
 		}
 		addrPart = make([]byte, 1+int(domainLen[0]))
 		addrPart[0] = domainLen[0]

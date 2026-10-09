@@ -108,7 +108,7 @@ Resolver получает список IP, но возвращает тольк�
 
 Код: [cmd/s5client/main.go](../../cmd/s5client/main.go), строки 713-745 и 748-757;
 [pkg/transport/ws/dialer.go](../../pkg/transport/ws/dialer.go), строки 54-63;
-[pkg/transport/ws/common.go](../../pkg/transport/ws/common.go), строка 12.
+[pkg/transport/ws/common.go](../../pkg/transport/ws/dialer.go), строка 12.
 
 Ветка TCP создает context с `cfg.DialTimeout`. Ветка WS вызывает `ws.Dial` без этого контекста. Внутри используется фиксированный `wsHandshakeTimeout=10s`. `cfg.HandshakeTimeout` устанавливается на соединение только после возврата `dialServer`, поэтому он также не ограничивает начальное TCP/TLS/HTTP Upgrade ожидание WSS.
 

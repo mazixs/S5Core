@@ -1,0 +1,1373 @@
+{
+  "method": "Single local amd64 run, nearest-rank p95/p99; 80 small/mixed, 5 bulk per cell, concurrency=4, child GOMAXPROCS=1. Background mixed transfer excluded from CPU-normalized throughput.",
+  "groups": [
+    {
+      "mode": "direct",
+      "scenario": "small",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.0625,
+        "p95": 0.1315,
+        "p99": 0.5453
+      },
+      "total_ms": {
+        "p50": 1.0322,
+        "p95": 1.5367,
+        "p99": 1.7632
+      },
+      "elapsed_seconds": 0.022199787,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "large",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.098,
+        "p95": 0.4379,
+        "p99": 0.4379
+      },
+      "total_ms": {
+        "p50": 13.4776,
+        "p95": 13.9403,
+        "p99": 13.9403
+      },
+      "elapsed_seconds": 0.025046422,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 1597.03
+    },
+    {
+      "mode": "direct",
+      "scenario": "upload",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.0829,
+        "p95": 0.1176,
+        "p99": 0.1176
+      },
+      "total_ms": {
+        "p50": 11.8702,
+        "p95": 12.1303,
+        "p99": 12.1303
+      },
+      "elapsed_seconds": 0.022919427,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 1745.24
+    },
+    {
+      "mode": "direct",
+      "scenario": "mixed",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.0622,
+        "p95": 0.17,
+        "p99": 0.242
+      },
+      "total_ms": {
+        "p50": 1.0412,
+        "p95": 2.2507,
+        "p99": 2.8011
+      },
+      "elapsed_seconds": 0.026234465,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "small",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0.1057,
+        "p99": 0.2371
+      },
+      "total_ms": {
+        "p50": 0.0666,
+        "p95": 0.6155,
+        "p99": 1.1373
+      },
+      "elapsed_seconds": 0.00363878,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "large",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 2,
+      "connect_setup_ms": {
+        "p50": 0.0996,
+        "p95": 0.118,
+        "p99": 0.118
+      },
+      "total_ms": {
+        "p50": 10.2069,
+        "p95": 13.0489,
+        "p99": 13.0489
+      },
+      "elapsed_seconds": 0.019212481,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 2081.98
+    },
+    {
+      "mode": "direct",
+      "scenario": "upload",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 2,
+      "connect_setup_ms": {
+        "p50": 0.0963,
+        "p95": 0.1096,
+        "p99": 0.1096
+      },
+      "total_ms": {
+        "p50": 13.8043,
+        "p95": 14.1185,
+        "p99": 14.1185
+      },
+      "elapsed_seconds": 0.019531207,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 2048.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "mixed",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0.0667,
+        "p99": 0.1188
+      },
+      "total_ms": {
+        "p50": 0.0755,
+        "p95": 0.4473,
+        "p99": 0.7191
+      },
+      "elapsed_seconds": 0.003107784,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "small",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 1,
+      "connect_setup_ms": {
+        "p50": 0.0703,
+        "p95": 0.3761,
+        "p99": 1.0543
+      },
+      "total_ms": {
+        "p50": 1.4091,
+        "p95": 3.2725,
+        "p99": 3.9752
+      },
+      "elapsed_seconds": 0.034180785,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "large",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.3052,
+        "p95": 0.4398,
+        "p99": 0.4398
+      },
+      "total_ms": {
+        "p50": 17.7524,
+        "p95": 18.7633,
+        "p99": 18.7633
+      },
+      "elapsed_seconds": 0.028935809,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 1382.37
+    },
+    {
+      "mode": "direct",
+      "scenario": "upload",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.0867,
+        "p95": 0.0956,
+        "p99": 0.0956
+      },
+      "total_ms": {
+        "p50": 14.6519,
+        "p95": 18.0211,
+        "p99": 18.0211
+      },
+      "elapsed_seconds": 0.025660219,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 1558.83
+    },
+    {
+      "mode": "direct",
+      "scenario": "mixed",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 2,
+      "connect_setup_ms": {
+        "p50": 0.0734,
+        "p95": 0.6292,
+        "p99": 1.3939
+      },
+      "total_ms": {
+        "p50": 1.5287,
+        "p95": 3.3396,
+        "p99": 6.1069
+      },
+      "elapsed_seconds": 0.038020925,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "small",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 0.1022,
+        "p95": 0.2388,
+        "p99": 0.3147
+      },
+      "elapsed_seconds": 0.002830001,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "direct",
+      "scenario": "large",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 41.825,
+        "p95": 41.9263,
+        "p99": 41.9263
+      },
+      "elapsed_seconds": 0.052766817,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 758.05
+    },
+    {
+      "mode": "direct",
+      "scenario": "upload",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 29.0053,
+        "p95": 34.2005,
+        "p99": 34.2005
+      },
+      "elapsed_seconds": 0.037363174,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0,
+      "body_mib_per_second": 1070.57
+    },
+    {
+      "mode": "direct",
+      "scenario": "mixed",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 0.1023,
+        "p95": 0.2811,
+        "p99": 0.3411
+      },
+      "elapsed_seconds": 0.003079046,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 0.0
+    },
+    {
+      "mode": "plain",
+      "scenario": "small",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.3485,
+        "p95": 0.9815,
+        "p99": 1.3131
+      },
+      "total_ms": {
+        "p50": 1.6561,
+        "p95": 2.6802,
+        "p99": 3.0989
+      },
+      "elapsed_seconds": 0.035565719,
+      "s5_cpu_ticks": 2,
+      "max_observed_s5_rss_mib": 18.06
+    },
+    {
+      "mode": "plain",
+      "scenario": "large",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.561,
+        "p95": 3.2422,
+        "p99": 3.2422
+      },
+      "total_ms": {
+        "p50": 15.8657,
+        "p95": 18.1262,
+        "p99": 18.1262
+      },
+      "elapsed_seconds": 0.026610892,
+      "s5_cpu_ticks": 3,
+      "max_observed_s5_rss_mib": 18.23,
+      "body_mib_per_second": 1503.14
+    },
+    {
+      "mode": "plain",
+      "scenario": "upload",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.64,
+        "p95": 0.721,
+        "p99": 0.721
+      },
+      "total_ms": {
+        "p50": 16.4804,
+        "p95": 19.8905,
+        "p99": 19.8905
+      },
+      "elapsed_seconds": 0.028399038,
+      "s5_cpu_ticks": 2,
+      "max_observed_s5_rss_mib": 18.38,
+      "body_mib_per_second": 1408.5
+    },
+    {
+      "mode": "plain",
+      "scenario": "mixed",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.7797,
+        "p95": 2.7224,
+        "p99": 4.3794
+      },
+      "total_ms": {
+        "p50": 2.8194,
+        "p95": 5.1271,
+        "p99": 6.0814
+      },
+      "elapsed_seconds": 0.060539039,
+      "s5_cpu_ticks": 4,
+      "max_observed_s5_rss_mib": 18.8
+    },
+    {
+      "mode": "plain",
+      "scenario": "small",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0.475,
+        "p99": 1.1294
+      },
+      "total_ms": {
+        "p50": 0.1821,
+        "p95": 1.1248,
+        "p99": 1.8258
+      },
+      "elapsed_seconds": 0.006855472,
+      "s5_cpu_ticks": 2,
+      "max_observed_s5_rss_mib": 19.05
+    },
+    {
+      "mode": "plain",
+      "scenario": "large",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 2,
+      "connect_setup_ms": {
+        "p50": 4.1612,
+        "p95": 4.216,
+        "p99": 4.216
+      },
+      "total_ms": {
+        "p50": 16.1695,
+        "p95": 20.5856,
+        "p99": 20.5856
+      },
+      "elapsed_seconds": 0.025771174,
+      "s5_cpu_ticks": 1,
+      "max_observed_s5_rss_mib": 20.89,
+      "body_mib_per_second": 1552.12
+    },
+    {
+      "mode": "plain",
+      "scenario": "upload",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 2,
+      "connect_setup_ms": {
+        "p50": 0.4586,
+        "p95": 1.3418,
+        "p99": 1.3418
+      },
+      "total_ms": {
+        "p50": 17.8684,
+        "p95": 19.5907,
+        "p99": 19.5907
+      },
+      "elapsed_seconds": 0.022823555,
+      "s5_cpu_ticks": 2,
+      "max_observed_s5_rss_mib": 20.89,
+      "body_mib_per_second": 1752.58
+    },
+    {
+      "mode": "plain",
+      "scenario": "mixed",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0.4366,
+        "p99": 1.104
+      },
+      "total_ms": {
+        "p50": 0.1368,
+        "p95": 2.4685,
+        "p99": 3.0466
+      },
+      "elapsed_seconds": 0.011274686,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 21.3
+    },
+    {
+      "mode": "plain",
+      "scenario": "small",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.6552,
+        "p95": 1.3327,
+        "p99": 4.7101
+      },
+      "total_ms": {
+        "p50": 2.7762,
+        "p95": 6.0401,
+        "p99": 9.1856
+      },
+      "elapsed_seconds": 0.064436464,
+      "s5_cpu_ticks": 3,
+      "max_observed_s5_rss_mib": 21.72
+    },
+    {
+      "mode": "plain",
+      "scenario": "large",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.6625,
+        "p95": 1.3476,
+        "p99": 1.3476
+      },
+      "total_ms": {
+        "p50": 23.2959,
+        "p95": 24.3247,
+        "p99": 24.3247
+      },
+      "elapsed_seconds": 0.037913972,
+      "s5_cpu_ticks": 4,
+      "max_observed_s5_rss_mib": 21.79,
+      "body_mib_per_second": 1055.02
+    },
+    {
+      "mode": "plain",
+      "scenario": "upload",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 1.4003,
+        "p95": 2.2799,
+        "p99": 2.2799
+      },
+      "total_ms": {
+        "p50": 19.6883,
+        "p95": 24.6575,
+        "p99": 24.6575
+      },
+      "elapsed_seconds": 0.032491293,
+      "s5_cpu_ticks": 2,
+      "max_observed_s5_rss_mib": 21.98,
+      "body_mib_per_second": 1231.1
+    },
+    {
+      "mode": "plain",
+      "scenario": "mixed",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.9021,
+        "p95": 1.9233,
+        "p99": 2.8128
+      },
+      "total_ms": {
+        "p50": 3.177,
+        "p95": 6.1691,
+        "p99": 7.7666
+      },
+      "elapsed_seconds": 0.074092547,
+      "s5_cpu_ticks": 8,
+      "max_observed_s5_rss_mib": 22.67
+    },
+    {
+      "mode": "plain",
+      "scenario": "small",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 0.1605,
+        "p95": 0.4625,
+        "p99": 0.7767
+      },
+      "elapsed_seconds": 0.004376954,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 22.67
+    },
+    {
+      "mode": "plain",
+      "scenario": "large",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 35.8079,
+        "p95": 36.2709,
+        "p99": 36.2709
+      },
+      "elapsed_seconds": 0.046954897,
+      "s5_cpu_ticks": 4,
+      "max_observed_s5_rss_mib": 22.69,
+      "body_mib_per_second": 851.88
+    },
+    {
+      "mode": "plain",
+      "scenario": "upload",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 30.6254,
+        "p95": 37.0639,
+        "p99": 37.0639
+      },
+      "elapsed_seconds": 0.042528847,
+      "s5_cpu_ticks": 4,
+      "max_observed_s5_rss_mib": 22.69,
+      "body_mib_per_second": 940.54
+    },
+    {
+      "mode": "plain",
+      "scenario": "mixed",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 0.1834,
+        "p95": 0.7788,
+        "p99": 1.4196
+      },
+      "elapsed_seconds": 0.0066215,
+      "s5_cpu_ticks": 0,
+      "max_observed_s5_rss_mib": 22.69
+    },
+    {
+      "mode": "obfs",
+      "scenario": "small",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.6919,
+        "p95": 1.943,
+        "p99": 2.0665
+      },
+      "total_ms": {
+        "p50": 2.4642,
+        "p95": 3.4285,
+        "p99": 4.7454
+      },
+      "elapsed_seconds": 0.051914488,
+      "s5_cpu_ticks": 5,
+      "max_observed_s5_rss_mib": 32.12
+    },
+    {
+      "mode": "obfs",
+      "scenario": "large",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 1.0311,
+        "p95": 7.8639,
+        "p99": 7.8639
+      },
+      "total_ms": {
+        "p50": 37.0858,
+        "p95": 44.3312,
+        "p99": 44.3312
+      },
+      "elapsed_seconds": 0.058918009,
+      "s5_cpu_ticks": 9,
+      "max_observed_s5_rss_mib": 32.5,
+      "body_mib_per_second": 678.91
+    },
+    {
+      "mode": "obfs",
+      "scenario": "upload",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 1.2364,
+        "p95": 13.3015,
+        "p99": 13.3015
+      },
+      "total_ms": {
+        "p50": 49.9074,
+        "p95": 50.4931,
+        "p99": 50.4931
+      },
+      "elapsed_seconds": 0.063404484,
+      "s5_cpu_ticks": 10,
+      "max_observed_s5_rss_mib": 34.21,
+      "body_mib_per_second": 630.87
+    },
+    {
+      "mode": "obfs",
+      "scenario": "mixed",
+      "protocol": "h1",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 8.0092,
+        "p95": 11.3819,
+        "p99": 16.9164
+      },
+      "total_ms": {
+        "p50": 19.348,
+        "p95": 30.423,
+        "p99": 35.9953
+      },
+      "elapsed_seconds": 0.346284939,
+      "s5_cpu_ticks": 59,
+      "max_observed_s5_rss_mib": 36.61
+    },
+    {
+      "mode": "obfs",
+      "scenario": "small",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0.445,
+        "p99": 1.0479
+      },
+      "total_ms": {
+        "p50": 0.2231,
+        "p95": 1.3224,
+        "p99": 1.8959
+      },
+      "elapsed_seconds": 0.008003274,
+      "s5_cpu_ticks": 1,
+      "max_observed_s5_rss_mib": 37.07
+    },
+    {
+      "mode": "obfs",
+      "scenario": "large",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 3,
+      "connect_setup_ms": {
+        "p50": 11.1711,
+        "p95": 11.1716,
+        "p99": 11.1716
+      },
+      "total_ms": {
+        "p50": 31.3534,
+        "p95": 47.3754,
+        "p99": 47.3754
+      },
+      "elapsed_seconds": 0.047682103,
+      "s5_cpu_ticks": 10,
+      "max_observed_s5_rss_mib": 37.34,
+      "body_mib_per_second": 838.89
+    },
+    {
+      "mode": "obfs",
+      "scenario": "upload",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 11.2363,
+        "p95": 11.3606,
+        "p99": 11.3606
+      },
+      "total_ms": {
+        "p50": 57.6448,
+        "p95": 61.2753,
+        "p99": 61.2753
+      },
+      "elapsed_seconds": 0.061577583,
+      "s5_cpu_ticks": 11,
+      "max_observed_s5_rss_mib": 38.54,
+      "body_mib_per_second": 649.59
+    },
+    {
+      "mode": "obfs",
+      "scenario": "mixed",
+      "protocol": "h1",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 1.237,
+        "p99": 5.2402
+      },
+      "total_ms": {
+        "p50": 0.1442,
+        "p95": 7.09,
+        "p99": 10.9833
+      },
+      "elapsed_seconds": 0.027811896,
+      "s5_cpu_ticks": 5,
+      "max_observed_s5_rss_mib": 38.61
+    },
+    {
+      "mode": "obfs",
+      "scenario": "small",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.7596,
+        "p95": 1.3863,
+        "p99": 1.7508
+      },
+      "total_ms": {
+        "p50": 2.4912,
+        "p95": 4.0868,
+        "p99": 5.8416
+      },
+      "elapsed_seconds": 0.054622204,
+      "s5_cpu_ticks": 6,
+      "max_observed_s5_rss_mib": 36.03
+    },
+    {
+      "mode": "obfs",
+      "scenario": "large",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.8262,
+        "p95": 14.4108,
+        "p99": 14.4108
+      },
+      "total_ms": {
+        "p50": 33.9445,
+        "p95": 51.4947,
+        "p99": 51.4947
+      },
+      "elapsed_seconds": 0.062948063,
+      "s5_cpu_ticks": 9,
+      "max_observed_s5_rss_mib": 36.76,
+      "body_mib_per_second": 635.44
+    },
+    {
+      "mode": "obfs",
+      "scenario": "upload",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 0.9711,
+        "p95": 1.9868,
+        "p99": 1.9868
+      },
+      "total_ms": {
+        "p50": 50.3543,
+        "p95": 50.4575,
+        "p99": 50.4575
+      },
+      "elapsed_seconds": 0.065047199,
+      "s5_cpu_ticks": 10,
+      "max_observed_s5_rss_mib": 36.78,
+      "body_mib_per_second": 614.94
+    },
+    {
+      "mode": "obfs",
+      "scenario": "mixed",
+      "protocol": "h2",
+      "reuse": "new",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 0,
+      "connect_setup_ms": {
+        "p50": 3.37,
+        "p95": 7.6778,
+        "p99": 10.4513
+      },
+      "total_ms": {
+        "p50": 11.2674,
+        "p95": 20.4074,
+        "p99": 36.6161
+      },
+      "elapsed_seconds": 0.245666594,
+      "s5_cpu_ticks": 44,
+      "max_observed_s5_rss_mib": 37.37
+    },
+    {
+      "mode": "obfs",
+      "scenario": "small",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 0.176,
+        "p95": 0.3272,
+        "p99": 0.902
+      },
+      "elapsed_seconds": 0.004784273,
+      "s5_cpu_ticks": 1,
+      "max_observed_s5_rss_mib": 37.43
+    },
+    {
+      "mode": "obfs",
+      "scenario": "large",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        8388608
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 44.5138,
+        "p95": 44.7058,
+        "p99": 44.7058
+      },
+      "elapsed_seconds": 0.05668124,
+      "s5_cpu_ticks": 9,
+      "max_observed_s5_rss_mib": 37.5,
+      "body_mib_per_second": 705.7
+    },
+    {
+      "mode": "obfs",
+      "scenario": "upload",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 5,
+      "errors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 5,
+      "connect_setup_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 53.8878,
+        "p95": 72.8082,
+        "p99": 72.8082
+      },
+      "elapsed_seconds": 0.075709339,
+      "s5_cpu_ticks": 12,
+      "max_observed_s5_rss_mib": 38.44,
+      "body_mib_per_second": 528.34
+    },
+    {
+      "mode": "obfs",
+      "scenario": "mixed",
+      "protocol": "h2",
+      "reuse": "reuse",
+      "samples": 80,
+      "errors": 0,
+      "statuses": {
+        "200": 80
+      },
+      "response_bytes": [
+        24
+      ],
+      "reused_samples": 80,
+      "connect_setup_ms": {
+        "p50": 0.0,
+        "p95": 0,
+        "p99": 0
+      },
+      "total_ms": {
+        "p50": 0.4778,
+        "p95": 5.2109,
+        "p99": 9.3639
+      },
+      "elapsed_seconds": 0.033548116,
+      "s5_cpu_ticks": 5,
+      "max_observed_s5_rss_mib": 38.45
+    }
+  ]
+}

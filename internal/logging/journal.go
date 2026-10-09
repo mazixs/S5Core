@@ -81,9 +81,6 @@ func NewBoot() string {
 	return hex.EncodeToString(b[:])
 }
 
-// Boot is the epoch this journal writes under.
-func (j *Journal) Boot() string { return j.boot }
-
 // JournalLevels names the levels a journal line takes, in the order Lines
 // counts them.
 func JournalLevels() []string { return []string{"info", "warn"} }

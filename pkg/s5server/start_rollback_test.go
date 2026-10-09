@@ -29,7 +29,7 @@ func TestAFailedStartLeavesNothingListening(t *testing.T) {
 		t.Fatalf("split: %v", err)
 	}
 
-	const plainPort = "19311"
+	plainPort := reservePort(t)
 	srv, err := NewServer(Config{
 		Port:           plainPort,
 		ListenIP:       "127.0.0.1",
@@ -77,8 +77,7 @@ func TestAFailedStartLeavesNothingListening(t *testing.T) {
 // one dead listener is a reason to stop the server, not a reason to keep two
 // of the three running with nobody expecting them to.
 func TestStartStopsEveryListenerWhenOneFails(t *testing.T) {
-	const plainPort = "19312"
-	const obfsPort = "19313"
+	plainPort, obfsPort := reservePort(t), reservePort(t)
 
 	srv, err := NewServer(Config{
 		Port:           plainPort,

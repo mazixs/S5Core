@@ -15,18 +15,21 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    container: golang:1.26.8
+    container: golang:1.26.9@sha256:f1f0bcc2c524a3ced375fcb4d1ecb7aa371aa7070e112599aaca45cc02d0101b
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: Install Python for the mandatory script tests
+        run: apt-get update && apt-get install -y --no-install-recommends python3
 
       - name: scripts/pre-commit.sh
         run: ./scripts/pre-commit.sh
 
       - name: Upload test diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-checks
           path: |
@@ -36,22 +39,25 @@ jobs:
           if-no-files-found: ignore
 
   build-and-push-docker:
-    needs: checks
+    needs: [checks, build-binaries]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Login to GitHub Container Registry
         if: github.event_name == 'push'
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -59,7 +65,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/${{ github.repository }}
           flavor: latest=false
@@ -70,33 +76,59 @@ jobs:
             type=sha
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/v0.') && !contains(github.ref_name, '-') }}
 
+      - name: Select the canonical registry name
+        id: registry
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+        id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
           build-args: |
             VERSION=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
 
-  create-github-release:
-    needs: [checks, build-and-push-docker]
+      - name: Sign the image provenance
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ steps.registry.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify image provenance before the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ${{ steps.registry.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: gh attestation verify "oci://$IMAGE_NAME@$IMAGE_DIGEST" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+
+  build-binaries:
+    needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      contents: write
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: '1.26.8'
+          go-version: '1.26.9'
           cache: true
 
       - name: Build binaries
@@ -125,17 +157,75 @@ jobs:
           done
           (cd dist && sha256sum -- * > SHA256SUMS)
 
-      - name: Keep the binaries of a dry run
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
+      - name: Generate the binary SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
-          name: dist-dry-run
+          path: dist/
+          syft-version: v1.54.0
+          format: spdx-json
+          output-file: dist/SBOM.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Hash binaries and SBOM
+        run: (cd dist && sha256sum -- s5* SBOM.spdx.json > SHA256SUMS)
+
+      - name: Sign provenance for binaries, SBOM and checksums
+        if: github.event_name == 'push'
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*
+
+      - name: Sign the SBOM for the binaries
+        if: github.event_name == 'push'
+        id: sbom-attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/s5*
+          sbom-path: dist/SBOM.spdx.json
+
+      - name: Verify attestations before publication
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom-attestation.outputs.bundle-path }}
+        run: |
+          gh attestation verify dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          for artifact in dist/s5*; do
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document
+          done
+          cp -- "$PROVENANCE_BUNDLE" dist/provenance.sigstore.json
+          cp -- "$SBOM_BUNDLE" dist/sbom.sigstore.json
+
+      - name: Keep the verified release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-binaries
           path: dist/
           retention-days: 3
+          if-no-files-found: error
+
+  create-github-release:
+    needs: [build-binaries, build-and-push-docker]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download the already built and verified artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-binaries
+          path: dist/
+
+      - name: Verify downloaded checksums
+        run: (cd dist && sha256sum -c SHA256SUMS)
 
       - name: Release
-        if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           files: dist/*
           generate_release_notes: true

@@ -1,0 +1,2 @@
+# github.com/mazixs/S5Core/cmd/s5core [github.com/mazixs/S5Core/cmd/s5core.test]
+cmd/s5core/shutdown_test.go:144:20: undefined: syscall.Kill

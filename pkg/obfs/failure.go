@@ -32,8 +32,11 @@ const (
 	// ReasonDecryptFail - the AEAD tag did not verify. A wrong PSK and random
 	// probe data are indistinguishable here, by design.
 	ReasonDecryptFail FailureReason = "decrypt_fail"
-	// ReasonReplay - the frame decrypted, but its nonce was seen before.
+	// ReasonReplay - the first frame decrypted, but its session salt was seen before.
 	ReasonReplay FailureReason = "replay"
+	// ReasonHistoryFull - no authenticated salt can be recorded without
+	// evicting a still-live entry. New sessions fail closed.
+	ReasonHistoryFull FailureReason = "history_full"
 	// ReasonShortFrame - the frame is too small to contain a nonce, or the
 	// decrypted plaintext is too short to be a valid payload record.
 	ReasonShortFrame FailureReason = "short_frame"
@@ -58,7 +61,19 @@ const (
 	// speaking a different encoding; unlike a field of unknown type, which
 	// is skipped, a payload that cannot be walked at all is not guessed at.
 	ReasonBadControl FailureReason = "bad_control_frame"
+	// ReasonIdleClose - the peer ended the transport before a byte of the
+	// obfuscation stream arrived (plan task R4-9); on WSS only the payload
+	// of binary messages counts. It is reported through the same observer
+	// but is not a refusal: a client's spare connection that was never used
+	// ends this way, and so does a connect-and-drop scan - the two cannot be
+	// told apart, and neither is a frame the server rejected. A server
+	// counts it apart from the failures and does not drain it.
+	ReasonIdleClose FailureReason = "idle_close"
 )
+
+// IsFailure reports whether a reason is a refusal rather than a peer that
+// left before saying anything.
+func (r FailureReason) IsFailure() bool { return r != ReasonIdleClose }
 
 // FrameError reports a failed frame read together with its classification and
 // the number of bytes received on the connection before the failure. The byte

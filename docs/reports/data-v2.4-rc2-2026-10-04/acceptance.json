@@ -1,0 +1,66 @@
+{
+  "candidate": "v2.4.0-rc2",
+  "source_commit": "ba3f104c1260ccb7aadfb0107f72bf73cd6b4b09",
+  "checks": [
+    {
+      "id": "MTU-1",
+      "status": "local_pass",
+      "criterion": "100 race-enabled repeats: lose first 12 size probes, answer controls; recover wire limit >=1392 within 35 virtual seconds; IPv6 QUIC Initial goes native"
+    },
+    {
+      "id": "MTU-2",
+      "status": "local_pass",
+      "criterion": "1357-byte and below-QUIC-floor paths never adopt a limit larger than the measured path; at most three recovery searches per association; no size probes after the budget is exhausted"
+    },
+    {
+      "id": "MTU-3",
+      "status": "local_pass",
+      "criterion": "Client increases limit only after exact generation+limit acknowledgement; lost, duplicate, reordered and stale acknowledgements cannot commit another proposal"
+    },
+    {
+      "id": "COMPAT",
+      "status": "passed",
+      "criterion": "RC2 client/RC1 server and RC1 client/RC2 server pass HTTPS+native UDP; old peers retain one-shot limit behavior and no recovery search"
+    },
+    {
+      "id": "LIVENESS",
+      "status": "local_pass",
+      "criterion": "Normal native liveness intervals, loss thresholds, TCP fallback and healthy wide-path size-probe budget unchanged"
+    },
+    {
+      "id": "PUBLICATION",
+      "status": "passed",
+      "criterion": "No tracked agent instruction files; every tracked README is English; no local absolute links or working secrets in changed published files"
+    },
+    {
+      "id": "GATE",
+      "status": "passed",
+      "criterion": "Full scripts/pre-commit.sh passes with RC2 stamp; all release targets build; source/binary hashes recorded"
+    },
+    {
+      "id": "ARM-WAN",
+      "status": "measured_with_open_udp_observations",
+      "criterion": "Fixed-source raw/2.3/RC1/RC2 comparison on physical ARM router and WAN; >=5 repeats, quiet and same controlled background load; no content/connection errors; noisy measurements excluded from speed claims"
+    },
+    {
+      "id": "D",
+      "status": "passed_initial_smoke",
+      "criterion": "Backups complete; server and router D client live hashes match tested RC2; HTTPS and UDP pass; unrelated configuration preserved; no new unexpected WARN/ERROR"
+    },
+    {
+      "id": "FIELD",
+      "status": "pending",
+      "criterion": "Three real Discord sessions >=2h through D, each with confirmed outgoing speech, silence and usual Mihomo load, including a >=10min silence then speech. No outgoing voice outage or unexplained association loss; both-side timestamped evidence retained. Missing real-session evidence keeps this pending."
+    },
+    {
+      "id": "MONITOR",
+      "status": "active",
+      "criterion": "Private compressed snapshots of all three servers and router clients every five minutes; seven-day retention; passive read-only collection; notify only on new actionable failures/counter changes"
+    },
+    {
+      "id": "WAN-UDP",
+      "status": "open",
+      "criterion": "Repeat the observed fallback/buffer-drop cases with per-socket or isolated-network-namespace counters and establish attribution; no unexplained candidate-only persistent outage. This remains open and prevents calling RC2 a fully accepted stable release."
+    }
+  ]
+}

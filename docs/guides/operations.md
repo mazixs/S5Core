@@ -11,6 +11,7 @@ Available metrics:
 - `s5core_traffic_bytes_out` (Counter): Total volume of outgoing traffic in bytes (TCP + UDP).
 - `s5core_obfs_handshake_failures_total` (Counter, labels `reason`, `transport`): Obfuscated frames rejected before they reached SOCKS5.
 - `s5core_obfs_bytes_before_failure` (Histogram, bytes, same labels): How much a peer sent before its connection was rejected.
+- `s5core_obfs_idle_closes_total` (Counter, label `transport`): Obfuscated connections the peer closed without sending a byte: a client's spare connection that was not needed (`PREWARM`) or a connect-and-drop scan. They are not failures and are not counted in `s5core_obfs_handshake_failures_total`.
 - `s5core_obfs_clock_skew_total` (Counter, labels `transport`, `direction`): Connections whose prologue authenticated against an hour outside the accepted window - a peer whose clock is wrong, not a scanner. The exact number of hours goes to the log, not to a label. Anything here is a client that cannot connect and does not know why.
 - `s5core_connection_phase_seconds` (Histogram, seconds, labels `phase`, `outcome`): How long each stage of a connection took.
 - `s5core_connections_in_phase` (UpDownCounter, label `phase`): How many connections are sitting in each stage right now.
@@ -34,7 +35,7 @@ Available metrics:
 | `first_byte` | success reply is sent to the client | destination sends its first byte |
 | `session` | SOCKS handler is entered | handler returns |
 
-`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average. A UDP association that the client closed (the normal end) is a `session` that is `ok`; any other end of an association is `fail`.
+`session` overlaps the other phases. These observations do not add up to HTTP latency: request parsing, rules, rewriting and reply writes have their own gaps. `dns` is absent for numeric destinations and includes failed lookups; `dial` excludes DNS. `first_byte` starts after the SOCKS success reply and ends on the first destination TCP byte. For HTTPS that is usually the TLS handshake, not HTTP TTFB. `outcome` is `ok` or `fail`, so a phase that is slow only when it fails does not hide inside the average. A UDP association that the client closed (the normal end) is a `session` that is `ok`; any other end of an association is `fail`. A connection that never sends the SOCKS5 version byte - a probe, or a client's spare connection that was not needed - records no phase at all, the same rule the session journal follows; `s5core_connections_in_phase` still counts it while it is open.
 
 Measure an actual HTTPS response from the client with the probe:
 
@@ -148,21 +149,26 @@ number rather than as confusing latency.
 
 ### Telling obfuscation failures apart
 
-`reason` is one of four values, and together with the byte histogram they separate the cases that used to look identical in the logs:
+`reason` is a bounded value, and together with the byte histogram it separates the cases that used to look identical in the logs:
 
 | `reason` | What it means | Typical cause |
 | --- | --- | --- |
 | `decrypt_fail` | Frame is well formed but AES-GCM rejects it | A tampered frame. A PSK typo no longer lands here: the frame length is masked with a key derived from the PSK, so a peer with the wrong key does not produce a frame the server can even find the end of - it looks like a scanner and ends as `eof_before_frame` |
 | `replay` | The frame authenticates, but the connection's session salt has been seen before | A recorded connection replayed onto a fresh socket. The refusal is issued only after the frame has been decrypted, so a prober cannot tell it apart from a bad tag by timing |
+| `history_full` | The authenticated opening cannot be retained without evicting a live replay record | The process has exhausted its replay-history capacity. It refuses the opening through the same path as an invalid tag; unauthenticated openings do not consume this capacity |
 | `short_frame` | Frame or plaintext is shorter than the format allows | Truncated or hand-crafted frame |
-| `eof_before_frame` | Stream ended before a frame was complete | Ordinary disconnect, a connect-and-drop scan, a plaintext probe, or a peer with the wrong PSK |
+| `eof_before_frame` | Stream ended before a frame was complete | A disconnect after some bytes, a plaintext probe, a peer with the wrong PSK, or a silent peer that outlived the handshake budget. A peer that closes without sending a byte is not here: it is `s5core_obfs_idle_closes_total` |
 | `bad_opening` | The opening was read in full, but no session came out of it | A scheme that refused the prologue. With the schemes shipped today this counter stays at zero: an unrecognised client is given a wrong secret rather than a refusal, so it fails one frame later as `decrypt_fail` or `eof_before_frame` |
 
 Each connection reports at most one failure, so a peer that keeps retrying on one socket cannot inflate the counters.
 
 `transport` is `obfs` or `ws`. There is deliberately no label for the source address: it would both leak who connects and make the metric unbounded in cardinality. For the full rule see [docs/design/observability-policy.md](../design/observability-policy.md). Per-connection detail is available on demand at `LOG_LEVEL=debug` (see [Hot Reloading](#hot-reloading)), which logs the reason and the byte count - still without the address.
 
-> **Note:** UDP traffic flowing through the standard UDP Associate relay is tracked with batched counters (flushed every 1 MB) to minimize performance overhead. UDP traffic tunneled via `s5client` (command `0x83`) is automatically counted as TCP bytes since it flows through the obfuscated TCP connection.
+`s5core_traffic_bytes_in` and `s5core_traffic_bytes_out` count forwarded payload for CONNECT and UDP. UDP uses the same payload level for standard Associate, TCP fallback (`0x83`) and native UDP (`0x84`); SOCKS5 headers are excluded. The fallback payload is counted once. These definitions replace the previous counters that also included TCP framing and could count fallback UDP payload twice; comparisons across that change require the corresponding version and metric definition.
+
+`s5core_tcp_stream_bytes_in` and `s5core_tcp_stream_bytes_out` separately count the decrypted TCP stream, including SOCKS5 negotiation and UDP framing. They exclude obfuscation and TLS overhead. Neither counter proves delivery to the remote application: a successful write only establishes local acceptance of the bytes.
+
+Per-account traffic accounting is separate from telemetry. Its batching threshold is 64 KiB, with an additional one-second check while packets arrive and a final flush when the relay ends. Idle CONNECT sessions also check account status every second; revocation, expiry and quota apply through the configured grace period. Batched spend and the polling interval allow a bounded accounting delay, so telemetry totals are not an exact instantaneous quota balance.
 
 > **Security Warning:** By default, the metrics endpoint binds to `127.0.0.1:8080` and is not exposed outside the host. If you change `METRICS_BIND_ADDR` to `0.0.0.0`, ensure the port is protected by a firewall, VPN, or reverse proxy with authentication. The `/metrics` endpoint may reveal internal counters and connection details.
 
@@ -180,7 +186,7 @@ Each connection reports at most one failure, so a peer that keeps retrying on on
 | --- | --- |
 | `USERS_FILE` | accounts, quotas, expiry and roles; accumulated traffic is merged rather than lost |
 | `LOG_LEVEL_FILE` | the log level (`SIGUSR1` toggles debug without any file at all) |
-| `TRANSPORT_ADVICE_FILE` | what the server advises every client, from the next accepted connection |
+| `TRANSPORT_ADVICE_FILE` | what the server advises every client, from the next accepted connection; an empty or removed file sends an explicit withdrawal |
 
 **What it cannot change is the environment.** A running process keeps the environment it was started with: editing `.env` or exporting a variable in another shell does not reach it, and a reload re-applies the values the process already had. `ALLOWED_IPS`, `READ_TIMEOUT`, `WRITE_TIMEOUT`, `HANDSHAKE_TIMEOUT`, `DIAL_TIMEOUT`, `FRAME_TIMEOUT` and `QUOTA_GRACE` are re-parsed on `SIGHUP` and therefore change only if the process is restarted - or, for an embedding application, through `UpdateWhitelist`, `UpdateTimeouts`, `UpdateHandshakeTimeout` and `UpdateSessionTimeouts` on the SDK, which take values from the caller rather than from the environment. `TRANSPORT_ADVICE` used to be documented as reloadable and was not, for exactly this reason; `TRANSPORT_ADVICE_FILE` is the changeable source it needed. An advice that cannot be read or does not parse is logged and the previous one kept.
 

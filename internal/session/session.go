@@ -262,6 +262,7 @@ type Session struct {
 	exhausted   atomic.Uint32
 
 	closeOnce sync.Once
+	exhaustMu sync.Mutex
 }
 
 // Transport names the listener the connection arrived on.
@@ -363,6 +364,11 @@ func (s *Session) Exhaust(reason Account) bool {
 	if s == nil {
 		return false
 	}
+	s.exhaustMu.Lock()
+	defer s.exhaustMu.Unlock()
+	if s.Account() != WithinQuota || s.Protocol() == Closed {
+		return false
+	}
 	if reason != Expired {
 		reason = QuotaExceeded
 	}
@@ -370,10 +376,10 @@ func (s *Session) Exhaust(reason Account) bool {
 
 	p := s.Protocol()
 	if s.sla.Grace > 0 && (p == Relay || p == HalfClosed) {
+		s.graceAt.Store(time.Now().UnixNano())
 		if !s.account.CompareAndSwap(uint32(WithinQuota), uint32(Grace)) {
 			return false
 		}
-		s.graceAt.Store(time.Now().UnixNano())
 		s.observe(RegionAccount, uint32(WithinQuota), uint32(Grace), false)
 		s.Enter(HalfClosed)
 		return true
@@ -446,6 +452,8 @@ func (s *Session) Close() {
 		return
 	}
 	s.closeOnce.Do(func() {
+		s.exhaustMu.Lock()
+		defer s.exhaustMu.Unlock()
 		if s.Account() == Grace {
 			s.move(RegionAccount, &s.account, s.exhausted.Load(), legalAccount)
 		}

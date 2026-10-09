@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -102,6 +105,55 @@ func TestARecordedConnectionCannotBeReplayedIntoANewOne(t *testing.T) {
 	}
 }
 
+func TestUnauthenticatedOpeningsCannotEvictARecordedSession(t *testing.T) {
+	psk := bytes.Repeat([]byte("k"), 32)
+	history := NewSaltHistory(4)
+	cfg := Config{PSK: psk, MaxPadding: 0, History: history}
+	flight := firstFlight(t, Config{PSK: psk}, []byte("recorded payload"))
+	if reason, _, _ := feedServer(t, cfg, flight); reason != "" {
+		t.Fatalf("original refused: %s", reason)
+	}
+	for i := 0; i < 32; i++ {
+		feedServer(t, cfg, bytes.Repeat([]byte{byte(i + 1)}, saltSize))
+	}
+	if history.Len() != 1 {
+		t.Fatalf("unauthenticated openings changed history size to %d", history.Len())
+	}
+	if reason, _, _ := feedServer(t, cfg, flight); reason != ReasonReplay {
+		t.Fatalf("recording accepted after garbage: %s", reason)
+	}
+}
+
+func TestConcurrentFirstFlightsAuthenticateExactlyOnce(t *testing.T) {
+	psk := bytes.Repeat([]byte("k"), 32)
+	cfg := Config{PSK: psk, History: NewSaltHistory(128)}
+	flight := firstFlight(t, Config{PSK: psk}, []byte("one connection"))
+	var accepted atomic.Int64
+	var workers sync.WaitGroup
+	start := make(chan struct{})
+	for range 32 {
+		workers.Go(func() {
+			<-start
+			wire := newScriptConn(bytes.Clone(flight))
+			server, err := NewServerConn(wire, cfg)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if _, err := server.Read(make([]byte, 100)); err == nil {
+				accepted.Add(1)
+			} else if reason, _ := ReasonOf(err); reason != ReasonReplay {
+				t.Errorf("unexpected refusal: %v", err)
+			}
+		})
+	}
+	close(start)
+	workers.Wait()
+	if got := accepted.Load(); got != 1 {
+		t.Fatalf("same recording authenticated %d times", got)
+	}
+}
+
 // The point of Ф4-4 is not only to notice the replay but to answer it with
 // nothing a prober can measure. The control is the same flight with one
 // ciphertext byte flipped: bytes that reached the server looking exactly as
@@ -139,7 +191,7 @@ func TestAReplayAnswersLikeBytesThatDoNotAuthenticate(t *testing.T) {
 	}
 }
 
-func TestTheHistoryForgetsInOrderAndOnlyWhenFull(t *testing.T) {
+func TestFullHistoryNeverEvictsAnUnexpiredSalt(t *testing.T) {
 	h := NewSaltHistory(3)
 
 	salts := [][]byte{
@@ -161,19 +213,51 @@ func TestTheHistoryForgetsInOrderAndOnlyWhenFull(t *testing.T) {
 		t.Fatalf("the history holds %d salts, want 3", h.Len())
 	}
 
-	// The fourth entry evicts the first, and only the first.
-	if !h.Accept(salts[3]) {
-		t.Fatal("a new salt was refused by a full history")
+	if h.record(salts[3]) != ReasonHistoryFull {
+		t.Fatal("a full history accepted a fresh connection")
 	}
 	if h.Accept(salts[1]) || h.Accept(salts[2]) {
 		t.Fatal("a salt younger than the oldest one was evicted")
 	}
-	if !h.Accept(salts[0]) {
-		t.Fatal("the oldest salt was still remembered after eviction")
+	if h.Accept(salts[0]) {
+		t.Fatal("a full history forgot an unexpired recording")
 	}
 	if h.Len() != 3 {
 		t.Fatalf("the history grew to %d salts beyond its limit of 3", h.Len())
 	}
+}
+
+func TestHistoryCapacityReturnsOnlyAfterTheWholeEpochWindow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := NewSaltHistory(1)
+		salt := bytes.Repeat([]byte{1}, saltSize)
+		other := bytes.Repeat([]byte{2}, saltSize)
+		if !h.Accept(salt) {
+			t.Fatal("first salt refused")
+		}
+		time.Sleep(DefaultSaltRetention - time.Nanosecond)
+		if h.Accept(salt) || h.Accept(other) {
+			t.Fatal("live entry lost before epoch window ended")
+		}
+		time.Sleep(time.Nanosecond)
+		if h.Len() != 0 || !h.Accept(other) {
+			t.Fatal("expired capacity was not released")
+		}
+	})
+}
+
+func TestHistoryForAnUnclockedSchemeDoesNotExpire(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := NewSaltHistoryWithRetention(1, 0)
+		salt := bytes.Repeat([]byte{1}, saltSize)
+		if !h.Accept(salt) {
+			t.Fatal("first salt refused")
+		}
+		time.Sleep(30 * 24 * time.Hour)
+		if h.Accept(salt) || h.Len() != 1 {
+			t.Fatal("unclocked recording expired")
+		}
+	})
 }
 
 func TestAHistoryThatIsNotThereAcceptsEverything(t *testing.T) {

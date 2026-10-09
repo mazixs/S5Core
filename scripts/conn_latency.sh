@@ -29,7 +29,8 @@ RUNS="${RUNS:-20}"
 NET="${NET:-s5lat}"
 IMAGE="${IMAGE:-s5-netem:local}"
 PSK="${PSK:-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH}"
-OUT="${OUT:-/tmp/s5-conn-latency}"
+OUT="${OUT:-$(mktemp -d -t s5-conn-latency.XXXXXX)}"
+umask 077
 
 bold() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 

@@ -56,12 +56,12 @@ func TestServerFromEnv_WSSEndToEnd(t *testing.T) {
 	}
 	echoAddr := startEcho(t)
 
-	t.Setenv("PROXY_PORT", "19083")
+	t.Setenv("PROXY_PORT", reserveTestPort(t))
 	t.Setenv("PROXY_LISTEN_IP", "127.0.0.1")
 	t.Setenv("REQUIRE_AUTH", "false")
 	t.Setenv("ALLOW_PRIVATE_DEST", "true")
 	t.Setenv("OBFS_ENABLED", "true")
-	t.Setenv("OBFS_PORT", "19444")
+	t.Setenv("OBFS_PORT", reserveTestPort(t))
 	t.Setenv("OBFS_PSK", envTestPSK)
 	t.Setenv("OBFS_MAX_PADDING", "32")
 	t.Setenv("WS_ENABLED", "true")

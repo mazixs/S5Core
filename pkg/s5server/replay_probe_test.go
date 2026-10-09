@@ -2,6 +2,7 @@ package s5server
 
 import (
 	"bytes"
+	"crypto/rand"
 	"errors"
 	"io"
 	"net"
@@ -149,8 +150,8 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
-	const plainPort = "19081"
-	const obfsPort = "19444"
+	plainPort := reservePort(t)
+	obfsPort := reservePort(t)
 
 	// The handshake budget is short here because it is also what closes a
 	// refused connection (plan task Ф5-6): the server holds it, says
@@ -171,7 +172,7 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 		ObfsPSK:          testPSK,
 		ObfsMaxPadding:   256,
 		ObfsMTU:          1400,
-		ObfsReplayWindow: obfs.DefaultSaltHistory,
+		ObfsReplayWindow: 4,
 	})
 
 	// Recording authenticates a legacy password and may run Argon2id and
@@ -182,6 +183,25 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 	srv.UpdateHandshakeTimeout(handshakeBudget)
 	if len(flight) < 40 {
 		t.Fatalf("the recorded flight is %d bytes, too short to be a salt and a frame", len(flight))
+	}
+
+	// More unauthenticated first flights than the capacity must not remove
+	// the genuine session, or even claim one slot in the shared history.
+	var attempts sync.WaitGroup
+	for range 32 {
+		noise := make([]byte, len(flight))
+		if _, err := rand.Read(noise[:32]); err != nil {
+			t.Fatal(err)
+		}
+		attempts.Go(func() {
+			if result := probe(t, obfsPort, noise); result.answered != 0 || result.timedOut || result.elapsed < handshakeBudget/2 {
+				t.Errorf("garbage refusal: %+v", result)
+			}
+		})
+	}
+	attempts.Wait()
+	if got := srv.saltHistory.Len(); got != 1 {
+		t.Fatalf("garbage changed authenticated history: %d", got)
 	}
 
 	garbage := append([]byte(nil), flight...)
@@ -252,11 +272,11 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 // right shape, and this pins it.
 func TestTheSaltHistoryIsSharedByEveryObfuscatedListener(t *testing.T) {
 	srv, err := NewServer(Config{
-		Port:             "19082",
+		Port:             reservePort(t),
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      false,
 		ObfsEnabled:      true,
-		ObfsPort:         "19445",
+		ObfsPort:         reservePort(t),
 		ObfsPSK:          testPSK,
 		ObfsMTU:          1400,
 		ObfsReplayWindow: 128,
@@ -274,11 +294,11 @@ func TestTheSaltHistoryIsSharedByEveryObfuscatedListener(t *testing.T) {
 
 func TestZeroDisablesTheSaltHistory(t *testing.T) {
 	srv, err := NewServer(Config{
-		Port:             "19083",
+		Port:             reservePort(t),
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      false,
 		ObfsEnabled:      true,
-		ObfsPort:         "19446",
+		ObfsPort:         reservePort(t),
 		ObfsPSK:          testPSK,
 		ObfsMTU:          1400,
 		ObfsReplayWindow: 0,

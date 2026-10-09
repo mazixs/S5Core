@@ -45,6 +45,8 @@ var journalFields = map[string]bool{
 	"end": true, "server_timeouts": true, "resets": true, "dial_ms": true, "dial_tries": true, "dial_backups": true,
 	"dial_backup_won": true, "first_byte_ms": true, "dur_ms": true, "up": true, "down": true,
 	"dgram_up": true, "dgram_down": true, "rotations": true, "answered": true,
+	"udp_client_in": true, "udp_target_out": true, "udp_target_in": true, "udp_client_out": true,
+	"udp_drops": true, "target_write_errors": true,
 	"native_up": true, "native_down": true, "path_moves": true, "tunnel_drops": true,
 	"assocs": true, "rcvbuf_drops": true,
 	"tcp_rtt_ms": true, "tcp_unacked": true, "tcp_retransmits": true, "tcp_since_data_ms": true, "tcp_since_ack_ms": true,
@@ -112,6 +114,9 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids = append(ids, obfs.LogIDOf(member))
+	if err := member.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
 	_ = member.Close()
 
 	shared := dialMember(t, cfg.ObfsPort, &veil.Clocked{})
@@ -169,6 +174,9 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 	}
 
 	lines := readJournal(t, path)
+	if boot := srv.Boot(); !regexp.MustCompile(`^[0-9a-f]{8}$`).MatchString(boot) || len(lines) == 0 || lines[0]["boot"] != boot {
+		t.Fatalf("public Boot does not match the journal epoch: boot=%q, lines=%v", boot, lines)
+	}
 	if len(lines) == 0 || lines[0]["event"] != "process_start" || lines[len(lines)-1]["event"] != "process_stop" {
 		t.Fatalf("the journal does not start and stop with the process: %v", lines)
 	}

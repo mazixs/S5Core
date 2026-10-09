@@ -43,8 +43,8 @@ func dialObfs(t *testing.T, addr string) (net.Conn, error) {
 func TestTheConnectionLimitCoversTheObfuscatedPort(t *testing.T) {
 	echoAddr := startEchoServer(t)
 
-	const plainPort = "19092"
-	const obfsPort = "19446"
+	plainPort := reservePort(t)
+	obfsPort := reservePort(t)
 	obfsAddr := "127.0.0.1:" + obfsPort
 
 	startServer(t, Config{
@@ -125,8 +125,8 @@ func TestUpdateWhitelistReachesEveryListener(t *testing.T) {
 		t.Fatalf("generate cert: %v", err)
 	}
 
-	const plainPort = "19093"
-	const obfsPort = "19447"
+	plainPort := reservePort(t)
+	obfsPort := reservePort(t)
 	plainAddr := "127.0.0.1:" + plainPort
 	obfsAddr := "127.0.0.1:" + obfsPort
 

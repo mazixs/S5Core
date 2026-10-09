@@ -26,6 +26,7 @@ type Search struct {
 	undecided int
 	sizes     []int // of the round in flight, the control last
 	answered  []bool
+	confirm   []int // unanswered sizes above lo, tried again before narrowing hi
 	control   int
 	draw      func(n int) int
 	sent      int
@@ -40,17 +41,23 @@ func NewSearch(draw func(n int) int) *Search {
 // within their bands: a probe of one constant size would itself be a shape.
 func (s *Search) Round() []int {
 	s.sizes = s.sizes[:0]
-	top, bands := s.hi, nextBands
-	if s.decided == 0 {
-		top, bands = MaxWire-s.draw(topSpread+1), firstBands
-		s.sizes = append(s.sizes, top)
-	}
-	// One size in each band of lo+1 .. top-1.
-	width := top - s.lo - 1
-	for i := range bands {
-		from, to := s.lo+1+i*width/bands, s.lo+1+(i+1)*width/bands
-		if to > from {
-			s.sizes = append(s.sizes, from+s.draw(to-from))
+	if len(s.confirm) > 0 {
+		// Fresh datagrams and a fresh control distinguish the loss of one
+		// round from a size the path repeatedly fails to carry.
+		s.sizes = append(s.sizes, s.confirm...)
+	} else {
+		top, bands := s.hi, nextBands
+		if s.decided == 0 {
+			top, bands = MaxWire-s.draw(topSpread+1), firstBands
+			s.sizes = append(s.sizes, top)
+		}
+		// One size in each band of lo+1 .. top-1.
+		width := top - s.lo - 1
+		for i := range bands {
+			from, to := s.lo+1+i*width/bands, s.lo+1+(i+1)*width/bands
+			if to > from {
+				s.sizes = append(s.sizes, from+s.draw(to-from))
+			}
 		}
 	}
 	control := controlLow + s.draw(controlHigh-controlLow+1)
@@ -80,7 +87,8 @@ func (s *Search) Answered(size int) (control, all bool) {
 
 // End closes the round and reports whether the search is over. A round whose
 // control went unanswered decides nothing: the path lost a packet, and what
-// it says of the sizes is not known.
+// it says of the sizes is not known. An unanswered size above lo narrows hi
+// only after an independent round with an answered control misses it again.
 func (s *Search) End() bool {
 	if len(s.sizes) == 0 {
 		return false
@@ -93,18 +101,28 @@ func (s *Search) End() bool {
 		return s.undecided >= searchRetries
 	}
 	s.undecided = 0
-	s.decided++
 	for i, v := range sizes {
 		if answered[i] {
 			s.lo = max(s.lo, v)
 		}
 	}
-	// A size below lo that went unanswered was lost, not refused.
+	confirming := len(s.confirm) > 0
+	s.confirm = s.confirm[:0]
+	// A size below lo that went unanswered was lost, not refused. The first
+	// miss of a larger size schedules confirmation, without changing hi.
 	for i, v := range sizes {
 		if !answered[i] && v > s.lo {
-			s.hi = min(s.hi, v)
+			if confirming {
+				s.hi = min(s.hi, v)
+			} else {
+				s.confirm = append(s.confirm, v)
+			}
 		}
 	}
+	if len(s.confirm) > 0 {
+		return false
+	}
+	s.decided++
 	return s.decided >= searchRounds || s.hi-s.lo <= searchClose
 }
 

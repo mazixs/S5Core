@@ -22,7 +22,7 @@ import threading
 import time
 import urllib.request
 
-from .plan import CLIENT_IP, blackout_problem
+from .plan import CLIENT_IP, GO_TRUE, SPARE_LINGER, blackout_problem
 from .util import go_duration, netns_inode, proc_stat, read_json, seconds, set_pdeathsig, write_json
 
 PORTS = {"plain": 41080, "obfs": 41443, "wss": 41444, "metrics": 41090, "client": 41081}
@@ -398,6 +398,16 @@ def gauges():
     except OSError as e:
         return {"error": str(e)}
     return parse_gauges(body)
+
+
+def settled_gauges(read, stopped):
+    """The gauges once the sessions are gone or SPARE_LINGER has passed."""
+    g = read()
+    deadline = time.monotonic() + SPARE_LINGER
+    while (g.get("s5core_sessions") or 0) > 0 and time.monotonic() < deadline and not stopped():
+        time.sleep(0.5)
+        g = read()
+    return g
 
 
 def parse_gauges(body):
@@ -794,6 +804,10 @@ def start(spec, secret, procs, run):
         with os.fdopen(fd, "w") as f:
             json.dump(doc, f)
     base = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    if srv.get("OBFS_TFO") in GO_TRUE:
+        # A new network namespace takes Fast Open on the client side only.
+        with open("/proc/sys/net/ipv4/tcp_fastopen", "w") as f:
+            f.write("3")
     procs["server"] = _spawn([spec["bin"]["s5core"]], base | srv, os.path.join(out, "server.log"))
     wait_port(PORTS["plain"], procs, out)
     wait_port(PORTS["metrics"], procs, out)
@@ -894,7 +908,7 @@ def measure(spec, socks, procs, run, cap):
     stall = seconds(st["scenario_timeout"]) + seconds(st["hang_grace"]) + 30
     if spec["kind"] == "soak":
         stall += max(seconds(st["soak"]), seconds(st["idle"]))
-    hard = spec["deadline"] - time.time() - STOP_WAIT - seconds(st["settle"]) - 15
+    hard = spec["deadline"] - time.time() - STOP_WAIT - seconds(st["settle"]) - SPARE_LINGER - 15
     last_size, last_change, next_sample = -1, time.monotonic(), time.monotonic() + (st["sample_s"] or 1e18)
     why = None
     while True:
@@ -969,7 +983,7 @@ def measure(spec, socks, procs, run, cap):
         while time.monotonic() < deadline and not _stop:
             time.sleep(0.2)
         run["settled"] = snapshot(procs, "settled", run)
-        run["gauges_settled"] = gauges()
+        run["gauges_settled"] = settled_gauges(gauges, lambda: _stop)
     if blackout:
         run["udp_blackout"] = blackout.stop()
         if run["status"] == "ok" and (not run["udp_blackout"]["applied"] or run["udp_blackout"].get("error")):

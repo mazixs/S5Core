@@ -1,0 +1,3 @@
+?   	github.com/mazixs/S5Core/scripts/matrix	[no test files]
+?   	github.com/mazixs/S5Core/scripts/matrix/internal/stand	[no test files]
+?   	github.com/mazixs/S5Core/scripts/matrix/mtuprobe	[no test files]

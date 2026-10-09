@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-03",
+  "source": {
+    "tag": "v2.3.0",
+    "tag_commit": "e04ba5c03b3d41bda8cc7031e9e3e77a969d482c",
+    "workspace_commit": "65650535fbfd79b3d9a4f4281fd85d4c85aa667a",
+    "tree": "a5058fd4a0b0d8c48e03cc3e4ba335641e2da312"
+  },
+  "local": {
+    "go": "1.26.8",
+    "os": "linux",
+    "arch": "amd64",
+    "cpu": "Intel Core i7-11700K",
+    "logical_cpus": 16
+  },
+  "tools": {
+    "golangci-lint": "2.14.0",
+    "govulncheck": "1.8.0",
+    "deadcode": "v0.51.0"
+  },
+  "process_matrix": {
+    "original_samples": 2040,
+    "repeat_samples": 3840,
+    "total_samples": 5880,
+    "invalid_bodies": 0,
+    "transport_errors": 0,
+    "concurrency": 4,
+    "small_samples_per_cell": 80,
+    "bulk_samples_per_cell": 5,
+    "bulk_body_bytes": 8388608,
+    "gomaxprocs_original": 1,
+    "gomaxprocs_repeats": [
+      1,
+      2
+    ]
+  },
+  "native_benchmark": {
+    "iterations": "5 samples, 300ms per benchmark",
+    "gomaxprocs": 16,
+    "includes": "SealWrite + Open only; no SOCKS5 address header, outer IP/UDP or network in the codec benchmark"
+  },
+  "obfs_benchmark": {
+    "iterations": "3 samples, 300ms per benchmark",
+    "gomaxprocs": 16
+  },
+  "diagnostic_tests": {
+    "passed": 6,
+    "race": true,
+    "semantics": "Assert observed defects on the released source, not fix acceptance"
+  },
+  "limitations": [
+    "No fresh ARM benchmark",
+    "No long WAN load or game capture",
+    "No supplied failing website reproduction",
+    "No browser HAR/HTTP3 trace",
+    "No WSS WAN acceptance",
+    "Windows test compilation fails in syscall.Kill; production Windows targets do build",
+    "Nested matrix Go module has no Go unit tests; vet succeeds; 51 Python tests pass"
+  ]
+}

@@ -13,6 +13,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Used only with OBFS_TFO=true: docs/guides/docker.md#tcp-fast-open
+    sysctls:
+      net.ipv4.tcp_fastopen: 3
     env_file: .env
     environment:
       PROXY_LISTEN_IP: 0.0.0.0

@@ -1,0 +1,33 @@
+Run from the S5Core checkout. This creates an isolated temporary release tree.
+The six diagnostic tests assert the observed defect, so they pass before a fix.
+No remote access, configuration change or service restart is performed here.
+
+audit_repo="$PWD"
+audit_data="$audit_repo/docs/reports/data-v2.3-audit-2026-10-03"
+audit_copy=$(mktemp -d /tmp/s5core-release-audit-repeat.XXXXXX)
+git archive v2.3.0 | tar -x -C "$audit_copy"
+cd "$audit_copy"
+./scripts/pre-commit.sh
+
+cp "$audit_data/socks5-probes.go.txt" internal/socks5/audit_release_test.go
+cp "$audit_data/client-probes.go.txt" cmd/s5client/audit_release_test.go
+cp "$audit_data/hub-probes.go.txt" pkg/nativeudp/audit_release_test.go
+cp "$audit_data/native-bench.go.txt" pkg/nativeudp/audit_bench_test.go
+go test -count=1 -race -run '^TestAudit' -v ./internal/socks5 ./cmd/s5client ./pkg/nativeudp
+go test -run '^$' -bench '^BenchmarkAuditNative' -benchmem -benchtime=300ms -count=5 ./pkg/nativeudp
+go test -run '^$' -bench '^BenchmarkHub' -benchmem -benchtime=300ms -count=5 ./pkg/nativeudp
+go test -run '^$' -bench '^(BenchmarkRoundTrip|BenchmarkRelay)' -benchmem -benchtime=300ms -count=3 ./pkg/obfs
+
+go build -o audit-s5core ./cmd/s5core
+go build -o audit-s5client ./cmd/s5client
+go test -c -o audit-performance ./cmd/httpsprobe
+S5_PERF_SERVER="$audit_copy/audit-s5core" S5_PERF_CLIENT="$audit_copy/audit-s5client" S5_PERF_OUT="$audit_copy/process-results" S5_PERF_MODES=direct,plain,obfs S5_PERF_PROTOCOLS=h1,h2 S5_PERF_REUSE=new,reuse S5_PERF_CASES=small,large,upload,mixed S5_PERF_SMALL=80 S5_PERF_LARGE=5 S5_PERF_CONCURRENCY=4 S5_PERF_PROCS=1 ./audit-performance -test.run '^TestPerformanceProcesses$' -test.v -test.timeout 8m
+
+Repeat small,mixed only in separate S5_PERF_OUT directories with S5_PERF_PROCS=1
+and then S5_PERF_PROCS=2 for the additional capacity comparisons.
+
+Windows negative check (expected to fail on the audited release):
+GOOS=windows GOARCH=amd64 go test -c -o "$audit_copy/s5core-windows.test.exe" ./cmd/s5core
+
+Inspect and retain the temporary output as needed. Remove only the directory
+created in audit_copy when it is no longer needed.

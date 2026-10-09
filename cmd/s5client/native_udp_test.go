@@ -161,7 +161,7 @@ func udpEcho(t testing.TB) *net.UDPConn {
 }
 
 // openNativeAssociation asks for 0x84 the way the client's accept loop does
-// and hands the association to handleUDPAssociate. It returns the socket the
+// and hands the association to associateUDP. It returns the socket the
 // application talks to, the client's UDP port and the metered control
 // connection.
 func openNativeAssociation(t testing.TB, addr string, psk string) (*net.UDPConn, *net.UDPAddr, *meteredConn) {
@@ -170,7 +170,7 @@ func openNativeAssociation(t testing.TB, addr string, psk string) (*net.UDPConn,
 }
 
 func nativeParams(addr, psk string) clientParams {
-	return clientParams{ServerAddr: addr, PSK: psk, MTU: 1400, MaxPadding: 32, Transport: "obfs", UDPNative: true, HandshakeTimeout: 3 * time.Second}
+	return clientParams{ServerAddr: addr, PSK: psk, MTU: 1400, MaxPadding: 32, Transport: "obfs", UDPNative: true, HandshakeTimeout: 3 * time.Second, OptimisticConnect: true}
 }
 
 // openAssociation asks for the command the accept loop would, 0x84 unless the
@@ -179,17 +179,35 @@ func openAssociation(t testing.TB, clientCfg clientParams) (*net.UDPConn, *net.U
 	t.Helper()
 	t.Cleanup(func() { noNative.Delete(nativeKey(clientCfg)) })
 	req := []byte{5, udpCommandFor(clientCfg), 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialAttempt(clientCfg.attempt(), req)
-	if err != nil {
-		t.Fatal(err)
+	// The meter goes on the tunnel the association is handed when its
+	// request is out, so that the datagrams sent before the reply cross it
+	// too.
+	tunnels := make(chan *meteredConn, 2)
+	dial := func(cfg clientParams, req []byte) (net.Conn, clientParams, error) {
+		handOver := cfg.requestSent
+		var metered *meteredConn
+		cfg.requestSent = func(c net.Conn) {
+			metered = &meteredConn{Conn: c}
+			handOver(metered)
+		}
+		_, used, err := dialAttempt(cfg, req)
+		if err != nil {
+			return nil, used, err
+		}
+		tunnels <- metered
+		return metered, used, nil
 	}
-	metered := &meteredConn{Conn: stream}
-	t.Cleanup(func() { _ = stream.Close() })
 	app, handlerSide := tcpPair(t)
-	runUDPAssociate(t, handlerSide, metered, "", clientCfg, req)
+	runUDPAssociate(t, handlerSide, "", clientCfg.attempt(), req, dial)
 	reply := readAppReply(t, app)
 	if reply[1] != 0 {
 		t.Fatalf("application refused: %x", reply)
+	}
+	var metered *meteredConn
+	select {
+	case metered = <-tunnels:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the association opened no tunnel")
 	}
 	return appSocket(t), boundUDPPort(t, reply), metered
 }
@@ -375,8 +393,8 @@ func TestAServerThatPredatesNativeIsAskedOnce(t *testing.T) {
 }
 
 // A 2.3 server whose rules refuse UDP answers 0x84 as a 2.2 one does. The
-// retry by 0x83 is refused too, so the refusal goes to the application and
-// the server is not taken for one without native: the next association asks
+// retry by 0x83 is refused too, so the association ends for the application
+// and the server is not taken for one without native: the next association asks
 // for 0x84 again. The log names the command refused last, 0x83; it used to
 // name the 0x84 asked for first.
 func TestARefusalOfUDPIsNotTakenForAnOldServer(t *testing.T) {
@@ -386,16 +404,10 @@ func TestARefusalOfUDPIsNotTakenForAnOldServer(t *testing.T) {
 	cfg := nativeParams(addr, psk)
 	t.Cleanup(func() { noNative.Delete(nativeKey(cfg)) })
 	req := []byte{5, udpCommandFor(cfg), 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialAttempt(cfg.attempt(), req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stream.Close()
 	app, handlerSide := tcpPair(t)
-	runUDPAssociate(t, handlerSide, stream, "", cfg, req)
-	if reply := readAppReply(t, app); reply[1] != replyNotAllowed {
-		t.Fatalf("the application was told %x, want the refusal", reply)
-	}
+	done := runUDPAssociate(t, handlerSide, "", cfg.attempt(), req, dialAttempt)
+	readAppReply(t, app)
+	associationEnded(t, app, done)
 	if n := accepted.Load(); n != 2 {
 		t.Fatalf("%d tunnels, want 2", n)
 	}
@@ -424,16 +436,10 @@ func TestARefusedRetryKeepsItsPhase(t *testing.T) {
 	cfg.ProxyUser, cfg.ProxyPass = "alice", "secret"
 	t.Cleanup(func() { noNative.Delete(nativeKey(cfg)) })
 	req := []byte{5, socks5.UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}
-	stream, _, err := dialAttempt(cfg.attempt(), req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stream.Close()
 	app, handlerSide := tcpPair(t)
-	runUDPAssociate(t, handlerSide, stream, "", cfg, req)
-	if reply := readAppReply(t, app); reply[1] == 0 {
-		t.Fatalf("the application was told %x", reply)
-	}
+	done := runUDPAssociate(t, handlerSide, "", cfg.attempt(), req, dialAttempt)
+	readAppReply(t, app)
+	associationEnded(t, app, done)
 	out := logs.String()
 	if !strings.Contains(out, "phase="+string(phaseAuthRejected)) || strings.Contains(out, "hint=") {
 		t.Fatalf("the retry's failure was logged as:\n%s", out)

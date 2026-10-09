@@ -166,6 +166,13 @@ func Validate(encodedHash string) error {
 	return err
 }
 
+// MemoryCost is the actual Argon2 allocation requested by a validated PHC.
+// Validation and memory accounting share the same parser as Verify.
+func MemoryCost(encodedHash string) (int64, error) {
+	p, _, _, err := parse(encodedHash)
+	return int64(p.memory) * 1024, err
+}
+
 // Audit finding P3-1. The PHC string format spells its salt and hash in
 // base64 with the standard alphabet and no padding; this package used the
 // URL-safe alphabet, which differs in two characters ("-_" against "+/").

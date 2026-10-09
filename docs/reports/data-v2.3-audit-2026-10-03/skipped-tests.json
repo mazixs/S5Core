@@ -1,0 +1,30 @@
+[
+  {
+    "package": "github.com/mazixs/S5Core/cmd/httpsprobe",
+    "test": "TestPerformanceProcesses"
+  },
+  {
+    "package": "github.com/mazixs/S5Core/internal/socks5",
+    "test": "TestPerformanceDNS"
+  },
+  {
+    "package": "github.com/mazixs/S5Core/pkg/nativeudp",
+    "test": "TestADatagramThroughTheHubCostsNoAllocations"
+  },
+  {
+    "package": "github.com/mazixs/S5Core/pkg/transport/ws",
+    "test": "TestPerformanceIdleConnections"
+  },
+  {
+    "package": "github.com/mazixs/S5Core/pkg/s5server",
+    "test": "TestIntegration_PlainSOCKS5_ValidUser"
+  },
+  {
+    "package": "github.com/mazixs/S5Core/pkg/s5server",
+    "test": "TestTheEndOfAConnectionCostsFewAllocations"
+  },
+  {
+    "package": "github.com/mazixs/S5Core/cmd/s5client",
+    "test": "TestANativeDatagramCostsNoAllocations"
+  }
+]

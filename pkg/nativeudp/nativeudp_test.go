@@ -153,7 +153,7 @@ func TestAResyncRecoversFromMoreLostThanTheWindow(t *testing.T) {
 
 // A resync through the hub keeps the hub's index in step with the window,
 // and a second one within resyncEvery is ignored: each can cost a window of
-// tags under the hub's lock.
+// tags outside the hub's lock.
 func TestAResyncThroughTheHubKeepsItsIndexInStep(t *testing.T) {
 	client, server := pair(t)
 	hub, err := Listen("127.0.0.1:0", nil)
@@ -161,7 +161,7 @@ func TestAResyncThroughTheHubKeepsItsIndexInStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	c := dialHub(t, hub)
 	probe := func() {
 		t.Helper()
@@ -207,26 +207,26 @@ func TestAResyncThroughTheHubKeepsItsIndexInStep(t *testing.T) {
 	// Under -race on a loaded machine answered and lose outlast resyncEvery,
 	// and the second resync is then rightly honoured: take the last one to
 	// have been just now.
-	hub.mu.Lock()
+	registered.recvMu.Lock()
 	if registered.resynced.IsZero() {
-		hub.mu.Unlock()
+		registered.recvMu.Unlock()
 		t.Fatal("the resync did not record when it happened")
 	}
 	registered.resynced = time.Now()
-	hub.mu.Unlock()
+	registered.recvMu.Unlock()
 	hub.Resync(registered, client.Next())
 	dropped(2)
-	hub.mu.Lock()
+	registered.recvMu.Lock()
 	registered.resynced = registered.resynced.Add(-resyncEvery)
-	hub.mu.Unlock()
+	registered.recvMu.Unlock()
 	hub.Resync(registered, client.Next())
 	answered()
-	hub.mu.Lock()
 	registered.recvMu.Lock()
+	hub.mu.Lock()
 	inWindow := registered.recvTop - low(registered.recvHigh)
 	live, index, spent := len(registered.recvTags), len(hub.index), len(hub.spent)
-	registered.recvMu.Unlock()
 	hub.mu.Unlock()
+	registered.recvMu.Unlock()
 	if inWindow != window || live != index || index+spent > window {
 		t.Fatalf("window %d, session tags %d, hub tags %d live and %d spent", inWindow, live, index, spent)
 	}
@@ -243,7 +243,7 @@ func TestHubProbeAndData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	c, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: hub.Port()})
 	if err != nil {
@@ -299,7 +299,7 @@ func TestOnlyAHeardProbeReachesTheAssociation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	c := dialHub(t, hub)
 	probe := func(payload []byte) {
@@ -347,7 +347,7 @@ func TestTheAssociationLearnsTheCountersOfTheClientsWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	c := dialHub(t, hub)
 	send := func(kind byte, payload []byte) uint64 {
@@ -405,11 +405,9 @@ func dialHub(t *testing.T, hub *Hub) *net.UDPConn {
 func portOf(c *net.UDPConn) uint16 { return uint16(c.LocalAddr().(*net.UDPAddr).Port) }
 
 // The answers follow a new address only once it has sent the newest datagram
-// twice in a row. An observer that forwards a copy from its own address ahead
-// of the original, or a datagram it held back, used to take the answers of
-// the association, and with a forged source it could point them anywhere
-// (finding 11 of the 2.3 review). A client whose NAT mapping changed moves
-// with its second datagram.
+// An observer or malicious authenticated member cannot redirect replies
+// with fresh authenticated datagrams alone. Migration requires a token
+// received at the new UDP address, including the hub's chosen source.
 func TestTheAnswersFollowANewAddressOnlyWhenItLeads(t *testing.T) {
 	client, server := pair(t)
 	hub, err := Listen("127.0.0.1:0", nil)
@@ -417,7 +415,7 @@ func TestTheAnswersFollowANewAddressOnlyWhenItLeads(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	peerIs := func(want *net.UDPConn, when string) {
 		t.Helper()
@@ -469,23 +467,14 @@ func TestTheAnswersFollowANewAddressOnlyWhenItLeads(t *testing.T) {
 	waitFor(t, hub, func(s Stats) bool { return s.AuthDrops == 1 })
 	peerIs(origin, "a forged datagram")
 
-	// A new mapping: the first probe is answered where the answers went, the
-	// second one moves them.
+	// Fresh authenticated datagrams still cannot transfer application replies.
 	rebound := dialHub(t, hub)
-	send(rebound, seal(KindProbe))
-	waitFor(t, hub, func(s Stats) bool { return s.Accepted == 8 })
-	peerIs(origin, "one probe from a new address")
-	send(rebound, seal(KindProbe))
-	_ = rebound.SetReadDeadline(time.Now().Add(time.Second))
-	var b [MaxWire]byte
-	n, err := rebound.Read(b[:])
-	if err != nil {
-		t.Fatalf("the second probe from the new address: %v", err)
-	}
-	if p, err := client.Open(b[:n]); err != nil || p.Kind != KindProbeAck {
-		t.Fatalf("answer %+v, %v", p, err)
-	}
-	peerIs(rebound, "two probes from a new address")
+	send(rebound, seal(KindData))
+	send(rebound, seal(KindData))
+	waitFor(t, hub, func(s Stats) bool { return s.Accepted == 9 })
+	peerIs(origin, "two fresh datagrams without return-path proof")
+	proveReturnPath(t, client, rebound, func(wire []byte) error { _, err := rebound.Write(wire); return err })
+	peerIs(rebound, "verified return path")
 }
 
 // A write the hub cannot finish, a full socket buffer say, stalls the one
@@ -513,7 +502,7 @@ func TestAStalledAnswerDoesNotStopTheOtherSessions(t *testing.T) {
 	defer close(release)
 	probing, probed := pairOf(t, 9)
 	sending, sent := pairOf(t, 10)
-	a, b := hub.Register(probed.keys), hub.Register(sent.keys)
+	a, b := hub.RegisterPeer(probed.keys, netip.MustParseAddr("127.0.0.1")), hub.RegisterPeer(sent.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(a)
 	defer hub.Remove(b)
 	c := dialHub(t, hub)
@@ -545,7 +534,7 @@ func TestHubStatsClassifyDropsAndBoundSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	session := hub.Register(server.keys)
+	session := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(session)
 	c, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: hub.Port()})
 	if err != nil {
@@ -600,7 +589,7 @@ func TestADatagramThroughTheHubCostsNoAllocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	c := dialHub(t, hub)
 	_ = c.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -641,7 +630,7 @@ func TestTheWindowStaysTheSizeOfTheWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	c := dialHub(t, hub)
 	var wires [][]byte
 	for i := 0; i < 5000; i++ {
@@ -676,12 +665,12 @@ func TestTheWindowStaysTheSizeOfTheWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, hub, func(s Stats) bool { return s.ReplayDrops == 1 && s.TagDrops == 1 })
-	hub.mu.Lock()
 	registered.recvMu.Lock()
+	hub.mu.Lock()
 	inWindow := registered.recvTop - low(registered.recvHigh)
 	live, index, spent := len(registered.recvTags), len(hub.index), len(hub.spent)
-	registered.recvMu.Unlock()
 	hub.mu.Unlock()
+	registered.recvMu.Unlock()
 	if inWindow != window || index+spent != window || live != index {
 		t.Fatalf("window %d, session tags %d, hub tags %d live and %d spent", inWindow, live, index, spent)
 	}

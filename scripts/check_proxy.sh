@@ -9,8 +9,8 @@ SERVER_IP="YOUR_VPS_IP"
 PROXY_PORT="1080"
 OBFS_PORT="1443"
 
-PROXY_USER="your_username"
-PROXY_PASS="your_password"
+PROXY_USER="${PROXY_USER:-your_username}"
+PROXY_PASS="${PROXY_PASS:-your_password}"
 OBFS_PSK="YOUR_32_BYTE_PSK"
 # ================================
 
@@ -29,6 +29,15 @@ echo "  Server: ${SERVER_IP}"
 echo "========================================"
 echo ""
 
+# Send credentials through curl's private stdin configuration, not argv.
+proxy_curl() {
+    local credential="${PROXY_USER}:${PROXY_PASS}"
+    [[ "$credential" != *$'\n'* && "$credential" != *$'\r'* ]] || return 1
+    credential="${credential//\\/\\\\}"
+    credential="${credential//\"/\\\"}"
+    printf 'proxy-user = "%s"\n' "$credential" | curl --config - "$@"
+}
+
 # 1. TCP connectivity check
 echo "--- 1. TCP Connectivity ---"
 if timeout 5 bash -c "echo >/dev/tcp/${SERVER_IP}/${PROXY_PORT}" 2>/dev/null; then
@@ -46,7 +55,7 @@ echo ""
 
 # 2. Plain SOCKS5 with auth
 echo "--- 2. Plain SOCKS5 (port ${PROXY_PORT}) ---"
-PLAIN_IP=$(curl -s --max-time 10 --socks5 "${SERVER_IP}:${PROXY_PORT}" -U "${PROXY_USER}:${PROXY_PASS}" https://ifconfig.me 2>/dev/null || true)
+PLAIN_IP=$(proxy_curl -s --max-time 10 --socks5 "${SERVER_IP}:${PROXY_PORT}" https://ifconfig.me 2>/dev/null || true)
 if [ -n "$PLAIN_IP" ]; then
     pass "Plain SOCKS5 works! Exit IP: ${PLAIN_IP}"
 else
@@ -56,7 +65,7 @@ echo ""
 
 # 3. Plain SOCKS5 — full ipinfo
 echo "--- 3. GeoIP Info (plain) ---"
-IPINFO=$(curl -s --max-time 10 --socks5 "${SERVER_IP}:${PROXY_PORT}" -U "${PROXY_USER}:${PROXY_PASS}" https://ipinfo.io 2>/dev/null || true)
+IPINFO=$(proxy_curl -s --max-time 10 --socks5 "${SERVER_IP}:${PROXY_PORT}" https://ipinfo.io 2>/dev/null || true)
 if [ -n "$IPINFO" ]; then
     pass "ipinfo.io response:"
     echo "$IPINFO" | head -20
@@ -92,7 +101,7 @@ info "Full obfs test requires s5client binary."
 info "To test manually:"
 echo ""
 echo "  SERVER_ADDR=${SERVER_IP}:${OBFS_PORT} \\"
-echo "  OBFS_PSK=${OBFS_PSK} \\"
+echo "  # Read OBFS_PSK from a private client environment file."
 echo "  ./s5client"
 echo ""
 echo "  # Then in another terminal:"
@@ -101,7 +110,7 @@ echo ""
 
 # 7. DNS resolution through proxy
 echo "--- 7. DNS Resolution Through Proxy ---"
-DNS_TEST=$(curl -s --max-time 10 --socks5-hostname "${SERVER_IP}:${PROXY_PORT}" -U "${PROXY_USER}:${PROXY_PASS}" https://dns.google/resolve?name=example.com 2>/dev/null || true)
+DNS_TEST=$(proxy_curl -s --max-time 10 --socks5-hostname "${SERVER_IP}:${PROXY_PORT}" https://dns.google/resolve?name=example.com 2>/dev/null || true)
 if [ -n "$DNS_TEST" ]; then
     pass "DNS resolution through proxy works"
 else

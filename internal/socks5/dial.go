@@ -69,11 +69,18 @@ func interleaveIPs(ips []net.IP) []net.IP {
 	return out
 }
 
-// dialSocketLimit is how many sockets one CONNECT may send into the network,
-// whatever the name resolves to: what one address that never answers costs,
-// its first attempt and every backup. A failure that never left this host
-// (stayedLocal) takes no place in it.
+// dialSocketLimit bounds attempts in flight, independently of DNS coverage.
+// Fast failures release a place for the next address; silent sockets retain
+// theirs until the address answers or the common deadline expires.
 const dialSocketLimit = 1 + len(backupAfter)
+
+// A CONNECT tries at most this many distinct candidates and opens at most
+// dialBackupLimit extra sockets in total. A large DNS answer cannot create an
+// unbounded sequence of attempts even when every address refuses immediately.
+const (
+	dialCandidateLimit = 32
+	dialBackupLimit    = len(backupAfter)
+)
 
 // dialAttemptDelay is how long the next address waits for the one before it
 // (RFC 8305, section 5). A short budget divides it, but not below that
@@ -97,6 +104,9 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if len(candidates) > dialCandidateLimit {
+		candidates = candidates[:dialCandidateLimit]
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -199,9 +209,7 @@ func dialResolved(ctx context.Context, dial func(context.Context, string, string
 			return nil, ended(ctx.Err())
 		case <-wake:
 		case r := <-results:
-			if r.err != nil && stayedLocal(r.err) {
-				plan.used--
-			}
+			plan.active--
 			if plan.addrs[r.index].answered {
 				if r.conn != nil {
 					_ = r.conn.Close()
@@ -251,7 +259,8 @@ type dialPlan struct {
 	addrs    []addressPlan
 	delay    time.Duration
 	launched int       // addresses whose first attempt has started, in order
-	used     int       // sockets that may have reached the network
+	active   int       // attempts whose results are still outstanding
+	backups  int       // extra sockets launched across all addresses
 	nextNew  time.Time // when the next address may start
 }
 
@@ -282,11 +291,11 @@ func attemptDelay(ctx context.Context, n int) time.Duration {
 
 // next returns the attempt due at now, if any, and counts its socket.
 func (p *dialPlan) next(now time.Time) (index int, backup, ok bool) {
-	if p.launched < len(p.addrs) && p.used < dialSocketLimit && !now.Before(p.nextNew) {
+	if p.launched < len(p.addrs) && p.active < dialSocketLimit && !now.Before(p.nextNew) {
 		i := p.launched
 		p.addrs[i].start = now
 		p.launched++
-		p.used++
+		p.active++
 		p.nextNew = now.Add(p.delay)
 		return i, false, true
 	}
@@ -295,8 +304,9 @@ func (p *dialPlan) next(now time.Time) (index int, backup, ok bool) {
 		a := &p.addrs[i]
 		for at, due := a.backupAt(); due && !now.Before(at); at, due = a.backupAt() {
 			a.backups++
-			if p.used+1+waiting <= dialSocketLimit {
-				p.used++
+			if p.active+1+waiting <= dialSocketLimit && p.backups < dialBackupLimit {
+				p.active++
+				p.backups++
 				return i, true, true
 			}
 		}
@@ -307,7 +317,7 @@ func (p *dialPlan) next(now time.Time) (index int, backup, ok bool) {
 // wake is the next moment something may start.
 func (p *dialPlan) wake() (time.Time, bool) {
 	var at time.Time
-	ok := p.launched < len(p.addrs) && p.used < dialSocketLimit
+	ok := p.launched < len(p.addrs) && p.active < dialSocketLimit
 	if ok {
 		at = p.nextNew
 	}
@@ -350,7 +360,7 @@ func (p *dialPlan) over(stopped bool) bool {
 			return false
 		}
 	}
-	return stopped || p.launched == len(p.addrs) || p.used >= dialSocketLimit
+	return stopped || p.launched == len(p.addrs)
 }
 
 func (a *addressPlan) backupAt() (time.Time, bool) {
@@ -405,8 +415,8 @@ func spent(ctx context.Context) error {
 // socket fell into the hole again about one time in three, so the draws come
 // early and often: next to backups at 1s, 3s and 7s, this schedule cut the wait
 // of a dial that met the hole from 2.0s to 1.1s on average, and none of 81
-// waited 7s where 7 of 75 did (docs/field/nodes.md). A destination that never
-// answers costs six sockets, and so does a name: dialSocketLimit.
+// waited 7s where 7 of 75 did (docs/field/nodes.md). A silent destination costs
+// six sockets; a name shares the same concurrency and backup limits.
 var backupAfter = [...]time.Duration{
 	500 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second, 5 * time.Second, 7 * time.Second,
 }
@@ -438,8 +448,8 @@ func noRoute(err error) bool {
 }
 
 // stayedLocal reports a failure that sent nothing into the network: no route
-// for the family, or no such family on this host. It costs no place in
-// dialSocketLimit.
+// for the family, or no such family on this host. Another address's network
+// failure takes precedence over it when naming the final result.
 func stayedLocal(err error) bool {
 	return noRoute(err) || errors.Is(err, syscall.EAFNOSUPPORT)
 }

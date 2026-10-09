@@ -97,9 +97,11 @@ func TestTheSpecificationListsEveryFailureReason(t *testing.T) {
 		ReasonShortFrame,
 		ReasonDecryptFail,
 		ReasonReplay,
+		ReasonHistoryFull,
 		ReasonBadOpening,
 		ReasonUnknownFrameKind,
 		ReasonBadControl,
+		ReasonIdleClose,
 	} {
 		if !strings.Contains(spec, "`"+string(r)+"`") {
 			t.Errorf("failure reason %q is missing from section 11 of the specification", r)

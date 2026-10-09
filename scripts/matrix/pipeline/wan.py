@@ -20,7 +20,7 @@ import sys
 import time
 
 from . import build
-from .cell import GAUGES, PORTS, WARMUP_TIMEOUT, environments, last_line, log_counts, parse_gauges
+from .cell import GAUGES, PORTS, SPARE_LINGER, WARMUP_TIMEOUT, environments, last_line, log_counts, parse_gauges, settled_gauges
 from .util import go_duration, read_json, seconds, set_pdeathsig, sha256, write_json
 
 SRV_UNIT, ORIGIN_UNIT = "s5bench-srv", "s5bench-origin"
@@ -451,7 +451,7 @@ exit 0
         stall = seconds(st["scenario_timeout"]) + seconds(st["hang_grace"]) + 30
         if sp["kind"] == "soak":
             stall += max(seconds(st["soak"]), seconds(st["idle"]))
-        hard = sp["deadline"] - time.time() - STOP_WAIT - seconds(st["settle"]) - 30
+        hard = sp["deadline"] - time.time() - STOP_WAIT - seconds(st["settle"]) - SPARE_LINGER - 30
         last_size, last_change, why, rc = None, time.monotonic(), None, "-"
         fails = 0
         while True:
@@ -512,7 +512,7 @@ exit 0
             while time.monotonic() < deadline and not _stop:
                 time.sleep(0.2)
             self.run["settled"] = self.snapshot("settled")
-            self.run["gauges_settled"] = self.gauges()
+            self.run["gauges_settled"] = settled_gauges(self.gauges, lambda: _stop)
 
     def foreign(self):
         """Busy cores on each host over the measurement minus what this cell's processes used there."""

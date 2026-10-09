@@ -58,7 +58,7 @@ func TestALongAssociationReportsWhatItCarried(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logs := captureLogs(t)
 		var stats assocStats
-		r := startAssocReport(&stats, time.Now(), func() []any { return []any{"native_sent", 7} })
+		r := startAssocReport(&stats, time.Now(), func() []any { return []any{"native_sent", 7} }, 0)
 
 		time.Sleep(udpReportEvery + time.Second)
 		if got := linesOf(logs.String(), "UDP Tunnel running"); len(got) != 0 {
@@ -229,4 +229,55 @@ func TestTheAgeOfAnAssociationReadsAsADuration(t *testing.T) {
 	if !strings.Contains(buf.String(), `"age":"1m30s"`) {
 		t.Errorf("no age as a duration in %s", buf.String())
 	}
+}
+
+func TestDiagnosticClientReportShowsShortAndIdlePeriods(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logs := captureLogs(t)
+		var stats assocStats
+		r := startAssocReport(&stats, time.Now(), nil, 5*time.Second)
+		stats.addSent(100)
+		stats.addReceived(200)
+		time.Sleep(5 * time.Second)
+		synctest.Wait()
+		stats.addReceived(200)
+		time.Sleep(5 * time.Second)
+		synctest.Wait()
+		time.Sleep(5 * time.Second)
+		synctest.Wait()
+		r.stop()
+		time.Sleep(10 * time.Second)
+		lines := linesOf(logs.String(), "UDP Tunnel running")
+		if len(lines) != 3 {
+			t.Fatalf("diagnostic lines: %q", lines)
+		}
+		wantFields(t, lines[0], "period=5s", "sent_period=1", "received_period=1")
+		wantFields(t, lines[1], "sent_period=0", "received_period=1")
+		wantFields(t, lines[2], "sent_period=0", "received_period=0")
+	})
+}
+
+func TestLocalUDPHeaderDropsAndPortChangesAreVisible(t *testing.T) {
+	logs := captureLogs(t)
+	control, app, tunnel, done := udpAssociationUp(t)
+	if _, err := app.Write([]byte{0}); err != nil {
+		t.Fatal(err)
+	}
+	question := datagram("voice packet")
+	if _, err := app.Write(question); err != nil {
+		t.Fatal(err)
+	}
+	readFrame(t, tunnel, len(question))
+	second := appSocket(t)
+	if _, err := second.WriteToUDP(question, app.RemoteAddr().(*net.UDPAddr)); err != nil {
+		t.Fatal(err)
+	}
+	readFrame(t, tunnel, len(question))
+	_ = control.Close()
+	waitHandler(t, done)
+	lines := linesOf(logs.String(), "UDP Tunnel closed")
+	if len(lines) != 1 {
+		t.Fatalf("closing lines: %q", lines)
+	}
+	wantFields(t, lines[0], "local_udp_in=3", "header_drops=1", "app_port_changes=1", "sent=2", "tcp_sent=2")
 }

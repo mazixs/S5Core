@@ -1,0 +1,2640 @@
+{
+  "date": "2026-10-03",
+  "environment": "Linux amd64; isolated A-R1-R2-B; two 5 ms netem links; current dirty source tree",
+  "source_fingerprint": "e4405d496f6c139af848d3eb18b3133c3ebbed4efa48848f498f1085b1738193",
+  "validation": "complete expected lengths and no read errors; no application-body SHA-256",
+  "cases": [
+    {
+      "case": "quic-v4-1400-filter",
+      "policy": "narrow_mtu_ptb_filtered",
+      "cell": {
+        "family": 4,
+        "mtu": 1400,
+        "ptb": "filter",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "10.2.0.3:4433",
+        "socks_header": 10,
+        "native_limit_payload": 1364,
+        "warmup_ms": 463,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.109433569,
+            "mb_per_s": 38.32739842378713,
+            "client_to_origin": {
+              "packets": 452,
+              "bytes": 21132,
+              "max": 1366,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1323": 1,
+                "1366": 1
+              },
+              "max_by_250ms": [
+                1366
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3471,
+              "bytes": 4306509,
+              "max": 1323,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1246": 2,
+                "1280": 3331,
+                "1323": 1
+              },
+              "max_by_250ms": [
+                1323
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 451,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3471,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 452,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 451
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.067385384,
+            "mb_per_s": 15.56088186720135,
+            "client_to_origin": {
+              "packets": 1037,
+              "bytes": 1105656,
+              "max": 1387,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1323": 784,
+                "1344": 1,
+                "1387": 1
+              },
+              "max_by_250ms": [
+                1387
+              ]
+            },
+            "origin_to_client": {
+              "packets": 137,
+              "bytes": 4468,
+              "max": 92,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {},
+              "max_by_250ms": [
+                92
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 1011,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 137,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 1035,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 1011,
+              "s5core_native_udp_queue_drops_total{queue=\"data\"}": 24
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.053715692,
+            "mb_per_s": 78.08340251857874,
+            "client_to_origin": {
+              "packets": 501,
+              "bytes": 18714,
+              "max": 1360,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1333": 1,
+                "1360": 1
+              },
+              "max_by_250ms": [
+                1360
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3340,
+              "bytes": 4292907,
+              "max": 1333,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1323": 400,
+                "1333": 2801
+              },
+              "max_by_250ms": [
+                1333
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 500,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3340,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 501,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 500
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 181.106,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 804.359,
+            "mtu": 1333,
+            "done": false,
+            "lost_so_far": 27
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 180.338,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 7
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 804.04,
+            "mtu": 1333,
+            "done": false,
+            "lost_so_far": 9
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {
+            "TcpRetransSegs": 7,
+            "TcpExtTCPTimeouts": 6
+          },
+          "R1": {
+            "IpFragFails": 8,
+            "IcmpOutDestUnreachs": 8
+          },
+          "R2": {
+            "IpFragFails": 8,
+            "IcmpOutDestUnreachs": 8
+          }
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "10.2.0.3:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.09677514,
+            "mb_per_s": 43.34071746111657
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.05918086,
+            "mb_per_s": 17.718160905400836
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.065391302,
+            "mb_per_s": 64.14161932423367
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 86.189,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 778.069,
+            "mtu": 1371,
+            "done": false,
+            "lost_so_far": 3
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1232.435,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1938.458,
+            "mtu": 1371,
+            "done": false,
+            "lost_so_far": 4
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {
+            "TcpRetransSegs": 2,
+            "TcpExtTCPTimeouts": 2
+          },
+          "R1": {
+            "IpFragFails": 4,
+            "IcmpOutDestUnreachs": 4
+          },
+          "R2": {
+            "IpFragFails": 6,
+            "IcmpOutDestUnreachs": 6
+          }
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "2s",
+          "sent": 1995,
+          "sent_bytes": 1165612,
+          "received": 6953,
+          "received_bytes": 8673734,
+          "conn": "a827debe8d1a",
+          "native_sent": 1990,
+          "tcp_sent_oversize": 0,
+          "tcp_sent_other": 1,
+          "native_received": 6952,
+          "tcp_received": 1,
+          "tunnel_drops": 0,
+          "native_limit": 1371,
+          "size_probes": 22,
+          "dropped_oversize_sent": 4,
+          "dropped_oversize_received": 0
+        }
+      ]
+    },
+    {
+      "case": "quic-v4-1500-filter",
+      "policy": "native_port_blocked",
+      "cell": {
+        "family": 4,
+        "mtu": 1500,
+        "ptb": "filter",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "10.2.0.3:4433",
+        "socks_header": 10,
+        "native_limit_payload": 1364,
+        "warmup_ms": -1,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.135213417,
+            "mb_per_s": 31.01988022386861,
+            "client_to_origin": {
+              "packets": 413,
+              "bytes": 19584,
+              "max": 1409,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1366": 1,
+                "1409": 1
+              },
+              "max_by_250ms": [
+                1409
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3314,
+              "bytes": 4295853,
+              "max": 1409,
+              "over_native_limit": 2539,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1212": 1,
+                "1246": 1,
+                "1280": 633,
+                "1366": 2538,
+                "1409": 1
+              },
+              "max_by_250ms": [
+                1409
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_route\"}": 411,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2539,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_route\"}": 775
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.112086601,
+            "mb_per_s": 9.355052170776416,
+            "client_to_origin": {
+              "packets": 889,
+              "bytes": 1077643,
+              "max": 1441,
+              "over_native_limit": 642,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1200": 1,
+                "1216": 93,
+                "1219": 10,
+                "1222": 1,
+                "1244": 1,
+                "1309": 2,
+                "1321": 2,
+                "1330": 1,
+                "1409": 25,
+                "1417": 2,
+                "1430": 525,
+                "1441": 90
+              },
+              "max_by_250ms": [
+                1441
+              ]
+            },
+            "origin_to_client": {
+              "packets": 173,
+              "bytes": 8056,
+              "max": 1441,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1430": 1,
+                "1441": 1
+              },
+              "max_by_250ms": [
+                1441
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_oversize\"}": 642,
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_route\"}": 247,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_route\"}": 171
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.11481755,
+            "mb_per_s": 36.53016459591761,
+            "client_to_origin": {
+              "packets": 374,
+              "bytes": 11440,
+              "max": 77,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {},
+              "max_by_250ms": [
+                77
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3079,
+              "bytes": 4284049,
+              "max": 1441,
+              "over_native_limit": 2942,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1287": 2,
+                "1367": 2,
+                "1407": 1,
+                "1441": 2939
+              },
+              "max_by_250ms": [
+                1441
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_route\"}": 374,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2942,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_route\"}": 137
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 87.602,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 206.226,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 452.406,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 514.601,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 75.392,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 230.974,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 461.841,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 552.901,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "10.2.0.3:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.094098504,
+            "mb_per_s": 44.573546036396074
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.059084608,
+            "mb_per_s": 17.74702474119825
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.04468314,
+            "mb_per_s": 93.86770938658294
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 83.989,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 164.786,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 405.327,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 474.213,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1359.838,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1452.108,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1692.768,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1751.45,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "16s",
+          "sent": 2392,
+          "sent_bytes": 1155493,
+          "received": 7281,
+          "received_bytes": 8706528,
+          "conn": "6c65ffb436f7",
+          "native_sent": 0,
+          "tcp_sent_oversize": 644,
+          "tcp_sent_other": 1748,
+          "native_received": 0,
+          "tcp_received": 7281,
+          "tunnel_drops": 0,
+          "native_limit": 1400,
+          "size_probes": 0,
+          "dropped_oversize_sent": 0,
+          "dropped_oversize_received": 0
+        }
+      ]
+    },
+    {
+      "case": "quic-v4-1500-loss",
+      "policy": "first_six_size_probes_dropped",
+      "cell": {
+        "family": 4,
+        "mtu": 1500,
+        "ptb": "loss",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "10.2.0.3:4433",
+        "socks_header": 10,
+        "native_limit_payload": 1364,
+        "warmup_ms": 459,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.098358979,
+            "mb_per_s": 42.64281759167101,
+            "client_to_origin": {
+              "packets": 604,
+              "bytes": 26448,
+              "max": 1366,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1323": 1,
+                "1366": 1
+              },
+              "max_by_250ms": [
+                1366
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3471,
+              "bytes": 4299034,
+              "max": 1323,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1206": 1,
+                "1246": 1,
+                "1251": 1,
+                "1280": 3324,
+                "1323": 1
+              },
+              "max_by_250ms": [
+                1323
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 603,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3471,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 604,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 603
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.059639225,
+            "mb_per_s": 17.581985681403474,
+            "client_to_origin": {
+              "packets": 1023,
+              "bytes": 1082748,
+              "max": 1398,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1323": 767,
+                "1344": 1,
+                "1387": 1,
+                "1398": 1
+              },
+              "max_by_250ms": [
+                1398
+              ]
+            },
+            "origin_to_client": {
+              "packets": 142,
+              "bytes": 5899,
+              "max": 1344,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1344": 1
+              },
+              "max_by_250ms": [
+                1344
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 1021,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 142,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 1022,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 1021
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.059559772,
+            "mb_per_s": 70.42176051311951,
+            "client_to_origin": {
+              "packets": 343,
+              "bytes": 14776,
+              "max": 1376,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1355": 1,
+                "1376": 1
+              },
+              "max_by_250ms": [
+                1376
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3288,
+              "bytes": 4310942,
+              "max": 1355,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1218": 2,
+                "1270": 2,
+                "1297": 1,
+                "1319": 1,
+                "1344": 3146,
+                "1355": 1
+              },
+              "max_by_250ms": [
+                1355
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 342,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3288,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 343,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 342
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 169.452,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 485.548,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 793.045,
+            "mtu": 1355,
+            "done": false,
+            "lost_so_far": 3
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 168.888,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 474.726,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 839.137,
+            "mtu": 1355,
+            "done": false,
+            "lost_so_far": 19
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "10.2.0.3:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.094934736,
+            "mb_per_s": 44.18092024820083
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.057783318,
+            "mb_per_s": 18.14669071097648
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.049404967,
+            "mb_per_s": 84.89640323006388
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 84.601,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 165.595,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 406.245,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 467.243,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1212.98,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1305.782,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1546.566,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1597.351,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "2s",
+          "sent": 1976,
+          "sent_bytes": 1143918,
+          "received": 6906,
+          "received_bytes": 8685255,
+          "conn": "05f5f7aa7867",
+          "native_sent": 1971,
+          "tcp_sent_oversize": 0,
+          "tcp_sent_other": 1,
+          "native_received": 6905,
+          "tcp_received": 1,
+          "tunnel_drops": 0,
+          "native_limit": 1396,
+          "size_probes": 14,
+          "dropped_oversize_sent": 4,
+          "dropped_oversize_received": 3
+        }
+      ],
+      "loss_rule_counters": "Chain FORWARD (policy ACCEPT 10343 packets, 20350568 bytes)\n    pkts      bytes target     prot opt in     out     source               destination         \n       6     8042 DROP       udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:1444 length 1227:1428 quota: 8300 bytes\n"
+    },
+    {
+      "case": "quic-v4-1500-pass",
+      "policy": "wide_path",
+      "cell": {
+        "family": 4,
+        "mtu": 1500,
+        "ptb": "pass",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "10.2.0.3:4433",
+        "socks_header": 10,
+        "native_limit_payload": 1364,
+        "warmup_ms": 461,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.099608411,
+            "mb_per_s": 42.10793002209422,
+            "client_to_origin": {
+              "packets": 508,
+              "bytes": 22569,
+              "max": 1366,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1323": 1,
+                "1366": 1
+              },
+              "max_by_250ms": [
+                1366
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3471,
+              "bytes": 4298992,
+              "max": 1323,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1201": 1,
+                "1225": 1,
+                "1241": 1,
+                "1246": 1,
+                "1280": 3323,
+                "1323": 1
+              },
+              "max_by_250ms": [
+                1323
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 507,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3471,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 508,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 507
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.059437759,
+            "mb_per_s": 17.64158032943335,
+            "client_to_origin": {
+              "packets": 1023,
+              "bytes": 1081383,
+              "max": 1387,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1323": 767,
+                "1344": 1,
+                "1387": 1
+              },
+              "max_by_250ms": [
+                1387
+              ]
+            },
+            "origin_to_client": {
+              "packets": 148,
+              "bytes": 5957,
+              "max": 1344,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1344": 1
+              },
+              "max_by_250ms": [
+                1344
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 1022,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 148,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 1023,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 1022
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.052352257,
+            "mb_per_s": 80.11696611284592,
+            "client_to_origin": {
+              "packets": 434,
+              "bytes": 17174,
+              "max": 1398,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1355": 1,
+                "1376": 1,
+                "1398": 1
+              },
+              "max_by_250ms": [
+                1398
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3273,
+              "bytes": 4291018,
+              "max": 1355,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1223": 1,
+                "1270": 1,
+                "1298": 1,
+                "1299": 1,
+                "1310": 1,
+                "1344": 3132,
+                "1355": 1
+              },
+              "max_by_250ms": [
+                1355
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 427,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3273,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 433,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 427,
+              "s5core_native_udp_queue_drops_total{queue=\"data\"}": 5
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 171.663,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 477.848,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 869.692,
+            "mtu": 1355,
+            "done": false,
+            "lost_so_far": 3
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 172.773,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 477.872,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 894.53,
+            "mtu": 1355,
+            "done": false,
+            "lost_so_far": 3
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "10.2.0.3:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.094797752,
+            "mb_per_s": 44.24476225976329
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.058126157,
+            "mb_per_s": 18.039658118117117
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.044841313,
+            "mb_per_s": 93.53660094654231
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 84.378,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 166.706,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 405.854,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 463.813,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1214.47,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1306.822,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1546.132,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1604.029,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "2s",
+          "sent": 1971,
+          "sent_bytes": 1141022,
+          "received": 6897,
+          "received_bytes": 8665257,
+          "conn": "daa601bd2aed",
+          "native_sent": 1966,
+          "tcp_sent_oversize": 0,
+          "tcp_sent_other": 1,
+          "native_received": 6896,
+          "tcp_received": 1,
+          "tunnel_drops": 0,
+          "native_limit": 1399,
+          "size_probes": 7,
+          "dropped_oversize_sent": 4,
+          "dropped_oversize_received": 3
+        }
+      ]
+    },
+    {
+      "case": "quic-v6-1400-filter",
+      "policy": "narrow_mtu_ptb_filtered",
+      "cell": {
+        "family": 6,
+        "mtu": 1400,
+        "ptb": "filter",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "[fd02::3]:4433",
+        "socks_header": 22,
+        "native_limit_payload": 1352,
+        "warmup_ms": 461,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.10474773,
+            "mb_per_s": 40.04195604047935,
+            "client_to_origin": {
+              "packets": 586,
+              "bytes": 25745,
+              "max": 1366,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1323": 1,
+                "1366": 1
+              },
+              "max_by_250ms": [
+                1366
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3469,
+              "bytes": 4297645,
+              "max": 1280,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1246": 2,
+                "1280": 3325
+              },
+              "max_by_250ms": [
+                1280
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 584,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3469,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 585,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 584
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.065703901,
+            "mb_per_s": 15.959113295266897,
+            "client_to_origin": {
+              "packets": 1035,
+              "bytes": 1095567,
+              "max": 1376,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 90,
+                "1301": 688,
+                "1376": 1
+              },
+              "max_by_250ms": [
+                1376
+              ]
+            },
+            "origin_to_client": {
+              "packets": 115,
+              "bytes": 5761,
+              "max": 1301,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1301": 1
+              },
+              "max_by_250ms": [
+                1301
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 1020,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 115,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 1034,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 1020,
+              "s5core_native_udp_queue_drops_total{queue=\"data\"}": 14
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.058008625,
+            "mb_per_s": 72.30483397942979,
+            "client_to_origin": {
+              "packets": 496,
+              "bytes": 18433,
+              "max": 1312,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1306": 1,
+                "1312": 1
+              },
+              "max_by_250ms": [
+                1312
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3402,
+              "bytes": 4295970,
+              "max": 1301,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1267": 1,
+                "1301": 3263
+              },
+              "max_by_250ms": [
+                1301
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 462,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3402,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 3,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 495,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 462,
+              "s5core_native_udp_queue_drops_total{queue=\"data\"}": 32
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 432.553,
+            "mtu": 1301,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 448.041,
+            "mtu": 1301,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "kernel": {
+          "A": {
+            "TcpRetransSegs": 1,
+            "TcpExtTCPTimeouts": 2
+          },
+          "B": {
+            "TcpRetransSegs": 7,
+            "TcpExtTCPTimeouts": 5
+          },
+          "R1": {
+            "Ip6InTooBigErrors": 8,
+            "Ip6FragFails": 8,
+            "Icmp6OutPktTooBigs": 8
+          },
+          "R2": {
+            "Ip6InTooBigErrors": 7,
+            "Ip6FragFails": 7,
+            "Icmp6OutPktTooBigs": 7
+          }
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "[fd02::3]:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.099869403,
+            "mb_per_s": 41.99788798176755
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.058214349,
+            "mb_per_s": 18.012328884756577
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.045624852,
+            "mb_per_s": 91.93024889154708
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 170.49,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 473.384,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1312.721,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 59
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1615.425,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 60
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {
+            "TcpRetransSegs": 2,
+            "TcpExtTCPTimeouts": 2
+          },
+          "R1": {
+            "Ip6InTooBigErrors": 4,
+            "Ip6FragFails": 4,
+            "Icmp6OutPktTooBigs": 4
+          },
+          "R2": {
+            "Ip6InTooBigErrors": 6,
+            "Ip6FragFails": 6,
+            "Icmp6OutPktTooBigs": 6
+          }
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "2s",
+          "sent": 2122,
+          "sent_bytes": 1186589,
+          "received": 6991,
+          "received_bytes": 8753498,
+          "conn": "86dfda68f530",
+          "native_sent": 2116,
+          "tcp_sent_oversize": 0,
+          "tcp_sent_other": 1,
+          "native_received": 6990,
+          "tcp_received": 1,
+          "tunnel_drops": 0,
+          "native_limit": 1349,
+          "size_probes": 22,
+          "dropped_oversize_sent": 5,
+          "dropped_oversize_received": 0
+        }
+      ]
+    },
+    {
+      "case": "quic-v6-1500-filter",
+      "policy": "native_port_blocked",
+      "cell": {
+        "family": 6,
+        "mtu": 1500,
+        "ptb": "filter",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "[fd02::3]:4433",
+        "socks_header": 22,
+        "native_limit_payload": 1352,
+        "warmup_ms": -1,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.136507893,
+            "mb_per_s": 30.72572514176891,
+            "client_to_origin": {
+              "packets": 359,
+              "bytes": 17901,
+              "max": 1409,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1366": 1,
+                "1409": 1
+              },
+              "max_by_250ms": [
+                1409
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3310,
+              "bytes": 4295734,
+              "max": 1409,
+              "over_native_limit": 2525,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1240": 1,
+                "1280": 648,
+                "1366": 2524,
+                "1409": 1
+              },
+              "max_by_250ms": [
+                1409
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_route\"}": 357,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2525,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_route\"}": 785
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.113222406,
+            "mb_per_s": 9.261205772292104,
+            "client_to_origin": {
+              "packets": 896,
+              "bytes": 1077852,
+              "max": 1441,
+              "over_native_limit": 642,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1211": 1,
+                "1216": 86,
+                "1219": 5,
+                "1222": 1,
+                "1223": 1,
+                "1244": 1,
+                "1309": 2,
+                "1321": 1,
+                "1324": 1,
+                "1330": 1,
+                "1381": 1,
+                "1403": 1,
+                "1409": 25,
+                "1430": 467,
+                "1441": 148
+              },
+              "max_by_250ms": [
+                1441
+              ]
+            },
+            "origin_to_client": {
+              "packets": 158,
+              "bytes": 7792,
+              "max": 1441,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1430": 1,
+                "1441": 1
+              },
+              "max_by_250ms": [
+                1441
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_oversize\"}": 642,
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_route\"}": 254,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_route\"}": 156
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.11486531,
+            "mb_per_s": 36.51497567020017,
+            "client_to_origin": {
+              "packets": 394,
+              "bytes": 11916,
+              "max": 80,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {},
+              "max_by_250ms": [
+                80
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3079,
+              "bytes": 4284045,
+              "max": 1441,
+              "over_native_limit": 2942,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1201": 1,
+                "1287": 1,
+                "1367": 2,
+                "1407": 1,
+                "1441": 2939
+              },
+              "max_by_250ms": [
+                1441
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"tcp_route\"}": 394,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2942,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_route\"}": 137
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 87.38,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 207.852,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 453.966,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 514.857,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 75.989,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 232.605,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 463.45,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 556.082,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "kernel": {
+          "A": {
+            "TcpRetransSegs": 1,
+            "TcpExtTCPTimeouts": 2
+          },
+          "B": {
+            "TcpRetransSegs": 1
+          },
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "[fd02::3]:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.093236279,
+            "mb_per_s": 44.98575066471711
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.05779363,
+            "mb_per_s": 18.14345283381577
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.053653214,
+            "mb_per_s": 78.17432894141254
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 84.418,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 168.656,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 404.282,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 461.85,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1362.438,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1458.35,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 23
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1694.139,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 23
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1751.709,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 23
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "16s",
+          "sent": 2365,
+          "sent_bytes": 1182605,
+          "received": 7262,
+          "received_bytes": 8793095,
+          "conn": "c4897927f211",
+          "native_sent": 0,
+          "tcp_sent_oversize": 644,
+          "tcp_sent_other": 1721,
+          "native_received": 0,
+          "tcp_received": 7262,
+          "tunnel_drops": 0,
+          "native_limit": 1400,
+          "size_probes": 0,
+          "dropped_oversize_sent": 0,
+          "dropped_oversize_received": 0
+        }
+      ]
+    },
+    {
+      "case": "quic-v6-1500-loss",
+      "policy": "first_six_size_probes_dropped",
+      "cell": {
+        "family": 6,
+        "mtu": 1500,
+        "ptb": "loss",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "[fd02::3]:4433",
+        "socks_header": 22,
+        "native_limit_payload": 1352,
+        "warmup_ms": 459,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.098285333,
+            "mb_per_s": 42.674770201979165,
+            "client_to_origin": {
+              "packets": 610,
+              "bytes": 26430,
+              "max": 1366,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1323": 1,
+                "1366": 1
+              },
+              "max_by_250ms": [
+                1366
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3470,
+              "bytes": 4299016,
+              "max": 1323,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1201": 1,
+                "1246": 2,
+                "1280": 3324,
+                "1323": 1
+              },
+              "max_by_250ms": [
+                1323
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 609,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3470,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 610,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 609
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.057964458,
+            "mb_per_s": 18.08998196791558,
+            "client_to_origin": {
+              "packets": 1025,
+              "bytes": 1081454,
+              "max": 1387,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1323": 766,
+                "1344": 1,
+                "1387": 1
+              },
+              "max_by_250ms": [
+                1387
+              ]
+            },
+            "origin_to_client": {
+              "packets": 177,
+              "bytes": 6927,
+              "max": 1344,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1344": 1
+              },
+              "max_by_250ms": [
+                1344
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 1024,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 177,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 1025,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 1024
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.052668102,
+            "mb_per_s": 79.6365131973049,
+            "client_to_origin": {
+              "packets": 352,
+              "bytes": 17762,
+              "max": 1398,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1355": 1,
+                "1398": 1
+              },
+              "max_by_250ms": [
+                1398
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3408,
+              "bytes": 4472858,
+              "max": 1344,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1216": 2,
+                "1270": 2,
+                "1285": 1,
+                "1295": 1,
+                "1297": 1,
+                "1344": 3267
+              },
+              "max_by_250ms": [
+                1344
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 350,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3408,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 351,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 350
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 169.177,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 473.063,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 168.558,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 472.532,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "kernel": {
+          "A": {
+            "TcpRetransSegs": 1,
+            "TcpExtTCPTimeouts": 2
+          },
+          "B": {
+            "TcpRetransSegs": 1
+          },
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "[fd02::3]:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.092997183,
+            "mb_per_s": 45.101409146984594
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.057824594,
+            "mb_per_s": 18.13373735058131
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.06508658,
+            "mb_per_s": 64.44191721242689
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 83.911,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 163.69,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 403.351,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 464.206,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1207.926,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1299.061,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1538.756,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1589.412,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "2s",
+          "sent": 1993,
+          "sent_bytes": 1169678,
+          "received": 7060,
+          "received_bytes": 8934441,
+          "conn": "85cbe570b9bf",
+          "native_sent": 1987,
+          "tcp_sent_oversize": 0,
+          "tcp_sent_other": 1,
+          "native_received": 7059,
+          "tcp_received": 1,
+          "tunnel_drops": 0,
+          "native_limit": 1398,
+          "size_probes": 14,
+          "dropped_oversize_sent": 4,
+          "dropped_oversize_received": 4
+        }
+      ],
+      "loss_rule_counters": "Chain FORWARD (policy ACCEPT 10480 packets, 20731782 bytes)\n    pkts      bytes target     prot opt in     out     source               destination         \n       6     8168 DROP       udp  --  *      *       ::/0                 ::/0                 udp dpt:1444 length 1247:1448 quota: 8500 bytes\n"
+    },
+    {
+      "case": "quic-v6-1500-pass",
+      "policy": "wide_path",
+      "cell": {
+        "family": 6,
+        "mtu": 1500,
+        "ptb": "pass",
+        "delay_ms": 5,
+        "initial_packet_size": 1280,
+        "pmtud": true
+      },
+      "tunnel": {
+        "mode": "tunnel",
+        "target": "[fd02::3]:4433",
+        "socks_header": 22,
+        "native_limit_payload": 1352,
+        "warmup_ms": 461,
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.101071128,
+            "mb_per_s": 41.49853754476749,
+            "client_to_origin": {
+              "packets": 549,
+              "bytes": 24240,
+              "max": 1366,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1280": 3,
+                "1323": 1,
+                "1366": 1
+              },
+              "max_by_250ms": [
+                1366
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3472,
+              "bytes": 4299049,
+              "max": 1323,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1206": 1,
+                "1241": 1,
+                "1246": 1,
+                "1280": 3324,
+                "1323": 1
+              },
+              "max_by_250ms": [
+                1323
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 548,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3472,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 549,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 548
+            }
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.060037342,
+            "mb_per_s": 17.465396785887023,
+            "client_to_origin": {
+              "packets": 1027,
+              "bytes": 1081504,
+              "max": 1387,
+              "over_native_limit": 1,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1323": 768,
+                "1344": 1,
+                "1387": 1
+              },
+              "max_by_250ms": [
+                1387
+              ]
+            },
+            "origin_to_client": {
+              "packets": 130,
+              "bytes": 5498,
+              "max": 1344,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1344": 1
+              },
+              "max_by_250ms": [
+                1344
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 1026,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 130,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 1,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 1027,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 1026
+            }
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.054191066,
+            "mb_per_s": 77.3984405473773,
+            "client_to_origin": {
+              "packets": 544,
+              "bytes": 19572,
+              "max": 1398,
+              "over_native_limit": 2,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1355": 1,
+                "1398": 1
+              },
+              "max_by_250ms": [
+                1398
+              ]
+            },
+            "origin_to_client": {
+              "packets": 3275,
+              "bytes": 4289717,
+              "max": 1344,
+              "over_native_limit": 0,
+              "steady_size": 0,
+              "steady_count": 0,
+              "sizes_from_1200": {
+                "1222": 1,
+                "1270": 1,
+                "1296": 1,
+                "1304": 1,
+                "1344": 3133
+              },
+              "max_by_250ms": [
+                1344
+              ]
+            },
+            "metrics": {
+              "s5core_native_udp_datagrams_total{direction=\"from_client\",path=\"native\"}": 542,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"native\"}": 3275,
+              "s5core_native_udp_datagrams_total{direction=\"to_client\",path=\"tcp_oversize\"}": 2,
+              "s5core_native_udp_packets_total{outcome=\"accepted\"}": 543,
+              "s5core_native_udp_packets_total{outcome=\"data_enqueued\"}": 542
+            }
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 174.556,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 479.626,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 147.656,
+            "mtu": 1323,
+            "done": false,
+            "lost_so_far": 1
+          },
+          {
+            "side": "server",
+            "conn": 1,
+            "at_ms": 479.268,
+            "mtu": 1344,
+            "done": false,
+            "lost_so_far": 2
+          }
+        ],
+        "kernel": {
+          "A": {
+            "TcpRetransSegs": 1,
+            "TcpExtTCPTimeouts": 2
+          },
+          "B": {
+            "TcpRetransSegs": 1
+          },
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "direct": {
+        "mode": "direct",
+        "target": "[fd02::3]:4433",
+        "phases": [
+          {
+            "name": "download",
+            "bytes": 4194304,
+            "seconds": 0.096977562,
+            "mb_per_s": 43.25025205315019
+          },
+          {
+            "name": "upload",
+            "bytes": 1048576,
+            "seconds": 0.057817341,
+            "mb_per_s": 18.13601216977446
+          },
+          {
+            "name": "download_after",
+            "bytes": 4194304,
+            "seconds": 0.05018146,
+            "mb_per_s": 83.5827415144956
+          }
+        ],
+        "client_mtu": [
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 86.006,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 168.407,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 408.21,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "client",
+            "conn": 1,
+            "at_ms": 465.714,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 0
+          }
+        ],
+        "origin_mtu": [
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1218.267,
+            "mtu": 1366,
+            "done": false,
+            "lost_so_far": 0
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1313.723,
+            "mtu": 1409,
+            "done": false,
+            "lost_so_far": 50
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1553.603,
+            "mtu": 1430,
+            "done": false,
+            "lost_so_far": 50
+          },
+          {
+            "side": "server",
+            "conn": 2,
+            "at_ms": 1611.078,
+            "mtu": 1441,
+            "done": true,
+            "lost_so_far": 50
+          }
+        ],
+        "kernel": {
+          "A": {},
+          "B": {},
+          "R1": {},
+          "R2": {}
+        }
+      },
+      "client_closed": [
+        {
+          "closed_by": "application",
+          "reason": "app tcp connection closed: EOF",
+          "age": "2s",
+          "sent": 2126,
+          "sent_bytes": 1172274,
+          "received": 6882,
+          "received_bytes": 8745988,
+          "conn": "b46b3009b94a",
+          "native_sent": 2121,
+          "tcp_sent_oversize": 0,
+          "tcp_sent_other": 1,
+          "native_received": 6881,
+          "tcp_received": 1,
+          "tunnel_drops": 0,
+          "native_limit": 1394,
+          "size_probes": 7,
+          "dropped_oversize_sent": 4,
+          "dropped_oversize_received": 4
+        }
+      ]
+    }
+  ]
+}

@@ -28,10 +28,13 @@ func (a *nativeAssociation) Send(data []byte) error {
 }
 
 // nativeSendError tells the relay which failures end the path. The hub answers
-// ErrPacket for a removed session and for one with no peer yet (an oversized
-// payload is never passed), and a closed socket carries nothing again; any
-// other error is one lost write.
+// ErrPacket for a removed session and for one with no peer yet, and a closed
+// socket carries nothing again. A limit change racing the relay's size check
+// leaves the path alive and routes that one datagram to TCP.
 func nativeSendError(err error) error {
+	if errors.Is(err, nativeudp.ErrPayloadTooLarge) {
+		return fmt.Errorf("%w: %w", socks5.ErrNativePayloadTooLarge, err)
+	}
 	if err != nil && (errors.Is(err, nativeudp.ErrPacket) || errors.Is(err, net.ErrClosed)) {
 		return fmt.Errorf("%w: %w", socks5.ErrNativePathGone, err)
 	}
@@ -90,10 +93,14 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCou
 			{"accepted", st.Accepted}, {"tag", st.TagDrops},
 			{"replay", st.ReplayDrops}, {"auth", st.AuthDrops},
 			{"read_error", st.ReadErrors},
+			{"probe_ack_write_error", st.ProbeACKWriteErrors},
+			{"data_enqueued", st.DataEnqueued},
 		} {
 			o.ObserveInt64(t.NativeUDPPackets, int64(row.count), metric.WithAttributes(attribute.String("outcome", row.outcome)))
 		}
 		o.ObserveInt64(t.NativeUDPSessions, int64(st.Active))
+		o.ObserveInt64(t.NativeUDPQueueDrops, int64(st.DataQueueDrops), metric.WithAttributes(attribute.String("queue", "data")))
+		o.ObserveInt64(t.NativeUDPQueueDrops, int64(st.ProbeACKQueueDrops), metric.WithAttributes(attribute.String("queue", "probe_ack")))
 		for _, row := range datagrams {
 			o.ObserveInt64(t.NativeUDPDatagrams, int64(row.count.Load()), metric.WithAttributes(
 				attribute.String("direction", row.direction), attribute.String("path", row.path)))
@@ -105,5 +112,5 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCou
 			o.ObserveInt64(t.NativeUDPStreamDrops, int64(row.count.Load()), metric.WithAttributes(attribute.String("reason", row.reason)))
 		}
 		return nil
-	}, t.NativeUDPPackets, t.NativeUDPSessions, t.NativeUDPDatagrams, t.NativeUDPRouteEvents, t.NativeUDPStreamDrops)
+	}, t.NativeUDPPackets, t.NativeUDPSessions, t.NativeUDPDatagrams, t.NativeUDPRouteEvents, t.NativeUDPStreamDrops, t.NativeUDPQueueDrops)
 }

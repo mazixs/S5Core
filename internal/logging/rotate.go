@@ -137,7 +137,9 @@ func (r *RotatingFile) rotateLocked() error {
 	}
 	if r.size > 0 {
 		if err := r.archive(time.Now()); err != nil {
-			return err
+			// Write can continue on the live file even if archiving fails.
+			// Rotate still reports the error to its caller.
+			return errors.Join(err, r.open())
 		}
 	}
 	return r.open()

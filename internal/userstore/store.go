@@ -2,6 +2,7 @@ package userstore
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -9,10 +10,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/configfile"
 	"github.com/mazixs/S5Core/internal/identity"
 	"github.com/mazixs/S5Core/internal/passwordhash"
 )
@@ -24,10 +27,17 @@ const maxUsersFileSize = 10 << 20 // 10 MiB
 type Store struct {
 	mu    sync.RWMutex
 	users map[string]*userEntry // keyed by username
+	// ioMu serializes load/reload/save. Metadata has a three-way baseline;
+	// a digest detects external writers before atomic replacement.
+	ioMu         sync.Mutex
+	diskAccounts map[string]UserAccount // keyed by stable account ID
+	diskDigest   [sha256.Size]byte
+	diskKnown    bool
 
 	filePath  string
 	logger    *slog.Logger
 	stopFlush chan struct{}
+	flushDone chan struct{}
 
 	// verifier keeps Argon2id off the connection path: the KDF runs once per
 	// password, not once per TCP connection. See verifier.go.
@@ -45,6 +55,7 @@ type Store struct {
 type userEntry struct {
 	account      UserAccount
 	trafficDelta atomic.Int64 // unflushed traffic delta since last save
+	token        string       // server-local incarnation, never persisted
 }
 
 // NewStore creates a new empty Store.
@@ -61,13 +72,12 @@ func NewStore(logger *slog.Logger) *Store {
 }
 
 // SetKDFBudget sets how much memory concurrent password checks may use, in
-// bytes. Zero restores the default; a negative budget removes the bound,
-// which is for tests and for embedders that bound it themselves. It must be
+// bytes. A non-positive budget restores the default. It must be
 // called before the store serves connections.
 func (s *Store) SetKDFBudget(bytes int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if bytes == 0 {
+	if bytes <= 0 {
 		bytes = defaultKDFBudget
 	}
 	s.kdf = newKDFGate(bytes)
@@ -75,19 +85,14 @@ func (s *Store) SetKDFBudget(bytes int64) {
 
 // readFileLimited reads a file with a size limit to prevent unbounded memory consumption.
 func readFileLimited(path string, maxSize int64) ([]byte, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if fi.Size() > maxSize {
-		return nil, fmt.Errorf("file size %d exceeds limit %d", fi.Size(), maxSize)
-	}
-	return os.ReadFile(path)
+	return configfile.Read(path, maxSize)
 }
 
 // LoadFromFile reads and parses a users JSON file into the store.
 // Existing users are replaced entirely. Traffic counters are reset.
 func (s *Store) LoadFromFile(path string) error {
+	s.ioMu.Lock()
+	defer s.ioMu.Unlock()
 	data, err := readFileLimited(path, maxUsersFileSize)
 	if err != nil {
 		return fmt.Errorf("userstore: read file %s: %w", path, err)
@@ -102,6 +107,7 @@ func (s *Store) LoadFromFile(path string) error {
 		return fmt.Errorf("userstore: validation: %w", err)
 	}
 
+	baseline := accountsByID(uf.Users)
 	migrated, err := migrateAccounts(uf.Users)
 	if err != nil {
 		return err
@@ -110,12 +116,13 @@ func (s *Store) LoadFromFile(path string) error {
 
 	users := make(map[string]*userEntry, len(uf.Users))
 	for _, u := range uf.Users {
-		users[u.Username] = &userEntry{account: u}
+		users[u.Username] = newUserEntry(u)
 	}
 
 	s.mu.Lock()
 	s.users = users
 	s.filePath = path
+	s.diskAccounts, s.diskDigest, s.diskKnown = baseline, sha256.Sum256(data), true
 	s.mu.Unlock()
 	s.verifier.retain(users)
 
@@ -133,7 +140,7 @@ func (s *Store) LoadFromFile(path string) error {
 		// live only in memory, it just has to generate them again next time,
 		// and refusing to start over a read-only account file would be a
 		// worse outcome than that.
-		if err := s.SaveToFile(path); err != nil {
+		if err := s.saveToFileLocked(path); err != nil {
 			s.logger.Error("Could not write the migrated account file back",
 				"path", path, "error", err)
 		}
@@ -144,6 +151,8 @@ func (s *Store) LoadFromFile(path string) error {
 // Reload re-reads the JSON file, merging current traffic counters
 // into the freshly loaded data so in-flight traffic is not lost.
 func (s *Store) Reload(path string) error {
+	s.ioMu.Lock()
+	defer s.ioMu.Unlock()
 	data, err := readFileLimited(path, maxUsersFileSize)
 	if err != nil {
 		return fmt.Errorf("userstore: reload read %s: %w", path, err)
@@ -158,37 +167,39 @@ func (s *Store) Reload(path string) error {
 		return fmt.Errorf("userstore: reload validation: %w", err)
 	}
 
-	// A reload migrates in memory and does not write the file back. The
-	// operator has just edited it; rewriting it underneath them, from a
-	// signal handler, is not something a reload gets to do. The keys are
-	// written on the next start, or by the next SaveToFile.
-	migrated, err := migrateAccounts(uf.Users)
+	baseline := accountsByID(uf.Users)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	accounts, entries, deltas, err := s.mergeReloadLocked(uf.Users)
 	if err != nil {
 		return err
 	}
-	respelled := standardiseHashes(uf.Users)
-
-	newUsers := make(map[string]*userEntry, len(uf.Users))
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, u := range uf.Users {
-		if oldEntry, ok := s.users[u.Username]; ok {
-			// Preserve existing entry (keeps the same trafficDelta pointer
-			// so in-flight TCP proxy goroutines continue counting correctly).
-			oldEntry.account = u
-			// Flush any unflushed delta into the base counter so the
-			// new file state starts from an accurate baseline.
-			oldEntry.account.TrafficUsedBytes += oldEntry.trafficDelta.Swap(0)
+	// Merge before generating keys, so repeated reloads of an unpersisted
+	// migration retain its original key rather than generating a new one.
+	migrated, err := migrateAccounts(accounts)
+	if err != nil {
+		return err
+	}
+	respelled := standardiseHashes(accounts)
+	if err := validateUsers(accounts); err != nil {
+		return fmt.Errorf("userstore: merged validation: %w", err)
+	}
+	newUsers := make(map[string]*userEntry, len(accounts))
+	for _, u := range accounts {
+		if oldEntry, ok := entries[u.ID]; ok {
+			// Keep the counter pointer across a rename. Subtract the delta
+			// observed in the snapshot, leaving concurrent increments intact.
+			u.TrafficUsedBytes -= deltas[u.ID]
+			oldEntry.account = u.clone()
 			newUsers[u.Username] = oldEntry
 		} else {
-			newUsers[u.Username] = &userEntry{account: u}
+			newUsers[u.Username] = newUserEntry(u)
 		}
 	}
 
 	s.users = newUsers
 	s.filePath = path
+	s.diskAccounts, s.diskDigest, s.diskKnown = baseline, sha256.Sum256(data), true
 	// Accounts that disappeared must not keep a cached verifier. Accounts
 	// whose password changed need no handling here: their cache entry records
 	// the hash it was verified against, and that hash no longer matches.
@@ -206,10 +217,56 @@ func (s *Store) Reload(path string) error {
 // SaveToFile atomically writes the current state to a JSON file.
 // Uses write-to-temp + rename for crash safety.
 func (s *Store) SaveToFile(path string) error {
+	s.ioMu.Lock()
+	defer s.ioMu.Unlock()
+	return s.saveToFileLocked(path)
+}
+
+func (s *Store) saveToFileLocked(path string) error {
 	s.mu.RLock()
 	accounts := s.collectAccountsLocked()
 	s.mu.RUnlock()
-	return s.writeAccounts(path, accounts)
+	if err := s.checkFileUnchanged(path); err != nil {
+		return err
+	}
+	err := s.writeAccounts(path, accounts)
+	data, marshalErr := json.MarshalIndent(UsersFile{Users: accounts}, "", "  ")
+	if marshalErr != nil {
+		return marshalErr
+	}
+	digest := sha256.Sum256(data)
+	written := err == nil
+	if !written {
+		// A directory fsync can fail after rename: the write is visible,
+		// although durability is unproven. Track it without reporting success.
+		actual, readErr := readFileLimited(path, maxUsersFileSize)
+		written = readErr == nil && sha256.Sum256(actual) == digest
+	}
+	if written {
+		s.mu.Lock()
+		if s.filePath == "" {
+			s.filePath = path
+		}
+		if s.filePath == path {
+			s.diskAccounts, s.diskDigest, s.diskKnown = accountsByID(accounts), digest, true
+		}
+		s.mu.Unlock()
+	}
+	return err
+}
+
+func (s *Store) checkFileUnchanged(path string) error {
+	s.mu.RLock()
+	known, expected := s.diskKnown && s.filePath == path, s.diskDigest
+	s.mu.RUnlock()
+	if !known {
+		return nil
+	}
+	data, err := readFileLimited(path, maxUsersFileSize)
+	if err != nil || sha256.Sum256(data) != expected {
+		return ErrFileChanged
+	}
+	return nil
 }
 
 // writeAccounts performs the actual file write without holding the store lock.
@@ -225,22 +282,41 @@ func (s *Store) writeAccounts(path string, accounts []UserAccount) error {
 		return fmt.Errorf("userstore: create temp: %w", err)
 	}
 	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("userstore: write temp: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("userstore: sync temp: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("userstore: close temp: %w", err)
 	}
 
+	if err := s.checkFileUnchanged(path); err != nil {
+		return err
+	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("userstore: rename: %w", err)
 	}
 
+	if runtime.GOOS == "windows" {
+		return nil
+	} // No portable directory fsync on Windows.
+	directory, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("userstore: open directory for sync: %w", err)
+	}
+	defer func() { _ = directory.Close() }()
+	if err := directory.Sync(); err != nil {
+		return fmt.Errorf("userstore: sync directory: %w", err)
+	}
 	return nil
 }
 
@@ -249,7 +325,7 @@ func (s *Store) writeAccounts(path string, accounts []UserAccount) error {
 func (s *Store) collectAccountsLocked() []UserAccount {
 	accounts := make([]UserAccount, 0, len(s.users))
 	for _, entry := range s.users {
-		acc := entry.account
+		acc := entry.account.clone()
 		acc.TrafficUsedBytes += entry.trafficDelta.Load()
 		accounts = append(accounts, acc)
 	}
@@ -289,7 +365,10 @@ func (s *Store) StartPeriodicFlush(path string, interval time.Duration) {
 	// поле под мьютексом, а горутина читает его без блокировки.
 	stop := make(chan struct{})
 	s.stopFlush = stop
+	done := make(chan struct{})
+	s.flushDone = done
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -309,8 +388,9 @@ func (s *Store) StartPeriodicFlush(path string, interval time.Duration) {
 
 // StopPeriodicFlush stops the background flush goroutine and performs
 // a final flush+save. It is safe to call multiple times.
-func (s *Store) StopPeriodicFlush() {
+func (s *Store) StopPeriodicFlush() error {
 	s.mu.Lock()
+	stop, done := s.stopFlush, s.flushDone
 	if s.stopFlush != nil {
 		select {
 		case <-s.stopFlush:
@@ -318,7 +398,14 @@ func (s *Store) StopPeriodicFlush() {
 		default:
 			close(s.stopFlush)
 		}
-		s.stopFlush = nil
+	}
+	s.mu.Unlock()
+	if done != nil {
+		<-done
+	}
+	s.mu.Lock()
+	if s.stopFlush == stop {
+		s.stopFlush, s.flushDone = nil, nil
 	}
 	s.mu.Unlock()
 
@@ -330,10 +417,12 @@ func (s *Store) StopPeriodicFlush() {
 	if path != "" {
 		if err := s.SaveToFile(path); err != nil {
 			s.logger.Error("Failed final traffic flush", "error", err)
+			return err
 		} else {
 			s.logger.Info("Final traffic flush completed", "path", path)
 		}
 	}
+	return nil
 }
 
 // Lookup returns a copy of the user account if found.
@@ -345,7 +434,7 @@ func (s *Store) Lookup(username string) (UserAccount, bool) {
 	if !ok {
 		return UserAccount{}, false
 	}
-	acc := entry.account
+	acc := entry.account.clone()
 	acc.TrafficUsedBytes += entry.trafficDelta.Load()
 	return acc, true
 }
@@ -353,13 +442,19 @@ func (s *Store) Lookup(username string) (UserAccount, bool) {
 // IsValid checks username/password and all business rules:
 // enabled, TTL, traffic limit.
 func (s *Store) IsValid(username, password string) bool {
+	ok, _ := s.ValidResult(username, password)
+	return ok
+}
+
+// ValidResult keeps resource overload separate from a wrong password.
+func (s *Store) ValidResult(username, password string) (bool, error) {
 	s.mu.RLock()
 	entry, ok := s.users[username]
 	if !ok {
 		s.mu.RUnlock()
-		return false
+		return false, nil
 	}
-	acc := entry.account
+	acc := entry.account.clone()
 	s.mu.RUnlock()
 
 	// Every cheap reason to refuse is checked before the expensive one. An
@@ -374,12 +469,12 @@ func (s *Store) IsValid(username, password string) bool {
 	// "a stopped account", which an operator can see in their own files and
 	// an attacker cannot act on.
 	if !acc.Enabled {
-		return false
+		return false, nil
 	}
 
 	now := time.Now()
 	if acc.IsExpired(now) || acc.IsNotYetActive(now) {
-		return false
+		return false, nil
 	}
 
 	if acc.TrafficLimitBytes > 0 {
@@ -387,18 +482,19 @@ func (s *Store) IsValid(username, password string) bool {
 		totalUsed := acc.TrafficUsedBytes + entry.trafficDelta.Load()
 		s.mu.RUnlock()
 		if totalUsed >= acc.TrafficLimitBytes {
-			return false
+			return false, nil
 		}
 	}
 
 	// Verify password: prefer Argon2id hash, fallback to plaintext.
 	if acc.PasswordHash != "" {
-		return s.verifyHashed(username, password, acc.PasswordHash)
+		return s.verifyHashedResult(username, password, acc.PasswordHash)
 	}
 	if acc.Password != "" {
-		return subtle.ConstantTimeCompare([]byte(acc.Password), []byte(password)) == 1
+		stored, supplied := sha256.Sum256([]byte(acc.Password)), sha256.Sum256([]byte(password))
+		return subtle.ConstantTimeCompare(stored[:], supplied[:]) == 1, nil
 	}
-	return false
+	return false, nil
 }
 
 // SessionStatus is what an account may still do right now. The relay turns
@@ -431,29 +527,15 @@ const (
 // 64 KiB - so the check costs one map read per 64 KiB, not one per packet.
 func (s *Store) SessionStatus(username string) SessionStatus {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	entry, ok := s.users[username]
-	s.mu.RUnlock()
 	if !ok {
 		// An account removed or renamed mid-session is no longer valid under
 		// its old name.
 		return SessionExpired
 	}
 
-	s.mu.RLock()
-	acc := entry.account
-	s.mu.RUnlock()
-
-	if !acc.Enabled {
-		return SessionExpired
-	}
-	now := time.Now()
-	if acc.IsExpired(now) || acc.IsNotYetActive(now) {
-		return SessionExpired
-	}
-	if acc.TrafficLimitBytes > 0 && acc.TrafficUsedBytes+entry.trafficDelta.Load() >= acc.TrafficLimitBytes {
-		return SessionQuotaExceeded
-	}
-	return SessionAllowed
+	return entryStatus(entry, time.Now())
 }
 
 // SetVerifyObserver installs a callback reporting which path answered each
@@ -469,40 +551,49 @@ func (s *Store) SetVerifyObserver(f func(path VerifyPath)) {
 // verifier cache when it can. The KDF runs on the first successful login for a
 // given password and after that only when the stored hash changes or the entry
 // expires - see verifier.go for why that is safe.
-func (s *Store) verifyHashed(username, password, hash string) bool {
+func (s *Store) verifyHashedResult(username, password, hash string) (bool, error) {
 	s.mu.RLock()
-	observe := s.onVerify
+	observe, gate := s.onVerify, s.kdf
 	s.mu.RUnlock()
-
-	s.mu.RLock()
-	gate := s.kdf
-	s.mu.RUnlock()
-
-	// The gate refusing is not an answer about this password, and saying so
-	// takes a flag rather than a wider signature: slow runs in this
-	// goroutine, so there is nothing to race with.
-	refused := false
-	ok, path := s.verifier.verify(username, password, hash, time.Now(), func() bool {
-		verified, ran := gate.run(func() bool {
+	ok, path, err := s.verifier.verifyResult(username, password, hash, time.Now(), func() (bool, error) {
+		cost, err := passwordhash.MemoryCost(hash)
+		if err != nil {
+			return false, err
+		}
+		var verifyErr error
+		verified, ran := gate.runWithMemory(cost, func() bool {
 			got, err := passwordhash.Verify(password, hash)
-			if err != nil {
-				s.logger.Warn("Password hash could not be verified", "error", err)
-				return false
-			}
+			verifyErr = err
 			return got
 		})
 		if !ran {
-			refused = true
+			return false, ErrVerificationUnavailable
 		}
-		return verified
+		return verified, verifyErr
 	})
-	if refused {
+	if err != nil {
 		path = VerifyPathOverloaded
 	}
 	if observe != nil {
 		observe(path)
 	}
-	return ok
+	return ok, err
+}
+
+func (s *Store) hashPassword(password string) (string, error) {
+	s.mu.RLock()
+	gate := s.kdf
+	s.mu.RUnlock()
+	var hash string
+	var hashErr error
+	_, ran := gate.run(func() bool {
+		hash, hashErr = passwordhash.Hash(password)
+		return hashErr == nil
+	})
+	if !ran {
+		return "", ErrVerificationUnavailable
+	}
+	return hash, hashErr
 }
 
 // MigratePassword hashes a plaintext password using Argon2id and persists the
@@ -527,7 +618,7 @@ func (s *Store) MigratePassword(username, password string) {
 	}
 	s.mu.Unlock()
 
-	hash, err := passwordhash.Hash(password)
+	hash, err := s.hashPassword(password)
 	if err != nil {
 		s.logger.Error("Failed to hash password during migration", "user", username, "error", err)
 		return
@@ -616,7 +707,18 @@ func (s *Store) TrafficCounterFor(username string) *atomic.Int64 {
 // creating an account that differ in what the tunnel can do with it is the
 // split plan task Ф6-3 removed, and this is the last place it survived.
 func (s *Store) AddUser(username, password string) error {
-	hash, err := passwordhash.Hash(password)
+	if username == "" {
+		return fmt.Errorf("username must not be empty")
+	}
+	s.mu.RLock()
+	for _, entry := range s.users {
+		if entry.account.ID == username || entry.account.Username == username {
+			s.mu.RUnlock()
+			return fmt.Errorf("account name or ID already exists")
+		}
+	}
+	s.mu.RUnlock()
+	hash, err := s.hashPassword(password)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -631,16 +733,22 @@ func (s *Store) AddUser(username, password string) error {
 	if _, exists := s.users[username]; exists {
 		return fmt.Errorf("user %q already exists", username)
 	}
-
-	s.users[username] = &userEntry{
-		account: UserAccount{
-			ID:           username,
-			Username:     username,
-			PasswordHash: hash,
-			TunnelKey:    base64.StdEncoding.EncodeToString(key),
-			Enabled:      true,
-		},
+	for _, entry := range s.users {
+		if entry.account.ID == username {
+			return fmt.Errorf("account ID already exists")
+		}
+		if entry.account.TunnelKey == base64.StdEncoding.EncodeToString(key) {
+			return fmt.Errorf("duplicate tunnel key")
+		}
 	}
+
+	s.users[username] = newUserEntry(UserAccount{
+		ID:           username,
+		Username:     username,
+		PasswordHash: hash,
+		TunnelKey:    base64.StdEncoding.EncodeToString(key),
+		Enabled:      true,
+	})
 	return nil
 }
 
@@ -677,6 +785,7 @@ func (s *Store) RemoveUser(username string) error {
 func validateUsers(users []UserAccount) error {
 	seenUsers := make(map[string]struct{}, len(users))
 	seenIDs := make(map[string]struct{}, len(users))
+	seenKeys := make(map[string]struct{}, len(users))
 
 	for i, u := range users {
 		if u.Username == "" {
@@ -693,6 +802,17 @@ func validateUsers(users []UserAccount) error {
 			return fmt.Errorf("duplicate id: %q", u.ID)
 		}
 		seenIDs[u.ID] = struct{}{}
+		if u.TunnelKey != "" {
+			key, err := DecodeTunnelKey(u.TunnelKey)
+			if err != nil {
+				return fmt.Errorf("user %q: invalid tunnel key", u.Username)
+			}
+			encoded := string(key)
+			if _, exists := seenKeys[encoded]; exists {
+				return fmt.Errorf("duplicate tunnel key")
+			}
+			seenKeys[encoded] = struct{}{}
+		}
 		if _, err := identity.ParseRole(u.Role); err != nil {
 			return fmt.Errorf("user %q: %w", u.Username, err)
 		}
@@ -708,14 +828,48 @@ func validateUsers(users []UserAccount) error {
 			}
 		}
 	}
+	for _, user := range users {
+		if _, exists := seenUsers[user.ID]; exists && user.ID != user.Username {
+			return fmt.Errorf("account ID conflicts with another account's username")
+		}
+	}
 	return nil
 }
 
 // TunnelMember is one account as the obfuscation layer authenticates it: a
 // name and a key, with nothing about passwords or quotas in it.
 type TunnelMember struct {
-	Username string
-	Key      []byte
+	Username  string
+	Key       []byte
+	Reference string // opaque server-local incarnation resolved by BindMember
+}
+
+// NextTunnelValidityChange returns the next time a dated, enabled member
+// can enter or leave the directory. It does not expose internal date pointers.
+// The server uses a single timer rather than polling all accounts per second.
+func (s *Store) NextTunnelValidityChange(now time.Time) time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var next time.Time
+	for _, entry := range s.users {
+		a := &entry.account
+		if !a.Enabled || a.TunnelKey == "" {
+			continue
+		}
+		for _, date := range []*time.Time{a.ValidFrom, a.ValidUntil} {
+			if date == nil {
+				continue
+			}
+			at := *date
+			if date == a.ValidUntil {
+				at = at.Add(time.Nanosecond)
+			}
+			if at.After(now) && (next.IsZero() || at.Before(next)) {
+				next = at
+			}
+		}
+	}
+	return next
 }
 
 // TunnelMembers returns the accounts that carry a tunnel key and are
@@ -730,9 +884,11 @@ func (s *Store) TunnelMembers() []TunnelMember {
 	s.mu.RLock()
 	accounts := make([]UserAccount, 0, len(s.users))
 	deltas := make([]int64, 0, len(s.users))
+	references := make([]string, 0, len(s.users))
 	for _, entry := range s.users {
-		accounts = append(accounts, entry.account)
+		accounts = append(accounts, entry.account.clone())
 		deltas = append(deltas, entry.trafficDelta.Load())
+		references = append(references, entry.token+":"+entry.account.Username)
 	}
 	s.mu.RUnlock()
 
@@ -756,7 +912,7 @@ func (s *Store) TunnelMembers() []TunnelMember {
 			s.logger.Error("User has an unusable tunnel key", "username", acc.Username, "error", err)
 			continue
 		}
-		members = append(members, TunnelMember{Username: acc.Username, Key: key})
+		members = append(members, TunnelMember{Username: acc.Username, Key: key, Reference: references[i]})
 	}
 	return members
 }

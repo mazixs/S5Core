@@ -1,0 +1,9 @@
+=== RUN   TestPerformanceProcesses
+=== RUN   TestPerformanceProcesses/direct
+=== RUN   TestPerformanceProcesses/plain
+=== RUN   TestPerformanceProcesses/obfs
+--- PASS: TestPerformanceProcesses (1.47s)
+    --- PASS: TestPerformanceProcesses/direct (0.11s)
+    --- PASS: TestPerformanceProcesses/plain (0.21s)
+    --- PASS: TestPerformanceProcesses/obfs (1.13s)
+PASS

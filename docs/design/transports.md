@@ -57,6 +57,12 @@ frame has been decrypted, so that a prober replaying a captured handshake
 waits exactly as long, and hears exactly as much, as one sending a frame with
 a corrupted tag.
 
+Only authenticated first frames enter this history. Entries cover the whole
+five-hour epoch interval and are never evicted early; at capacity fresh
+sessions fail closed with `history_full` until space expires. The history is
+in memory and is lost on restart, so it does not replace a future protocol
+with a fresh server contribution to session keys.
+
 #### Clocks
 
 The hour inside the prologue is the one thing a deployment can get wrong
@@ -153,9 +159,10 @@ independent implementation works from. Changing the format means changing that
 document first: `pkg/obfs/spec_test.go` fails when the code and the document
 disagree.
 
-A frame is never larger than `OBFS_MTU`: padding is drawn first, the payload
-takes what is left of the budget, and a longer write becomes several frames of
-roughly equal size rather than full frames plus a short remainder. The padding
+A frame is never larger than `OBFS_MTU`: payload is segmented into roughly
+equal parts, and padding uses only the remaining space in each frame. Padding
+cannot reduce a part or create additional frames for a bulk write. Short
+writes retain random padding within their available space. The padding
 bytes themselves are zeros - they sit inside the AEAD, so the wire carries
 ciphertext either way and only the peer holding the PSK ever sees them, which
 is how TLS 1.3 pads its records (RFC 8446, section 5.4). What is random is the
@@ -494,7 +501,7 @@ What to know before enabling it:
   and the server's `s5core_native_udp_*` metrics say which path each
   datagram took.
 - **Native carries datagrams up to the limit of the path.** At the start of
-  each association the client probes the path with 7-15 datagrams of chosen
+  each association the client probes the path with up to 30 datagrams of chosen
   sizes, about 8 KB each way on a 1500-byte path, and both ends then keep
   every native datagram, padding included, within the limit it found. The
   limit is at most 1400 bytes on the wire, that is 1374 bytes of SOCKS5 UDP
@@ -504,7 +511,9 @@ What to know before enabling it:
   DF and ignore the PMTU cache, so a native datagram is never fragmented
   ([narrow link bench](../benchmarks/mtu-native-2026-09-26.md#после-м-2),
   [section 10.7](../veil-spec.md#107-предел-размера-native)).
-- **A datagram longer than the limit is dropped, not sent by `0x83`.** A QUIC
+  Unanswered sizes are confirmed by fresh datagrams and a new control before
+  narrowing the search; a wide loss-free path still needs seven probes.
+- **A datagram longer than the limit is dropped while native is verified and heard.** A QUIC
   stack that searches for its packet size then sees the drop as the path's
   and settles below the limit, instead of taking the reliable stream for the
   path. On the narrow link bench quic-go sends 99.7-100% of its packets
@@ -515,7 +524,8 @@ What to know before enabling it:
   sending them, such as a VPN over SOCKS5, still gets them through.
   `native_limit`, `size_probes`, `dropped_oversize_sent` and
   `dropped_oversize_received` in `UDP Tunnel closed` show the search and the
-  drops.
+  drops. When native is unavailable or no longer heard, both directions use
+  the working TCP fallback immediately, without consuming the drop allowance.
 - **A path under 1248 bytes on the wire does not carry the smallest QUIC
   packet to an IPv6 address**: 1200 bytes of QUIC, 22 of SOCKS5 header and
   26 of native. The client logs one Info line; QUIC then goes by `0x83`

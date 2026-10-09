@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/internal/socks5"
+	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/internal/userstore"
 	"github.com/mazixs/S5Core/pkg/obfs"
@@ -18,11 +20,15 @@ import (
 
 // Telemetry holds OpenTelemetry instruments
 type Telemetry struct {
+	buildMu           sync.Mutex
+	buildSeen         map[[3]string]struct{}
 	ActiveConnections metric.Int64UpDownCounter
 	TotalConnections  metric.Int64Counter
 	AuthFailures      metric.Int64Counter
 	BytesIn           metric.Int64Counter
 	BytesOut          metric.Int64Counter
+	TCPStreamBytesIn  metric.Int64Counter
+	TCPStreamBytesOut metric.Int64Counter
 
 	// ObfsFailures counts frame-level obfuscation failures. Its only labels are
 	// reason and transport - both come from a fixed set inside this process, so
@@ -40,6 +46,11 @@ type Telemetry struct {
 	// transport and direction (ahead or behind) - the exact number of hours
 	// goes to the log, not to a label, because it is unbounded.
 	ObfsClockSkew metric.Int64Counter
+	// ObfsIdleCloses counts obfuscated connections the peer closed without
+	// sending a byte (plan task R4-9): a client's unused spare connection or
+	// a connect-and-drop scan. They are not failures and stay out of
+	// ObfsFailures. Its only label is transport.
+	ObfsIdleCloses metric.Int64Counter
 
 	// PhaseDuration records how long each stage of a connection took, labelled
 	// by phase and outcome. Five phases, so five distributions from one
@@ -108,10 +119,16 @@ type Telemetry struct {
 	// guessed at. Every label comes from a closed enum in the code; see
 	// docs/design/observability-policy.md.
 	SessionTransitions metric.Int64Counter
-	// NativeUDPPackets has only five fixed outcome labels: accepted, tag,
-	// replay, auth and read_error. NativeUDPSessions counts live associations.
-	NativeUDPPackets  metric.Int64ObservableCounter
-	NativeUDPSessions metric.Int64ObservableGauge
+	// NativeUDPPackets counts authenticated packets (accepted), data enqueued,
+	// and tag, replay, auth, read and probe-ACK write failures. These stages
+	// overlap; a successful local write is not proof of remote delivery.
+	// NativeUDPSessions counts live associations.
+	NativeUDPPackets    metric.Int64ObservableCounter
+	NativeUDPSessions   metric.Int64ObservableGauge
+	NativeUDPQueueDrops metric.Int64ObservableCounter
+	// UDPDrops counts dns_pending and frame_oversize for all UDP transports.
+	UDPDrops          metric.Int64Counter
+	UDPRelayDatagrams metric.Int64ObservableCounter
 	// NativeUDPDatagrams is the path each datagram of a 0x84 association
 	// took, by direction and path; NativeUDPRouteEvents the moves of the
 	// server's answers between native and TCP, and the words of the client
@@ -126,6 +143,10 @@ type Telemetry struct {
 	// in a container it is the server's alone, and a host's count does not
 	// include it. It is observed once per Telemetry and only on Linux.
 	UDPReceiveDrops metric.Int64ObservableCounter
+	// TCPFastOpenPassive is the kernel's count of connections accepted with
+	// data in the SYN, TCPFastOpenPassive of the network namespace, as
+	// UDPReceiveDrops; Linux only. It is how OBFS_TFO is seen to work.
+	TCPFastOpenPassive metric.Int64ObservableCounter
 	// UDPAssociationsEnded counts UDP associations as they end, by kind
 	// (associate, tunnel, native) and by what ended them (client, reset,
 	// timeout, account, shutdown, error). A game that lost its association in
@@ -173,12 +194,20 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		return nil, err
 	}
 
-	bytesIn, err := meter.Int64Counter("s5core_traffic_bytes_in", metric.WithDescription("Total bytes transferred in"))
+	bytesIn, err := meter.Int64Counter("s5core_traffic_bytes_in", metric.WithDescription("Application payload bytes accounted from clients, TCP and UDP, excluding framing"))
 	if err != nil {
 		return nil, err
 	}
 
-	bytesOut, err := meter.Int64Counter("s5core_traffic_bytes_out", metric.WithDescription("Total bytes transferred out"))
+	bytesOut, err := meter.Int64Counter("s5core_traffic_bytes_out", metric.WithDescription("Application payload bytes accounted to clients, TCP and UDP, excluding framing"))
+	if err != nil {
+		return nil, err
+	}
+	tcpStreamBytesIn, err := meter.Int64Counter("s5core_tcp_stream_bytes_in", metric.WithDescription("Decrypted client TCP stream bytes including SOCKS5 framing, excluding obfs and TLS overhead"))
+	if err != nil {
+		return nil, err
+	}
+	tcpStreamBytesOut, err := meter.Int64Counter("s5core_tcp_stream_bytes_out", metric.WithDescription("Decrypted server TCP stream bytes including SOCKS5 framing, excluding obfs and TLS overhead"))
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +224,17 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		metric.WithExplicitBucketBoundaries(0, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576))
 	if err != nil {
 		return nil, err
+	}
+
+	obfsIdleCloses, err := meter.Int64Counter("s5core_obfs_idle_closes_total",
+		metric.WithDescription("Obfuscated connections the peer closed before sending a byte"))
+	if err != nil {
+		return nil, err
+	}
+	// Both series exist from the start, so the first idle close shows in
+	// increase() as well.
+	for _, transport := range []string{TransportObfs, TransportWS} {
+		obfsIdleCloses.Add(context.Background(), 0, metric.WithAttributes(attribute.String("transport", transport)))
 	}
 
 	phaseDuration, err := meter.Float64Histogram("s5core_connection_phase_seconds",
@@ -270,7 +310,22 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		return nil, err
 	}
 	nativePackets, err := meter.Int64ObservableCounter("s5core_native_udp_packets_total",
-		metric.WithDescription("Native UDP datagrams accepted or dropped, by fixed outcome"))
+		metric.WithDescription("Native UDP authenticated packets, enqueued data, and validation failures, by fixed outcome; stages overlap"))
+	if err != nil {
+		return nil, err
+	}
+	nativeQueueDrops, err := meter.Int64ObservableCounter("s5core_native_udp_queue_drops_total",
+		metric.WithDescription("Native UDP datagrams dropped on full data or probe ACK queues"))
+	if err != nil {
+		return nil, err
+	}
+	udpDrops, err := meter.Int64Counter("s5core_udp_drops_total",
+		metric.WithDescription("UDP datagrams discarded by the relay, by fixed reason including target socket write failures"))
+	if err != nil {
+		return nil, err
+	}
+	udpRelayDatagrams, err := meter.Int64ObservableCounter("s5core_udp_relay_datagrams_total",
+		metric.WithDescription("UDP socket and relay stages; successful writes do not confirm remote delivery; stages overlap"))
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +353,18 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		metric.WithDescription("UDP datagrams the kernel dropped on a full receive buffer, in the server's network namespace"),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
 			if n, ok := udpbuf.ReceiveDrops(); ok {
+				o.Observe(int64(n))
+			}
+			return nil
+		}))
+	if err != nil {
+		return nil, err
+	}
+
+	tcpFastOpenPassive, err := meter.Int64ObservableCounter("s5core_tcp_fastopen_passive_total",
+		metric.WithDescription("TCP connections the kernel accepted with data in the SYN, in the server's network namespace"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			if n, ok := tcptune.FastOpenPassive(); ok {
 				o.Observe(int64(n))
 			}
 			return nil
@@ -346,10 +413,13 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		AuthFailures:      authFailures,
 		BytesIn:           bytesIn,
 		BytesOut:          bytesOut,
+		TCPStreamBytesIn:  tcpStreamBytesIn,
+		TCPStreamBytesOut: tcpStreamBytesOut,
 
 		ObfsFailures:           obfsFailures,
 		ObfsBytesBeforeFailure: obfsBytes,
 		ObfsClockSkew:          obfsClockSkew,
+		ObfsIdleCloses:         obfsIdleCloses,
 
 		PhaseDuration:      phaseDuration,
 		ConnectionsInPhase: connectionsInPhase,
@@ -361,15 +431,19 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		ConnectionsRejected: connectionsRejected,
 		ClientConnections:   clientConnections,
 
-		Sessions:           sessions,
-		SessionTransitions: sessionTransitions,
-		NativeUDPPackets:   nativePackets,
-		NativeUDPSessions:  nativeSessions,
+		Sessions:            sessions,
+		SessionTransitions:  sessionTransitions,
+		NativeUDPPackets:    nativePackets,
+		NativeUDPSessions:   nativeSessions,
+		NativeUDPQueueDrops: nativeQueueDrops,
+		UDPDrops:            udpDrops,
+		UDPRelayDatagrams:   udpRelayDatagrams,
 
 		NativeUDPDatagrams:   nativeDatagrams,
 		NativeUDPRouteEvents: nativeRouteEvents,
 		NativeUDPStreamDrops: nativeStreamDrops,
 		UDPReceiveDrops:      udpReceiveDrops,
+		TCPFastOpenPassive:   tcpFastOpenPassive,
 		UDPAssociationsEnded: udpAssociationsEnded,
 
 		ConnectionsEnded:   connectionsEnded,
@@ -555,6 +629,16 @@ func (t *Telemetry) RecordBuildInfo(version, goVersion string, transports []stri
 	if len(transports) > 0 {
 		list = strings.Join(transports, ",")
 	}
+	t.buildMu.Lock()
+	defer t.buildMu.Unlock()
+	key := [3]string{version, goVersion, list}
+	if _, seen := t.buildSeen[key]; seen {
+		return
+	}
+	if t.buildSeen == nil {
+		t.buildSeen = make(map[[3]string]struct{})
+	}
+	t.buildSeen[key] = struct{}{}
 	t.BuildInfo.Add(context.Background(), 1, metric.WithAttributes(
 		attribute.String("version", version),
 		attribute.String("go_version", goVersion),
@@ -600,6 +684,13 @@ func phaseHooks(t *Telemetry) (socks5.PhaseObserver, socks5.PhaseCounter) {
 func obfsFailureObserver(t *Telemetry, logger *slog.Logger, transport string) obfs.FailureObserver {
 	return func(fe *obfs.FrameError) {
 		if fe == nil {
+			return
+		}
+		if !fe.Reason.IsFailure() {
+			if t != nil && t.ObfsIdleCloses != nil {
+				t.ObfsIdleCloses.Add(context.Background(), 1,
+					metric.WithAttributes(attribute.String("transport", transport)))
+			}
 			return
 		}
 		if t != nil && t.ObfsFailures != nil {

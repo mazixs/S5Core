@@ -1,0 +1,518 @@
+{
+  "schema": 1,
+  "scope": "local audit gate, mixed-version compatibility and D RC3 canary; no Discord or whole-version performance acceptance",
+  "source_revision": "e81bc752f1ee1d3c733a38a0d6e8dd4e64bb0402",
+  "version": "v2.4.0-rc3",
+  "local_gate": {
+    "go_tests": {
+      "passed": 1010,
+      "failed": 0,
+      "skipped": 6,
+      "packages": 39
+    },
+    "coverage_percent": 77.1,
+    "statement_count": 11981,
+    "python_tests_passed": 128,
+    "release_builds": 12,
+    "windows_test_packages": "compiled, not executed",
+    "full_gate": "passed"
+  },
+  "builds": [
+    {
+      "file": "s5core-linux-amd64",
+      "sha256": "0cc5b2815120a0fea1b47de7b5d917a794ea6d52996ed0a3eaf8518bbdc52511",
+      "bytes": 14479522
+    },
+    {
+      "file": "s5core-linux-arm64",
+      "sha256": "89960aa576bf5533d029ae406ded2974306f624bd0cfa71d433b5951e770cfae",
+      "bytes": 13435042
+    },
+    {
+      "file": "s5core-darwin-amd64",
+      "sha256": "e04260ce1ce602e3a420769798f8d287404703a08d948220ecd89b38ddd86458",
+      "bytes": 14927760
+    },
+    {
+      "file": "s5core-darwin-arm64",
+      "sha256": "e9f700fe8017a418f1ea1d589d75afca5dc2dd25f1d52d9b90acfdb28cad2efd",
+      "bytes": 13908946
+    },
+    {
+      "file": "s5core-windows-amd64.exe",
+      "sha256": "8e16247c2c5d9e4ec2e97a0069fb7966f40b705f7e1a143ff4b36059434f300a",
+      "bytes": 14861824
+    },
+    {
+      "file": "s5client-linux-amd64",
+      "sha256": "c78d589ab0584795ec054df9f77ed74019d9a22fa7f3f8fb93db118671ac3097",
+      "bytes": 8593570
+    },
+    {
+      "file": "s5client-linux-arm64",
+      "sha256": "8f383510cda2a559449a776b5314f898b0b4dd49a4ad4f4da2df8a5b085a9b6a",
+      "bytes": 7930018
+    },
+    {
+      "file": "s5client-darwin-amd64",
+      "sha256": "c492f51e20c35aff1f190bd8ec099fbd8cd0d81b3e3731aee159224b7de24e7e",
+      "bytes": 8787760
+    },
+    {
+      "file": "s5client-darwin-arm64",
+      "sha256": "dfc84ecf927ac0a419c4073e59548fe3d364021aa0ecff2b856d1153ada2c08b",
+      "bytes": 8113170
+    },
+    {
+      "file": "s5client-windows-amd64.exe",
+      "sha256": "4a4e2fef3c5f609d84805351047373cc94a9baf48ec5ed0e26e4412a44033c43",
+      "bytes": 8942080
+    },
+    {
+      "file": "s5client-linux-mipsle-softfloat",
+      "sha256": "ebad830ec14d54e15150484fd19d55f7f495f4a61a1e063be3b9c73b153cdeb9",
+      "bytes": 9371841
+    },
+    {
+      "file": "s5client-linux-mips-softfloat",
+      "sha256": "a36e02e6b7ea4c98fb89314403b18cce597c69b43fa0c5986d64db9cc69dcd95",
+      "bytes": 9371841
+    }
+  ],
+  "docker_image": {
+    "image_id": "sha256:864c6807878f85caf15e7fbfc3582957a089ca5b6f058402018a268d600622cd",
+    "arch": "amd64",
+    "source_revision": "e81bc752f1ee1d3c733a38a0d6e8dd4e64bb0402",
+    "server_sha256": "a8f3411e68a828caddb8933dfb4e5023c4074fa03a2d78c069b8c5fcb9492b63"
+  },
+  "local_compatibility": [
+    {
+      "core": "v2.4.0-rc1",
+      "client": "v2.4.0-rc3",
+      "ok": true,
+      "exit": 0
+    },
+    {
+      "core": "v2.4.0-rc2",
+      "client": "v2.4.0-rc3",
+      "ok": true,
+      "exit": 0
+    },
+    {
+      "core": "v2.4.0-rc3",
+      "client": "v2.4.0-rc1",
+      "ok": true,
+      "exit": 0
+    },
+    {
+      "core": "v2.4.0-rc3",
+      "client": "v2.4.0-rc2",
+      "ok": true,
+      "exit": 0
+    },
+    {
+      "core": "v2.4.0-rc3",
+      "client": "v2.4.0-rc3",
+      "ok": true,
+      "exit": 0
+    }
+  ],
+  "live_compatibility": [
+    {
+      "node": "C",
+      "server_version": "v2.4.0-rc1",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "linux",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 19
+    },
+    {
+      "node": "C",
+      "server_version": "v2.4.0-rc1",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "win",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 19
+    },
+    {
+      "node": "A",
+      "server_version": "v2.4.0-rc1",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "linux",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 18
+    },
+    {
+      "node": "A",
+      "server_version": "v2.4.0-rc1",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "win",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 18
+    },
+    {
+      "node": "D",
+      "server_version": "v2.4.0-rc2",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "linux",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 19
+    },
+    {
+      "node": "D",
+      "server_version": "v2.4.0-rc2",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "win",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 19
+    },
+    {
+      "node": "D",
+      "server_version": "v2.4.0-rc3",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "linux",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 19
+    },
+    {
+      "node": "D",
+      "server_version": "v2.4.0-rc3",
+      "client_version": "v2.4.0-rc3",
+      "credential_set": "win",
+      "executed_os_arch": "linux/amd64",
+      "https_egress_match": true,
+      "udp_ok": 20,
+      "udp_sent": 20,
+      "native_sent": 19
+    }
+  ],
+  "fleet": {
+    "verified_utc": "2026-10-05T02:10:30.229308+00:00",
+    "servers": [
+      {
+        "node": "A",
+        "version": "v2.4.0-rc1",
+        "running": true,
+        "oom": false,
+        "restarts": 0,
+        "sha256": "6f918c3d4a052573bba68922a4a535b8ec0fdf8cb3eeb58c3e3e62486e9290e3",
+        "started_utc": "2026-10-04T08:17:22.802221667Z"
+      },
+      {
+        "node": "C",
+        "version": "v2.4.0-rc1",
+        "running": true,
+        "oom": false,
+        "restarts": 0,
+        "sha256": "6f918c3d4a052573bba68922a4a535b8ec0fdf8cb3eeb58c3e3e62486e9290e3",
+        "started_utc": "2026-10-04T08:17:49.309801118Z"
+      },
+      {
+        "node": "D",
+        "version": "v2.4.0-rc3",
+        "running": true,
+        "oom": false,
+        "restarts": 0,
+        "sha256": "a8f3411e68a828caddb8933dfb4e5023c4074fa03a2d78c069b8c5fcb9492b63",
+        "started_utc": "2026-10-05T02:07:15.514174333Z"
+      }
+    ],
+    "router_clients": [
+      {
+        "node": "A",
+        "version": "v2.4.0-rc1",
+        "running_hash_matches": true,
+        "sha256": "0610a535727e14794d905071a8d17e4c98faa801c789e5f3cd5137888a056532"
+      },
+      {
+        "node": "C",
+        "version": "v2.4.0-rc1",
+        "running_hash_matches": true,
+        "sha256": "0610a535727e14794d905071a8d17e4c98faa801c789e5f3cd5137888a056532"
+      },
+      {
+        "node": "D",
+        "version": "v2.4.0-rc3",
+        "running_hash_matches": true,
+        "sha256": "8f383510cda2a559449a776b5314f898b0b4dd49a4ad4f4da2df8a5b085a9b6a"
+      }
+    ]
+  },
+  "de2_canary": {
+    "first_recreate_utc": "2026-10-05T02:00:30.368348+00:00",
+    "capacity_recreate_utc": "2026-10-05T02:07:14.513194+00:00",
+    "replay_capacity": 100000,
+    "server_recreates_planned": 2,
+    "router_restarts_planned": 1,
+    "running_server_sha256": "a8f3411e68a828caddb8933dfb4e5023c4074fa03a2d78c069b8c5fcb9492b63",
+    "running_router_client_sha256": "8f383510cda2a559449a776b5314f898b0b4dd49a4ad4f4da2df8a5b085a9b6a",
+    "router_checks": {
+      "native": {
+        "egress_matches": true,
+        "http_ok": true,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "fallback": {
+        "egress_matches": true,
+        "http_ok": true,
+        "tcp_sent": 20,
+        "udp_ok": 20,
+        "udp_sent": 20
+      }
+    },
+    "final_router_check": {
+      "egress_matches": true,
+      "http_ok": true,
+      "udp_ok": 20,
+      "udp_sent": 20
+    },
+    "initial_log_summary": {
+      "since_utc": "2026-10-05T02:00:30.368348+00:00",
+      "server_warn_error": 0,
+      "router_warn_error": 1,
+      "server_message_counts": {},
+      "router_message_counts": {
+        "Connections still open at shutdown, exiting anyway": 1
+      },
+      "router_native_test_closes": [
+        {
+          "time": "2026-10-05T02:01:55.171837686Z",
+          "sent": 20,
+          "received": 20,
+          "native_sent": 19,
+          "native_received": 19,
+          "tcp_sent_other": 1,
+          "native_probes_sent": 9,
+          "native_probe_write_errors": 0
+        }
+      ]
+    }
+  },
+  "short_independent_network_checks": {
+    "samples": 12,
+    "start_utc": "2026-10-05T02:03:53.180629+00:00",
+    "end_utc": "2026-10-05T02:05:43.181244+00:00",
+    "checks": [
+      {
+        "place": "container",
+        "target": "resolver_a",
+        "protocol": "dns_udp",
+        "checks": 12,
+        "failures": 0
+      },
+      {
+        "place": "container",
+        "target": "resolver_a",
+        "protocol": "tcp_443",
+        "checks": 12,
+        "failures": 0
+      },
+      {
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "checks": 12,
+        "failures": 5
+      },
+      {
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "tcp_443",
+        "checks": 12,
+        "failures": 0
+      },
+      {
+        "place": "host",
+        "target": "resolver_a",
+        "protocol": "dns_udp",
+        "checks": 12,
+        "failures": 0
+      },
+      {
+        "place": "host",
+        "target": "resolver_a",
+        "protocol": "tcp_443",
+        "checks": 12,
+        "failures": 0
+      },
+      {
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "checks": 12,
+        "failures": 6
+      },
+      {
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "tcp_443",
+        "checks": 12,
+        "failures": 1
+      }
+    ],
+    "failures": [
+      {
+        "time_utc": "2026-10-05T02:03:53.180629+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:04:13.179497+00:00",
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:04:23.180162+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:04:33.180427+00:00",
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:04:43.180538+00:00",
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:04:53.180595+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:05:03.180749+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:05:03.180749+00:00",
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:05:13.180861+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:05:23.180979+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "tcp_443",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:05:23.180979+00:00",
+        "place": "container",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      },
+      {
+        "time_utc": "2026-10-05T02:05:33.181133+00:00",
+        "place": "host",
+        "target": "resolver_b",
+        "protocol": "dns_udp",
+        "error": "timeout"
+      }
+    ],
+    "collector_errors": 0,
+    "namespace_errors": 0,
+    "local_metrics_failures": 0,
+    "not_running": 0,
+    "oom": 0,
+    "restart_count_max": 0,
+    "different_starts": 1,
+    "kernel_udp_receive_errors_delta": 0,
+    "native_queue_drop_deltas": {
+      "data": 0.0,
+      "probe_ack": 0.0
+    }
+  },
+  "local_client_packages": [
+    {
+      "node": "C",
+      "os": "linux",
+      "version": "v2.4.0-rc3",
+      "sha256": "c78d589ab0584795ec054df9f77ed74019d9a22fa7f3f8fb93db118671ac3097"
+    },
+    {
+      "node": "C",
+      "os": "win",
+      "version": "v2.4.0-rc3",
+      "sha256": "4a4e2fef3c5f609d84805351047373cc94a9baf48ec5ed0e26e4412a44033c43"
+    },
+    {
+      "node": "A",
+      "os": "linux",
+      "version": "v2.4.0-rc3",
+      "sha256": "c78d589ab0584795ec054df9f77ed74019d9a22fa7f3f8fb93db118671ac3097"
+    },
+    {
+      "node": "A",
+      "os": "win",
+      "version": "v2.4.0-rc3",
+      "sha256": "4a4e2fef3c5f609d84805351047373cc94a9baf48ec5ed0e26e4412a44033c43"
+    },
+    {
+      "node": "D",
+      "os": "linux",
+      "version": "v2.4.0-rc3",
+      "sha256": "c78d589ab0584795ec054df9f77ed74019d9a22fa7f3f8fb93db118671ac3097"
+    },
+    {
+      "node": "D",
+      "os": "win",
+      "version": "v2.4.0-rc3",
+      "sha256": "4a4e2fef3c5f609d84805351047373cc94a9baf48ec5ed0e26e4412a44033c43"
+    }
+  ],
+  "remaining_acceptance": [
+    "GitHub signing and provenance execution",
+    "Windows runtime and PowerShell execution",
+    "edge-case recovery in WAN",
+    "several real Discord sessions lasting at least two hours"
+  ]
+}

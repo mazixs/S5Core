@@ -1,7 +1,9 @@
 package ws
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -23,6 +25,10 @@ type UpgraderOpts struct {
 	// WriteBufferSize is the payload gorilla assembles into one socket
 	// write; see writeBufferSize.
 	WriteBufferSize int
+	// EarlyData accepts WebSocket frames that arrive behind the upgrade
+	// request, before the 101 has been sent (docs/veil-spec.md, 8.5).
+	// Without it gorilla refuses such a connection outright.
+	EarlyData bool
 }
 
 // writeBufferSize covers the shaper's largest message. A message longer than
@@ -62,9 +68,59 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error
 	if r.URL.Path != u.opts.Path {
 		return nil, fmt.Errorf("ws upgrade: path %q does not match %q", r.URL.Path, u.opts.Path)
 	}
+	if u.opts.EarlyData {
+		if h, ok := w.(http.Hijacker); ok {
+			w = earlyHijacker{ResponseWriter: w, h: h}
+		}
+	}
 	wsConn, err := u.up.Upgrade(w, r, nil)
 	if err != nil {
 		return nil, fmt.Errorf("ws upgrade: %w", err)
 	}
 	return WrapWithLimit(wsConn, u.opts.ReadLimit), nil
 }
+
+// earlyHijacker hands gorilla a connection whose buffered bytes have been
+// moved out of the bufio.Reader and in front of the socket: gorilla refuses
+// a non-empty buffer, but reads the same bytes happily from the connection.
+type earlyHijacker struct {
+	http.ResponseWriter
+	h http.Hijacker
+}
+
+func (e earlyHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	c, brw, err := e.h.Hijack()
+	if err != nil {
+		return c, brw, err
+	}
+	n := brw.Reader.Buffered()
+	if n == 0 {
+		return c, brw, nil
+	}
+	early, _ := brw.Peek(n)
+	prefix := append([]byte(nil), early...)
+	_, _ = brw.Discard(n)
+	return &prefixConn{Conn: c, prefix: prefix}, brw, nil
+}
+
+// prefixConn reads prefix before the socket. Reads are serialised by its
+// only reader, gorilla's frame reader.
+type prefixConn struct {
+	net.Conn
+	prefix []byte
+}
+
+func (p *prefixConn) Read(b []byte) (int, error) {
+	if len(p.prefix) > 0 {
+		n := copy(b, p.prefix)
+		p.prefix = p.prefix[n:]
+		if len(p.prefix) == 0 {
+			p.prefix = nil
+		}
+		return n, nil
+	}
+	return p.Conn.Read(b)
+}
+
+// NetConn keeps the socket reachable for tcptune and obfs.layerOf.
+func (p *prefixConn) NetConn() net.Conn { return p.Conn }

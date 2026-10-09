@@ -1,0 +1,53 @@
+package nativeudp
+
+import (
+	"bytes"
+	"github.com/mazixs/S5Core/pkg/veil"
+	"net"
+	"testing"
+	"time"
+)
+
+func TestAuditAcceptedPacketsHideQueueDrops(t *testing.T) {
+	clientKeys, err := veil.DeriveDatagram(bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40), veil.Context{}, veil.RoleClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverKeys, err := veil.DeriveDatagram(bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40), veil.Context{}, veil.RoleServer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub, err := Listen("127.0.0.1:0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	registered := hub.Register(serverKeys)
+	defer hub.Remove(registered)
+	client := NewSession(clientKeys)
+	c, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: hub.Port()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for i := 0; i < 128; i++ {
+		err = client.SealWrite(KindData, []byte("payload"), func(wire []byte) error { _, err := c.Write(wire); return err })
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for hub.Stats().Accepted < 128 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	stats := hub.Stats()
+	queued := len(registered.packets)
+	for len(registered.packets) > 0 {
+		p := <-registered.packets
+		p.Release()
+	}
+	if stats.Accepted != 128 || queued != 64 {
+		t.Fatalf("unexpected loopback receipt: %+v queued=%d", stats, queued)
+	}
+	t.Logf("accepted=%d delivered_queue=%d uncounted_queue_drops=%d tag=%d replay=%d auth=%d read_errors=%d", stats.Accepted, queued, int(stats.Accepted)-queued, stats.TagDrops, stats.ReplayDrops, stats.AuthDrops, stats.ReadErrors)
+}

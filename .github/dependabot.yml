@@ -7,3 +7,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  - package-ecosystem: gomod
+    directories: ["/", "/scripts/matrix"]
+    schedule:
+      interval: monthly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly

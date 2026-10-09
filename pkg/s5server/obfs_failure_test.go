@@ -155,7 +155,8 @@ func TestObfsFailuresAreDistinguishable(t *testing.T) {
 	tampered[len(tampered)-1] ^= 0x01
 	feed(t, observe, obfs.NewSaltHistory(16), tampered)
 
-	// 3. Обычный обрыв: соединение закрыто, не начав кадр.
+	// 3. Соединение закрыто клиентом без единого байта: это не отказ, а
+	//    idle_close (R4-9), и в счетчик отказов он не попадает.
 	feed(t, observe, nil, nil)
 
 	// 4. Зондирование открытым текстом: длина кадра разбирается в мусор, и
@@ -168,7 +169,7 @@ func TestObfsFailuresAreDistinguishable(t *testing.T) {
 	want := map[string]int64{
 		string(obfs.ReasonReplay):         1,
 		string(obfs.ReasonDecryptFail):    1,
-		string(obfs.ReasonEOFBeforeFrame): 2,
+		string(obfs.ReasonEOFBeforeFrame): 1,
 	}
 	for reason, n := range want {
 		if counts[reason] != n {
@@ -179,11 +180,12 @@ func TestObfsFailuresAreDistinguishable(t *testing.T) {
 		t.Errorf("unexpected reasons reported: %v", counts)
 	}
 
-	// Объем до отказа разделяет обрыв на нулевом байте и пира, успевшего
-	// прислать данные: обе записи eof_before_frame складываются в длину
-	// зонда, потому что чистое закрытие принесло ноль.
 	if got, want := buckets[string(obfs.ReasonEOFBeforeFrame)], int64(len(probe)); got != want {
-		t.Errorf("bytes before an end of stream: got %d, want %d (a clean close contributes 0, the probe its length)", got, want)
+		t.Errorf("bytes before an end of stream: got %d, want %d", got, want)
+	}
+	// Both series are there from the start, the ws one still at zero.
+	if got := idleCloses(t, reader); len(got) != 2 || got["obfs"] != 1 || got["ws"] != 0 {
+		t.Errorf("s5core_obfs_idle_closes_total = %v, want obfs 1 and ws 0", got)
 	}
 	if got, want := buckets[string(obfs.ReasonReplay)], int64(len(valid)); got != want {
 		t.Errorf("replay should report the whole flight (%d bytes), got %d", want, got)
@@ -238,6 +240,36 @@ func collectObfsFailures(t *testing.T, reader sdkmetric.Reader) (counts map[stri
 		t.Fatal("s5core_obfs_bytes_before_failure was never exported")
 	}
 	return counts, bytesBefore
+}
+
+// idleCloses reads s5core_obfs_idle_closes_total back and fails the test if
+// it carries any label besides transport.
+func idleCloses(t *testing.T, reader sdkmetric.Reader) map[string]int64 {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	byTransport := map[string]int64{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "s5core_obfs_idle_closes_total" {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				t.Fatalf("%s: unexpected data type %T", m.Name, m.Data)
+			}
+			for _, dp := range sum.DataPoints {
+				transport, ok := dp.Attributes.Value("transport")
+				if dp.Attributes.Len() != 1 || !ok {
+					t.Errorf("%s: labels %v, want transport only", m.Name, dp.Attributes.ToSlice())
+				}
+				byTransport[transport.AsString()] += dp.Value
+			}
+		}
+	}
+	return byTransport
 }
 
 // requireCleanLabels asserts the policy from docs/design/observability-policy.md:
@@ -324,8 +356,8 @@ func TestCleanEOFStaysEOF(t *testing.T) {
 	if _, err := srv.Read(make([]byte, 16)); !errors.Is(err, io.EOF) {
 		t.Fatalf("Read after EOF = %v, want io.EOF", err)
 	}
-	if len(seen) != 1 || seen[0] != obfs.ReasonEOFBeforeFrame {
-		t.Fatalf("observer saw %v, want exactly [%s]", seen, obfs.ReasonEOFBeforeFrame)
+	if len(seen) != 1 || seen[0] != obfs.ReasonIdleClose {
+		t.Fatalf("observer saw %v, want exactly [%s]", seen, obfs.ReasonIdleClose)
 	}
 	_ = srv.Close()
 }

@@ -69,9 +69,9 @@ func TestHalfCloseWorksTheSameOnBothTransports(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	const obfsPort = "19445"
+	obfsPort := reservePort(t)
 	srv := startServer(t, Config{
-		Port:           "19084",
+		Port:           reservePort(t),
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    false,
 		ObfsEnabled:    true,

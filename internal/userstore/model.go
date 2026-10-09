@@ -85,9 +85,22 @@ func (u *UserAccount) Identity(key []byte) identity.Identity {
 func (u *UserAccount) Policy() identity.Policy {
 	return identity.Policy{
 		Enabled:           u.Enabled,
-		ValidFrom:         u.ValidFrom,
-		ValidUntil:        u.ValidUntil,
+		ValidFrom:         copyTime(u.ValidFrom),
+		ValidUntil:        copyTime(u.ValidUntil),
 		TrafficLimitBytes: u.TrafficLimitBytes,
 		TrafficUsedBytes:  u.TrafficUsedBytes,
 	}
+}
+
+func copyTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func (u UserAccount) clone() UserAccount {
+	u.ValidFrom, u.ValidUntil = copyTime(u.ValidFrom), copyTime(u.ValidUntil)
+	return u
 }

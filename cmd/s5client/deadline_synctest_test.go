@@ -96,6 +96,9 @@ func testClientParams() clientParams {
 		MTU:              1400,
 		DialTimeout:      10 * time.Second,
 		HandshakeTimeout: 15 * time.Second,
+		// Off: the tests built on this check the reply codes the
+		// application gets; optimisticParams turns it on.
+		OptimisticConnect: false,
 	}
 }
 

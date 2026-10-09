@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /home/mazix/Documents/GitHub/S5Core
+cd <workspace>
 base=/tmp/s5core-implementation-20260921
 probe=$base/probe-final.test
 export S5_PERF_CLIENT=$base/final-client S5_PERF_SERVER=$base/candidate-server

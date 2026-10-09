@@ -328,15 +328,18 @@ func TestTheServerAdvisesEveryClientAndChangesItsMindWithoutARestart(t *testing.
 		t.Fatal("no advice arrived after the refused update")
 	}
 
-	// Cleared: nothing is sent, and the client's callback stays silent.
+	// Cleared: an explicit empty frame withdraws the prior recommendation.
 	if err := srv.UpdateTransportAdvice(""); err != nil {
 		t.Fatalf("clearing the advice: %v", err)
 	}
 	dialAdvised(t, port, echo, obfs.Config{OnAdvice: onAdvice})
 	select {
 	case a := <-got:
-		t.Fatalf("an advice %+v arrived after the advice was cleared", a)
+		if a != (obfs.Advice{}) {
+			t.Fatalf("withdrawal was %+v", a)
+		}
 	default:
+		t.Fatal("withdrawal frame did not arrive")
 	}
 }
 

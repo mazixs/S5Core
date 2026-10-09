@@ -25,5 +25,7 @@ func infoOf(sc syscall.Conn) (Info, bool) {
 		Retransmits: ti.Retransmits,
 		SinceData:   time.Duration(ti.Last_data_recv) * time.Millisecond,
 		SinceAck:    time.Duration(ti.Last_ack_recv) * time.Millisecond,
+		State:       ti.State,
+		BytesAcked:  ti.Bytes_acked,
 	}, true
 }

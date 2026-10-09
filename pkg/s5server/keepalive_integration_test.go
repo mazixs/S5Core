@@ -23,9 +23,9 @@ func TestAKeepaliveKeepsTheServerFromTimingOut(t *testing.T) {
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
-	const obfsPort = "19446"
+	obfsPort := reservePort(t)
 	startServer(t, Config{
-		Port:           "19082",
+		Port:           reservePort(t),
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    true,
 		UsersFile:      usersPath,

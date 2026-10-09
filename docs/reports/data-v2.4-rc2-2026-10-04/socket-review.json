@@ -1,0 +1,797 @@
+{
+  "method": {
+    "transport": "wss",
+    "rounds": 3,
+    "load": "one router CPU busy-loop worker",
+    "per_socket_source": "server host /proc/net/udp and udp6; inodes associated with test server/origin process file descriptors",
+    "sample_interval_s": 0.2,
+    "pid_refresh_interval_s": 1,
+    "scope_limit": "server-side only; short-lived sockets between polls can escape observation; no reconstruction of earlier episode"
+  },
+  "observations": {
+    "cells": 6,
+    "snapshots": 1272,
+    "observed_test_sockets": 32,
+    "kernel_drops_on_observed_test_sockets": 0,
+    "earlier_episode_reproduced": false,
+    "earlier_episode_attributed": false
+  },
+  "cells": [
+    {
+      "variant": "rc1",
+      "round": 1,
+      "status": "ok",
+      "foreign_cores": {
+        "client": 1.116,
+        "server": 0.09
+      },
+      "client_log_counts": {},
+      "server_log_counts": {},
+      "result": {
+        "h3/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 1909.702,
+          "p90_ms": 1909.702,
+          "p99_ms": 1909.702,
+          "max_ms": 1909.702,
+          "mbps": 4.392624754776835,
+          "bytes": 8388608,
+          "seconds": 1.915239154
+        },
+        "h3/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.496,
+          "p90_ms": 58.091,
+          "p99_ms": 126.227,
+          "max_ms": 333.847,
+          "bytes": 2400,
+          "seconds": 5.790088077,
+          "extra": {
+            "handshake_p50_ms": 277.838,
+            "handshake_p99_ms": 277.838,
+            "ttfb_p50_ms": 53.396,
+            "ttfb_p99_ms": 126.099
+          }
+        },
+        "https/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 1014.467,
+          "p90_ms": 1014.467,
+          "p99_ms": 1014.467,
+          "max_ms": 1014.467,
+          "mbps": 8.268975016308357,
+          "bytes": 8388608,
+          "seconds": 1.023043462
+        },
+        "https/small-new": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 327.438,
+          "p90_ms": 330.219,
+          "p99_ms": 334.146,
+          "max_ms": 334.534,
+          "bytes": 360,
+          "seconds": 5.243395154,
+          "extra": {
+            "handshake_p50_ms": 273.036,
+            "handshake_p99_ms": 277.644,
+            "ttfb_p50_ms": 327.268,
+            "ttfb_p99_ms": 333.962
+          }
+        },
+        "https/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.741,
+          "p90_ms": 54.448,
+          "p99_ms": 55.675,
+          "max_ms": 90.766,
+          "bytes": 2400,
+          "seconds": 5.7477039229999995,
+          "extra": {
+            "ttfb_p50_ms": 53.571,
+            "ttfb_p99_ms": 55.523
+          }
+        },
+        "tcp/connect": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 269.472,
+          "p90_ms": 272.498,
+          "p99_ms": 277.932,
+          "max_ms": 279.399,
+          "bytes": 960,
+          "seconds": 4.048767538
+        },
+        "udp/rtt-64": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.172,
+          "p90_ms": 53.902,
+          "p99_ms": 54.769,
+          "max_ms": 55.647,
+          "bytes": 12800,
+          "seconds": 5.547991154,
+          "extra": {
+            "loss_pct": 0
+          }
+        },
+        "udp/stream-40mbit": {
+          "n": 1000,
+          "errors": 0,
+          "p50_ms": 52.871,
+          "p90_ms": 498.196,
+          "p99_ms": 784.97,
+          "max_ms": 787.133,
+          "mbps": 4.994056760326664,
+          "bytes": 2400000,
+          "seconds": 3.05112277,
+          "extra": {
+            "duplicates": 0,
+            "loss_pct": 0,
+            "offered_mbit": 40,
+            "reordered": 207
+          }
+        }
+      },
+      "input_sha256": {
+        "run.json": "86c9593cf160a8dad1774a0e19a1cecc7a2a823e0d2a97b6dfff62af4dcb4aa3",
+        "result.json": "9545f4d583c9a4c3d1033566091b3945a72d04282ed4d050df4dca749cccf02c"
+      }
+    },
+    {
+      "variant": "rc1",
+      "round": 2,
+      "status": "ok",
+      "foreign_cores": {
+        "client": 1.085,
+        "server": 0.101
+      },
+      "client_log_counts": {},
+      "server_log_counts": {},
+      "result": {
+        "h3/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 1089.924,
+          "p90_ms": 1089.924,
+          "p99_ms": 1089.924,
+          "max_ms": 1089.924,
+          "mbps": 7.696504560726935,
+          "bytes": 8388608,
+          "seconds": 1.095153847
+        },
+        "h3/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.097,
+          "p90_ms": 54.023,
+          "p99_ms": 81.371,
+          "max_ms": 325.939,
+          "bytes": 2400,
+          "seconds": 5.633545077,
+          "extra": {
+            "handshake_p50_ms": 273.07,
+            "handshake_p99_ms": 273.07,
+            "ttfb_p50_ms": 53.003,
+            "ttfb_p99_ms": 81.279
+          }
+        },
+        "https/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 848.078,
+          "p90_ms": 848.078,
+          "p99_ms": 848.078,
+          "max_ms": 848.078,
+          "mbps": 9.891313918056827,
+          "bytes": 8388608,
+          "seconds": 0.852692384
+        },
+        "https/small-new": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 325.969,
+          "p90_ms": 329.569,
+          "p99_ms": 329.958,
+          "max_ms": 331.297,
+          "bytes": 360,
+          "seconds": 5.218461077,
+          "extra": {
+            "handshake_p50_ms": 272.639,
+            "handshake_p99_ms": 275.14,
+            "ttfb_p50_ms": 325.795,
+            "ttfb_p99_ms": 329.692
+          }
+        },
+        "https/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 52.777,
+          "p90_ms": 53.452,
+          "p99_ms": 55.233,
+          "max_ms": 55.867,
+          "bytes": 2400,
+          "seconds": 5.618943154,
+          "extra": {
+            "ttfb_p50_ms": 52.627,
+            "ttfb_p99_ms": 55.06
+          }
+        },
+        "tcp/connect": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 267.489,
+          "p90_ms": 269.753,
+          "p99_ms": 270.11,
+          "max_ms": 270.494,
+          "bytes": 960,
+          "seconds": 4.005708847
+        },
+        "udp/rtt-64": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 51.862,
+          "p90_ms": 52.223,
+          "p99_ms": 52.855,
+          "max_ms": 53.425,
+          "bytes": 12800,
+          "seconds": 5.404996231,
+          "extra": {
+            "loss_pct": 0
+          }
+        },
+        "udp/stream-40mbit": {
+          "n": 1000,
+          "errors": 0,
+          "p50_ms": 52.352,
+          "p90_ms": 539.666,
+          "p99_ms": 816.651,
+          "max_ms": 825.237,
+          "mbps": 4.99961061366004,
+          "bytes": 2400000,
+          "seconds": 3.088253692,
+          "extra": {
+            "duplicates": 0,
+            "loss_pct": 0,
+            "offered_mbit": 40,
+            "reordered": 201
+          }
+        }
+      },
+      "input_sha256": {
+        "run.json": "22588fe8def8720e43fb5111eda63c4733c4def0b464c0842e470eaa7f068e4a",
+        "result.json": "fea064d6c226c0eb7a2407b2d2b522b601500c67bdd649baa04f466bb6a9cbf5"
+      }
+    },
+    {
+      "variant": "rc1",
+      "round": 3,
+      "status": "ok",
+      "foreign_cores": {
+        "client": 1.087,
+        "server": 0.094
+      },
+      "client_log_counts": {},
+      "server_log_counts": {},
+      "result": {
+        "h3/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 1667.612,
+          "p90_ms": 1667.612,
+          "p99_ms": 1667.612,
+          "max_ms": 1667.612,
+          "mbps": 5.030311374987721,
+          "bytes": 8388608,
+          "seconds": 1.672343154
+        },
+        "h3/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.178,
+          "p90_ms": 54.468,
+          "p99_ms": 56.266,
+          "max_ms": 325.544,
+          "bytes": 2400,
+          "seconds": 5.614825077,
+          "extra": {
+            "handshake_p50_ms": 272.41,
+            "handshake_p99_ms": 272.41,
+            "ttfb_p50_ms": 53.071,
+            "ttfb_p99_ms": 56.174
+          }
+        },
+        "https/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 954.953,
+          "p90_ms": 954.953,
+          "p99_ms": 954.953,
+          "max_ms": 954.953,
+          "mbps": 8.78431433128939,
+          "bytes": 8388608,
+          "seconds": 0.959516846
+        },
+        "https/small-new": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 325.75,
+          "p90_ms": 329.211,
+          "p99_ms": 330.149,
+          "max_ms": 330.506,
+          "bytes": 360,
+          "seconds": 5.205684923,
+          "extra": {
+            "handshake_p50_ms": 272.476,
+            "handshake_p99_ms": 275.871,
+            "ttfb_p50_ms": 325.562,
+            "ttfb_p99_ms": 329.857
+          }
+        },
+        "https/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.5,
+          "p90_ms": 54.003,
+          "p99_ms": 57.074,
+          "max_ms": 58.487,
+          "bytes": 2400,
+          "seconds": 5.695411847,
+          "extra": {
+            "ttfb_p50_ms": 53.347,
+            "ttfb_p99_ms": 56.904
+          }
+        },
+        "tcp/connect": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 267.588,
+          "p90_ms": 271.305,
+          "p99_ms": 272.715,
+          "max_ms": 275.819,
+          "bytes": 960,
+          "seconds": 4.029420539
+        },
+        "udp/rtt-64": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 52.283,
+          "p90_ms": 52.816,
+          "p99_ms": 53.606,
+          "max_ms": 54.792,
+          "bytes": 12800,
+          "seconds": 5.448869231,
+          "extra": {
+            "loss_pct": 0
+          }
+        },
+        "udp/stream-40mbit": {
+          "n": 1000,
+          "errors": 0,
+          "p50_ms": 53.202,
+          "p90_ms": 545.922,
+          "p99_ms": 785.835,
+          "max_ms": 787.963,
+          "mbps": 4.992215658923939,
+          "bytes": 2400000,
+          "seconds": 3.051663308,
+          "extra": {
+            "duplicates": 0,
+            "loss_pct": 0,
+            "offered_mbit": 40,
+            "reordered": 207
+          }
+        }
+      },
+      "input_sha256": {
+        "run.json": "554f7467dcd6977426fca50c2c5deaad6d44d17ca527d3116580f4de665c901b",
+        "result.json": "1e3240ef9f6172d4a38ad50df5376a4f9938a55a788b5fe8bdd3f2e7e143b109"
+      }
+    },
+    {
+      "variant": "rc2",
+      "round": 1,
+      "status": "ok",
+      "foreign_cores": {
+        "client": 1.094,
+        "server": 0.108
+      },
+      "client_log_counts": {},
+      "server_log_counts": {},
+      "result": {
+        "h3/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 4761.477,
+          "p90_ms": 4761.477,
+          "p99_ms": 4761.477,
+          "max_ms": 4761.477,
+          "mbps": 1.7617659394343392,
+          "bytes": 8388608,
+          "seconds": 4.766432077
+        },
+        "h3/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.296,
+          "p90_ms": 54.352,
+          "p99_ms": 55.484,
+          "max_ms": 332.146,
+          "bytes": 2400,
+          "seconds": 5.623123616,
+          "extra": {
+            "handshake_p50_ms": 277.035,
+            "handshake_p99_ms": 277.035,
+            "ttfb_p50_ms": 53.192,
+            "ttfb_p99_ms": 55.389
+          }
+        },
+        "https/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 942.32,
+          "p90_ms": 942.32,
+          "p99_ms": 942.32,
+          "max_ms": 942.32,
+          "mbps": 8.902072708109865,
+          "bytes": 8388608,
+          "seconds": 0.948421693
+        },
+        "https/small-new": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 324.695,
+          "p90_ms": 329.56,
+          "p99_ms": 335.602,
+          "max_ms": 336.506,
+          "bytes": 360,
+          "seconds": 5.224272385,
+          "extra": {
+            "handshake_p50_ms": 271.434,
+            "handshake_p99_ms": 281.686,
+            "ttfb_p50_ms": 324.516,
+            "ttfb_p99_ms": 335.448
+          }
+        },
+        "https/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.557,
+          "p90_ms": 54.683,
+          "p99_ms": 57.241,
+          "max_ms": 57.464,
+          "bytes": 2400,
+          "seconds": 5.7296338460000005,
+          "extra": {
+            "ttfb_p50_ms": 53.418,
+            "ttfb_p99_ms": 57.099
+          }
+        },
+        "tcp/connect": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 267.692,
+          "p90_ms": 271.009,
+          "p99_ms": 273.97,
+          "max_ms": 280.119,
+          "bytes": 960,
+          "seconds": 4.035581923
+        },
+        "udp/rtt-64": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.355,
+          "p90_ms": 53.923,
+          "p99_ms": 55.081,
+          "max_ms": 55.412,
+          "bytes": 12800,
+          "seconds": 5.563693078,
+          "extra": {
+            "loss_pct": 0
+          }
+        },
+        "udp/stream-40mbit": {
+          "n": 1000,
+          "errors": 0,
+          "p50_ms": 53.504,
+          "p90_ms": 595.562,
+          "p99_ms": 842.155,
+          "max_ms": 887.599,
+          "mbps": 4.999051450816588,
+          "bytes": 2400000,
+          "seconds": 3.160239077,
+          "extra": {
+            "duplicates": 0,
+            "loss_pct": 0,
+            "offered_mbit": 40,
+            "reordered": 207
+          }
+        }
+      },
+      "input_sha256": {
+        "run.json": "f56170a2a4913494a818ad609b4501de54bdcdc17499d69e97f53305fa8ada1c",
+        "result.json": "9be2d758d53f2ee665d69e541f0afcaafac6f0885e2020adc43008b8d7cdf249"
+      }
+    },
+    {
+      "variant": "rc2",
+      "round": 2,
+      "status": "ok",
+      "foreign_cores": {
+        "client": 1.125,
+        "server": 0.109
+      },
+      "client_log_counts": {},
+      "server_log_counts": {},
+      "result": {
+        "h3/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 935.551,
+          "p90_ms": 935.551,
+          "p99_ms": 935.551,
+          "max_ms": 935.551,
+          "mbps": 8.966487062392083,
+          "bytes": 8388608,
+          "seconds": 0.940482923
+        },
+        "h3/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.212,
+          "p90_ms": 54.535,
+          "p99_ms": 77.771,
+          "max_ms": 333.954,
+          "bytes": 2400,
+          "seconds": 5.654311923,
+          "extra": {
+            "handshake_p50_ms": 280.313,
+            "handshake_p99_ms": 280.313,
+            "ttfb_p50_ms": 53.091,
+            "ttfb_p99_ms": 77.678
+          }
+        },
+        "https/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 904.836,
+          "p90_ms": 904.836,
+          "p99_ms": 904.836,
+          "max_ms": 904.836,
+          "mbps": 9.270860133770096,
+          "bytes": 8388608,
+          "seconds": 0.910251384
+        },
+        "https/small-new": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 323.322,
+          "p90_ms": 330.207,
+          "p99_ms": 330.361,
+          "max_ms": 330.405,
+          "bytes": 360,
+          "seconds": 5.197476308,
+          "extra": {
+            "handshake_p50_ms": 270.467,
+            "handshake_p99_ms": 276.002,
+            "ttfb_p50_ms": 323.13,
+            "ttfb_p99_ms": 330.078
+          }
+        },
+        "https/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 52.931,
+          "p90_ms": 54.213,
+          "p99_ms": 57.736,
+          "max_ms": 62.187,
+          "bytes": 2400,
+          "seconds": 5.649916077,
+          "extra": {
+            "ttfb_p50_ms": 52.792,
+            "ttfb_p99_ms": 57.54
+          }
+        },
+        "tcp/connect": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 265.098,
+          "p90_ms": 271.103,
+          "p99_ms": 272.282,
+          "max_ms": 274.02,
+          "bytes": 960,
+          "seconds": 4.002412154
+        },
+        "udp/rtt-64": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 52,
+          "p90_ms": 52.392,
+          "p99_ms": 53.263,
+          "max_ms": 53.839,
+          "bytes": 12800,
+          "seconds": 5.428332539,
+          "extra": {
+            "loss_pct": 0
+          }
+        },
+        "udp/stream-40mbit": {
+          "n": 1000,
+          "errors": 0,
+          "p50_ms": 52.37,
+          "p90_ms": 541.297,
+          "p99_ms": 782.35,
+          "max_ms": 830.142,
+          "mbps": 4.996518446765121,
+          "bytes": 2400000,
+          "seconds": 3.097913462,
+          "extra": {
+            "duplicates": 0,
+            "loss_pct": 0,
+            "offered_mbit": 40,
+            "reordered": 199
+          }
+        }
+      },
+      "input_sha256": {
+        "run.json": "065fdee1b4fcfd65d84a0a1078f5560572200c47f79f4dd21c8e1cb2d4eb71eb",
+        "result.json": "c6913ce432c5344a633dbc7811ea00394015370fa439b15e34518d69cc50876c"
+      }
+    },
+    {
+      "variant": "rc2",
+      "round": 3,
+      "status": "ok",
+      "foreign_cores": {
+        "client": 1.071,
+        "server": 0.101
+      },
+      "client_log_counts": {},
+      "server_log_counts": {},
+      "result": {
+        "h3/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 905.863,
+          "p90_ms": 905.863,
+          "p99_ms": 905.863,
+          "max_ms": 905.863,
+          "mbps": 9.260342448960852,
+          "bytes": 8388608,
+          "seconds": 0.910726077
+        },
+        "h3/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 54.017,
+          "p90_ms": 54.823,
+          "p99_ms": 58.481,
+          "max_ms": 332.111,
+          "bytes": 2400,
+          "seconds": 5.6969918459999995,
+          "extra": {
+            "handshake_p50_ms": 276.832,
+            "handshake_p99_ms": 276.832,
+            "ttfb_p50_ms": 53.906,
+            "ttfb_p99_ms": 58.385
+          }
+        },
+        "https/large": {
+          "n": 1,
+          "errors": 0,
+          "p50_ms": 944.066,
+          "p90_ms": 944.066,
+          "p99_ms": 944.066,
+          "max_ms": 944.066,
+          "mbps": 8.88561025961076,
+          "bytes": 8388608,
+          "seconds": 0.949442846
+        },
+        "https/small-new": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 323.581,
+          "p90_ms": 327.449,
+          "p99_ms": 328.196,
+          "max_ms": 329.281,
+          "bytes": 360,
+          "seconds": 5.183914616,
+          "extra": {
+            "handshake_p50_ms": 270.31,
+            "handshake_p99_ms": 274.694,
+            "ttfb_p50_ms": 323.389,
+            "ttfb_p99_ms": 327.896
+          }
+        },
+        "https/small-reuse": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 53.265,
+          "p90_ms": 53.908,
+          "p99_ms": 56.241,
+          "max_ms": 57.625,
+          "bytes": 2400,
+          "seconds": 5.675663154,
+          "extra": {
+            "ttfb_p50_ms": 53.116,
+            "ttfb_p99_ms": 56.107
+          }
+        },
+        "tcp/connect": {
+          "n": 15,
+          "errors": 0,
+          "p50_ms": 266.635,
+          "p90_ms": 271.186,
+          "p99_ms": 274.566,
+          "max_ms": 286.753,
+          "bytes": 960,
+          "seconds": 4.024666385
+        },
+        "udp/rtt-64": {
+          "n": 100,
+          "errors": 0,
+          "p50_ms": 52.628,
+          "p90_ms": 53.223,
+          "p99_ms": 54.852,
+          "max_ms": 71.101,
+          "bytes": 12800,
+          "seconds": 5.508385231,
+          "extra": {
+            "loss_pct": 0
+          }
+        },
+        "udp/stream-40mbit": {
+          "n": 1000,
+          "errors": 0,
+          "p50_ms": 51.561,
+          "p90_ms": 497.391,
+          "p99_ms": 781.404,
+          "max_ms": 783.481,
+          "mbps": 5.002605523710265,
+          "bytes": 2400000,
+          "seconds": 3.047394154,
+          "extra": {
+            "duplicates": 0,
+            "loss_pct": 0,
+            "offered_mbit": 40,
+            "reordered": 205
+          }
+        }
+      },
+      "input_sha256": {
+        "run.json": "24c916cd66bf4ef2ea5dd56441c203f29538ed5206ceab1a14187ec285a843d1",
+        "result.json": "05caaf28ee50745eaf570c1b1b5b7f6024f04c1880065d20437c923f4f173aef"
+      }
+    }
+  ],
+  "build_source": {
+    "matrix": {
+      "built": "2026-10-04T18:06:24",
+      "matrix_linux_arm64_sha256": "cc3340f29764b3f4006f0949ce3ecb22f3c87bd421242ddd0705accdcca16135",
+      "matrix_sha256": "74bf57548720becab068723734114ff0a16e6185b94f1b7179abe81908fbd72c",
+      "sha256": "74bf57548720becab068723734114ff0a16e6185b94f1b7179abe81908fbd72c"
+    },
+    "rc1": {
+      "built": "2026-10-04T18:06:27",
+      "commit": "11f387541287d79024b950f63c8e2c7cb685aa61",
+      "dirty": false,
+      "ref": "v2.4.0-rc1",
+      "s5client_linux_arm64_sha256": "42521bcf97b3b7972e72ed274aaa7aa19cdd1ff6a3af64fb15115c3b2198087f",
+      "s5client_sha256": "46aabc8aad1fb8a4bb372b01dd42c30c01bbef37bd183345d0dd08a2cde81720",
+      "s5core_sha256": "5a40129bc9ade80af6aa2069f1ea7f30014d1afbb0b6435bc17381bb080f6bb8"
+    },
+    "rc2": {
+      "built": "2026-10-04T18:06:30",
+      "commit": "ba3f104c1260ccb7aadfb0107f72bf73cd6b4b09",
+      "dirty": false,
+      "ref": "v2.4.0-rc2",
+      "s5client_linux_arm64_sha256": "6a0e17100e1518d81d95725cec2719bf7b9df2e38c205efd0bd5625d1308db6a",
+      "s5client_sha256": "e4483a5018872765ffa24469c0f98897d457b405e5d29c8671cdca1caef8c06f",
+      "s5core_sha256": "6e65210df5e52fde2fd8beb9a39ef68574926844ee96fc3e6cc97df3b93ae31e"
+    }
+  }
+}

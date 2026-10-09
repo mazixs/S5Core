@@ -173,7 +173,7 @@ func TestSessionsByStateShowTheBugReport(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	const port = "19085"
+	port := reservePort(t)
 	startServer(t, Config{
 		Port:        port,
 		ListenIP:    "127.0.0.1",
@@ -247,7 +247,7 @@ func TestSessionTransitionsAreCountedWithClosedLabels(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	const port = "19086"
+	port := reservePort(t)
 	startServer(t, Config{
 		Port:             port,
 		ListenIP:         "127.0.0.1",

@@ -20,6 +20,9 @@ import (
 // DefaultMTU is the default maximum frame size on the wire.
 const DefaultMTU = 1400
 
+// MaxMTU includes the two-byte length and the largest uint16 ciphertext.
+const MaxMTU = 2 + 65535
+
 // MinMTU is the smallest acceptable MTU. It must accommodate the 2-byte
 // masked length, the kind byte and the two 2-byte length fields inside the
 // frame, the 16-byte GCM tag, and a payload worth carrying.
@@ -341,10 +344,6 @@ type conn struct {
 	// connection contributes one event rather than one per retry.
 	failed bool
 
-	// replayed records that this connection's salt had been seen before. The
-	// refusal is deliberately not issued here - see Read.
-	replayed bool
-
 	// Half-close state. writeClosed is set by CloseWrite under writeMu and
 	// makes every later Write fail, the way a TCP socket does; readClosed is
 	// set by the reader under readMu when a FIN frame arrives. They are
@@ -377,20 +376,18 @@ func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
 		return nil, fmt.Errorf("obfs: Role must be RoleClient or RoleServer; the two ends share a key and must not share a nonce space")
 	}
 
-	if cfg.MTU <= 0 {
+	if err := ValidateMTU(cfg.MTU); err != nil {
+		return nil, err
+	}
+	if cfg.MTU == 0 {
 		cfg.MTU = DefaultMTU
 	}
 
 	if cfg.MTU <= frameOverhead {
 		return nil, fmt.Errorf("obfs: MTU %d leaves no room for a payload, it must exceed %d", cfg.MTU, frameOverhead)
 	}
-	// What is left of the MTU is shared by payload and padding. The payload
-	// length is a 16-bit field, and so is the frame length on the wire, so
-	// the share is capped there however large the MTU is.
+	// Ciphertext, including its AEAD tag, must fit the uint16 length.
 	budget := cfg.MTU - frameOverhead
-	if budget > 65535-(minCiphertext-16) {
-		budget = 65535 - (minCiphertext - 16)
-	}
 
 	// Padding is drawn per frame out of the same budget. Capping it at half
 	// keeps a large MaxPadding from squeezing the payload down to a handful
@@ -631,6 +628,9 @@ func (c *conn) encoding() PrologueEncoding {
 // timing is the whole of what Config.RefuseLinger buys (docs/design/decoy.md).
 func (c *conn) readOpening() error {
 	if err := c.ensure(saltSize, FrameAwaitHeader); err != nil {
+		if c.bytesRead == 0 && peerLeft(err) {
+			return c.idleClose(err)
+		}
 		return c.fail(ReasonEOFBeforeFrame, err)
 	}
 	if !looksEncoded(c.readBuf[c.readLo : c.readLo+saltSize]) {
@@ -781,6 +781,9 @@ func batchBytes(frames, frameLen, limit int) int {
 //
 // Zero-alloc hot path: all buffers are pre-allocated and reused.
 func (c *conn) Write(b []byte) (int, error) {
+	if len(b) == 0 {
+		return 0, nil
+	}
 	c.writeMu.Lock()
 	yield := len(b) > c.maxFrame && yieldDue(&c.writeYieldAt)
 	defer func() {
@@ -840,9 +843,6 @@ func (c *conn) Write(b []byte) (int, error) {
 			n, taken := c.encodeFrame(c.writeBuf[batch:batch+c.maxFrame], b[written:], target)
 			batch += n
 			written += taken
-			// An empty write still produces one frame, which is what this
-			// layer did before and what a caller passing an empty buffer
-			// gets from any net.Conn.
 			if written >= len(b) || batch+c.maxFrame > len(c.writeBuf) {
 				break
 			}
@@ -862,20 +862,13 @@ func (c *conn) Write(b []byte) (int, error) {
 // frame, and returns the frame's length on the wire together with the number
 // of payload bytes it took from b.
 //
-// Padding is drawn first and the payload takes what is left of the budget, so
-// the frame is at most the MTU whatever the draw was.
+// Payload segmentation is fixed before padding. Padding uses only the room
+// left in that frame, so bulk writes do not need extra frames to carry it.
 func (c *conn) encodeFrame(buf []byte, b []byte, target int) (int, int) {
+	take := min(len(b), target, c.payloadBudget)
 	padLen := 0
-	if c.padCap > 0 {
-		padLen = int(c.randUint16()) % (c.padCap + 1)
-	}
-
-	take := len(b)
-	if take > target {
-		take = target
-	}
-	if take > c.payloadBudget-padLen {
-		take = c.payloadBudget - padLen
+	if cap := min(c.padCap, c.payloadBudget-take); cap > 0 {
+		padLen = int(c.randUint16()) % (cap + 1)
 	}
 
 	plaintextLen := 1 + 2 + take + 2 + padLen
@@ -1089,16 +1082,6 @@ func (c *conn) readFrame(b []byte) (int, error) {
 		if err := c.readOpening(); err != nil {
 			return 0, err
 		}
-		if !c.cfg.History.Accept(c.prologue) {
-			// Do not refuse yet. Refusing at the salt would answer a replay
-			// before the first frame has even arrived, while a wrong PSK is
-			// answered a whole frame later - and that difference in timing is
-			// precisely what an active prober measures. The connection is
-			// marked instead and goes on to read and decrypt the frame like
-			// any other; the refusal comes below, at the point where a bad
-			// tag would have produced one.
-			c.replayed = true
-		}
 	}
 
 	if err := c.ensure(2, FrameAwaitHeader); err != nil {
@@ -1145,8 +1128,12 @@ func (c *conn) readFrame(b []byte) (int, error) {
 	// passed: whoever is sending a recording is precisely the party that
 	// does not hold the key, and marking it first would exempt them from
 	// the refusal drain (plan task Ф5-6).
-	if c.replayed {
-		return 0, c.fail(ReasonReplay, errors.New("session salt has been used before"))
+	if !c.authenticated {
+		// Authenticate before claiming history capacity. Check and insert are
+		// atomic across listeners, so concurrent copies have one winner.
+		if reason := c.cfg.History.record(c.prologue); reason != "" {
+			return 0, c.fail(reason, errors.New("session opening history refused"))
+		}
 	}
 	c.authenticated = true
 	// The frame is whole and authentic: whatever the reader does next, it is
@@ -1161,6 +1148,11 @@ func (c *conn) readFrame(b []byte) (int, error) {
 	payloadLen := int(binary.BigEndian.Uint16(plaintext[1:3]))
 	if len(plaintext) < 3+payloadLen+2 {
 		return 0, c.fail(ReasonShortFrame, fmt.Errorf("declared payload %d exceeds plaintext %d", payloadLen, len(plaintext)))
+	}
+	padOffset := 3 + payloadLen
+	padLen := int(binary.BigEndian.Uint16(plaintext[padOffset : padOffset+2]))
+	if len(plaintext) != padOffset+2+padLen {
+		return 0, c.fail(ReasonShortFrame, errors.New("frame padding length mismatch"))
 	}
 
 	switch kind {
@@ -1223,6 +1215,15 @@ func (c *conn) readFrame(b []byte) (int, error) {
 // a relay error. The event is still observed - only the error value is left
 // alone.
 func (c *conn) fail(reason FailureReason, cause error) error {
+	var netErr net.Error
+	if c.authenticated && errors.As(cause, &netErr) && netErr.Timeout() {
+		// Timeouts belong to the session budget, not to authentication or
+		// malformed-frame counters. Do not latch away a subsequent failure.
+		return cause
+	}
+	if c.authenticated && errors.Is(cause, io.EOF) && !c.readClosed {
+		cause = io.ErrUnexpectedEOF
+	}
 	// A stream that ends between frames was not refused, it ended; every
 	// other failure is a frame the reader would not accept.
 	if !errors.Is(cause, io.EOF) {
@@ -1239,6 +1240,38 @@ func (c *conn) fail(reason FailureReason, cause error) error {
 		return cause
 	}
 	return &FrameError{Reason: reason, BytesBefore: c.bytesRead, Err: cause}
+}
+
+// idleClose ends a server connection whose peer ended the transport before
+// a byte of the obfuscation stream arrived: a client's spare that was never
+// used (plan task R4-9), or a connect-and-drop scan. It is reported, but as
+// idle_close, apart from the refusals, and it is not drained. The drain only
+// keeps the moment of closing from telling one refusal from another; here
+// it would end on the same end of stream at once, so skipping it changes
+// nothing the other side can measure.
+func (c *conn) idleClose(cause error) error {
+	if !c.failed {
+		c.failed = true
+		if c.cfg.OnFailure != nil {
+			c.cfg.OnFailure(&FrameError{Reason: ReasonIdleClose, Err: cause})
+		}
+	}
+	if errors.Is(cause, io.EOF) {
+		return cause
+	}
+	return &FrameError{Reason: ReasonIdleClose, Err: cause}
+}
+
+// peerLeft reports whether a read error means the peer, or the path to it,
+// ended the transport: anything but a deadline and this end's own Close. A
+// WebSocket peer that hangs up surfaces as a close error rather than io.EOF,
+// which is why this is not errors.Is(err, io.EOF).
+func peerLeft(err error) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return false
+	}
+	return !errors.Is(err, net.ErrClosed)
 }
 
 // lingerAfterRefusal holds a connection that never authenticated, reading

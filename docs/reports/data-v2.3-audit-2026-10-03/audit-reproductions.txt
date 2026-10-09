@@ -1,0 +1,30 @@
+=== RUN   TestAuditTailAddressNeverTried
+    audit_release_test.go:40: resolved_addresses=7 reachable_index=7 attempted=6 skipped_live_address=true elapsed=238.015µs error=dial tcp: connection refused
+--- PASS: TestAuditTailAddressNeverTried (0.00s)
+=== RUN   TestAuditIPv6MaximumDatagramOverflowsTunnelPrefix
+    audit_release_test.go:86: real_ipv6_udp_payload=65527 ipv6_socks_frame=65549 declared_16bit_frame_length=13 framing_corrupted=true
+--- PASS: TestAuditIPv6MaximumDatagramOverflowsTunnelPrefix (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.010s
+=== RUN   TestAuditOversizeDropsWhileNativeUnavailable
+2000/01/01 02:00:07 INFO Native UDP not answering; association using 0x83 conn="" addr=192.0.2.1:4000 unanswered_probes=3
+2000/01/01 02:00:20 INFO Native UDP: the application keeps sending datagrams longer than native carries; they use 0x83 conn="" max_payload=1374
+    audit_release_test.go:29: native_up=false payload_with_socks_header=1375 dropped=8 tcp=4
+--- PASS: TestAuditOversizeDropsWhileNativeUnavailable (0.00s)
+=== RUN   TestAuditTCPAnswersDroppedWhileNativeUnavailable
+2000/01/01 02:00:07 INFO Native UDP not answering; association using 0x83 conn="" addr=192.0.2.1:4000 unanswered_probes=3
+2000/01/01 02:00:20 INFO Native UDP: the application keeps sending datagrams longer than native carries; they use 0x83 conn="" max_payload=1374
+    audit_release_test.go:48: native_up=false arrived_on_working_tcp=12 dropped=8 delivered=4
+--- PASS: TestAuditTCPAnswersDroppedWhileNativeUnavailable (0.00s)
+=== RUN   TestAuditInitialSizeProbeLossPermanentlyCapsHealthyPath
+2000/01/01 02:00:00 INFO Native UDP verified for association conn=""
+2000/01/01 02:00:00 INFO Native UDP path is narrower than the smallest QUIC packet to an IPv6 address limit=1217 size_probes=11
+    audit_release_test.go:70: actual_path_wire_limit=1400 lost_initial_size_probes=6 native_up=true measured_limit=1217 size_probes_before=11 after_30s=11 minimum_ipv4_quic_wire=1236
+--- PASS: TestAuditInitialSizeProbeLossPermanentlyCapsHealthyPath (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	1.019s
+=== RUN   TestAuditAcceptedPacketsHideQueueDrops
+    audit_release_test.go:52: accepted=128 delivered_queue=64 uncounted_queue_drops=64 tag=0 replay=0 auth=0 read_errors=0
+--- PASS: TestAuditAcceptedPacketsHideQueueDrops (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/nativeudp	1.012s

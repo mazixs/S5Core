@@ -80,6 +80,9 @@ type Config struct {
 	// so Argon2id is left for the control panel, off the connection path
 	// entirely.
 	TunnelIdentity func(conn net.Conn) string
+	// TunnelAccount binds the transport's local member reference to the
+	// account incarnation it authenticated. Nil retains the legacy name API.
+	TunnelAccount func(reference string) *SessionAccount
 
 	// SessionStatus, when set, is asked whether an authenticated session may
 	// continue, and if not, why. It is consulted on the traffic-flush
@@ -119,6 +122,13 @@ type Config struct {
 	// NativeCounters, when set, counts where the datagrams of native
 	// associations go.
 	NativeCounters *NativeCounters
+	// OnUDPDrop counts discarded datagrams using the closed UDPDropReasons set.
+	OnUDPDrop        func(reason string)
+	UDPRelayCounters *UDPRelayCounters
+	// UDPDiagnosticsInterval enables temporary Debug reports without addresses.
+	// Zero disables reporting; positive intervals must be at least one second.
+	UDPDiagnosticsInterval time.Duration
+	OnUDPReport            func(net.Conn, UDPRelaySnapshot, UDPRelaySnapshot)
 
 	// DenyPrivateDest refuses a destination that is the server's own machine
 	// or the network behind it (see privateDestination), by whatever name or
@@ -149,6 +159,10 @@ type Config struct {
 // or has no client address yet.
 var ErrNativePathGone = errors.New("socks: native UDP path is gone")
 
+// ErrNativePayloadTooLarge sends one oversized answer by TCP without
+// withdrawing a still-working native path.
+var ErrNativePayloadTooLarge = errors.New("socks: native payload exceeds current limit")
+
 type NativeAssociation interface {
 	Port() int
 	MaxPayload() int
@@ -162,6 +176,7 @@ type NativeAssociation interface {
 	// Send writes one answer native. A failed answer goes by the control
 	// connection instead. ErrNativePathGone also moves the answers after it
 	// there, until the client's next native datagram or heard probe; any
+	// ErrNativePayloadTooLarge means a concurrent size change, and any
 	// other error is about this datagram alone (a full socket buffer, one
 	// failed write), and the next answer goes native again: an application
 	// that only listens sends nothing that would bring it back.
@@ -187,10 +202,13 @@ type Server struct {
 
 // New creates a new Server and potentially returns an error
 func New(conf *Config) (*Server, error) {
+	if err := ValidateUDPDiagnosticsInterval(conf.UDPDiagnosticsInterval); err != nil {
+		return nil, err
+	}
 	// Ensure we have at least one authentication method enabled
 	if len(conf.AuthMethods) == 0 {
 		if conf.Credentials != nil {
-			conf.AuthMethods = []Authenticator{&UserPassAuthenticator{conf.Credentials}}
+			conf.AuthMethods = []Authenticator{&UserPassAuthenticator{Credentials: conf.Credentials}}
 		} else {
 			conf.AuthMethods = []Authenticator{&NoAuthAuthenticator{}}
 		}
@@ -381,11 +399,25 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	// how a healthy one ends: it is not a failed session (docs/plan/draft.md,
 	// Ч-17).
 	var association bool
+	// A peer that never sends the version byte is a probe or an unused spare,
+	// not a session: its phases leave the gauge but record no duration, the
+	// same rule the journal follows with ConnEnd.Spoke.
+	var spoke bool
 	sessionPhase := s.startPhase(PhaseSession)
-	defer func() { sessionPhase.end(err == nil || association && associationEnd(err) == EndedByClient) }()
+	defer func() {
+		if !spoke {
+			sessionPhase.abandon()
+		}
+		sessionPhase.end(err == nil || association && associationEnd(err) == EndedByClient)
+	}()
 
 	handshake := s.startPhase(PhaseHandshake)
-	defer func() { handshake.end(false) }()
+	defer func() {
+		if !spoke {
+			handshake.abandon()
+		}
+		handshake.end(false)
+	}()
 
 	// The connection's state machine, if the listener pipeline gave it one.
 	// It is closed by the transport wrapper that owns it, on Close above.
@@ -434,6 +466,7 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	// The first byte is in: a peer that speaks. Everything up to the reply
 	// to the request is the handshake.
 	sess.Enter(session.Handshake)
+	spoke = true
 	if end != nil {
 		end.Spoke = true
 	}
@@ -455,6 +488,11 @@ func (s *Server) ServeConnContext(ctx context.Context, conn net.Conn) (err error
 	stage = "request"
 	request, err := NewRequest(br)
 	if err != nil {
+		if errors.Is(err, errEmptyDomain) {
+			if replyErr := sendReply(conn, ruleFailure, nil); replyErr != nil {
+				return errors.Join(err, connFailure("request", "reply_write", replyErr))
+			}
+		}
 		if errors.Is(err, errUnrecognizedAddrType) {
 			if replyErr := sendReply(conn, addrTypeNotSupported, nil); replyErr != nil {
 				return errors.Join(err, connFailure("request", "reply_write", replyErr))

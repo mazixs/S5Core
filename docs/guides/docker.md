@@ -240,9 +240,10 @@ stream, and the kernel cuts the stream into packets by the MSS on its own.
 
 Native UDP (`UDP_PORT`) finds its own limit on the path at the start of each
 association and does not fragment, so game-sized datagrams keep going
-natively through a black hole. Datagrams longer than that limit are dropped,
-and from the eighth on they go by `0x83`, where the black hole stalls them
+natively through a black hole. While native is verified and heard, datagrams
+longer than that limit are dropped, and from the eighth on they go by `0x83`, where the black hole stalls them
 together with the TCP stream ([limit of native](../design/transports.md#native-udp-for-games)).
+If native is unavailable, large datagrams use the working TCP fallback immediately.
 
 ```bash
 ss -tin dst <peer>          # on the side sending the large data: pmtu, mss, retrans
@@ -261,11 +262,11 @@ kernel probe smaller segments only after it has detected a black hole, which
 is what Cloudflare advises for servers; `2` starts every connection at
 `tcp_base_mss` (1024 bytes by default) and pays for it on every path. The value
 belongs to the network namespace, so the container sets its own without host
-networking and leaves the host as it is. Add to the `s5core` service, or to a
-local override:
+networking and leaves the host as it is. Add the line to the `sysctls` the
+`s5core` service already has (a second `sysctls:` key in the same service is
+invalid YAML), or to a local override:
 
 ```yaml
-    sysctls:
       net.ipv4.tcp_mtu_probing: 1
 ```
 
@@ -326,6 +327,40 @@ that stays at zero while the game loses answers points to the path.
 
 The client asks for the same 2 MiB on its UDP sockets and logs the same line.
 Run as root, it gets them regardless of `rmem_max`.
+
+### TCP Fast Open
+
+`OBFS_TFO=true` on the server and the client sends the client's opening,
+greeting and request in the SYN from the second connection to a node on, and
+saves a round trip of every setup ([configuration](configuration.md)). It is off
+by default and meant for a field measurement: a SYN that carries data is a shape
+a filter can see, and some paths drop it ([limitations](../field/stealth.md#tcp-fast-open-obfs_tfo-ограничения)).
+
+The server accepts data in a SYN only where `net.ipv4.tcp_fastopen` has the
+server bit, `2`. Linux starts every network namespace, a container's included,
+at `1` (client only), so the base file sets the container's own value:
+
+```yaml
+    sysctls:
+      net.ipv4.tcp_fastopen: 3
+```
+
+Unlike `net.core.rmem_max`, this value belongs to the network namespace (Linux
+4.12 and newer): the container writes its own and the host keeps its value.
+Without `OBFS_TFO=true` it changes nothing on the wire, because the bit applies
+only to a listener that asks for Fast Open, and the client bit `1` is the
+kernel's default anyway. A server with `OBFS_TFO=true` and a value without the
+bit says so at startup:
+
+```text
+level=WARN msg="OBFS_TFO is on, but net.ipv4.tcp_fastopen does not let the server accept data in a SYN" tcp_fastopen=1 want=3
+```
+
+Connections accepted with data in the SYN are counted in
+`s5core_tcp_fastopen_passive_total`, the kernel's `TCPFastOpenPassive` of the
+container's namespace. Without Docker, set `net.ipv4.tcp_fastopen = 3` in a file
+under `/etc/sysctl.d/`. The client needs Linux 4.11 or newer; on an older kernel
+(a router on 4.9), Windows and macOS it dials without Fast Open.
 
 Docker references: [environment interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/),
 [local log rotation](https://docs.docker.com/engine/logging/drivers/local/),

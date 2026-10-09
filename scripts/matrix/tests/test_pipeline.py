@@ -126,6 +126,16 @@ class Plans(unittest.TestCase):
                           "native_udp_read_error": 4, "native_udp_dropped": 6})
         self.assertEqual(cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 5\n')["native_udp_dropped"], 0)
 
+    def test_the_settled_gauges_wait_for_the_warm_spare(self):
+        reads = iter([{"s5core_sessions": 3}, {"s5core_sessions": 3}, {}])
+        with patch.object(cell.time, "sleep"):
+            self.assertEqual(cell.settled_gauges(lambda: next(reads), lambda: False), {})
+        with patch.object(cell.time, "sleep"):
+            self.assertEqual(cell.settled_gauges(lambda: {"s5core_sessions": 3}, lambda: True), {"s5core_sessions": 3})
+        clock = iter(range(0, 100, 5))
+        with patch.object(cell.time, "sleep"), patch.object(cell.time, "monotonic", lambda: next(clock)):
+            self.assertEqual(cell.settled_gauges(lambda: {"s5core_sessions": 1}, lambda: False), {"s5core_sessions": 1})
+
     def test_udp_blackout_targets_only_native_port(self):
         cmds = []
         blackout = cell.UDPBlackout("41443", 0, 0.001)
@@ -447,7 +457,7 @@ class Plans(unittest.TestCase):
 
     def test_cell_timeout_bounds_every_scenario(self):
         c = plan.expand(plan.resolve(raw_plan(defaults={"scenario_timeout": "1m", "hang_grace": "10s", "settle": "5s"}), "."))[1]["cells"][0]
-        self.assertEqual(plan.cell_timeout(c, 10), 10 * 70 + 120 + 5)
+        self.assertEqual(plan.cell_timeout(c, 10), 10 * 70 + 120 + 5 + plan.SPARE_LINGER)
 
     def test_wan_needs_its_section_and_owned_directories(self):
         wan = {"server": "root@192.0.2.1", "client": "router"}
@@ -473,7 +483,7 @@ class Plans(unittest.TestCase):
         self.assertEqual(ids[:3], ["w/raw-r1", "w/a-obfs-member-r1", "w/b-obfs-member-r1"])
         self.assertEqual(ids[5:8], ["w/b-wss-member-r2", "w/a-wss-member-r2", "w/b-obfs-member-r2"])
         c = b[1]["cells"][0]
-        self.assertEqual(plan.cell_timeout(c, 1), seconds("5m") + seconds("30s") + 120 + 5 + 60)
+        self.assertEqual(plan.cell_timeout(c, 1), seconds("5m") + seconds("30s") + 120 + 5 + plan.SPARE_LINGER + 60)
 
     def test_wan_builds_for_both_hosts(self):
         from pipeline import build

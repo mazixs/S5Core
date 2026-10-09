@@ -122,7 +122,9 @@ func TestSetupInstallsDefault(t *testing.T) {
 // из горутин соединений: гонки здесь не должно быть по построению.
 func TestConcurrentLevelSwitch(t *testing.T) {
 	defer SetLevel(slog.LevelInfo)
-	logger := New(os.Stderr)
+	var buf bytes.Buffer
+	logger := New(&buf)
+	SetLevel(slog.LevelInfo)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -146,6 +148,18 @@ func TestConcurrentLevelSwitch(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+	if buf.Len() != 0 {
+		t.Fatal("concurrent switches admitted DEBUG above INFO")
+	}
+	SetLevel(slog.LevelDebug)
+	logger.Debug("after-switch")
+	var rec map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["level"] != "DEBUG" || rec["msg"] != "after-switch" {
+		t.Fatalf("switch did not apply: %v", rec)
+	}
 }
 
 func TestSetLevelFromFile(t *testing.T) {

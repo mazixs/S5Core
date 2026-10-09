@@ -12,6 +12,7 @@ import (
 	"github.com/caarlos0/env/v11"
 	"github.com/mazixs/S5Core/internal/buildinfo"
 	"github.com/mazixs/S5Core/pkg/obfs"
+	"github.com/mazixs/S5Core/pkg/s5server"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
 	"github.com/mazixs/S5Core/pkg/veil"
 )
@@ -388,6 +389,31 @@ func TestTheHelloGoesUpAndTheAdviceComesDownOneRealTunnel(t *testing.T) {
 	}
 }
 
+func TestEmptyAdviceRestoresAnAlreadyRunningClientPolicy(t *testing.T) {
+	const psk = "0123456789abcdef0123456789abcdef"
+	addr := startAdvisingServer(t, psk, obfs.Config{Advice: &obfs.Advice{}})
+	cfg := baseParams("")
+	cfg.ServerAddr, cfg.PSK, cfg.MTU, cfg.HandshakeTimeout = addr, psk, 1400, 5*time.Second
+	policy, err := newClientPolicy(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.policy = policy
+	policy.onAdvice(obfs.Advice{Transport: "obfs", MaxPadding: 48, KeepaliveMin: 11 * time.Second, KeepaliveMax: 22 * time.Second})
+	conn, used, err := dialAttempt(cfg.attempt(), connectRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if used.MaxPadding != 48 {
+		t.Fatal("test did not start with prior advice")
+	}
+	next := policy.apply(cfg)
+	if next.MaxPadding != cfg.MaxPadding || next.KeepaliveMin != cfg.KeepaliveMin || next.KeepaliveMax != cfg.KeepaliveMax {
+		t.Fatal("withdrawn recommendation persisted in running policy")
+	}
+}
+
 // TestClientDefaultsMatchTheLibraries is the drift check the plan asks for
 // under "no shape constant in the code": the client's defaults are written
 // in its environment tags, and this makes sure they are the same numbers the
@@ -409,6 +435,7 @@ func TestClientDefaultsMatchTheLibraries(t *testing.T) {
 		{"TRANSPORT", cfg.Transport, string(transportAuto)},
 		{"OBFS_FORMAT", cfg.Format, "auto"},
 		{"OBFS_PROLOGUE", cfg.Prologue, string(obfs.DefaultPrologueEncoding)},
+		{"OBFS_TFO", cfg.FastOpen, s5server.DefaultConfig().ObfsTFO},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

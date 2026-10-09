@@ -100,6 +100,9 @@ type Half struct {
 	// unmetered relay: it still asks Status, it just has nowhere to put the
 	// byte count.
 	Counter *atomic.Int64
+	// BytesAdd observes payload successfully copied in this direction. It
+	// excludes SOCKS5 framing and does not participate in quota accounting.
+	BytesAdd func(int64)
 	// Status, when set, is asked on the flush boundary whether the account
 	// may continue.
 	//
@@ -130,6 +133,9 @@ type Half struct {
 	// stream, so the smallest configuration the package documents was also
 	// one it could not run (review finding R12).
 	CloseDst func()
+	// AbortDst replaces CloseDst on transport errors, so a reset is not
+	// converted to a normal FIN. Nil preserves the embedding API's behavior.
+	AbortDst func()
 
 	// Copied is what Run wrote to Dst in all, for the session's final line.
 	// It is set as Run returns and is read after that, never during.
@@ -141,6 +147,14 @@ func (h *Half) closeDst() {
 	if h.CloseDst != nil {
 		h.CloseDst()
 	}
+}
+
+func (h *Half) finishDst(err error) {
+	if err != nil && !errors.Is(err, ErrNotAllowed) && h.AbortDst != nil {
+		h.AbortDst()
+		return
+	}
+	h.closeDst()
 }
 
 // exhausted answers whether this half keeps copying after the account said
@@ -160,15 +174,18 @@ func (h *Half) Run() error {
 
 	// The fast path is for a half that neither counts nor checks: there is
 	// nothing to do on the flush boundary, so there is no reason to have one.
-	if h.Counter == nil && h.Status == nil {
+	if h.Counter == nil && h.Status == nil && h.BytesAdd == nil {
 		n, err := io.CopyBuffer(h.Dst, h.Src, buf)
 		h.Copied = n
-		h.closeDst()
+		h.finishDst(err)
 		return err
 	}
 
 	var accumulated, copied int64
 	flush := func() {
+		if h.BytesAdd != nil && accumulated > 0 {
+			h.BytesAdd(accumulated)
+		}
 		if h.Counter != nil && accumulated > 0 {
 			h.Counter.Add(accumulated)
 		}
@@ -178,7 +195,7 @@ func (h *Half) Run() error {
 	finish := func(e error) error {
 		flush()
 		h.Copied = copied
-		h.closeDst()
+		h.finishDst(e)
 		return e
 	}
 

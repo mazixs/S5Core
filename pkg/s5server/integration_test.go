@@ -281,16 +281,12 @@ func doAuth(conn net.Conn, user, pass string) error {
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestIntegration_PlainSOCKS5_ValidUser(t *testing.T) {
-	t.Skip("Reimplemented in TestIntegration_FullSuite with fixed ports")
-}
-
 func TestIntegration_FullSuite(t *testing.T) {
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
-	const plainPort = "19080"
-	const obfsPort = "19443"
+	plainPort := reservePort(t)
+	obfsPort := reservePort(t)
 
 	startServer(t, Config{
 		Port:            plainPort,
@@ -769,7 +765,7 @@ func TestIntegration_FullSuite(t *testing.T) {
 func TestIntegration_NoUsersFile_LegacyMode(t *testing.T) {
 	echoAddr := startEchoServer(t)
 
-	const port = "19180"
+	port := reservePort(t)
 	cfg := Config{
 		Port:            port,
 		ListenIP:        "127.0.0.1",

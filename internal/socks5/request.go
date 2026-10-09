@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/relay"
@@ -42,6 +41,7 @@ const (
 
 var (
 	errUnrecognizedAddrType = fmt.Errorf("unrecognized address type")
+	errEmptyDomain          = errors.New("empty SOCKS5 domain name")
 )
 
 // AddrSpec is used to return the target AddrSpec
@@ -148,7 +148,7 @@ func NewRequest(conn io.Reader) (*Request, error) {
 	// Read in the destination address
 	dest, err := readAddrSpec(conn)
 	if err != nil {
-		if errors.Is(err, errUnrecognizedAddrType) {
+		if errors.Is(err, errUnrecognizedAddrType) || errors.Is(err, errEmptyDomain) {
 			return nil, protocolFailure("request", "address_read", err)
 		}
 		return nil, connFailure("request", "address_read", err)
@@ -165,6 +165,12 @@ func NewRequest(conn io.Reader) (*Request, error) {
 
 // handleRequest is used for request processing after authentication
 func (s *Server) handleRequest(ctx context.Context, req *Request, conn conn) error {
+	if req.AuthContext != nil && req.AuthContext.Account != nil && req.AuthContext.Account.Status() != SessionAllowed {
+		if err := sendReply(conn, ruleFailure, nil); err != nil {
+			return errors.Join(ErrSessionNotAllowed, err)
+		}
+		return ErrSessionNotAllowed
+	}
 	// The rules are checked before the name is resolved. They used to be
 	// checked inside each command handler, after Resolve had already run, so a
 	// forbidden destination was still looked up: the DNS query went out, the
@@ -389,6 +395,8 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 	// transport asks the session for its deadlines, and the relay idle
 	// timeout replaces the handshake budget.
 	sess.Enter(session.Relay)
+	targetBudget := &relayTarget{Conn: target, session: sess}
+	target = targetBudget
 
 	// The wait for the destination's first byte starts once the client has its
 	// success reply: from here on, any delay is the destination's or ours.
@@ -404,7 +412,10 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 	// difference is exactly what is worth counting.
 	var targetWriteOnce sync.Once
 	closeTargetWrite := func() {
-		targetWriteOnce.Do(func() { relay.HalfClose(target, s.halfCloseObserver()) })
+		targetWriteOnce.Do(func() {
+			targetBudget.boundRemainingRead()
+			relay.HalfClose(target, s.halfCloseObserver())
+		})
 	}
 
 	// Start proxying
@@ -412,6 +423,14 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 	defer cancel()
 
 	toDestination, toClient := s.connectHalves(conn, req, target, targetSrc, closeTargetWrite)
+	// A silent or slow stream must observe account revocation without waiting
+	// for the 64 KiB billing boundary. The same exhaustion hook starts grace.
+	var accountTick <-chan time.Time
+	if toClient.Status != nil {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		accountTick = ticker.C
+	}
 
 	results := make(chan relay.Result, 2)
 	go func() { results <- relay.Result{ToDestination: true, Err: toDestination.Run()} }()
@@ -436,6 +455,17 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 	closedBy := ""
 	for pending := 2; pending > 0; {
 		select {
+		case <-accountTick:
+			if st := toClient.Status(); st != SessionAllowed {
+				accountTick = nil
+				toClient.Exhaust(st)
+				if firstErr == nil {
+					firstErr = ErrSessionNotAllowed
+				}
+				if !sess.InGrace() {
+					closeBoth()
+				}
+			}
 		case r := <-results:
 			pending--
 			if closedBy == "" {
@@ -456,6 +486,9 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 			case r.Err != nil:
 				if firstErr == nil {
 					firstErr = r.Err
+				}
+				if nc, ok := conn.(net.Conn); ok {
+					relay.Abort(nc)
 				}
 				closeBoth()
 			case torn:
@@ -499,24 +532,10 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 func (s *Server) connectHalves(conn conn, req *Request, target net.Conn, targetSrc io.Reader,
 	closeTargetWrite func()) (toDestination, toClient *relay.Half) {
 	sess := req.session
-	// Extract username for per-user traffic tracking
-	username := extractUsername(req)
 	closeClientWrite := func() { relay.HalfClose(conn, nil) }
 
 	// Resolved once per connection: the relay asks a closure, not the store.
-	var status func() SessionStatus
-	if s.config.SessionStatus != nil && username != "" {
-		status = func() SessionStatus { return s.config.SessionStatus(username) }
-	}
-
-	// Resolved once per connection, and only if there is something to
-	// resolve: an unmetered server, or a user the store no longer knows, gets
-	// no counter. That says nothing about whether the account is asked - the
-	// relay asks Status regardless, which is the point of F01.
-	var counter *atomic.Int64
-	if s.config.TrafficCounter != nil && username != "" {
-		counter = s.config.TrafficCounter(username)
-	}
+	counter, status := s.accountFor(req)
 
 	// exhaust is the one place the account region reaches the protocol
 	// region. The account can no longer transfer; whether the relay ends
@@ -544,12 +563,19 @@ func (s *Server) connectHalves(conn conn, req *Request, target net.Conn, targetS
 	toDestination = &relay.Half{
 		Dst: target, Src: req.bufConn,
 		Counter: counter, Status: status, Exhaust: exhaust(false),
+		BytesAdd: s.config.BytesAddIn,
 		CloseDst: closeTargetWrite,
+		// The coordinator receives the original error before closing both
+		// sockets. Closing here could let the resulting net.ErrClosed win
+		// the race and erase a destination timeout from the journal.
+		AbortDst: func() {},
 	}
 	toClient = &relay.Half{
 		Dst: conn, Src: targetSrc,
 		Counter: counter, Status: status, Exhaust: exhaust(true),
+		BytesAdd: s.config.BytesAddOut,
 		CloseDst: closeClientWrite,
+		AbortDst: func() {},
 	}
 	return toDestination, toClient
 }
@@ -628,6 +654,9 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 			return nil, err
 		}
 		addrLen := int(addrType[0])
+		if addrLen == 0 {
+			return nil, errEmptyDomain
+		}
 		fqdn := make([]byte, addrLen)
 		if _, err := io.ReadFull(r, fqdn); err != nil {
 			return nil, err

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand/v2"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -200,7 +201,7 @@ func TestTheLimitOfTheClientBoundsTheAnswersOfTheHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	c := dialHub(t, hub)
 	var b [MaxWire + 1]byte
@@ -275,7 +276,7 @@ func TestTheSearchFindsTheLimitOfThePath(t *testing.T) {
 			if l > top || l < top-34 {
 				t.Fatalf("path %d: limit %d", path, l)
 			}
-			if rounds > searchRounds || s.Sent() != 7+4*(rounds-1) {
+			if rounds > 2*searchRounds || s.Sent() > 30 {
 				t.Fatalf("path %d: %d rounds, %d probes", path, rounds, s.Sent())
 			}
 			if path >= MaxWire && (rounds != 1 || l < MaxWire-topSpread) {
@@ -294,7 +295,7 @@ func TestALostProbeNeverTakesTheLimitPastThePath(t *testing.T) {
 			if s.Limit() > path {
 				t.Fatalf("path %d: limit %d", path, s.Limit())
 			}
-			if rounds > searchRounds+searchRetries*searchRounds {
+			if rounds > 2*searchRetries*searchRounds {
 				t.Fatalf("path %d: %d rounds", path, rounds)
 			}
 		}

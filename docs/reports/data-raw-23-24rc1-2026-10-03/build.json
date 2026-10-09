@@ -1,0 +1,23 @@
+{
+  "matrix": {
+    "built": "2026-10-03T19:32:15",
+    "matrix_sha256": "0c2d65682192b8d4c32e5543cfb548104e68e486228371ce235189b22c3a2a76",
+    "sha256": "0c2d65682192b8d4c32e5543cfb548104e68e486228371ce235189b22c3a2a76"
+  },
+  "rc1": {
+    "built": "2026-10-03T19:32:18",
+    "commit": "65650535fbfd79b3d9a4f4281fd85d4c85aa667a",
+    "dirty": true,
+    "ref": "worktree",
+    "s5client_sha256": "6fb5355c619f22969595c09161b016cc2526f4a1357bddf20c3cf7231bf1db46",
+    "s5core_sha256": "3960a0cb6bed93f1cd018f047e0da8cc7ff60d90a1de41380fd97e8e5cd853b4"
+  },
+  "v23": {
+    "built": "2026-10-03T19:32:17",
+    "commit": "e04ba5c03b3d41bda8cc7031e9e3e77a969d482c",
+    "dirty": false,
+    "ref": "v2.3.0",
+    "s5client_sha256": "c90292fd5385c19135e710f3836186c093ced5e46d2a2fe62a40e3ac78b63692",
+    "s5core_sha256": "d48f2ab07690c9b2513daa574ce9c1805149a2e89a378fb8e6a52b7413a4c984"
+  }
+}

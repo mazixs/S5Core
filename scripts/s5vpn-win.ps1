@@ -642,6 +642,8 @@ function Start-S5Client {
         -WorkingDirectory (Split-Path -Parent $Config.S5ClientExe)
 
     $State.S5ClientPid = $proc.Id
+    $State.S5ClientPath = $proc.Path
+    $State.S5ClientStarted = $proc.StartTime.ToUniversalTime().ToString("o")
     $State.S5ClientStdout = $stdout
     $State.S5ClientStderr = $stderr
 
@@ -679,6 +681,8 @@ function Start-Tun2Socks {
         -WorkingDirectory (Split-Path -Parent $Config.Tun2SocksExe)
 
     $State.Tun2SocksPid = $proc.Id
+    $State.Tun2SocksPath = $proc.Path
+    $State.Tun2SocksStarted = $proc.StartTime.ToUniversalTime().ToString("o")
     $State.Tun2SocksStdout = $stdout
     $State.Tun2SocksStderr = $stderr
 
@@ -689,14 +693,24 @@ function Start-Tun2Socks {
 function Stop-ManagedProcesses {
     param([Parameter(Mandatory = $true)]$State)
 
-    foreach ($pidName in @("Tun2SocksPid", "S5ClientPid")) {
-        $pidValue = $State.$pidName
-        if ($pidValue -and (Test-ProcessAlive -ProcessId ([int]$pidValue))) {
-            try {
-                Stop-Process -Id ([int]$pidValue) -Force
-            } catch {
-                Write-WarnMsg "Failed to stop PID $($pidValue): $($_.Exception.Message)"
+    foreach ($name in @("Tun2Socks", "S5Client")) {
+        $pidValue = $State.("${name}Pid")
+        if (-not $pidValue) { continue }
+        try {
+            $process = Get-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue
+            if (-not $process) { continue }
+            $savedPath = $State.("${name}Path")
+            $savedStart = $State.("${name}Started")
+            $expectedName = if ($name -eq "S5Client") { "s5client" } else { "tun2socks" }
+            if (-not $savedPath -or -not $savedStart -or $process.ProcessName -ne $expectedName -or
+                -not [String]::Equals($process.Path, $savedPath, [StringComparison]::OrdinalIgnoreCase) -or
+                $process.StartTime.ToUniversalTime().ToString("o") -ne $savedStart) {
+                Write-WarnMsg "Saved $name identity does not match the process; no signal sent."
+                continue
             }
+            Stop-Process -InputObject $process -Force
+        } catch {
+            Write-WarnMsg "Failed to stop owned $name process: $($_.Exception.Message)"
         }
     }
 }
@@ -779,7 +793,11 @@ function Start-Tunnel {
         PrimaryInterfaceMetric = $null
         TunInterfaceIndex    = $null
         S5ClientPid          = $null
+        S5ClientPath         = $null
+        S5ClientStarted      = $null
         Tun2SocksPid         = $null
+        Tun2SocksPath        = $null
+        Tun2SocksStarted     = $null
         S5ClientStdout       = $null
         S5ClientStderr       = $null
         Tun2SocksStdout      = $null

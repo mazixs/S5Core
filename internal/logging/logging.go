@@ -20,6 +20,8 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/mazixs/S5Core/internal/configfile"
 )
 
 const (
@@ -86,19 +88,7 @@ func SetLevelFromEnv() (slog.Level, error) {
 const maxLevelFileBytes = 4 << 10
 
 func readLevelFile(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, maxLevelFileBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(b) > maxLevelFileBytes {
-		return nil, fmt.Errorf("larger than %d bytes, which no level is", maxLevelFileBytes)
-	}
-	return b, nil
+	return configfile.Read(path, maxLevelFileBytes)
 }
 
 // ToggleDebug switches between debug and info and reports the new level.

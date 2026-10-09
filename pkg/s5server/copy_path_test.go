@@ -178,7 +178,7 @@ func TestTheCopyFastPathStillCountsBytes(t *testing.T) {
 		if got := counted.read.Load(); got != int64(len(payload)) {
 			t.Fatalf("the socket saw %d bytes read, want %d", got, len(payload))
 		}
-		if got := counterValue(t, reader, "s5core_traffic_bytes_in"); got != int64(len(payload)) {
+		if got := counterValue(t, reader, "s5core_tcp_stream_bytes_in"); got != int64(len(payload)) {
 			t.Fatalf("the meter counted %d bytes in, want %d", got, len(payload))
 		}
 	})
@@ -213,7 +213,7 @@ func TestTheCopyFastPathStillCountsBytes(t *testing.T) {
 		if got := counted.written.Load(); got != int64(len(payload)) {
 			t.Fatalf("the socket saw %d bytes written, want %d", got, len(payload))
 		}
-		if got := counterValue(t, reader, "s5core_traffic_bytes_out"); got != int64(len(payload)) {
+		if got := counterValue(t, reader, "s5core_tcp_stream_bytes_out"); got != int64(len(payload)) {
 			t.Fatalf("the meter counted %d bytes out, want %d", got, len(payload))
 		}
 	})

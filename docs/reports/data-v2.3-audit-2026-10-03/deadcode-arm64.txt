@@ -1,0 +1,2 @@
+internal/logging/journal.go:85:19: unreachable func: Journal.Boot
+pkg/s5server/journal.go:643:18: unreachable func: Server.Boot

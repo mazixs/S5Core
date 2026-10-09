@@ -1,98 +1,109 @@
 package obfs
 
-import "sync"
+import (
+	"sync"
+	"time"
 
-// SaltHistory remembers the session salts a server has already accepted, so
-// that a recorded connection cannot be replayed into a new one.
-//
-// It replaces a per-connection nonce window. That window cost about 82 KiB per
-// connection and could only catch a frame repeated inside the same session -
-// which counter nonces now make impossible anyway. The case it never covered
-// is the one an active prober actually uses: record the first frame of a
-// working connection and send it again on a fresh socket. The salt is what
-// makes that frame decrypt, so the salt is what has to be remembered, and it
-// has to be remembered across connections. That is a server-wide structure,
-// not a per-connection one: one history of 10 000 entries costs a few hundred
-// kilobytes for the whole process.
-//
-// The history is exact, not probabilistic. A Bloom filter would be smaller and
-// would occasionally drop a legitimate connection, which is a worse failure
-// than the memory it saves.
+	"github.com/mazixs/S5Core/pkg/veil"
+)
+
+// SaltHistory records only authenticated first frames. Entries cover the
+// entire accepted epoch interval and are never evicted for a new connection.
+// At capacity, new sessions fail closed until an entry expires. Listeners
+// using the same keys must share one history.
 type SaltHistory struct {
-	mu    sync.Mutex
-	limit int
-	seen  map[[saltPrefix]byte]struct{}
-	order [][saltPrefix]byte
-	pos   int
+	mu          sync.Mutex
+	limit       int
+	retention   time.Duration
+	seen        map[[saltPrefix]byte]struct{}
+	order       []saltEntry
+	head, count int
 }
 
-// saltPrefix is how much of a salt is stored. 16 bytes make an accidental
-// collision - which would close a legitimate connection - about as likely as
-// guessing an AES key, while halving what the history costs.
+type saltEntry struct {
+	key     [saltPrefix]byte
+	expires time.Time
+}
+
 const saltPrefix = 16
 
-// DefaultSaltHistory is the number of salts a history remembers when the
-// caller does not say. It is the window an active prober has to beat: a replay
-// works only if the server has forgotten the original, which takes this many
-// connections since it was made.
-const DefaultSaltHistory = 10000
+// DefaultSaltHistory bounds authenticated sessions retained concurrently.
+const DefaultSaltHistory = 100000
 
-// NewSaltHistory creates a history of the given size. A size of zero or less
-// gives a history that accepts everything, which is what a caller that does
-// not want the check should pass.
+// DefaultSaltRetention covers all epochs accepted by default Clocked,
+// including the maximum future clock skew at the first acceptance.
+const DefaultSaltRetention = time.Duration(2*veil.DefaultEpochWindow+1) * veil.EpochSeconds * time.Second
+
+// NewSaltHistory creates a bounded history for default Clocked. Zero or less
+// disables it. Size is capacity, not an eviction count.
 func NewSaltHistory(size int) *SaltHistory {
+	return NewSaltHistoryWithRetention(size, DefaultSaltRetention)
+}
+
+// NewSaltHistoryWithRetention supports other epoch windows. Retention must
+// cover the scheme's entire replay interval. Zero retains entries for the
+// process lifetime, for schemes without expiry; negative is treated as zero.
+func NewSaltHistoryWithRetention(size int, retention time.Duration) *SaltHistory {
 	if size <= 0 {
 		return nil
 	}
-	return &SaltHistory{
-		limit: size,
-		seen:  make(map[[saltPrefix]byte]struct{}, size),
-		order: make([][saltPrefix]byte, 0, size),
-	}
+	return &SaltHistory{limit: size, retention: max(retention, 0),
+		seen: make(map[[saltPrefix]byte]struct{}, size), order: make([]saltEntry, size)}
 }
 
-// Accept reports whether this salt is new, and records it. A false answer
-// means the exact bytes have been seen before within the history's window.
-//
-// It is safe for concurrent use: one history serves every connection a
-// listener accepts.
-func (h *SaltHistory) Accept(salt []byte) bool {
+// Accept atomically checks and records an authenticated salt. Callers must
+// verify the first frame before claiming capacity. False means a duplicate,
+// a short salt, or exhausted capacity.
+func (h *SaltHistory) Accept(salt []byte) bool { return h.record(salt) == "" }
+
+func (h *SaltHistory) record(salt []byte) FailureReason {
 	if h == nil {
-		return true
+		return ""
 	}
 	if len(salt) < saltPrefix {
-		return false
+		return ReasonShortFrame
 	}
-
 	var key [saltPrefix]byte
 	copy(key[:], salt)
-
 	h.mu.Lock()
 	defer h.mu.Unlock()
-
+	now := time.Now()
+	h.prune(now)
 	if _, exists := h.seen[key]; exists {
-		return false
+		return ReasonReplay
 	}
+	if h.count == h.limit {
+		return ReasonHistoryFull
+	}
+	entry := saltEntry{key: key}
+	if h.retention > 0 {
+		entry.expires = now.Add(h.retention)
+	}
+	h.order[(h.head+h.count)%h.limit] = entry
 	h.seen[key] = struct{}{}
-
-	if len(h.order) < h.limit {
-		h.order = append(h.order, key)
-		return true
-	}
-
-	// Full: the oldest entry makes room for this one.
-	delete(h.seen, h.order[h.pos])
-	h.order[h.pos] = key
-	h.pos = (h.pos + 1) % h.limit
-	return true
+	h.count++
+	return ""
 }
 
-// Len reports how many salts the history currently holds.
+func (h *SaltHistory) prune(now time.Time) {
+	if h.retention == 0 {
+		return
+	}
+	for h.count > 0 && !now.Before(h.order[h.head].expires) {
+		delete(h.seen, h.order[h.head].key)
+		h.order[h.head] = saltEntry{}
+		h.head = (h.head + 1) % h.limit
+		h.count--
+	}
+}
+
+// Len reports live entries without exposing their contents.
 func (h *SaltHistory) Len() int {
 	if h == nil {
 		return 0
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return len(h.seen)
+	h.prune(time.Now())
+	return h.count
 }
