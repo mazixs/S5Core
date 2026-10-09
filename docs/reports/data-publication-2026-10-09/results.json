@@ -16,7 +16,9 @@
     "lint": "passed",
     "govulncheck_main": "passed",
     "govulncheck_matrix": "passed",
-    "race": "passed"
+    "race": "passed",
+    "matrix_python_tests": 53,
+    "matrix_python_affinity_cpus": 2
   },
   "skipped_tests": [
     {
@@ -55,5 +57,10 @@
     "Windows tests were compiled, not executed",
     "Local checks do not prove prolonged Discord voice acceptance",
     "No release tag or live-node deployment is part of this publication"
-  ]
+  ],
+  "ci_followup": {
+    "initial_run": "https://github.com/mazixs/S5Core/actions/runs/37970039719",
+    "finding": "Plan parser test fixtures required CPU IDs unavailable on a four-CPU runner",
+    "fix": "Provide a synthetic 16-CPU topology in parser fixtures, keep production affinity validation, and test rejection on a sparse two-CPU topology"
+  }
 }

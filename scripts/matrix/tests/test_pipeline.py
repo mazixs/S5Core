@@ -92,7 +92,22 @@ class Verdict(unittest.TestCase):
         self.assertLess(analysis.binom_p(1200, 4000, 1800, 4000), 1e-9)
 
 
-class Plans(unittest.TestCase):
+class PlanFixture(unittest.TestCase):
+    def setUp(self):
+        # Plan parsing uses a synthetic 16-CPU topology. The fixtures are not
+        # executed here, so their CPU IDs must not depend on runner affinity.
+        affinity = patch.object(plan.os, "sched_getaffinity", return_value=set(range(16)))
+        affinity.start()
+        self.addCleanup(affinity.stop)
+
+
+class Plans(PlanFixture):
+    def test_unavailable_cpu_is_rejected_on_a_small_sparse_topology(self):
+        with patch.object(plan.os, "sched_getaffinity", return_value={6, 9}):
+            plan.resolve(raw_plan(cpus={"raw": "6", "obfs": ["9"]}), ".")
+            with self.assertRaisesRegex(plan.PlanError, r"cpus\.wss: CPUs \[10\] are not available here"):
+                plan.resolve(raw_plan(cpus={"raw": "6", "obfs": ["9"], "wss": ["10"]}), ".")
+
     def test_native_udp_metrics_keep_fixed_outcomes(self):
         gauges = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 42\n'
                                    's5core_native_udp_packets_total{outcome="replay"} 2\n'
@@ -529,7 +544,7 @@ s5core_session_transitions_total{from="accepted",illegal="true",region="protocol
         self.assertEqual(wan._ash_time("0m0.000s"), 0.0)
 
 
-class Recheck(unittest.TestCase):
+class Recheck(PlanFixture):
     def test_recheck_plan_round_trips(self):
         p = plan.load(os.path.join(PLANS, "compare.toml"))
         rep = {"plan": p, "flags": [
