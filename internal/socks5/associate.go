@@ -130,9 +130,10 @@ func (s *Server) handleAssociate(ctx context.Context, conn conn, req *Request) e
 // plainAssociation is one RFC 1928 UDP ASSOCIATE: the socket the client talks
 // to, the socket the targets talk to, and what both directions share.
 type plainAssociation struct {
-	s    *Server
-	req  *Request
-	acct *udpAccount
+	s        *Server
+	req      *Request
+	acct     *udpAccount
+	warnings udpWarningBudget
 
 	clientConn *net.UDPConn
 	targetConn *net.UDPConn
@@ -165,7 +166,7 @@ func (a *plainAssociation) bind(conn conn, client net.Conn) error {
 	// an operator who pinned BIND_IP to one interface still has every
 	// datagram leave through it, and a port of its own, so the address the
 	// client was handed is not the address targets get to see.
-	targetConn, err := udpbuf.ListenUDP("udp", &net.UDPAddr{IP: bindAddr.IP, Port: 0})
+	targetConn, err := udpbuf.ListenUnicast("udp", &net.UDPAddr{IP: bindAddr.IP, Port: 0})
 	if err != nil {
 		_ = clientConn.Close()
 		if err := sendReply(conn, serverFailure, nil); err != nil {
@@ -204,10 +205,16 @@ func (a *plainAssociation) fromClient(ctx, assocCtx context.Context) {
 	var said atomic.Bool
 	dispatcher := newUDPDispatcher(assocCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
 		if s.refuseDatagram(dest.Addr(), &said) {
+			s.udpDrop(req, UDPDropPrivate)
 			return true
 		}
 		nw, err := a.targetConn.WriteToUDPAddrPort(payload, dest)
-		if err != nil || nw <= 0 {
+		if err != nil {
+			s.udpTargetWriteError(req, err)
+			return true
+		}
+		s.udpTargetOut(req)
+		if nw <= 0 {
 			return true
 		}
 		req.end.target(dest)
@@ -219,7 +226,7 @@ func (a *plainAssociation) fromClient(ctx, assocCtx context.Context) {
 			return false
 		}
 		return true
-	}, meter.flush)
+	}, meter.flush, func(reason string) { s.udpDrop(req, reason) })
 	defer dispatcher.close()
 
 	for {
@@ -245,18 +252,22 @@ func (a *plainAssociation) fromClient(ctx, assocCtx context.Context) {
 		}
 
 		if !isClientDatagram(a.clientAddr.Load(), a.clientIP, rAddr) {
+			s.udpDrop(req, UDPDropSourceMismatch)
 			continue
 		}
+		s.udpClientIn(req)
 
 		// Parse SOCKS5 UDP header
 		// IMPORTANT: copy the IP out of buf before reuse
 		hdrLen, err := parseUDPHeaderInto(buf[:n], &question.dest)
 		if err != nil {
-			s.config.Logger.Warn("socks: invalid UDP header from client", "error", err)
+			s.udpDrop(req, UDPDropInvalidHeader)
+			a.warnings.invalidHeader(s.config.Logger)
 			continue
 		}
 
 		if !s.allowDatagram(ctx, question) {
+			s.udpDrop(req, UDPDropRules)
 			s.config.Logger.Debug("socks: udp datagram blocked by rules",
 				"destination", question.dest.String())
 			continue
@@ -305,7 +316,9 @@ func (a *plainAssociation) fromTargets() {
 		}
 
 		curClient := a.clientAddr.Load()
+		a.s.udpTargetIn(a.req)
 		if curClient == nil {
+			a.s.udpDrop(a.req, UDPDropClientUnknown)
 			continue // Drop if we don't know the client's UDP port yet
 		}
 
@@ -320,8 +333,10 @@ func (a *plainAssociation) fromTargets() {
 		_, werr := a.clientConn.WriteToUDP(pkt, curClient)
 		udpBufPool.Put(pktPtr)
 		if werr != nil {
+			a.s.udpDrop(a.req, UDPDropClientWrite)
 			continue
 		}
+		a.s.udpClientOut(a.req)
 		// The payload is what the target sent; the header this server
 		// put in front of it is not the client's traffic.
 		if st := meter.outbound(n); st != SessionAllowed {
@@ -429,16 +444,7 @@ func (s *Server) udpAccountFor(req *Request) *udpAccount {
 		bytesOut: s.config.BytesAddOut,
 		end:      req.end,
 	}
-	username := extractUsername(req)
-	if username == "" {
-		return acct
-	}
-	if s.config.TrafficCounter != nil {
-		acct.counter = s.config.TrafficCounter(username)
-	}
-	if s.config.SessionStatus != nil {
-		acct.status = func() SessionStatus { return s.config.SessionStatus(username) }
-	}
+	acct.counter, acct.status = s.accountFor(req)
 	return acct
 }
 
@@ -696,12 +702,15 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 	var said atomic.Bool
 	t.dispatcher = newUDPDispatcher(tunnelCtx, s.datagramResolver(req.session.SLA().Dial), func(payload []byte, dest netip.AddrPort) bool {
 		if s.refuseDatagram(dest.Addr(), &said) {
+			s.udpDrop(req, UDPDropPrivate)
 			return true
 		}
 		nw, err := egress.current().WriteToUDPAddrPort(payload, dest)
 		if err != nil {
+			s.udpTargetWriteError(req, err)
 			return true
 		}
+		s.udpTargetOut(req)
 		egress.sentToTarget()
 		req.end.target(dest)
 		if st := meter.inbound(nw); st != SessionAllowed {
@@ -709,8 +718,10 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 			return false
 		}
 		return true
-	}, meter.flush)
+	}, meter.flush, func(reason string) { s.udpDrop(req, reason) })
 	defer t.dispatcher.close()
+	stopReport := s.startUDPReport(tunnelCtx, req, tcpConn)
+	defer stopReport()
 
 	// Rotate the egress socket while it hears nothing back, so a match that
 	// lands on a dead link gets a fresh draw instead of waiting out the game's
@@ -814,6 +825,7 @@ type udpTunnel struct {
 	path       answerPath
 	dispatcher *udpDispatcher
 	errCh      chan error
+	warnings   udpWarningBudget
 }
 
 // stop signals termination to every half. The cause goes first: the deadline
@@ -841,6 +853,7 @@ func (t *udpTunnel) startFallback() *udpMeter {
 		binary.BigEndian.PutUint64(answer[2:], t.native.Next())
 		return answer[:]
 	}, func(payload int) error {
+		t.s.udpClientOut(t.req)
 		// The length prefix and the header belong to the tunnel, not to
 		// the client's transfer.
 		if st := tcpMeter.outbound(payload); st != SessionAllowed {
@@ -878,6 +891,7 @@ func (t *udpTunnel) answers() {
 			return
 		}
 		egress.replied(s.config.Logger)
+		s.udpTargetIn(req)
 
 		// Length prefix, header and payload are written into one pooled
 		// buffer. The header used to be built into a slice of its own and
@@ -885,6 +899,14 @@ func (t *udpTunnel) answers() {
 		// whole datagram per packet (plan task Ф6-5).
 		framePtr := udpBufPool.Get().(*[]byte)
 		frame := AppendUDPHeaderFromAddrPort((*framePtr)[:2], rAddr)
+		// IPv6 UDP can carry 65527 bytes, but its SOCKS5 header adds 22:
+		// the whole body must fit the tunnel's 16-bit length. Drop it before
+		// appending or writing any part, so the next frame stays aligned.
+		if len(frame)-2+n > 65535 {
+			s.udpDrop(req, UDPDropFrameOversize)
+			udpBufPool.Put(framePtr)
+			continue
+		}
 		frame = append(frame, buf[:n]...)
 		binary.BigEndian.PutUint16(frame[0:2], uint16(len(frame)-2))
 
@@ -897,6 +919,7 @@ func (t *udpTunnel) answers() {
 		default:
 			err := nativeSession.Send(frame[2:])
 			if err == nil {
+				s.udpClientOut(req)
 				count.AnswersNative.Add(1)
 				req.end.nativeDatagram(true)
 				udpBufPool.Put(framePtr)
@@ -906,7 +929,11 @@ func (t *udpTunnel) answers() {
 				}
 				continue
 			}
-			count.AnswersFailed.Add(1)
+			if errors.Is(err, ErrNativePayloadTooLarge) {
+				count.AnswersOversize.Add(1)
+			} else {
+				count.AnswersFailed.Add(1)
+			}
 			// This answer goes by TCP either way; only a path that is gone
 			// takes the answers after it there (see NativeAssociation.Send).
 			if errors.Is(err, ErrNativePathGone) {
@@ -923,9 +950,11 @@ func (t *udpTunnel) answers() {
 		_, err = t.tcpConn.Write(frame)
 		udpBufPool.Put(framePtr)
 		if err != nil {
+			s.udpDrop(req, UDPDropClientWrite)
 			t.stop(fmt.Errorf("tcp write error: %w", err))
 			return
 		}
+		s.udpClientOut(req)
 		// The length prefix and the header belong to the tunnel, not to
 		// the client's transfer.
 		if st := meter.outbound(n); st != SessionAllowed {
@@ -993,14 +1022,17 @@ func (t *udpTunnel) fromStream() {
 			return
 		}
 
+		s.udpClientIn(t.req)
 		hdrLen, err := parseUDPHeaderInto(frameBuf, &question.dest)
 		if err != nil {
+			s.udpDrop(t.req, UDPDropInvalidHeader)
 			udpBufPool.Put(framePtr)
-			s.config.Logger.Warn("socks: invalid udp-tcpmux header", "error", err)
+			t.warnings.invalidHeader(s.config.Logger)
 			continue
 		}
 
 		if !s.allowDatagram(t.ctx, question) {
+			s.udpDrop(t.req, UDPDropRules)
 			udpBufPool.Put(framePtr)
 			s.config.Logger.Debug("socks: udp-tcpmux datagram blocked by rules",
 				"destination", question.dest.String())
@@ -1027,8 +1059,15 @@ func (t *udpTunnel) fromStream() {
 func (t *udpTunnel) fromNative() {
 	question := newDatagramQuestion(t.req)
 	handle := func(counter uint64, packet []byte) {
+		t.s.udpClientIn(t.req)
 		hdrLen, err := parseUDPHeaderInto(packet, &question.dest)
-		if err != nil || !t.s.allowDatagram(t.ctx, question) {
+		if err != nil {
+			t.s.udpDrop(t.req, UDPDropInvalidHeader)
+			t.warnings.invalidHeader(t.s.config.Logger)
+			return
+		}
+		if !t.s.allowDatagram(t.ctx, question) {
+			t.s.udpDrop(t.req, UDPDropRules)
 			return
 		}
 		t.count.ClientNative.Add(1)

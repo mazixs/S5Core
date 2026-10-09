@@ -1,6 +1,7 @@
 package userstore
 
 import (
+	"sync"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/passwordhash"
@@ -49,10 +50,11 @@ type kdfGate struct {
 	// admitted holds one token per check inside the gate, running or
 	// waiting. Its capacity is the queue bound.
 	admitted chan struct{}
-	// running holds one token per check actually running. Its capacity is
-	// the memory bound.
-	running chan struct{}
-	wait    time.Duration
+	// Actual requested PHC memory is admitted as a whole under mu.
+	mu           sync.Mutex
+	budget, used int64
+	changed      chan struct{}
+	wait         time.Duration
 }
 
 // newKDFGate builds a gate for the given memory budget. A budget at or below
@@ -71,7 +73,8 @@ func newKDFGate(budget int64) *kdfGate {
 	}
 	return &kdfGate{
 		admitted: make(chan struct{}, permits*(1+kdfQueuePerPermit)),
-		running:  make(chan struct{}, permits),
+		budget:   max(budget, passwordhash.MemoryBytes),
+		changed:  make(chan struct{}),
 		wait:     defaultKDFWait,
 	}
 }
@@ -82,31 +85,46 @@ func newKDFGate(budget int64) *kdfGate {
 // server is visible in metrics rather than looking like a wave of wrong
 // passwords.
 func (g *kdfGate) run(f func() bool) (ok, ran bool) {
+	return g.runWithMemory(passwordhash.MemoryBytes, f)
+}
+
+// runWithMemory admits the PHC's actual allocation atomically. A large job
+// cannot hold partial permits while waiting for the rest of its budget.
+func (g *kdfGate) runWithMemory(cost int64, f func() bool) (ok, ran bool) {
 	if g == nil {
 		return f(), true
 	}
-
+	if cost <= 0 || cost > g.budget {
+		return false, false
+	}
 	select {
 	case g.admitted <- struct{}{}:
 	default:
-		// The queue is full. Waiting for a place in the queue would make the
-		// queue unbounded again.
 		return false, false
 	}
 	defer func() { <-g.admitted }()
-
-	select {
-	case g.running <- struct{}{}:
-	default:
-		timer := time.NewTimer(g.wait)
-		defer timer.Stop()
+	timer := time.NewTimer(g.wait)
+	defer timer.Stop()
+	for {
+		g.mu.Lock()
+		if cost <= g.budget-g.used {
+			g.used += cost
+			g.mu.Unlock()
+			defer func() {
+				g.mu.Lock()
+				g.used -= cost
+				close(g.changed)
+				g.changed = make(chan struct{})
+				g.mu.Unlock()
+			}()
+			return f(), true
+		}
+		changed := g.changed
+		g.mu.Unlock()
 		select {
-		case g.running <- struct{}{}:
+		case <-changed:
 		case <-timer.C:
 			return false, false
 		}
 	}
-	defer func() { <-g.running }()
-
-	return f(), true
 }

@@ -3,9 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
+	"github.com/mazixs/S5Core/internal/configfile"
 	"io/fs"
-	"os"
 	"strings"
 )
 
@@ -34,21 +33,12 @@ const maxAdviceFileBytes = 4 << 10
 // is how an operator withdraws a recommendation without editing the unit
 // file.
 func adviceFromFile(path string) (string, error) {
-	f, err := os.Open(path)
+	b, err := configfile.Read(path, maxAdviceFileBytes)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
 	if err != nil {
 		return "", err
-	}
-	defer func() { _ = f.Close() }()
-
-	b, err := io.ReadAll(io.LimitReader(f, maxAdviceFileBytes+1))
-	if err != nil {
-		return "", err
-	}
-	if len(b) > maxAdviceFileBytes {
-		return "", fmt.Errorf("%s is larger than %d bytes, which no advice is", path, maxAdviceFileBytes)
 	}
 
 	text := strings.TrimSpace(string(b))

@@ -1,0 +1,63 @@
+name = "raw-23-24rc1-loaded-20261003"
+description = "Matched local raw, v2.3.0 and audit remediation candidate 2.4 RC1"
+base = "v23"
+candidate = "rc1"
+[defaults]
+auth = "member"
+scale = 0.3
+scenario_timeout = "90s"
+hang_grace = "15s"
+settle = "2s"
+retries = 1
+server_procs = 4
+client_procs = 4
+gen_procs = 4
+[env.server]
+UDP_PORT = "41443"
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+[env.client]
+UDP_NATIVE = "true"
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+KEEPALIVE_MIN = "10s"
+KEEPALIVE_MAX = "20s"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+LOG_LEVEL = "info"
+[variants.raw]
+direct = true
+title = "raw"
+[variants.v23]
+ref = "v2.3.0"
+title = "2.3.0 release"
+[variants.rc1]
+ref = "worktree"
+title = "2.4 RC1 candidate: audit fixes, uncommitted"
+[cpus]
+loopback = "0-5,8-13"
+raw = "0,8"
+obfs = ["1-2,9-10", "3-4,11-12"]
+wss = ["6,14", "7,15"]
+[guard]
+max_foreign_cores = 3.0
+load_wait = "0s"
+[[series]]
+name = "local"
+rounds = 5
+transports = ["obfs", "wss"]
+variants = ["raw", "v23", "rc1"]
+compare = [["v23", "rc1"]]
+only = ["=tcp/connect", "=https/small-new", "=https/small-reuse", "=https/large", "=https/upload", "=https/small-reuse-under-bulk", "=h2/small-reuse", "=h3/small-reuse", "=h3/large", "=h3/upload", "=udp/rtt-64", "=udp/rtt-64-under-bulk", "=udp/stream-40mbit"]
+[[series]]
+name = "game-loss"
+network = { rtt_ms = 40, loss_pct = 0.5 }
+rounds = 3
+scale = 0.00833334
+scenario_timeout = "75s"
+only = ["=game/64hz-200b"]
+transports = ["obfs", "wss"]
+variants = ["raw", "v23", "rc1"]
+compare = [["v23", "rc1"]]

@@ -24,6 +24,12 @@ type Store interface {
 	Valid(user, password string) bool
 }
 
+// ResultStore distinguishes a bad credential from a check that could not
+// run. Temporary resource failures must never contribute to lockouts.
+type ResultStore interface {
+	ValidResult(user, password string) (bool, error)
+}
+
 // Options configures a Guard. The two hooks are how it reports without
 // knowing what telemetry is; both may be nil.
 type Options struct {
@@ -47,6 +53,10 @@ type Options struct {
 }
 
 const guardShards = 256
+
+// A guard retains at most this many sources and account names per shard.
+// Unexpired bans are never evicted to admit a new source.
+const guardEntriesPerShard = 256
 
 // The lockout used to be keyed on the user name, which made the mechanism do
 // the opposite of what it claimed twice over:
@@ -73,9 +83,14 @@ const (
 
 type sourceShard struct {
 	mu          sync.RWMutex
-	failures    map[string]int
+	failures    map[string]sourceFailures
 	banned      map[string]time.Time
 	lastCleanup time.Time
+}
+
+type sourceFailures struct {
+	count   int
+	expires time.Time
 }
 
 // accountShard holds the soft per-account counters. They expire on their own:
@@ -106,7 +121,8 @@ type Guard struct {
 	// lockout is whether there is a limit at all. It is decided once, from
 	// MaxRetries, so that every path asks the same question: a guard that is
 	// off counts nothing, bans nobody and slows nobody down.
-	lockout bool
+	lockout  bool
+	capacity int
 
 	// sleep is the throttle applied to a hot account, replaceable in tests.
 	sleep func(time.Duration)
@@ -126,6 +142,7 @@ func NewGuard(store Store, opts Options) *Guard {
 	f := &Guard{
 		store:          store,
 		lockout:        opts.MaxRetries > 0,
+		capacity:       guardEntriesPerShard,
 		maxRetries:     opts.MaxRetries,
 		banTime:        opts.BanTime,
 		logger:         logger,
@@ -135,7 +152,7 @@ func NewGuard(store Store, opts Options) *Guard {
 	}
 	for i := range f.shards {
 		f.shards[i] = sourceShard{
-			failures:    make(map[string]int),
+			failures:    make(map[string]sourceFailures),
 			banned:      make(map[string]time.Time),
 			lastCleanup: time.Now(),
 		}
@@ -198,6 +215,12 @@ func (s *Guard) ValidFrom(user, password, source string) bool {
 		return false
 	}
 
+	// Refuse a new source temporarily when its shard has no space. This is
+	// admission pressure, not a bad password, and never removes active bans.
+	if !s.reserveSource(key, now) {
+		return false
+	}
+
 	// A hot account is slowed down, never refused: the owner waits a quarter
 	// of a second, an online guessing run loses its throughput.
 	if s.accountIsHot(user, now) {
@@ -205,7 +228,17 @@ func (s *Guard) ValidFrom(user, password, source string) bool {
 	}
 
 	// Heavy validation (Argon2id etc.) outside any lock
-	valid := s.store.Valid(user, password)
+	var valid bool
+	if store, ok := s.store.(ResultStore); ok {
+		var err error
+		valid, err = store.ValidResult(user, password)
+		if err != nil {
+			s.forgetReservation(key)
+			return false
+		}
+	} else {
+		valid = s.store.Valid(user, password)
+	}
 
 	if !valid {
 		s.recordSourceFailure(key, now)
@@ -240,8 +273,10 @@ func (s *Guard) sourceIsBanned(key string, now time.Time) bool {
 		return true
 	}
 	shard.mu.Lock()
-	delete(shard.banned, key)
-	delete(shard.failures, key)
+	if expiry, exists := shard.banned[key]; exists && !now.Before(expiry) {
+		delete(shard.banned, key)
+		delete(shard.failures, key)
+	}
 	shard.mu.Unlock()
 	return false
 }
@@ -254,24 +289,24 @@ func (s *Guard) recordSourceFailure(key string, now time.Time) {
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
 
-	shard.failures[key]++
-	if shard.failures[key] == s.maxRetries {
-		shard.banned[key] = now.Add(s.banTime)
-		// The address itself stays out of the log: a ban is worth knowing
-		// about, who was banned is not something this log gets to say.
-		s.logger.Warn("Source banned after repeated authentication failures",
-			"failures", shard.failures[key],
-			"ban_seconds", s.banTime.Seconds(),
-		)
-	} else if shard.failures[key] > s.maxRetries {
-		shard.banned[key] = now.Add(s.banTime)
+	entry, exists := shard.failures[key]
+	if !exists && len(shard.failures) >= s.capacity {
+		return
+	}
+	if entry.count < s.maxRetries {
+		entry.count++
+	}
+	entry.expires = now.Add(s.banTime)
+	shard.failures[key] = entry
+	if entry.count >= s.maxRetries {
+		_, already := shard.banned[key]
+		shard.banned[key] = entry.expires
+		if !already {
+			s.logger.Warn("Source banned after repeated authentication failures",
+				"failures", entry.count, "ban_seconds", s.banTime.Seconds())
+		}
 	}
 
-	// Periodic cleanup of stale entries to prevent unbounded growth
-	if now.Sub(shard.lastCleanup) > 5*time.Minute {
-		s.cleanupShardLocked(shard, now)
-		shard.lastCleanup = now
-	}
 }
 
 func (s *Guard) forgetSource(key string) {
@@ -298,6 +333,10 @@ func (s *Guard) accountIsHot(user string, now time.Time) bool {
 }
 
 func (s *Guard) softLimit() int {
+	maxInt := int(^uint(0) >> 1)
+	if s.maxRetries > maxInt/softFactor {
+		return maxInt
+	}
 	limit := s.maxRetries * softFactor
 	if limit < 1 {
 		limit = 1
@@ -317,7 +356,19 @@ func (s *Guard) recordAccountFailure(user string, now time.Time) {
 	if !ok || now.After(entry.expires) {
 		entry = accountFailures{}
 	}
-	entry.count++
+	if !ok && len(shard.failures) >= s.capacity {
+		for key, old := range shard.failures {
+			if !now.Before(old.expires) {
+				delete(shard.failures, key)
+			}
+		}
+		if len(shard.failures) >= s.capacity {
+			return
+		}
+	}
+	if entry.count < s.softLimit() {
+		entry.count++
+	}
 	entry.expires = now.Add(s.banTime)
 
 	if entry.count >= s.softLimit() && !entry.alerted {
@@ -350,28 +401,40 @@ func (s *Guard) forgetAccount(user string) {
 	shard.mu.Unlock()
 }
 
+// reserveSource also expires partial failures. Fixed bounds apply on every
+// insertion, rather than only at an occasional five-minute cleanup.
+func (s *Guard) reserveSource(key string, now time.Time) bool {
+	if !s.lockout {
+		return true
+	}
+	shard := s.shardFor(key)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+	if entry, ok := shard.failures[key]; ok && now.Before(entry.expires) {
+		return true
+	}
+	s.cleanupShardLocked(shard, now)
+	if len(shard.failures) >= s.capacity {
+		return false
+	}
+	shard.failures[key] = sourceFailures{expires: now.Add(s.banTime)}
+	return true
+}
+
+func (s *Guard) forgetReservation(key string) {
+	shard := s.shardFor(key)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+	if entry, ok := shard.failures[key]; ok && entry.count == 0 {
+		delete(shard.failures, key)
+	}
+}
+
 func (s *Guard) cleanupShardLocked(shard *sourceShard, now time.Time) {
-	for u, expiry := range shard.banned {
-		if now.After(expiry) {
-			delete(shard.banned, u)
-			delete(shard.failures, u)
-		}
-	}
-	// Heuristic: if failures map grew large, clear entries for sources that are
-	// not currently banned. This prevents memory exhaustion under a run from
-	// many addresses.
-	// The cap is derived from the limit, and a guard with no limit never gets
-	// here - nothing records a failure for it. The floor is still explicit,
-	// because a cap of zero would mean "clean on every call".
-	keep := s.maxRetries * 100
-	if keep < 100 {
-		keep = 100
-	}
-	if len(shard.failures) > keep {
-		for u := range shard.failures {
-			if _, banned := shard.banned[u]; !banned {
-				delete(shard.failures, u)
-			}
+	for key, entry := range shard.failures {
+		if !now.Before(entry.expires) {
+			delete(shard.failures, key)
+			delete(shard.banned, key)
 		}
 	}
 }

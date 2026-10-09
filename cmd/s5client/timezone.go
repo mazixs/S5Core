@@ -15,7 +15,8 @@ import (
 // through. Everything that reaches the network - the tunnel itself and the
 // optional timezone lookup - goes through it, which is what makes the promise
 // "starting the client contacts nothing but the server" testable instead of
-// merely stated.
+// merely stated. dialFastOpen (tfo.go) is the same dial with TCP Fast Open,
+// taken only when OBFS_TFO is on.
 var dialOutbound = func(ctx context.Context, network, addr string) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, network, addr)
 }

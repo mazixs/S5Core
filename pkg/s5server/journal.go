@@ -506,6 +506,12 @@ func (j *sessionJournal) connEnd(id, transport, client string, e *socks5.ConnEnd
 		if udp {
 			l.Int("dgram_up", e.DatagramsUp)
 			l.Int("dgram_down", e.DatagramsDown)
+			l.Int("udp_client_in", int64(e.UDPRelay.ClientIn))
+			l.Int("udp_target_out", int64(e.UDPRelay.TargetOut))
+			l.Int("udp_target_in", int64(e.UDPRelay.TargetIn))
+			l.Int("udp_client_out", int64(e.UDPRelay.ClientOut))
+			l.Int("udp_drops", int64(e.UDPRelay.Drops))
+			l.Int("target_write_errors", int64(e.UDPRelay.TargetWriteErrors))
 			if e.Rotations > 0 {
 				l.Int("rotations", e.Rotations)
 				l.Bool("answered", e.Answered)
@@ -582,14 +588,14 @@ func (s *Server) openJournal() error {
 	if !sessionLogOn(s.cfg) {
 		return nil
 	}
-	j, err := openSessionJournal(s.cfg, s.boot)
+	j, err := openSessionJournal(s.cfg, s.Boot())
 	if err != nil {
 		return err
 	}
 	s.journal.Store(j)
 	unclean := j.prev != "" && j.prev != "process_stop"
 	j.Write("INFO", "process_start", func(l *logging.Line) {
-		l.Str("boot", s.boot)
+		l.Str("boot", s.Boot())
 		l.Str("version", buildinfo.Version())
 		l.Str("go_version", buildinfo.GoVersion())
 		l.Int("pid", int64(os.Getpid()))
@@ -599,7 +605,7 @@ func (s *Server) openJournal() error {
 	})
 	if unclean {
 		s.logger.Warn("The previous process did not stop cleanly: its session journal has no process_stop",
-			"event", "process_start", "boot", s.boot, "last_event", j.prev)
+			"event", "process_start", "boot", s.Boot(), "last_event", j.prev)
 	}
 	return nil
 }
@@ -612,7 +618,7 @@ func (s *Server) closeJournal() {
 	open := s.openSessions()
 	if j != nil {
 		j.Write("INFO", "process_stop", func(l *logging.Line) {
-			l.Str("boot", s.boot)
+			l.Str("boot", s.Boot())
 			l.Int("uptime_s", int64(uptime/time.Second))
 			l.Int("conns", s.connsEnded.Load())
 			l.Int("open", open)
@@ -621,7 +627,7 @@ func (s *Server) closeJournal() {
 	}
 	s.logger.Info("Server stopped",
 		"event", "process_stop",
-		"boot", s.boot,
+		"boot", s.Boot(),
 		"uptime_s", int64(uptime/time.Second),
 		"conns", s.connsEnded.Load(),
 		"open", open,
@@ -638,14 +644,21 @@ func (s *Server) openSessions() int64 {
 	return n
 }
 
-// Boot is the epoch of this server: 8 hex digits drawn at NewServer, written
-// into its process markers in both the service log and the session journal.
-func (s *Server) Boot() string { return s.boot }
+// Boot is the current run ID: 8 hex digits, replaced at each accepted Start.
+// Before the first Start it returns the provisional ID drawn by NewServer;
+// Stop retains the last run ID. It is safe to read concurrently with Start.
+func (s *Server) Boot() string {
+	if value := s.boot.Load(); value != nil {
+		return value.(string)
+	}
+	return ""
+}
 
 // RecordReload marks a configuration reload (SIGHUP): the session journal is
 // reopened, for a rotation done from outside, and both logs get a
 // config_reload line naming what failed to reload, if anything.
 func (s *Server) RecordReload(failed ...string) {
+	boot := s.Boot()
 	n := s.reloads.Add(1)
 	j := s.journal.Load()
 	if j != nil {
@@ -654,7 +667,7 @@ func (s *Server) RecordReload(failed ...string) {
 			s.logger.Error("Failed to reopen the session journal", "error", err)
 		}
 		j.Write("INFO", "config_reload", func(l *logging.Line) {
-			l.Str("boot", s.boot)
+			l.Str("boot", boot)
 			l.Int("reload", n)
 			if len(failed) > 0 {
 				l.Str("failed", strings.Join(failed, ","))
@@ -663,7 +676,7 @@ func (s *Server) RecordReload(failed ...string) {
 	}
 	s.logger.Info("Configuration reloaded",
 		"event", "config_reload",
-		"boot", s.boot,
+		"boot", boot,
 		"reload", n,
 		"failed", failed,
 	)

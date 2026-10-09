@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -74,9 +75,10 @@ func streamPaths(t *testing.T, idle time.Duration) map[string]string {
 		}
 	}
 	out := map[string]string{"direct": "", "plain": "127.0.0.1:" + cfg.Port}
-	for _, mode := range []string{"obfs", "obfs-keepalive", "obfs-keepalive-risk", "wss"} {
+	for _, mode := range []string{"obfs", "obfs-keepalive", "obfs-keepalive-risk", "wss", "obfs-optimistic", "wss-optimistic"} {
 		cp := clientParams{ServerAddr: "127.0.0.1:" + cfg.ObfsPort, PSK: cfg.ObfsPSK, MTU: 1400, MaxPadding: 256, Prologue: "printable", Format: "v1", HandshakeTimeout: 5 * time.Second, DialTimeout: 5 * time.Second, Transport: "obfs"}
-		if mode == "wss" {
+		cp.OptimisticConnect = strings.HasSuffix(mode, "-optimistic")
+		if strings.HasPrefix(mode, "wss") {
 			cp.Transport = "ws"
 			cp.WSUrl = "wss://" + cfg.WSAddr + "/ws"
 			cp.WSCAFile = cert
@@ -138,11 +140,17 @@ func streamTransport(t *testing.T, addr string, reuse bool) *http.Transport {
 func TestHTTPSActiveStreams(t *testing.T) {
 	const idle = 500 * time.Millisecond
 	paths := streamPaths(t, idle)
+	// This checks idle refresh, not scheduler throughput. Bound the concurrent
+	// TLS setups so race instrumentation cannot consume the short idle budget
+	// before a stream starts; every stream still crosses four idle intervals.
+	active := make(chan struct{}, 4)
 	for _, h2 := range []bool{false, true} {
 		for _, upload := range []bool{false, true} {
-			for _, mode := range []string{"plain", "obfs", "wss", "obfs-keepalive", "obfs-keepalive-risk"} {
+			for _, mode := range []string{"plain", "obfs", "wss", "obfs-keepalive", "obfs-keepalive-risk", "obfs-optimistic", "wss-optimistic"} {
 				t.Run(fmt.Sprintf("h2=%v/upload=%v/%s", h2, upload, mode), func(t *testing.T) {
 					t.Parallel()
+					active <- struct{}{}
+					defer func() { <-active }()
 					payload := bytes.Repeat([]byte("x"), 1024)
 					const rounds = 40
 					origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

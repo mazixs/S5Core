@@ -1,0 +1,26 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/nativeudp
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkAuditNativeCodec/32-16      	  330067	       943.7 ns/op	  33.91 MB/s	        74.51 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/32-16      	  379982	       963.1 ns/op	  33.23 MB/s	        74.51 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/32-16      	  351969	       979.4 ns/op	  32.67 MB/s	        74.50 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/32-16      	  356854	      1044 ns/op	  30.65 MB/s	        74.52 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/32-16      	  361234	       961.5 ns/op	  33.28 MB/s	        74.50 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/200-16     	  342541	      1093 ns/op	 183.03 MB/s	       242.5 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/200-16     	  341974	      1068 ns/op	 187.23 MB/s	       242.5 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/200-16     	  358022	      1072 ns/op	 186.65 MB/s	       242.5 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/200-16     	  295528	      1298 ns/op	 154.09 MB/s	       242.5 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/200-16     	  342337	      1102 ns/op	 181.46 MB/s	       242.5 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/1200-16    	  238459	      1554 ns/op	 772.10 MB/s	      1242 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/1200-16    	  247544	      1530 ns/op	 784.14 MB/s	      1243 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/1200-16    	  221618	      1457 ns/op	 823.53 MB/s	      1243 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/1200-16    	  242541	      1457 ns/op	 823.81 MB/s	      1243 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeCodec/1200-16    	  249344	      1444 ns/op	 831.17 MB/s	      1243 wire-B/packet	       0 B/op	       0 allocs/op
+BenchmarkAuditNativeNewSession-16    	    2587	    136671 ns/op	   27320 B/op	       8 allocs/op
+BenchmarkAuditNativeNewSession-16    	    2540	    129752 ns/op	   27320 B/op	       8 allocs/op
+BenchmarkAuditNativeNewSession-16    	    2734	    135322 ns/op	   27320 B/op	       8 allocs/op
+BenchmarkAuditNativeNewSession-16    	    2526	    134280 ns/op	   27320 B/op	       8 allocs/op
+BenchmarkAuditNativeNewSession-16    	    2660	    130156 ns/op	   27320 B/op	       8 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/nativeudp	7.454s

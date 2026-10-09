@@ -1,0 +1,1668 @@
+{
+  "base_commit": "65650535fbfd79b3d9a4f4281fd85d4c85aa667a",
+  "base_tree": "a5058fd4a0b0d8c48e03cc3e4ba335641e2da312",
+  "fingerprint": "e4405d496f6c139af848d3eb18b3133c3ebbed4efa48848f498f1085b1738193",
+  "method": "SHA-256 of canonical sorted JSON files map; Go sources, go.mod, go.sum and quality gate",
+  "files": {
+    "cmd/connlat/main.go": {
+      "bytes": 8643,
+      "sha256": "160020e4bbd1057a202b2d83ddc332df368c99f7caea4b726c63cad7ed1fffed"
+    },
+    "cmd/connlat/main_test.go": {
+      "bytes": 611,
+      "sha256": "d220fb768a58771213dec931019a5229800988d7068dbc74e07c4dcca738b6a3"
+    },
+    "cmd/fpcollect/collect_test.go": {
+      "bytes": 4087,
+      "sha256": "d8deca63607ffec4bd9ec22296eb95dd32f05e94492c3e9df3f1ec999ca97754"
+    },
+    "cmd/fpcollect/main.go": {
+      "bytes": 10141,
+      "sha256": "c4abf4c5b7f50c6c167d61aebecb44e9964c2f5915a8d6d5329b195cf1c909a0"
+    },
+    "cmd/fpcollect/tcpinfo_linux.go": {
+      "bytes": 924,
+      "sha256": "8e10176e12fec26ad1dd02e7adfc42d8e82992b8608cce01a8a6a72958eff65c"
+    },
+    "cmd/fpcollect/tcpinfo_other.go": {
+      "bytes": 405,
+      "sha256": "c9ceb2f4f39c1794ffbc29affe32ce4676556f3bdee2c68dd207ab38cdbc9feb"
+    },
+    "cmd/fpprobe/main.go": {
+      "bytes": 16476,
+      "sha256": "02260400c960beb91cf9fa9af046f675ca5d76d1db8472f5b248c80cc0d93305"
+    },
+    "cmd/fpprobe/shape_test.go": {
+      "bytes": 2785,
+      "sha256": "127569086145ab1ffb0ff0bc375c69e427f520bcc788f1def4884e59b505b45b"
+    },
+    "cmd/fpprobe/tcpinfo_linux.go": {
+      "bytes": 928,
+      "sha256": "1231ac8bfd9ff7e415ecdede665ed1164497e1ace4b3608127b527f77d87b101"
+    },
+    "cmd/fpprobe/tcpinfo_other.go": {
+      "bytes": 378,
+      "sha256": "9a792cfc90c1bb5bed215fc03155595d184c2b6c23c7e6e180bb03b55e8f3259"
+    },
+    "cmd/httpsprobe/main.go": {
+      "bytes": 6915,
+      "sha256": "984a93d6e1a00f3813024913c9c758352528397099951b6fe476af033181ab2e"
+    },
+    "cmd/httpsprobe/main_test.go": {
+      "bytes": 2559,
+      "sha256": "d9401caf072a97b9f488e5edb4794b8805c002b6bbaebee340284a158f0e84a3"
+    },
+    "cmd/httpsprobe/performance_linux_test.go": {
+      "bytes": 15508,
+      "sha256": "f757f02268e77640f0566730880482892619d7c9caf4ef7bcc690f6b5505b24c"
+    },
+    "cmd/idleprobe/main.go": {
+      "bytes": 6424,
+      "sha256": "3bdbd2be1ad612b7a9353afb6679beea8463238cf675bf6cf2b1ff44ae74dbc3"
+    },
+    "cmd/s5client/accept.go": {
+      "bytes": 882,
+      "sha256": "47a18220fa5f4c81cc08c09f3a7eaddbbdd291aecea1f64275c5decad4ceb0b8"
+    },
+    "cmd/s5client/accept_test.go": {
+      "bytes": 2243,
+      "sha256": "06e1e5bf31056d210334442562f34a9b891263eb33ce8007ba129baa8eed4cc8"
+    },
+    "cmd/s5client/auth_mode.go": {
+      "bytes": 948,
+      "sha256": "db8b9f7659b0d17bb5c826159f3c231420fb7625bc123ba96fbb35a97ab18d2b"
+    },
+    "cmd/s5client/auth_mode_test.go": {
+      "bytes": 5185,
+      "sha256": "e626198cd5363b235afe92fb9e8d0cb9ed6b27a5be370e26b69a3132ef375f71"
+    },
+    "cmd/s5client/connect_reply_synctest_test.go": {
+      "bytes": 6178,
+      "sha256": "87b69b895427badc3f483eace5c08d345ab4ec9dc22ff18091a1c2f1374ac247"
+    },
+    "cmd/s5client/deadline_synctest_test.go": {
+      "bytes": 7824,
+      "sha256": "90e10eeaba8de59006ee0283aee09271eb2e70f880837a251a1ba38fb6f9ff13"
+    },
+    "cmd/s5client/https_stream_test.go": {
+      "bytes": 8851,
+      "sha256": "dd03cb94213e9df4a567dca206c9674bf714faeb86e384f319b5b95bb5338d9f"
+    },
+    "cmd/s5client/logs.go": {
+      "bytes": 6210,
+      "sha256": "05dd96a436412619d0cecbc6496f18a2af3b352cb146ac4e5e97830dba41d7ba"
+    },
+    "cmd/s5client/logs_test.go": {
+      "bytes": 10234,
+      "sha256": "d2cd8797d61c6b3542d4e6b2d0ce334cb1ef0b68a4d7da187a5dc128e06af18b"
+    },
+    "cmd/s5client/main.go": {
+      "bytes": 42971,
+      "sha256": "06c18f0ba47908adcd547d5c96685f7cffb949f9fb0b034b1b21a42af30387ff"
+    },
+    "cmd/s5client/main_test.go": {
+      "bytes": 12466,
+      "sha256": "51697c4ec91b83a5a6a3b921be3851116b5f656b297594ba188d42d6600ac547"
+    },
+    "cmd/s5client/native_cost_test.go": {
+      "bytes": 3508,
+      "sha256": "81fa02b9c3c09a4462908fe44f2ba338b85ac869f1845b5c3339772c09391bdc"
+    },
+    "cmd/s5client/native_limit_synctest_test.go": {
+      "bytes": 10848,
+      "sha256": "377b817a1fcd01aaf0aad2ffead7377e3a7be12b0ec071cb26339568f5225f7d"
+    },
+    "cmd/s5client/native_liveness_synctest_test.go": {
+      "bytes": 22394,
+      "sha256": "44c9987a285acc4b4df35ec61cfb6b48053cbaca567637406ab9edc68f6c10ea"
+    },
+    "cmd/s5client/native_order_synctest_test.go": {
+      "bytes": 9857,
+      "sha256": "30a1904ede6d97cb3fd377a14b8e71f144e23a027fb1595cedc68d0db42f0eaf"
+    },
+    "cmd/s5client/native_path_linux_test.go": {
+      "bytes": 17225,
+      "sha256": "365c70913ca6bbdf4024b4a4875080921233cfedee8f3edb95a3c377b0cd116b"
+    },
+    "cmd/s5client/native_timing_synctest_test.go": {
+      "bytes": 2820,
+      "sha256": "1d8c9b8e23d8275e72b59ee09a82fbd49c095826229bf8ec3e595c5fbc4b25d3"
+    },
+    "cmd/s5client/native_udp.go": {
+      "bytes": 22487,
+      "sha256": "5895fdd45d1ef08483a69ede2fedb2189821b7761dc3c380c664cb711e735cf0"
+    },
+    "cmd/s5client/native_udp_test.go": {
+      "bytes": 15724,
+      "sha256": "db9721659d460838f7d17f15cdad9646def23ce167c49a1fdd10c91581566994"
+    },
+    "cmd/s5client/norace_test.go": {
+      "bytes": 58,
+      "sha256": "fcfac550e0e157c587e37af8a0aab39132d0db6e8166391644e033dcb8d849a5"
+    },
+    "cmd/s5client/opening_test.go": {
+      "bytes": 2162,
+      "sha256": "31011f07a3ee2fd9acff1c9920d7b47d18b05caa3631a3654059eb0d7fb258e2"
+    },
+    "cmd/s5client/race_test.go": {
+      "bytes": 177,
+      "sha256": "b0917bd46b0eb3de9ef35f6509f58df8f2f3c6e15197647097aa33515544a0df"
+    },
+    "cmd/s5client/relay_buffer_test.go": {
+      "bytes": 1392,
+      "sha256": "d70efda28c1cdcdca3ee4b23ae8a4f4b4b4883b9621654b5235086db2ecc2111"
+    },
+    "cmd/s5client/relay_close_test.go": {
+      "bytes": 5341,
+      "sha256": "803a07f5527f6cc865fcc253b00a8aa6e130232c85fc0648e09eae059149628d"
+    },
+    "cmd/s5client/routes.go": {
+      "bytes": 1112,
+      "sha256": "20b2097d4608d754c553c2bdad9b10ce2465c340f1c7da567267fd6b6c8c97e4"
+    },
+    "cmd/s5client/routes_bench_test.go": {
+      "bytes": 452,
+      "sha256": "7f0d893d044577d6863137d0d4939714a704d31f337d133c06ca7e5a79709971"
+    },
+    "cmd/s5client/routes_test.go": {
+      "bytes": 625,
+      "sha256": "11a76cadf719eaac1231a39b2a84311019cda7116756825e2c9860e7689fc1f6"
+    },
+    "cmd/s5client/socks_fuzz_test.go": {
+      "bytes": 9429,
+      "sha256": "f0487b73a824e80c002e3a109f722233d68d5785f9dabf742597015954333536"
+    },
+    "cmd/s5client/stream_tuning_linux_test.go": {
+      "bytes": 3659,
+      "sha256": "d7adb3c552a87aa72d3de000b8d8f270222ecbe1e6e9f1aea3070fea64ec6806"
+    },
+    "cmd/s5client/timezone.go": {
+      "bytes": 3751,
+      "sha256": "b28ae8e8db86a91a88a4745a791cb60947f32d10766c7b41e23292a7bd6663b1"
+    },
+    "cmd/s5client/timezone_test.go": {
+      "bytes": 3195,
+      "sha256": "5ef05fd63bbf5b6532d4481bb1cdd9d34ce6aa8dc251c57f6831f8633e1652dd"
+    },
+    "cmd/s5client/transport.go": {
+      "bytes": 13359,
+      "sha256": "18c1d599a4954f368552b6f2a88471c64a8db095cfbb64a86900e933d93c4810"
+    },
+    "cmd/s5client/transport_test.go": {
+      "bytes": 17158,
+      "sha256": "9340025065d542b3a191374589c3a8a600f5d560faf5d41fbbcdba8365a33ee7"
+    },
+    "cmd/s5client/tunnel_dead_test.go": {
+      "bytes": 567,
+      "sha256": "597d10c4987d8c067d742924560ea0cee1f47bd309193f312149733286485fc7"
+    },
+    "cmd/s5client/udp_client.go": {
+      "bytes": 14999,
+      "sha256": "31c622311569778c041b33b265d256eded155177f5d479f8a60e03b4b5d720d1"
+    },
+    "cmd/s5client/udp_client_test.go": {
+      "bytes": 10135,
+      "sha256": "4e5dacfc2c4c272fd20d12aef6de30503695366a9ddd0074bc45ebb163985623"
+    },
+    "cmd/s5client/udp_reply_test.go": {
+      "bytes": 8315,
+      "sha256": "f979eabdd1f04c2571991e7c9844a29189c5437d55b27d95f2c0e1be9c30adc9"
+    },
+    "cmd/s5client/udp_report.go": {
+      "bytes": 4698,
+      "sha256": "0a3a218f3cdb1d79dfecc8ef17c405335da8b39099beddb1dce5a998ba1d2446"
+    },
+    "cmd/s5client/udp_report_test.go": {
+      "bytes": 7792,
+      "sha256": "6497d59accd988ec8564481d8d1d7b4b58947f1a148a51a3c081d3c2d501523c"
+    },
+    "cmd/s5client/udp_tuning_linux_test.go": {
+      "bytes": 1278,
+      "sha256": "ad38ae8f71a4259feb8c98674635236e5ae369b2e544fad8817a3fdac41fc254"
+    },
+    "cmd/s5client/ws_options.go": {
+      "bytes": 364,
+      "sha256": "fe2c7df4a69626027147d4708f9513317acdd2df2d18557b124a08bc40b23be0"
+    },
+    "cmd/s5core/advice_env_test.go": {
+      "bytes": 1951,
+      "sha256": "b3d44f746507e02c55994807ce5da5fcb7ad3b8187f44a1aa1415393d2bbe263"
+    },
+    "cmd/s5core/advice_file.go": {
+      "bytes": 2731,
+      "sha256": "cd4f0c7be110439922b5c949618dd036140329cd8193799bc95bd2b96d4b5cae"
+    },
+    "cmd/s5core/advice_file_fuzz_test.go": {
+      "bytes": 2359,
+      "sha256": "fde81e89502b442f825e9a5d518590603398ad83b83316c499189e8b437dc1c9"
+    },
+    "cmd/s5core/advice_file_test.go": {
+      "bytes": 10478,
+      "sha256": "f213f2ca876a1ce21765009defc33d0717b0a00676e48d521538a145278a027f"
+    },
+    "cmd/s5core/env_alias_test.go": {
+      "bytes": 1581,
+      "sha256": "8e5aabffb1e598e7d635d83f786491e6375085a8bcfc615fca953f6160769afb"
+    },
+    "cmd/s5core/main.go": {
+      "bytes": 18640,
+      "sha256": "6eb7e504c6428a49820cc1fe974db796871fa1e38df36a38be8cd06dc1edd55d"
+    },
+    "cmd/s5core/main_test.go": {
+      "bytes": 6782,
+      "sha256": "32baaf61dcf0cf4e484961efb367cca6ab1b443fbffb810120c4618aeb73cd68"
+    },
+    "cmd/s5core/metrics_server_test.go": {
+      "bytes": 4276,
+      "sha256": "a76d852a3a6ebfbd0c624c0c452c8d67837dc8887e50a9a257245ce15dc33478"
+    },
+    "cmd/s5core/private_dest_test.go": {
+      "bytes": 1960,
+      "sha256": "250ab20596d6dee5d1b8ae6007d6c4402170a759a6be09ed532854d839d27ec4"
+    },
+    "cmd/s5core/shutdown_test.go": {
+      "bytes": 4624,
+      "sha256": "03d333a1bbd68c7850aaaaf9df020e009e44859bb3d171294454ef2b9de0d587"
+    },
+    "cmd/s5core/shutdown_unix_test.go": {
+      "bytes": 4272,
+      "sha256": "a2ec77961baa716cf817d1fdfcc30c2baaa6b5363a0162193813d6effc14d316"
+    },
+    "cmd/stealthcheck/main.go": {
+      "bytes": 2772,
+      "sha256": "02b8f0d3b9906ecee8f0557a7739d45746d4e00f3a0d6b0664250cce4450343c"
+    },
+    "cmd/udpprobe/burst.go": {
+      "bytes": 8136,
+      "sha256": "ec6cf21327a39903db7687f9e71e0637688b512b3de459595aa9fb8893965f91"
+    },
+    "cmd/udpprobe/burst_test.go": {
+      "bytes": 2531,
+      "sha256": "4910aec23410eab17b728b002895ca30b2efda71057e7d0720bcedf44f46f2b8"
+    },
+    "cmd/udpprobe/drops_linux.go": {
+      "bytes": 2404,
+      "sha256": "a4548db2675a9200ebc9996853bfbbc2a9b2ebe0cd510d9172bc68218bce2cdf"
+    },
+    "cmd/udpprobe/drops_linux_test.go": {
+      "bytes": 420,
+      "sha256": "11d2a795a178f6770f06018c4c64de9249b66017a3b054a1606e47e2890ccdd4"
+    },
+    "cmd/udpprobe/drops_other.go": {
+      "bytes": 318,
+      "sha256": "2542f33af0bf97bd50350d057e506d2bf19ea357de5e875effdc83fe2bead990"
+    },
+    "cmd/udpprobe/main.go": {
+      "bytes": 13088,
+      "sha256": "7a5a910138e2e78aa9ce66c419ba05cde169d7f64e7d64a8b919600cba6ffbb4"
+    },
+    "cmd/udpshape/forms.go": {
+      "bytes": 8542,
+      "sha256": "7dbd1fa9e807f6bb15fd4d2d31c7f4d76e23735dbc2e88ca6c712154eca76dee"
+    },
+    "cmd/udpshape/forms_test.go": {
+      "bytes": 7254,
+      "sha256": "e97d3fe1356d96ba289ce61ef39a70e3c8af13ddf6aec24a4bd39e34de3f7d18"
+    },
+    "cmd/udpshape/main.go": {
+      "bytes": 3853,
+      "sha256": "9d687ffb351aed93f2b64c4616448d5d5874cf2ad311ca15b8b2395170e80a74"
+    },
+    "cmd/udpshape/probe.go": {
+      "bytes": 19389,
+      "sha256": "5380bc08c4bcfa12393339804891619a1817efcd173a9cb5dd07fea6a0b53975"
+    },
+    "cmd/udpshape/probe_test.go": {
+      "bytes": 8805,
+      "sha256": "91df46db4e027e36b88eab742b14dc036045ee101dc9ae239beaeb8ce6716e5b"
+    },
+    "cmd/udpshape/serve.go": {
+      "bytes": 7478,
+      "sha256": "5730142b15452710d1bf3a48d4675f623f3c38b43c8f64d820b10471df8e9ede"
+    },
+    "cmd/udpshape/serve_test.go": {
+      "bytes": 3735,
+      "sha256": "a70c38f17b94af9e2c535b12f442fc47be147af7a393e4a1d6ba002a89fd776d"
+    },
+    "cmd/wirebench/main.go": {
+      "bytes": 9280,
+      "sha256": "1bc6c7aceefd75f83e201e528a2d04168fe35c53ad9d6ce849eeba91084b71c8"
+    },
+    "cmd/wirebench/main_test.go": {
+      "bytes": 3025,
+      "sha256": "6feb8e214cbf3847393aa9b2215709dc7409f0e1e9256629bbeed46d3710acc4"
+    },
+    "go.mod": {
+      "bytes": 1439,
+      "sha256": "8db6f9b5750d747b702307b0db7e490a06fd6c550f453726d335756c7c19f01a"
+    },
+    "go.sum": {
+      "bytes": 7123,
+      "sha256": "bb87512164713baff4a596038bfaf26ba6eff2ff175b028aaf380255a996052d"
+    },
+    "internal/acceptretry/acceptretry.go": {
+      "bytes": 2043,
+      "sha256": "cf852942bc28a0aeb7a1bd5e77fe86a39257a46ba0b31ea98a55c82d44861c08"
+    },
+    "internal/acceptretry/acceptretry_test.go": {
+      "bytes": 1643,
+      "sha256": "5d125d29ee9a200f21bcd3af80103d1618fb61100e2d65a849993a5e9f9bb055"
+    },
+    "internal/arch/arch_test.go": {
+      "bytes": 5979,
+      "sha256": "48462223f87285990fc6ba5e3de6ce82d5d5b7a82d6f2e2a22845bba3cda2bf8"
+    },
+    "internal/arch/platforms_test.go": {
+      "bytes": 2715,
+      "sha256": "170c37996a1809e2ae9a550fd9c2a696fd44080068ac3722f8c44521e1413771"
+    },
+    "internal/buildinfo/buildinfo.go": {
+      "bytes": 1476,
+      "sha256": "326466861e4ba71ea63569c9776dd237725f7aeb9c3eaf389280f1e39d0741c8"
+    },
+    "internal/diagnostics/disabled.go": {
+      "bytes": 206,
+      "sha256": "6244d719ae26b095cefa79dff96d174811afcc7d02fc3e66bf175343d32e1d15"
+    },
+    "internal/diagnostics/profiling.go": {
+      "bytes": 1769,
+      "sha256": "12a0772e6cc21573f7b273bf659620214990c53a30814e5e780af4dc49548204"
+    },
+    "internal/identity/guard.go": {
+      "bytes": 10943,
+      "sha256": "b5811c62b82decb80302ecea94ef101d48a6a1d1d0035510e356307c9a2d82a4"
+    },
+    "internal/identity/guard_test.go": {
+      "bytes": 12984,
+      "sha256": "610f9da8ef07129d1d844cf2266c721fa8773621d6a18fd16222a1726d30b77c"
+    },
+    "internal/identity/model.go": {
+      "bytes": 6022,
+      "sha256": "e20553867c3539eff7e6f70843cbdaa50ec0e1a3a48a8ab75a1daa88bf5b3091"
+    },
+    "internal/identity/model_test.go": {
+      "bytes": 4923,
+      "sha256": "0cd0cdfbe87098130fd32a17703156e5a8cc009120815b1e59ffaeb2a3d33ddb"
+    },
+    "internal/logging/bench_test.go": {
+      "bytes": 1297,
+      "sha256": "afd57a5eaf9328a23e554ba81364ac74aa3899c42b4eeda0d449ba7bb5bf29be"
+    },
+    "internal/logging/journal.go": {
+      "bytes": 8875,
+      "sha256": "4c88e841298d1e6f060bcf4b9b8ff94c9968c940ba103bfdec8f95bb742e1b34"
+    },
+    "internal/logging/journal_test.go": {
+      "bytes": 8116,
+      "sha256": "3883ec6871e73f078b9ec55450476cf10677edaf954eb2088ab11d11dc73fb58"
+    },
+    "internal/logging/level_fuzz_test.go": {
+      "bytes": 1196,
+      "sha256": "31629044613e9a26b546c255b3c49b8c0e421ab3c14f6e9d80a10c096ca8c273"
+    },
+    "internal/logging/logging.go": {
+      "bytes": 7955,
+      "sha256": "fa837e620db40812cce01fa5b18e0c0afa563f5b5f9eddeba2899e35c4b4b71f"
+    },
+    "internal/logging/logging_test.go": {
+      "bytes": 8144,
+      "sha256": "4dfd1b09c2bf5d59b05288facb06fa514ecea452cd8e7f8d356e2729e5cf90d9"
+    },
+    "internal/logging/nofollow_other.go": {
+      "bytes": 132,
+      "sha256": "85ec29c47cdcdf9186419f3ba5f663ad6610634574dd1c6ddb460783df39b78b"
+    },
+    "internal/logging/nofollow_unix.go": {
+      "bytes": 88,
+      "sha256": "b3dc1bf6dec1f51c5776ddc5a755d699f629500c6da38f085a38116360963d0e"
+    },
+    "internal/logging/rotate.go": {
+      "bytes": 9701,
+      "sha256": "0f7c3dbbd6e2709b09121c3273d52438ad0502fcc84fe866c5614f7471ecceb7"
+    },
+    "internal/logging/rotate_test.go": {
+      "bytes": 8564,
+      "sha256": "db0952be8e794af7d0ef8a7018c240d2b05711c926aaf6888bc318100360587e"
+    },
+    "internal/passwordhash/alphabet_test.go": {
+      "bytes": 3597,
+      "sha256": "86634cba23d49bfda04c79274dc36d353f4055ec46fefbd5c7914d1b203aa1ce"
+    },
+    "internal/passwordhash/bench_test.go": {
+      "bytes": 1314,
+      "sha256": "a708cb7cb960ab2c156f213320b8af340564abcfa31274223f3a6187c487a347"
+    },
+    "internal/passwordhash/passwordhash.go": {
+      "bytes": 9210,
+      "sha256": "eab3c141f793b5e2e673b32635fa9484b3488f2af17c2b4dbe4c04f1eee42ff5"
+    },
+    "internal/passwordhash/passwordhash_test.go": {
+      "bytes": 2048,
+      "sha256": "b0b9dbcc08807b017ae11537d598155dfaf5f40f9a73def42dfb9a330db123c0"
+    },
+    "internal/passwordhash/phc_fuzz_test.go": {
+      "bytes": 4548,
+      "sha256": "9a3b7e53763259cff425492636e2ac54a7a8e3ab32ccd57a368ed03efe8590ce"
+    },
+    "internal/passwordhash/phc_test.go": {
+      "bytes": 3919,
+      "sha256": "b6031fff51fe8d6f4b6c2c927f548635210c012a554a6fc78b384ae9833634f2"
+    },
+    "internal/passwordhash/validate_test.go": {
+      "bytes": 3616,
+      "sha256": "9cb116fc86f77f6ffca40ffdfe4610c346bbfbeac26908ed68efa8b35980bdc0"
+    },
+    "internal/relay/relay.go": {
+      "bytes": 8205,
+      "sha256": "ccd630ea7da9c92599b7cb6ade6acd79570b038501d1c7f12530247ca42ea914"
+    },
+    "internal/relay/relay_test.go": {
+      "bytes": 8468,
+      "sha256": "b40fd4fb5bf438eea7774b823d274f8f390db41010393668b4bec68e29627f44"
+    },
+    "internal/s5core/ruleset.go": {
+      "bytes": 6315,
+      "sha256": "5c4a2c63580626dcb0ef22c6747f4a7683c31d6f2f097de9ca02981c9198f552"
+    },
+    "internal/s5core/ruleset_test.go": {
+      "bytes": 10695,
+      "sha256": "7a404c308e6cab95eaf0692544b4435f86e43dd3fa717496be57a86d494701cb"
+    },
+    "internal/session/registry.go": {
+      "bytes": 3752,
+      "sha256": "b4890387f2ea62e2c868f5005c9ae557c9e763039421746c1b402c78702d69b4"
+    },
+    "internal/session/session.go": {
+      "bytes": 16298,
+      "sha256": "edd2271c8ff23c403f90489c9c042c4e6b32c0f7dc86fbbfb77578264cebe3bd"
+    },
+    "internal/session/session_test.go": {
+      "bytes": 16539,
+      "sha256": "436387cd382f31e67c834433c8c4cb55cf610b4b37d00054b4336fdd97b7e897"
+    },
+    "internal/signals/signals.go": {
+      "bytes": 1847,
+      "sha256": "185038bef847ae446582ba13cdea97738777f3a7fb85ffa94f9eff6d9a7ebee1"
+    },
+    "internal/signals/signals_test.go": {
+      "bytes": 1482,
+      "sha256": "ae940798dc312071a7fa151875a8de114bbc07fe4764c945e5374155835aee06"
+    },
+    "internal/signals/signals_unix.go": {
+      "bytes": 509,
+      "sha256": "f50742a1fd3333f0d2f5e32a99bfb7edd4d12bb0c28b36f99bab865bf9a46bc4"
+    },
+    "internal/signals/signals_unix_test.go": {
+      "bytes": 2781,
+      "sha256": "61c707dbc8827694d120736bae2451cea1058c7159c07c8d39014dc717094a6c"
+    },
+    "internal/signals/signals_windows.go": {
+      "bytes": 1059,
+      "sha256": "30918b2fb2e94153e641e04a4b8623852cdf5f955300e96546471d10c758423a"
+    },
+    "internal/signals/signals_windows_test.go": {
+      "bytes": 840,
+      "sha256": "1f8c5f2e66de8ac88c54fa15bb792efced8a3136c49462ff9d5448474d407281"
+    },
+    "internal/socks5/accept_resilience_test.go": {
+      "bytes": 8907,
+      "sha256": "2321ae392d10437124ea47198c608384e67ff920319ed05c0df68274d24d4903"
+    },
+    "internal/socks5/addr_fuzz_test.go": {
+      "bytes": 6068,
+      "sha256": "40e6bc2b662f875a5af4d4200123a526cdcc338c3f672c78691af207356b869e"
+    },
+    "internal/socks5/associate.go": {
+      "bytes": 35910,
+      "sha256": "e990911132f55ac2710095e56d3d808216dc82893b410f77fc983fc1707b7205"
+    },
+    "internal/socks5/associate_sockets_test.go": {
+      "bytes": 5867,
+      "sha256": "0adab7073a403f07df2b40dc241bf86cf0ab94d02740153b8e1099ed8692a717"
+    },
+    "internal/socks5/association_cause_synctest_test.go": {
+      "bytes": 3684,
+      "sha256": "a08cb1be5c8c8a6efb54833286dc36d0654ee8796b0891a7ff9fbc74630d76f7"
+    },
+    "internal/socks5/association_end.go": {
+      "bytes": 1933,
+      "sha256": "d180aef1a168b6f2d816699bebdd787f982c6b3397e4487ba16e201144249a08"
+    },
+    "internal/socks5/association_end_test.go": {
+      "bytes": 3990,
+      "sha256": "c2436ac8290567f9543a732ca75f7971265f56387479311b5dcfc0872c2b9e2f"
+    },
+    "internal/socks5/auth.go": {
+      "bytes": 7950,
+      "sha256": "41f72c5c44f14c63d3c475be812c0340303eb055fbe10692b4cd957f807d7e67"
+    },
+    "internal/socks5/auth_test.go": {
+      "bytes": 2627,
+      "sha256": "b29cf7ff0c0a7c5addd4fe782c85f6f63c8fd74d95285fe20570709714d66f49"
+    },
+    "internal/socks5/blocked_resolve_test.go": {
+      "bytes": 3216,
+      "sha256": "a5d5f190e4b7440f809e057efaa8e2f82173e049247a1c634b1c11e042cb4bfb"
+    },
+    "internal/socks5/conn_end.go": {
+      "bytes": 13876,
+      "sha256": "087e46f80ee1b067841a5ae7e1c75c5cfdfb334a943f477f00e7c1cd4e5742da"
+    },
+    "internal/socks5/conn_end_test.go": {
+      "bytes": 5377,
+      "sha256": "026ea2cb310cf5080ec3fb44fb2b8d3067bfb906b8d0b1420c85067f9ef233d4"
+    },
+    "internal/socks5/connect_refused_test.go": {
+      "bytes": 1866,
+      "sha256": "456d913a7861103120617616f6340053b2fac1f61a4d67116602a34640b1be33"
+    },
+    "internal/socks5/credentials.go": {
+      "bytes": 1245,
+      "sha256": "11d162b2fe2735c0332439bd8ef2e5dc480c7088e835b04448683666d0d92fe9"
+    },
+    "internal/socks5/credentials_test.go": {
+      "bytes": 587,
+      "sha256": "9d322d0f6f2d6808da373e1fbd55b84d55c0fab770528b72cf443b95ae72c93f"
+    },
+    "internal/socks5/deadline.go": {
+      "bytes": 1681,
+      "sha256": "29064e2ad0aa481bc863067c0972426f90b279151195328726d532b48a385eca"
+    },
+    "internal/socks5/deadline_test.go": {
+      "bytes": 6673,
+      "sha256": "130d1df4dd69e52893c935b6bcd90a28b75bd84c56b8cddf88ddbb4d9076a304"
+    },
+    "internal/socks5/destination.go": {
+      "bytes": 3348,
+      "sha256": "73ebf0f934e06b49e292c600620c57d6bdf518e3e200b15df4d7deaa591b56e8"
+    },
+    "internal/socks5/dial.go": {
+      "bytes": 17717,
+      "sha256": "870edf709eea46b37720d56c62d95b15370993ce5245783897fe93523e674295"
+    },
+    "internal/socks5/dial_backup_test.go": {
+      "bytes": 11480,
+      "sha256": "7b972f97a983b0335a88585510596ab084c3c4d11fdb1a506ea734f047232ab2"
+    },
+    "internal/socks5/dial_choice_test.go": {
+      "bytes": 7995,
+      "sha256": "2d889765bbf911fccd51e7a6a79a50d0ef5c28d459e439fe55864acf10361b0e"
+    },
+    "internal/socks5/dial_history_test.go": {
+      "bytes": 7241,
+      "sha256": "2a1d48f53748eba4f24916413f8271dd242fb4b2994cac4482d8b94562c9df6d"
+    },
+    "internal/socks5/dial_schedule_test.go": {
+      "bytes": 27502,
+      "sha256": "a4f9c1aee41e54b8281bf877a2794f8871cc6b1c499454aa078ed070fca368cc"
+    },
+    "internal/socks5/dial_test.go": {
+      "bytes": 5979,
+      "sha256": "12c470ca978df65a81351d56a39a9423f520200371f21a8f867f4b2c461b1f9d"
+    },
+    "internal/socks5/dns_fallback_test.go": {
+      "bytes": 6605,
+      "sha256": "477be9fdf224220a3f341dec2e78e86eb305a24c78e64cf621e127060063ef3d"
+    },
+    "internal/socks5/dnsbudget_synctest_test.go": {
+      "bytes": 8137,
+      "sha256": "469bfce96e05d689d54103b01b46fa0dec53b72a613b025d53f8b98503acaf16"
+    },
+    "internal/socks5/failure.go": {
+      "bytes": 2885,
+      "sha256": "b3ccbe8341311c23729099ec3a84cdc6eec73bb3f4dc3d5804b958490fcc6116"
+    },
+    "internal/socks5/failure_test.go": {
+      "bytes": 3849,
+      "sha256": "91b97c3a53e74d32cd62467f78f5927607605d0c332378892462b6462bc37360"
+    },
+    "internal/socks5/grace_test.go": {
+      "bytes": 4829,
+      "sha256": "f958c705d8b223292475aaf6aa599b5a1b7d722e34ccd032ed664877e84110db"
+    },
+    "internal/socks5/handshake_read_test.go": {
+      "bytes": 7917,
+      "sha256": "b8c8ff3b714a155b710acba787288a5df028c46cf17ddf9285f52c2ff08a9aa6"
+    },
+    "internal/socks5/handshake_split_test.go": {
+      "bytes": 8663,
+      "sha256": "09a2b2929c1dd80d20b1436b747601f9460bf87b9ead90bf79b843a367eda691"
+    },
+    "internal/socks5/identity_test.go": {
+      "bytes": 3184,
+      "sha256": "3d199253d0010811b62359c4f0e3c909d8ee83d94d27d5704eb95eabfa2dbe82"
+    },
+    "internal/socks5/native_counters.go": {
+      "bytes": 1223,
+      "sha256": "ecb371a4c2f9f5a4da8840e21b93a76f90beecf022d680cdc519e215a52e12fb"
+    },
+    "internal/socks5/native_path.go": {
+      "bytes": 2265,
+      "sha256": "9ff31e65d5b63d750142e1a15a55d5d351d165da7d891964d7d93d0f86a8ac9a"
+    },
+    "internal/socks5/native_path_test.go": {
+      "bytes": 2026,
+      "sha256": "85ac88f63529fba9f0e3ed027c4e150d7a4365c7a07d8ab27e114b88a4af1698"
+    },
+    "internal/socks5/phase.go": {
+      "bytes": 4183,
+      "sha256": "b3f00b4920a13037f67b05996c19d311508658a1f35da5c58625e5491adca1dc"
+    },
+    "internal/socks5/private_dest_test.go": {
+      "bytes": 13358,
+      "sha256": "8ff8542dbab170e62a403a412e0a264a46607e77921a6b395243a47e4e4db6fb"
+    },
+    "internal/socks5/quota_test.go": {
+      "bytes": 7473,
+      "sha256": "6beb602e7d1cc2d58eb88a223acb591c5ffa8e27614ed09f328f4465321bbea7"
+    },
+    "internal/socks5/race_detector_test.go": {
+      "bytes": 69,
+      "sha256": "8861b638ed8ae91f698f9f2d0c497399d4354105e02612fef7ccf1a1d0f0a6e3"
+    },
+    "internal/socks5/relay.go": {
+      "bytes": 1344,
+      "sha256": "1c2cbcca47f45eb2c0412cdfc47be8206bafb8a9ae657f454d70ce1155d49951"
+    },
+    "internal/socks5/relay_teardown_test.go": {
+      "bytes": 2664,
+      "sha256": "a0328138b6153269c1d813aa972236435a5a8042d63977bb1cafc5491f87f80a"
+    },
+    "internal/socks5/request.go": {
+      "bytes": 22840,
+      "sha256": "39f9d9bb16c35e9ebee12723cd20e125af5b836247142c65c28db3089252b7f3"
+    },
+    "internal/socks5/request_test.go": {
+      "bytes": 3632,
+      "sha256": "fc395c92d4c9533a233d02bfac23e7caf812e0e90596c586f274b1abc8d082e7"
+    },
+    "internal/socks5/resolver.go": {
+      "bytes": 3041,
+      "sha256": "9ec79f5b1397af7f9697203cc91d4331e8d4b78efe5879480af411257056a3c1"
+    },
+    "internal/socks5/resolver_perf_test.go": {
+      "bytes": 823,
+      "sha256": "de5a6f6c1a8782551e5fc3ece7a3d3ed7cb55a026e01febdad85dc38d3a9fc17"
+    },
+    "internal/socks5/resolver_test.go": {
+      "bytes": 293,
+      "sha256": "23ef3ac8c420551ebecfbb2be30c44d7c698b3db365a2caf8568210b1bd8c7c3"
+    },
+    "internal/socks5/ruleset.go": {
+      "bytes": 1588,
+      "sha256": "419a4751b9c7924ce0ed95d79707207297bc99cbd28b106d39ee68485cfb0ff3"
+    },
+    "internal/socks5/ruleset_test.go": {
+      "bytes": 475,
+      "sha256": "bf680685486c6500ffab6e0f273fb951bbdf4b2cd731e68f64a8528989c7844a"
+    },
+    "internal/socks5/shutdown_test.go": {
+      "bytes": 7330,
+      "sha256": "a359e893ce4235f3bbd8f3e1c70e93a0e8c97a6c80c28805ce911b610ac4d700"
+    },
+    "internal/socks5/socks5.go": {
+      "bytes": 17399,
+      "sha256": "9081bffa4b3e41d12f3112dc5416306aba007d0ea900ea45b1aa444710d75b10"
+    },
+    "internal/socks5/socks5_test.go": {
+      "bytes": 2381,
+      "sha256": "d2d2ea0cf3cb5c72b68a279090e687fcc5ef6e82c142ecf81fd60e5ea5786136"
+    },
+    "internal/socks5/source_test.go": {
+      "bytes": 2387,
+      "sha256": "0aa54028fec38b435b09f7b08b1a6b09bd4dd5db961b3d790a6c4087f3e34739"
+    },
+    "internal/socks5/spec_test.go": {
+      "bytes": 1131,
+      "sha256": "be4312faa0f6f2f8fdb91a9710310981c3dfcb471918a5ac7c9118e7a77f93ad"
+    },
+    "internal/socks5/tcpmux_cost_test.go": {
+      "bytes": 8024,
+      "sha256": "3e2d43bfe3862448b87def7fdd3b14cf9822246ac0d96e4f40f76cdf9986c944"
+    },
+    "internal/socks5/tcpmux_fuzz_test.go": {
+      "bytes": 6365,
+      "sha256": "bbdb46bb23add90e0b98d29b6d7403c2c56c6670c80efc2ec03c1b95133cecf6"
+    },
+    "internal/socks5/tcpmux_writer_test.go": {
+      "bytes": 7215,
+      "sha256": "021641e0b000421711b0313e25083949b2f348913001b5eb8794d85d9a7a0f28"
+    },
+    "internal/socks5/tunnel_writer.go": {
+      "bytes": 5589,
+      "sha256": "894d7e6185b1dc11f6daced579404555b3dd5dd55bcc6d22fb809bbaed86c467"
+    },
+    "internal/socks5/tunnel_writer_test.go": {
+      "bytes": 4518,
+      "sha256": "246356fd7603e93dc8b56a276c212110ee1e3d33e4405a6a65fe51541ab83f26"
+    },
+    "internal/socks5/udp.go": {
+      "bytes": 6539,
+      "sha256": "acc00b61150aab6648b878721b03ba8814b762a265dbb7f2854921f4fafcf11b"
+    },
+    "internal/socks5/udp_dispatch.go": {
+      "bytes": 5924,
+      "sha256": "128e6108215c5db907750974fb3b35d80b00c136cdff5be2f0845512062091ed"
+    },
+    "internal/socks5/udp_dispatch_test.go": {
+      "bytes": 6702,
+      "sha256": "cfaaf70bd6c29d0f6abbedb9c2f05dac499641c11c18cfcfee12657cff343023"
+    },
+    "internal/socks5/udp_drops.go": {
+      "bytes": 219,
+      "sha256": "42c695a349d6ff2b8890729eb94ece085fb9981d9f468f4e9631f6af3a6e5747"
+    },
+    "internal/socks5/udp_egress.go": {
+      "bytes": 6241,
+      "sha256": "ce58f1057401fc350ad11868b10e6bb29032f79f169e91942bc72b6604b9b0d9"
+    },
+    "internal/socks5/udp_egress_test.go": {
+      "bytes": 6964,
+      "sha256": "1d6063228117df452785461915a3791110901bf11756172bdb330117d716959d"
+    },
+    "internal/socks5/udp_frag_test.go": {
+      "bytes": 5020,
+      "sha256": "3fa3d1f8694f23dc1e946b54e6006bd643730eb966c2c666e2f743887688b71b"
+    },
+    "internal/socks5/udp_frame_limit_test.go": {
+      "bytes": 2946,
+      "sha256": "41ad4e2ac3308d2e72dfbc1c404f11ea1e4ffc17506a8d3e171db0124517a9e6"
+    },
+    "internal/socks5/udp_header_test.go": {
+      "bytes": 4545,
+      "sha256": "eb2fe9c6b7638680cdef406bc0d93146d5eb58e2578f0f71b61201d9bf751f81"
+    },
+    "internal/socks5/udp_native_order_test.go": {
+      "bytes": 10462,
+      "sha256": "3310a40a38fe8c721fa5c5f453a3c80209eba602c3038160c2f6b441bb5aff51"
+    },
+    "internal/socks5/udp_native_reply_test.go": {
+      "bytes": 11246,
+      "sha256": "fe1aa30261bef5cc77d1f8b258b5072754102d73eee4a4a7e8638f9e37f754f1"
+    },
+    "internal/socks5/udp_quota_test.go": {
+      "bytes": 15606,
+      "sha256": "4a82ed3f519239b27d3a137738dfd82aec22aa5ef43e535b22b2635be5265ddd"
+    },
+    "internal/socks5/udp_resolve_test.go": {
+      "bytes": 7489,
+      "sha256": "70496165f9a073c5f819ce9c14fb095cc7310b070dd905ecd00d095aa72c247c"
+    },
+    "internal/socks5/udp_rules_test.go": {
+      "bytes": 10744,
+      "sha256": "d47c5d413679b062ede7faf0b8166ec4aae67be11e72264f080327cd48ba3de0"
+    },
+    "internal/socks5/udp_socket_contract_test.go": {
+      "bytes": 2621,
+      "sha256": "f9ee54dabc219116b7a6aef9c7c4721bbb8f6376e2408b8b899aa531424c8378"
+    },
+    "internal/socks5/udp_test.go": {
+      "bytes": 7014,
+      "sha256": "8adeae7bfe8858425b7d63d63c0b702b03229b08f3bbcbdbf6ac3908d6e8903e"
+    },
+    "internal/socks5/udp_tunnel_hook_test.go": {
+      "bytes": 1942,
+      "sha256": "3e9d08ce1aec39aaa276d1eef4cd112be65738f02e3ad05d92420bc068225bbe"
+    },
+    "internal/stealth/fingerprint.go": {
+      "bytes": 14109,
+      "sha256": "2ab1182edbb99c8426428f170622353f334525c50065bfbfb4a6eccf9f1015be"
+    },
+    "internal/stealth/fingerprint_test.go": {
+      "bytes": 7252,
+      "sha256": "e1343010ebaebff694806a444a0610746547dc0eda3e381050c373a08235a9c0"
+    },
+    "internal/stealth/hello_fuzz_test.go": {
+      "bytes": 9264,
+      "sha256": "696cc6e87353f36d3b582e5377ef54af7efcee17d63906a636efd835f51ec21e"
+    },
+    "internal/stealth/ja4_alpn_test.go": {
+      "bytes": 644,
+      "sha256": "00a020d1beca29d506a9df80aaf0b4a1c90ba5103295009162df5858de942f1c"
+    },
+    "internal/stealth/level1.go": {
+      "bytes": 7767,
+      "sha256": "b0b201d77a5ae9f95b8d9e4aa395d5beb4052185e68762a8e1ab01d9705b868f"
+    },
+    "internal/stealth/level2.go": {
+      "bytes": 7913,
+      "sha256": "54a7bc89e8e62953d4f63db0ed5d34ffc599ab75b1ecebddde0d79439937f63f"
+    },
+    "internal/stealth/opening.go": {
+      "bytes": 3981,
+      "sha256": "6f4006e2b29e755ff90d1f02608bf2b1773f4ff7188e28534ff33598b61b6f81"
+    },
+    "internal/stealth/stealth_test.go": {
+      "bytes": 5945,
+      "sha256": "0e8e2c3780a1de98945907907d427b5a2c9599e14b1a0c0b11acf707c6b54216"
+    },
+    "internal/tcptune/info.go": {
+      "bytes": 1261,
+      "sha256": "1921f1f622cbe14ae9354eb2fcd14390ece57c71b50a2328a63081f641cadf36"
+    },
+    "internal/tcptune/info_linux.go": {
+      "bytes": 683,
+      "sha256": "a79111dbaf8620c1608e29885ffd01e0cf5a234aba1fa959bd6a667c711d414a"
+    },
+    "internal/tcptune/info_linux_test.go": {
+      "bytes": 1237,
+      "sha256": "4c1fa6eaaa4489d6d8fd88fd703dfa8f7cd0eaca4f347b43846fcb2eac788e58"
+    },
+    "internal/tcptune/info_other.go": {
+      "bytes": 118,
+      "sha256": "abac3cb5a7d30166c726ac29f410f58a593b6bbf1528a1a80e6cb8a6c4a704af"
+    },
+    "internal/tcptune/info_test.go": {
+      "bytes": 243,
+      "sha256": "183d1497434e8d9644a5b906583e8e22079f00155d0edb4bb6f15da174d53558"
+    },
+    "internal/tcptune/tcptune.go": {
+      "bytes": 3877,
+      "sha256": "d49a92545ed443b7762fc97f4eb89dfbb9d0642d519c139829d1d11eb78b426e"
+    },
+    "internal/tcptune/tcptune_linux.go": {
+      "bytes": 1348,
+      "sha256": "032c65b462b4ff390459fd5f1a9ad8a736147c3e79bbfaa70bb7b1529a81660d"
+    },
+    "internal/tcptune/tcptune_linux_test.go": {
+      "bytes": 5419,
+      "sha256": "e5436de47b22e8239674100d5d642eb3faede0e064c8ce6c58e8ef688ba0862a"
+    },
+    "internal/tcptune/tcptune_other.go": {
+      "bytes": 230,
+      "sha256": "40fe9b80b8d0352c829810211afbd52232f130f1ad1f8ed701a7f636cf335f12"
+    },
+    "internal/tcptune/tcptune_test.go": {
+      "bytes": 2387,
+      "sha256": "28a64cb90fcc69a870c5b94776b7beaef0afffce36996053e3e8d3168c2792ba"
+    },
+    "internal/tcptune/tcptune_windows.go": {
+      "bytes": 469,
+      "sha256": "1d37a9ce650cdc18c0bc22bcb2d7614efe0d7b33c31cafb28749de15f224b632"
+    },
+    "internal/testcert/testcert.go": {
+      "bytes": 1617,
+      "sha256": "8cfff7beabdcc72fd502f3b163b8d0b9606c78ba5394c33997ce5b86bc0f3b5b"
+    },
+    "internal/udpbuf/kernel_linux.go": {
+      "bytes": 2702,
+      "sha256": "655d1e13156de969ec628f1f018784bc7452f8cf6a86a218a13b46f0a14a2d9f"
+    },
+    "internal/udpbuf/kernel_linux_test.go": {
+      "bytes": 3497,
+      "sha256": "c47d7a5df4b910763b68a000bf1974b53b19683206045319431e77a4dba3aca7"
+    },
+    "internal/udpbuf/kernel_other.go": {
+      "bytes": 433,
+      "sha256": "4db012330eaa4419fed779ab13a60fc65c0c2fdb74b7bd478895ca3a8a2ef266"
+    },
+    "internal/udpbuf/udpbuf.go": {
+      "bytes": 2371,
+      "sha256": "65681b61ec24b79d14bccfdf8be88280fbac076aae5bf8ae4003d81953c8a604"
+    },
+    "internal/udpbuf/udpbuf_test.go": {
+      "bytes": 2646,
+      "sha256": "635cdb1a44194e2706507dd3fca9d776607197ec73c55c05dbf5c85b095d0e09"
+    },
+    "internal/userstore/alphabet_test.go": {
+      "bytes": 4915,
+      "sha256": "776a30cd96c957905506dde8f05ef842988d241d53a22577d2897fd8cadcb2ad"
+    },
+    "internal/userstore/credential_adapter.go": {
+      "bytes": 823,
+      "sha256": "e6db1858522bab11445ef2eba2a6379cf594ac02f0a0c3e7544d3883516c77bb"
+    },
+    "internal/userstore/flight_synctest_test.go": {
+      "bytes": 6820,
+      "sha256": "f743a31354005b7c050f610247aa61d1d9d5a7a2a9934d7c6f3eecb2b8bfc3fd"
+    },
+    "internal/userstore/hashfile_test.go": {
+      "bytes": 4612,
+      "sha256": "5b857e68ac7eec481e28b665e3d4d81ee85c43be7b59daa391cce10abe183fdd"
+    },
+    "internal/userstore/helpers_test.go": {
+      "bytes": 742,
+      "sha256": "0041b032ac435b288a4a427391700578ef371bd11208af1ea47c3eb0b5fc72ae"
+    },
+    "internal/userstore/kdfgate.go": {
+      "bytes": 4161,
+      "sha256": "69fa940622cc85935ef0ad64762789ffcc74cc829e6b75bd9faf4d255b95df42"
+    },
+    "internal/userstore/kdfgate_test.go": {
+      "bytes": 8851,
+      "sha256": "6b749af30aec5d62cd016c079a529315529add8262b30cc2bfa35eb5e3bf0ba0"
+    },
+    "internal/userstore/migrate.go": {
+      "bytes": 5363,
+      "sha256": "7b5a5d6b9fedf350437674145eef4ef139f2efdc18742a9a41cbd0ac62954b78"
+    },
+    "internal/userstore/migrate_test.go": {
+      "bytes": 11593,
+      "sha256": "54634d325c85308ea8ab427e42293cc02740c67e613d8578f33e09a462be7a9c"
+    },
+    "internal/userstore/model.go": {
+      "bytes": 3453,
+      "sha256": "7760aae2b04b9afb8c3ea1102b9e9279e2bf2b5a56ef2736e46690ebbc427f3b"
+    },
+    "internal/userstore/passwordmigration_test.go": {
+      "bytes": 7817,
+      "sha256": "adaaffa8601f9cc8d03cf1f2f7d4921b5b2c653bc435ed7110f8f1daa91994f2"
+    },
+    "internal/userstore/store.go": {
+      "bytes": 24752,
+      "sha256": "33598ab3348e366f22d1ed713b949859bfba5852ce3328baef3034700f9dbb0b"
+    },
+    "internal/userstore/store_test.go": {
+      "bytes": 14826,
+      "sha256": "225b3c63df2be21344a3d5b4f160b0919b4628ef7ffc84cc70a251c9d411fb43"
+    },
+    "internal/userstore/users_fuzz_test.go": {
+      "bytes": 7925,
+      "sha256": "c41f78a58b265997ccacc7be263c798c0b5c5d758a66cae09cf00de10f8ce07e"
+    },
+    "internal/userstore/verifier.go": {
+      "bytes": 8678,
+      "sha256": "2c3809383aef9b3999002cec13922bd7f13e31d73cba0ee0a9e845489cab9abc"
+    },
+    "internal/userstore/verifier_bench_test.go": {
+      "bytes": 1213,
+      "sha256": "14475894f834285f34c61992e426ae6a1d9cc82124561e5794384bbcd5d86471"
+    },
+    "internal/userstore/verifier_test.go": {
+      "bytes": 7073,
+      "sha256": "13ea3b603fb87c264e55c02e8803f5c2249d9a878858cc69e8d56d72bcc0a075"
+    },
+    "internal/utls/dialer.go": {
+      "bytes": 7331,
+      "sha256": "1aa5f4ba9f53bea4eafe9b9cc627523efe5a2193910e751595d5e5db7fa83d1b"
+    },
+    "internal/utls/dialer_test.go": {
+      "bytes": 4676,
+      "sha256": "4bd332ff7acbd3b13cbf3bde854f7fbb0991495104fc94ec39a97cd4eaf71b98"
+    },
+    "pkg/nativeudp/hub_bench_test.go": {
+      "bytes": 2469,
+      "sha256": "5b82fa04a90b9e50cf75d933ec96dd5853fde1d0343085b930e9c627da686973"
+    },
+    "pkg/nativeudp/limit_test.go": {
+      "bytes": 12688,
+      "sha256": "d322c876680b1d533231139376723a1d29af28202d7942e3d5dd9567afaf1161"
+    },
+    "pkg/nativeudp/nativeudp.go": {
+      "bytes": 21280,
+      "sha256": "24fbd7668d905ad68e0c59d7a189cf265a3ab9821c2ecf8f784ea09b8b7746e8"
+    },
+    "pkg/nativeudp/nativeudp_test.go": {
+      "bytes": 22240,
+      "sha256": "532dd74ab2081544c4a263e233643687d4e7883aa48eb98c40eef86bffa67535"
+    },
+    "pkg/nativeudp/norace_test.go": {
+      "bytes": 63,
+      "sha256": "830d7f1b1aecc4013bd6d613e67be21959b3eae1cb35952b7d7c929443dea6bb"
+    },
+    "pkg/nativeudp/pmtu_linux.go": {
+      "bytes": 859,
+      "sha256": "b074fb2cbc19b6049c8faa63f3971ad6f875a46626fb7c621c2cb07e0dc0ff8c"
+    },
+    "pkg/nativeudp/pmtu_linux_test.go": {
+      "bytes": 1787,
+      "sha256": "bca43bc7c9d43e0d8fb10b75c38ddd039a500d722b38eff7a568387f23bd52f5"
+    },
+    "pkg/nativeudp/pmtu_other.go": {
+      "bytes": 247,
+      "sha256": "95be977595af430d742dc27d0131e16cec6d1105a18768e62fd8bfec7ecb63b3"
+    },
+    "pkg/nativeudp/probe.go": {
+      "bytes": 2994,
+      "sha256": "5d3b737fed7e8c2d273a99a17d421060f6fa59a65ea986545c9c0b77f11b39bd"
+    },
+    "pkg/nativeudp/queue_drops_test.go": {
+      "bytes": 2802,
+      "sha256": "ca4135ca014c88b10cd5d6670a9030bc1373d993084ed33c478518aa2537eadf"
+    },
+    "pkg/nativeudp/race_test.go": {
+      "bytes": 182,
+      "sha256": "a3960e3debd81a852703d3b77fbf1ba435299a804915a2a48de15f8b2b70a36b"
+    },
+    "pkg/nativeudp/search.go": {
+      "bytes": 4243,
+      "sha256": "d4bcf6cc7ca672fa8987b541ddcfff7628209963ae3e2c2987b1323cd72d0a1c"
+    },
+    "pkg/nativeudp/source_linux.go": {
+      "bytes": 2436,
+      "sha256": "5a7176afb287fe3aca404faf3ce36f203525033c212381fa5e273a8978499bbe"
+    },
+    "pkg/nativeudp/source_linux_test.go": {
+      "bytes": 4199,
+      "sha256": "a23e4f44bbfea9d9eb04555f6ac2cf54d81fe4c5b89befcd65709e84d10d73d3"
+    },
+    "pkg/nativeudp/source_other.go": {
+      "bytes": 761,
+      "sha256": "ba75fd06a6ebec044dfbc44fc7124442f4104c55850ea3ee2474e22953c9f7fd"
+    },
+    "pkg/obfs/alloc_test.go": {
+      "bytes": 5213,
+      "sha256": "bae7574eb5adff83032cec0c8deff5cfb3b167fda3ff03d99687f746324e2b10"
+    },
+    "pkg/obfs/bench_test.go": {
+      "bytes": 9222,
+      "sha256": "0683a8bda0431ad1fd819a7babc3e69929e4f12fd5e8dc6e80f9473fdc4d9846"
+    },
+    "pkg/obfs/cipher_test.go": {
+      "bytes": 8135,
+      "sha256": "0389c9301e8dc580df682ac6c8bd024d3f49fada4360674ddb33dcc85ce8c8a9"
+    },
+    "pkg/obfs/clock_test.go": {
+      "bytes": 5122,
+      "sha256": "79fd9bc326ee0eba89160874505791f587d151b80daedd154b230b87db0dab1d"
+    },
+    "pkg/obfs/conn.go": {
+      "bytes": 56133,
+      "sha256": "c79743813b7b9282c18c58cd15dade8ef96634fca0e7666bb992bb0e2eb5579f"
+    },
+    "pkg/obfs/conn_test.go": {
+      "bytes": 5988,
+      "sha256": "6442b79e2a9b13ab7519db460b2fd9b26a6e37cf23e72e25eb6f2ebf7dcdd70c"
+    },
+    "pkg/obfs/control.go": {
+      "bytes": 11699,
+      "sha256": "c7e36db8ea35395079a8c3511b79b79cbfd9197f511351a5273e6fe24b90e3b8"
+    },
+    "pkg/obfs/control_fuzz_test.go": {
+      "bytes": 9381,
+      "sha256": "656a0a45078956c1782d8cd1a490a31ea6128eef5d60293e8fb17262dce11011"
+    },
+    "pkg/obfs/control_test.go": {
+      "bytes": 9241,
+      "sha256": "99f1bb7924c7d1a7b90abc9791abb5905c693b85b85c2633da00058567c859a1"
+    },
+    "pkg/obfs/demo_test.go": {
+      "bytes": 11372,
+      "sha256": "536c7eb5e5fabf2f9817015379b95cc5c70ae9694cd623092d99dc71436dd127"
+    },
+    "pkg/obfs/duplex_test.go": {
+      "bytes": 5258,
+      "sha256": "1a3af596514d5a935457609f1ae9b602140e4a3d9a0fe4f3eba519a0ad866905"
+    },
+    "pkg/obfs/failure.go": {
+      "bytes": 4816,
+      "sha256": "7f337a5add8f147b0017fcc64bad4bce0ffddc72dbfb7ccd213263ad00cd54a9"
+    },
+    "pkg/obfs/frame_fuzz_test.go": {
+      "bytes": 14349,
+      "sha256": "840500a449faa7ccfab2981949e16e76ca6e7f6e74c65d77cbe450ee3d071bd7"
+    },
+    "pkg/obfs/framestate.go": {
+      "bytes": 1753,
+      "sha256": "41bb9419cda5ae89dfd2e6bc4209e51997c9806a72fc250f67fcd91b4a0b492f"
+    },
+    "pkg/obfs/half_close_test.go": {
+      "bytes": 4764,
+      "sha256": "03f90b1b9047af0d7e50d7ab2e094d9e6380d99f025ce6d7f1e62fa26e05c7d9"
+    },
+    "pkg/obfs/halfclose_opening_test.go": {
+      "bytes": 4685,
+      "sha256": "9bf8cb2567cdba75feda52c241915097480f5f197f16fbc629156a132a5a7162"
+    },
+    "pkg/obfs/keepalive.go": {
+      "bytes": 7608,
+      "sha256": "8c98ce01075445d726ff6b8df2e16c384959d3c63165732bb267bcc797f5a0ae"
+    },
+    "pkg/obfs/keepalive_idle_test.go": {
+      "bytes": 2639,
+      "sha256": "4b475d1923eca4b8f29559dc5b7e8007080916000b4bbca3284cf52ef03e08ed"
+    },
+    "pkg/obfs/keepalive_test.go": {
+      "bytes": 7970,
+      "sha256": "79a0c1e8baa712c67c442005cf789cdbf3e46a9a593a8dbf55af2577221c832f"
+    },
+    "pkg/obfs/linger_synctest_test.go": {
+      "bytes": 6190,
+      "sha256": "577e2a56b3046291cea178395d31a99c3a607be8eaff62eb286f2515c0b47a3d"
+    },
+    "pkg/obfs/logid_test.go": {
+      "bytes": 1294,
+      "sha256": "ce7382cc78f5182a4374d8b5f6c2d0415350dadac89db0a3dad64f18e46b5a4c"
+    },
+    "pkg/obfs/node_test.go": {
+      "bytes": 2314,
+      "sha256": "d687264b08a05efb76e5a78927405be766f84777aa12544e90850ab2d23f7859"
+    },
+    "pkg/obfs/prologue.go": {
+      "bytes": 6196,
+      "sha256": "b14158d1adaf3f6e94fea67403d0f755f70a961da3003645c9aab207ee02a5ba"
+    },
+    "pkg/obfs/prologue_test.go": {
+      "bytes": 10554,
+      "sha256": "843ab576bbaac4625f2dee17e7603d6193c376749dadc73754f8db7310065885"
+    },
+    "pkg/obfs/read_coalescing_test.go": {
+      "bytes": 7254,
+      "sha256": "9a857cfababf859c7ebf6aac05b40c2a98544526f1db321cc198f905ee681bdd"
+    },
+    "pkg/obfs/relay_bench_test.go": {
+      "bytes": 5261,
+      "sha256": "73e00cdb374f92abc3415a9acd936e7103be8e452b4cf55be04f290f9d91fb38"
+    },
+    "pkg/obfs/replay.go": {
+      "bytes": 3048,
+      "sha256": "681efabdca4ff1bc708843b04b8be555cfecd6e52d0bc09121adf990d6719aca"
+    },
+    "pkg/obfs/replay_test.go": {
+      "bytes": 7696,
+      "sha256": "54f99391b8d89886cf597049e01a309d251ba25ee103d0bd7c718cf1d0a2941d"
+    },
+    "pkg/obfs/scheme_test.go": {
+      "bytes": 5870,
+      "sha256": "94c69aa92813ec8201e2de149ebc13afc1c7121d72015932daee00d172b4ba5c"
+    },
+    "pkg/obfs/segment_test.go": {
+      "bytes": 6498,
+      "sha256": "2b9b5ecbe274309a94a79e534a3ac79a523008f1259ded7b0cbbe9456b47310c"
+    },
+    "pkg/obfs/spec_test.go": {
+      "bytes": 12054,
+      "sha256": "530e431612122df1b46baaa092b49607a2d9326ab146a81de8e0b22851ad695d"
+    },
+    "pkg/obfs/wrappers_test.go": {
+      "bytes": 1923,
+      "sha256": "1e730d3cfcb9569931f33029a8a3857a7279a6e6d641c30a3ca48a562db7df3e"
+    },
+    "pkg/obfs/writer_test.go": {
+      "bytes": 8856,
+      "sha256": "0981778c3147d2ebd9506230a3365289da4c1aed7d69ed0674c845c7085eda82"
+    },
+    "pkg/s5server/admin.go": {
+      "bytes": 6927,
+      "sha256": "bb4788ea91857054cf81993172a7fd243a4321726789fe3f2433f8db2b1d9365"
+    },
+    "pkg/s5server/admin_revocation_test.go": {
+      "bytes": 7363,
+      "sha256": "fa5fcc577f3138989ba3e6fe5f9b3389b951b0b5b33776ccad60ec73facfac45"
+    },
+    "pkg/s5server/admin_test.go": {
+      "bytes": 7506,
+      "sha256": "e6e4c840cd058ce87d42495c4dee31835803d00d58d72340b0b0b98c72f62818"
+    },
+    "pkg/s5server/advice.go": {
+      "bytes": 9562,
+      "sha256": "7b99712897aee4db7fdef3a1029d91c34f447687b13370496f440921327dae34"
+    },
+    "pkg/s5server/advice_fuzz_test.go": {
+      "bytes": 6754,
+      "sha256": "23c3964b1f49cc44d7dcf69f6e57711a35055e558026e9379aad5c5831015c9e"
+    },
+    "pkg/s5server/advice_test.go": {
+      "bytes": 16633,
+      "sha256": "00f21e6ba475859909443a4fca8673623b2ee464697a8841615ad8cbf21094fb"
+    },
+    "pkg/s5server/api_test.go": {
+      "bytes": 4680,
+      "sha256": "4f5bac9ea7cc1d757994ff6da52d78f62ea3c61c0607dc4795c9998a73b4869a"
+    },
+    "pkg/s5server/argon2_load_test.go": {
+      "bytes": 10303,
+      "sha256": "3235d3b2bb19b0d9142efe3c136860651e7200a73ddd9f6606a5cb4003c6a8ae"
+    },
+    "pkg/s5server/auth_failure_test.go": {
+      "bytes": 2238,
+      "sha256": "6dd5a51d69a4f601720f93208c55346b9029edcd3a57ecdb5d587c5ac5efd98e"
+    },
+    "pkg/s5server/auth_metrics_test.go": {
+      "bytes": 5067,
+      "sha256": "098c5ee43f54f9377cac088dd7e945bf339bb85c19ca8a8bc0b9aa2bbe00f5d8"
+    },
+    "pkg/s5server/config.go": {
+      "bytes": 15841,
+      "sha256": "d2773774e5e9cfc90f23d166b4e0911bcb1d768ff233dc6c6073301fb197990d"
+    },
+    "pkg/s5server/conn.go": {
+      "bytes": 9693,
+      "sha256": "6b70ad8b30b953d029996826959aacec6ed25dc839ec306dae85f54afb31571f"
+    },
+    "pkg/s5server/copy_path_test.go": {
+      "bytes": 8146,
+      "sha256": "29b3372390c3198cc7b954078e5fbdb8d0ff62e611bbbac0cd3008db7c66f2a1"
+    },
+    "pkg/s5server/decoy_probe_test.go": {
+      "bytes": 9000,
+      "sha256": "e03a14792dddf9e23a98564fb28062d079e3f0da254ab35bd273ffd0bf5221a5"
+    },
+    "pkg/s5server/example_test.go": {
+      "bytes": 653,
+      "sha256": "0b4dd7c3677fe82b04a971468f93eee35c3a09c52b9dd1d7910c7f4298a5a650"
+    },
+    "pkg/s5server/frame_observer_bench_test.go": {
+      "bytes": 2932,
+      "sha256": "85711b64ef3b2eee613cfe4113bc8d26235fc55ec103d28c65c97692f1d6870e"
+    },
+    "pkg/s5server/half_close_test.go": {
+      "bytes": 8212,
+      "sha256": "34d229ee81edb2ebce3a3ef11f30f6acc9071c1e589304bde436fa9650217984"
+    },
+    "pkg/s5server/identity.go": {
+      "bytes": 3144,
+      "sha256": "59c70b641e4d591e79b71fff360e079648802eb0dbb8acfa9c35dcafa24c1851"
+    },
+    "pkg/s5server/integration_test.go": {
+      "bytes": 24489,
+      "sha256": "3df73b360c77b9de47b178dfe0fb5c065a86c86ebfe925952fd31baf30c7aa23"
+    },
+    "pkg/s5server/journal.go": {
+      "bytes": 19025,
+      "sha256": "11497dcb6101ac934b9c2765952462e48e07580f899a1e1f58bd9a1bbeedf595"
+    },
+    "pkg/s5server/journal_test.go": {
+      "bytes": 29360,
+      "sha256": "04b303e51c20d1c9b5b627253426d34abd2957b45b7bd1373c1b7b7e22bec3eb"
+    },
+    "pkg/s5server/keepalive_integration_test.go": {
+      "bytes": 3551,
+      "sha256": "55a3e2b50cda35e831632982631d73b7d0379a04eabb4c1733cd110fea6a785f"
+    },
+    "pkg/s5server/listener.go": {
+      "bytes": 11166,
+      "sha256": "707fd8dcc291de539e0d664bf472efe44c04d6e3ceb9d8566db51f0565203601"
+    },
+    "pkg/s5server/member_test.go": {
+      "bytes": 9090,
+      "sha256": "e848200cba022411f1215d405d3ac376e435ec677b44e0ad24cd86dd7e8d649d"
+    },
+    "pkg/s5server/metrics_copy_bench_test.go": {
+      "bytes": 1872,
+      "sha256": "1c298de8d2e9de588b5135da156a0d16085da503fd5ea650af3a413f1a41f949"
+    },
+    "pkg/s5server/misconfig_test.go": {
+      "bytes": 1801,
+      "sha256": "f767cee7e8ce32ac766d33ac2c0857a519b2871d01a4e40db961a45b8e41671c"
+    },
+    "pkg/s5server/native_udp.go": {
+      "bytes": 4200,
+      "sha256": "ea2493f5eb8650ea52d6065bf721579fadf12e641ea31940720e9a5f4c692972"
+    },
+    "pkg/s5server/native_udp_test.go": {
+      "bytes": 18173,
+      "sha256": "5492a4063a175dc43c8a92e5d093ce72cf4f56d674752001f114ce2bdc70477d"
+    },
+    "pkg/s5server/norace_test.go": {
+      "bytes": 62,
+      "sha256": "9e2d0a491420cfaf1fc539bedf61ce5b8fc48bae89246b8d257e7f06adb33af6"
+    },
+    "pkg/s5server/obfs_failure_test.go": {
+      "bytes": 11241,
+      "sha256": "87bf453c86c118b3f9b01a14b27bda4c60d5af2736c3d727561dcba227160b15"
+    },
+    "pkg/s5server/phase_metrics_test.go": {
+      "bytes": 7492,
+      "sha256": "d60a13cd349815e4fe944437a223b1528f714fe52eba9d83510f5d9cfa7bf836"
+    },
+    "pkg/s5server/pipeline_test.go": {
+      "bytes": 10079,
+      "sha256": "b358ce76122e31b99226f7ff0f805bf1cd68691bd00501048927eaa8ce69294e"
+    },
+    "pkg/s5server/private_dest_test.go": {
+      "bytes": 1952,
+      "sha256": "ec2f6efe14ffad5d75c33dd71dd84a2961f0967429a982749032c18317fd24a7"
+    },
+    "pkg/s5server/profile_load_test.go": {
+      "bytes": 5115,
+      "sha256": "229a7ebf58ba0a6ee78b9fb0335a6a0ea6ba236d65e3498aadc0790ab548b412"
+    },
+    "pkg/s5server/race_test.go": {
+      "bytes": 60,
+      "sha256": "1167e9d9564d3c91d5f829586ece3f4a1ab9a72074bf41ea38550660918c79a2"
+    },
+    "pkg/s5server/readiness_test.go": {
+      "bytes": 1070,
+      "sha256": "33663b379731b686131dc3279c383cae23f34a8f93881010a52933e8b5ec79bd"
+    },
+    "pkg/s5server/replay_probe_test.go": {
+      "bytes": 9672,
+      "sha256": "88489898013a5eb11f62713f44b10d12f4ca5e584a988b4bc57e130cbbaf2756"
+    },
+    "pkg/s5server/revocation_test.go": {
+      "bytes": 6558,
+      "sha256": "96c0eb92f8ad850fd139dfa01152884023aeb24e12552b7d9f84fa267fb82751"
+    },
+    "pkg/s5server/server.go": {
+      "bytes": 32435,
+      "sha256": "342049d018f082d9c1868c16690e43b40c7fca0c861bdc74939318429d5fb20b"
+    },
+    "pkg/s5server/server_test.go": {
+      "bytes": 3884,
+      "sha256": "bd0f1323ffb846382720daf4e711356c22751dbe25ffb196646aa613aba05a3c"
+    },
+    "pkg/s5server/sessions_test.go": {
+      "bytes": 13557,
+      "sha256": "1a1782df11ec3ca5cd04877eb4859feda6de1d6d0e635b9f0dadfb004513db89"
+    },
+    "pkg/s5server/setup_failure_test.go": {
+      "bytes": 7377,
+      "sha256": "921bff65b158afeca5499e926cacaf1655672dd08a4edca6f439752062321dd3"
+    },
+    "pkg/s5server/shutdown_flush_test.go": {
+      "bytes": 3242,
+      "sha256": "ae05a9f9c4949c24366f1674e99dd8d7778720b275b5f42f3354a1f05092890d"
+    },
+    "pkg/s5server/start_rollback_test.go": {
+      "bytes": 3881,
+      "sha256": "e84a20b7584578eb8e3ad52fd62aa34533a54b825a0ae366a251441b10d29909"
+    },
+    "pkg/s5server/tcpinfo_test.go": {
+      "bytes": 3098,
+      "sha256": "cff1fa7b01911878835ae78f606e40a5795a4ff0b1446f54c0a37647934b26c9"
+    },
+    "pkg/s5server/telemetry.go": {
+      "bytes": 26813,
+      "sha256": "1b5f3555617658ab2aa64f2f2882aefbdc01bd1a439e5ae58e30a711b77d111f"
+    },
+    "pkg/s5server/timeouts_synctest_test.go": {
+      "bytes": 15829,
+      "sha256": "8e3cdd23df4041a85c7a5902aee9e86c1ee902d91b19c27de16aabf3e32e9ef7"
+    },
+    "pkg/s5server/udp_associations_test.go": {
+      "bytes": 2666,
+      "sha256": "d1bdd897b57d4bf1f36f79c6864b13fccb37131939f7964eb1fd2df8907bc100"
+    },
+    "pkg/s5server/udp_drops.go": {
+      "bytes": 328,
+      "sha256": "b6bc44cb9edcc647644c4136b4ff5400836e1a0ab5af41b18fcb08c73266983b"
+    },
+    "pkg/s5server/udp_drops_test.go": {
+      "bytes": 1411,
+      "sha256": "21c49a1babab3b878aa3c0c538b8896d8b27db7237d230ebc3718f67d7657215"
+    },
+    "pkg/s5server/udp_port_config_test.go": {
+      "bytes": 2146,
+      "sha256": "58e4ebb1ea214d0827a591522f3ae547c9faf7c8a90bbaabb25fc6d1f636da1f"
+    },
+    "pkg/s5server/udp_quota_test.go": {
+      "bytes": 5772,
+      "sha256": "c453c1c7a0330ad18af9b400653aaf8b96def47f6b7362178a295ab933aa0ad6"
+    },
+    "pkg/s5server/udp_receive_drops_linux_test.go": {
+      "bytes": 2072,
+      "sha256": "311b74ff55ed62a9dde8af9d4a93dcb9ac9a86376a92175045eee4ba6a653dd0"
+    },
+    "pkg/s5server/udp_tunnel_tuning_linux_test.go": {
+      "bytes": 5096,
+      "sha256": "63e9e4ce83b7a8aa494ab5ca93ce28234a52ebc24f917d63f03f7014167ffa17"
+    },
+    "pkg/s5server/whitelist_test.go": {
+      "bytes": 4817,
+      "sha256": "02c1ca3f85b9720f86349ccc2779b47d75b77fde960119ee7130ba442f576d4f"
+    },
+    "pkg/s5server/ws_integration_test.go": {
+      "bytes": 4722,
+      "sha256": "4044266ec73e79aa133ed1f9b15b60ae3cb18a9091d416cb9116b2d5db7ac14f"
+    },
+    "pkg/transport/tlsdecoy/listener.go": {
+      "bytes": 13154,
+      "sha256": "83c1e1d212ce3257c130676927f13e020a7b8942e050516a6e58e944eaedf4fd"
+    },
+    "pkg/transport/tlsdecoy/listener_test.go": {
+      "bytes": 6022,
+      "sha256": "e6d0267b81008f341a3b3d1c14f2f0e2d231eefd3835adb6caea75ca06199420"
+    },
+    "pkg/transport/tlsdecoy/path_test.go": {
+      "bytes": 7491,
+      "sha256": "1bd15fa08dc3607008209a1542c828ecb67b61976d463b997076f5d012da6273"
+    },
+    "pkg/transport/tlsdecoy/proxy.go": {
+      "bytes": 7036,
+      "sha256": "19610f5df1dbf28d049347a663a63d0b3e8b230029886c6bb76aa5d999c3acf5"
+    },
+    "pkg/transport/tlsdecoy/proxy_test.go": {
+      "bytes": 10754,
+      "sha256": "4e79e9e76de4ed77fd7f5f1ee7f3864c05da4b98763bfd62ba1f15cbff38a5d1"
+    },
+    "pkg/transport/tlsdecoy/shutdown_test.go": {
+      "bytes": 5754,
+      "sha256": "ae8ef33e62f074ff164848b709e48372047350d0afdb5118ffc699cc7b91fab8"
+    },
+    "pkg/transport/tlsdecoy/subprotocol_test.go": {
+      "bytes": 3116,
+      "sha256": "0fd3c2caf8711996d476315f5a45e840fbfe4205abbd47b612c0e8eee7272450"
+    },
+    "pkg/transport/ws/bench_test.go": {
+      "bytes": 3778,
+      "sha256": "97a3fe390056c569bbe20e8e2fa69a9aac2c6e831a661eb8d8efa01320d15f04"
+    },
+    "pkg/transport/ws/bounds_test.go": {
+      "bytes": 6017,
+      "sha256": "ad8289e0d64269fde6e379ec0761060c895241d066a7bb68cca1a22d8430550f"
+    },
+    "pkg/transport/ws/buffer_bench_test.go": {
+      "bytes": 2208,
+      "sha256": "771c4afd763ddd9cdad3b3a86e16f2d528c9bd691370c159f803ebcd5958e89e"
+    },
+    "pkg/transport/ws/concurrent_write_test.go": {
+      "bytes": 3762,
+      "sha256": "b845878920f671190228d35ab43fcd836d58d5cd88268ffc40a9f73ad78eb87d"
+    },
+    "pkg/transport/ws/conn.go": {
+      "bytes": 9084,
+      "sha256": "b1a6a22960e62d15a25facf942a86cbdc62b67517da5e2e7323a70cbc81721f7"
+    },
+    "pkg/transport/ws/conn_test.go": {
+      "bytes": 2494,
+      "sha256": "ba7734863da4e3acc46c8028e2b70c8f22bd0179da5359a5caef41eb7ebe6803"
+    },
+    "pkg/transport/ws/deadline_interrupt_test.go": {
+      "bytes": 4158,
+      "sha256": "7739dd1d0a6126ad7fc5f0d9035fa1909f0d697644a828f9719967dfbe50c87f"
+    },
+    "pkg/transport/ws/dial_context_test.go": {
+      "bytes": 2863,
+      "sha256": "b93462b7fd2545659aa33812f616dc1a19c5aa04725ddf6bd7c19249d492a289"
+    },
+    "pkg/transport/ws/dialer.go": {
+      "bytes": 9849,
+      "sha256": "892131171cd7ed2e5f04e3c2fc5015c5b3ece3b4a3f85cf2068f489ea5e746cc"
+    },
+    "pkg/transport/ws/example_test.go": {
+      "bytes": 848,
+      "sha256": "1035d5e8aa14a7879db5fec0bc9aa2254e1b3af5747cd1abe2884e871a394e99"
+    },
+    "pkg/transport/ws/fingerprint_test.go": {
+      "bytes": 6172,
+      "sha256": "30120631f6fc84048ae28357d820dcae5ba470fadb90fa113aba2d797d7f25ee"
+    },
+    "pkg/transport/ws/first_packet_test.go": {
+      "bytes": 2597,
+      "sha256": "821e8348d36f856b7e44cdb3d6fb761634fef9883b1c8ff16f8ce9966c68c346"
+    },
+    "pkg/transport/ws/idle_memory_linux_test.go": {
+      "bytes": 1621,
+      "sha256": "bf5c41ad569f960bb8252bd10bbd8965166c4b8b6052d7a03ce83688a2012b99"
+    },
+    "pkg/transport/ws/pin_resumption_test.go": {
+      "bytes": 6980,
+      "sha256": "5b62cf71032e5b1895f171ce7a09812925faccb3b069be08f4cbf6fa22c99ab9"
+    },
+    "pkg/transport/ws/plan_fuzz_test.go": {
+      "bytes": 3352,
+      "sha256": "9cceaf45a0e7e07a52ba280bf6414744bf65a0e8a1973846fc3fc912121462d7"
+    },
+    "pkg/transport/ws/readlimit_test.go": {
+      "bytes": 10235,
+      "sha256": "82d27c0f27238fd1489e9c7989c98c4584a483499c30c1482e5d8e6cee9cde12"
+    },
+    "pkg/transport/ws/session_cache_test.go": {
+      "bytes": 6675,
+      "sha256": "8fb12afc599bb3101dcec7d92487b650e827574de44b8aca9093faf638081c76"
+    },
+    "pkg/transport/ws/session_test.go": {
+      "bytes": 3798,
+      "sha256": "683d3f3ba65f62066faf0fecbe5923540a402d55896dab40a59bb9fe1095f985"
+    },
+    "pkg/transport/ws/shaped.go": {
+      "bytes": 8716,
+      "sha256": "30cfe274d8734c3fa76da43b908da8762710876a0b2d2482898626bda2d6b572"
+    },
+    "pkg/transport/ws/shaped_interrupt_test.go": {
+      "bytes": 3944,
+      "sha256": "5f3b6391e5cfa42d597104ab0726c01d5334147cfdfa41d822de15eff39bae44"
+    },
+    "pkg/transport/ws/shaped_test.go": {
+      "bytes": 1619,
+      "sha256": "abc68113cb2b094d4fa2a0ab6bba96fadbfe2f986b0ca6845f5749763e514f2e"
+    },
+    "pkg/transport/ws/shaping_test.go": {
+      "bytes": 8431,
+      "sha256": "21279c1b26765532b69b6e3af26c058c176117a74c5a74109cfeb8439a09cd57"
+    },
+    "pkg/transport/ws/sni_test.go": {
+      "bytes": 3200,
+      "sha256": "62ad0819f6a52793a11fd15a720548e178b1ff392f56b0cf31945212d2c0d98d"
+    },
+    "pkg/transport/ws/subprotocol_test.go": {
+      "bytes": 2615,
+      "sha256": "c074337d11314ee9ef9c76a26b8051ddf69b241f30b76a23800d5acedb12239d"
+    },
+    "pkg/transport/ws/upgrader.go": {
+      "bytes": 2308,
+      "sha256": "d39f64393cb13cd1294ce7f40f1e205deba9b6a2624047843927341ad4bd5705"
+    },
+    "pkg/transport/ws/writebuffer_test.go": {
+      "bytes": 4980,
+      "sha256": "d4d5bf516d4b4c70bc57de015908746b24cfb16fdfa31e855a6064614c35950f"
+    },
+    "pkg/veil/cipher.go": {
+      "bytes": 6974,
+      "sha256": "b2fc7ffe1ab9cfd660f4c91890901af96c68e8eecd9406605b85d6a343088230"
+    },
+    "pkg/veil/cipher_test.go": {
+      "bytes": 6610,
+      "sha256": "9acb197d690987fdf9ecc9e17990eb85b29fef446586274e6d998f322143a611"
+    },
+    "pkg/veil/clock.go": {
+      "bytes": 10874,
+      "sha256": "320b0b2191fdf4782ea8001b9761ccfa67c1c859ad4bdb49e00f9442efc086ff"
+    },
+    "pkg/veil/clock_test.go": {
+      "bytes": 6602,
+      "sha256": "5d953a966826ebe50117aa4fafc02ccdf45630a15bc94746089e70caaa4ecba4"
+    },
+    "pkg/veil/derive_vectors_test.go": {
+      "bytes": 4794,
+      "sha256": "e1f927f5da7bdb3184ab301977396453161769ff59691df615ea4819b13cd5da"
+    },
+    "pkg/veil/directory_bounds_test.go": {
+      "bytes": 1954,
+      "sha256": "d73f8dd8b194f502a3f553c0a9e4cb46f72ce88788bf95a9fe4b76d636aec699"
+    },
+    "pkg/veil/directory_concurrent_bench_test.go": {
+      "bytes": 2225,
+      "sha256": "68689c5b8a9cd0ec48c42206dbf9fb2ed9fd0126591de2d909bc231cce5c3db9"
+    },
+    "pkg/veil/logid.go": {
+      "bytes": 1157,
+      "sha256": "d6f2212de628d4741d86a42e814df9ffcc63160c0b97f05e12bfda749752981b"
+    },
+    "pkg/veil/logid_test.go": {
+      "bytes": 958,
+      "sha256": "b60971c71d6669a488dcae7773e001f3c1d3998786454c9d273a81da961048db"
+    },
+    "pkg/veil/node_test.go": {
+      "bytes": 5945,
+      "sha256": "7f7e42bbb0e5f2a1fb305e9f2c98647ba9b69ec939170ff517f38ec9743a7db8"
+    },
+    "pkg/veil/opening.go": {
+      "bytes": 1502,
+      "sha256": "89f02c7c7488acceb2a3526d7081a6b7984958089a169736055302e1e21beb52"
+    },
+    "pkg/veil/opening_test.go": {
+      "bytes": 3668,
+      "sha256": "464967b266d2916bed8a92554d43bc665d0f26c1d5376b4caab69f0a321183d0"
+    },
+    "pkg/veil/roster.go": {
+      "bytes": 17117,
+      "sha256": "dfe4b4897e52a88304b5202204533e69b63971d066bc64d7a99e22e41ea856b6"
+    },
+    "pkg/veil/roster_test.go": {
+      "bytes": 16517,
+      "sha256": "9518a8228061de5a212810183483e810ed1dd24f2ec375bb41513ce23bdeea8d"
+    },
+    "pkg/veil/scheme_fuzz_test.go": {
+      "bytes": 9099,
+      "sha256": "8e7606ce8ecaf7e5dce371e0df16243176a2154a81480fc1efecc89ec6753a09"
+    },
+    "pkg/veil/veil.go": {
+      "bytes": 12997,
+      "sha256": "c3e5b5acf2a3b95b4511a86b4dcb3e91a6b3c60460437d2230b9e7212b8676a3"
+    },
+    "pkg/veil/veil_test.go": {
+      "bytes": 8989,
+      "sha256": "5983482b949b6d4b9e7800a6576f6cb5bfea6d1ad0abc85012809335465a7562"
+    },
+    "scripts/matrix/game.go": {
+      "bytes": 18098,
+      "sha256": "f93400359678eabb217fd404f5b9e407a103ab8349572e09d15fec1eb24a8b41"
+    },
+    "scripts/matrix/internal/stand/stand.go": {
+      "bytes": 1466,
+      "sha256": "d5b067ce89e98b183bf466c1da13fad5859c611c901020a4c36552e6200cc03d"
+    },
+    "scripts/matrix/main.go": {
+      "bytes": 11661,
+      "sha256": "f3e7c3a8981f008e6ed492932ebb3810b4deaf82cbcdff8e49eb6752bcc796d8"
+    },
+    "scripts/matrix/mtuprobe/echo.go": {
+      "bytes": 5558,
+      "sha256": "8394097297ab8e80c7ca03b3a9e01bc1edb003e777e9f22c009e4eeba965615e"
+    },
+    "scripts/matrix/mtuprobe/main.go": {
+      "bytes": 8918,
+      "sha256": "3a07244dc4b723ba183aee263d440c579d65bb94163971fcc62b8ccc3c56363e"
+    },
+    "scripts/matrix/mtuprobe/quic.go": {
+      "bytes": 9210,
+      "sha256": "ffa27d188c4aa4a5e9d30895cd63ef5d57e742e9912a408965207e95d4552ef7"
+    },
+    "scripts/matrix/mtuprobe/sweep.go": {
+      "bytes": 7340,
+      "sha256": "486f97f62cc5e4605c3991935e896997674e2ad197ab4112fedacea6744c2653"
+    },
+    "scripts/matrix/origin.go": {
+      "bytes": 4168,
+      "sha256": "8cbf6d40ce0a7dc1680d44ea4b4c1a18cec5312d3adaf2ee445c82f6e341dc42"
+    },
+    "scripts/matrix/probe.go": {
+      "bytes": 19087,
+      "sha256": "cb28253f31f5de7a06edc86f4301b3e1d86d48dd0da2d7907e501788e662622d"
+    },
+    "scripts/matrix/soak.go": {
+      "bytes": 5977,
+      "sha256": "f5508377f1a1e7bd710010b8e17ba1cf9ab0a971d3c1c6b0e7bebf5411f58c0b"
+    },
+    "scripts/matrix/socks.go": {
+      "bytes": 6841,
+      "sha256": "b2f995a342a6ebb9ee65268aa29a95a4c6810ebc1392c628acb88b83e505be35"
+    },
+    "scripts/metrics/main.go": {
+      "bytes": 11947,
+      "sha256": "433455640dae2566f0a796368a6250e9deaf55e672c0b26c5a6b1d3d81003706"
+    },
+    "scripts/metrics/main_test.go": {
+      "bytes": 6339,
+      "sha256": "802b59e09b65929fc21568d7972d67bd91d2dc5e7275faeaa80b76aa6cad3403"
+    },
+    "scripts/pre-commit.sh": {
+      "bytes": 15447,
+      "sha256": "a6404bdc57abf7fa96e3a229657584016a578e280beda3da9038c41e2c26d44f"
+    },
+    "scripts/smoke/main.go": {
+      "bytes": 17942,
+      "sha256": "d57c921d4494e88ce78773ae00607e11727c3e427b7179c52ebd74b1632ee2b4"
+    },
+    "scripts/testreport/main.go": {
+      "bytes": 4680,
+      "sha256": "ee1d0898f4004307098ee60e881a84d5e6ee0711889dda9a6cca6c093d992454"
+    },
+    "scripts/testreport/main_test.go": {
+      "bytes": 3843,
+      "sha256": "266a6601502220f64ac03e7b4d20ccb110c018ea7c3c1a35b260de35c321b2df"
+    }
+  }
+}

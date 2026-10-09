@@ -1,0 +1,56 @@
+package nativeudp
+
+import (
+	"bytes"
+	"fmt"
+	"github.com/mazixs/S5Core/pkg/veil"
+	"testing"
+)
+
+func auditKeys(b *testing.B) (veil.DatagramKeys, veil.DatagramKeys) {
+	b.Helper()
+	psk, secret := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40)
+	ck, e := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleClient)
+	if e != nil {
+		b.Fatal(e)
+	}
+	sk, e := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleServer)
+	if e != nil {
+		b.Fatal(e)
+	}
+	return ck, sk
+}
+
+func BenchmarkAuditNativeCodec(b *testing.B) {
+	ck, sk := auditKeys(b)
+	for _, size := range []int{32, 200, 1200} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			client, server := NewSession(ck), NewSession(sk)
+			data := make([]byte, size)
+			bytesOut := 0
+			b.ReportAllocs()
+			b.SetBytes(int64(size))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				err := client.SealWrite(KindData, data, func(wire []byte) error { bytesOut += len(wire); _, err := server.Open(wire); return err })
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(float64(bytesOut)/float64(b.N), "wire-B/packet")
+		})
+	}
+}
+
+func BenchmarkAuditNativeNewSession(b *testing.B) {
+	ck, _ := auditKeys(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	var kept *Session
+	for i := 0; i < b.N; i++ {
+		kept = NewSession(ck)
+	}
+	if kept == nil {
+		b.Fatal("no session")
+	}
+}

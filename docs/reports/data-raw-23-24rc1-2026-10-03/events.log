@@ -1,0 +1,29 @@
+2026-10-03T19:35:03 plan raw-23-24rc1-loaded-20261003 (cddf13e94f7f6838): 28 of 28 batches, 40 cells to run, worst case 10.5 h (every scenario running into its budget)
+2026-10-03T19:35:10 [1/28] local/raw-r1: raw-r1=ok (5s) noisy(4.8 cores) loaded-start
+2026-10-03T19:35:20 [2/28, eta 2 min] local/v23-obfs-member-r1: v23-obfs-member-r1=ok (8s) noisy(3.7 cores) loaded-start
+2026-10-03T19:35:30 [3/28, eta 3 min] local/rc1-obfs-member-r1: rc1-obfs-member-r1=ok (8s)
+2026-10-03T19:35:40 [4/28, eta 3 min] local/v23-wss-member-r1: v23-wss-member-r1=ok (8s)
+2026-10-03T19:35:50 [5/28, eta 3 min] local/rc1-wss-member-r1: rc1-wss-member-r1=ok (8s) noisy(3.4 cores)
+2026-10-03T19:36:01 [6/28, eta 3 min] local/rc1-wss-member-r2: rc1-wss-member-r2=ok (8s) noisy(4.9 cores) loaded-start
+2026-10-03T19:36:11 [7/28, eta 3 min] local/v23-wss-member-r2: v23-wss-member-r2=ok (8s) noisy(5.0 cores) loaded-start
+2026-10-03T19:36:21 [8/28, eta 3 min] local/rc1-obfs-member-r2: rc1-obfs-member-r2=ok (8s) noisy(4.8 cores) loaded-start
+2026-10-03T19:36:31 [9/28, eta 3 min] local/v23-obfs-member-r2: v23-obfs-member-r2=ok (8s) noisy(4.9 cores) loaded-start
+2026-10-03T19:36:38 [10/28, eta 2 min] local/raw-r2: raw-r2=ok (5s) noisy(5.0 cores) loaded-start
+2026-10-03T19:36:46 [11/28, eta 2 min] local/raw-r3: raw-r3=ok (5s) noisy(5.5 cores) loaded-start
+2026-10-03T19:36:56 [12/28, eta 2 min] local/v23-obfs-member-r3: v23-obfs-member-r3=ok (8s) noisy(5.2 cores) loaded-start
+2026-10-03T19:37:05 [13/28, eta 2 min] local/rc1-obfs-member-r3: rc1-obfs-member-r3=ok (8s) noisy(3.9 cores) loaded-start
+2026-10-03T19:37:16 [14/28, eta 2 min] local/v23-wss-member-r3: v23-wss-member-r3=ok (8s) noisy(5.4 cores) loaded-start
+2026-10-03T19:37:26 [15/28, eta 2 min] local/rc1-wss-member-r3: rc1-wss-member-r3=ok (8s) noisy(5.6 cores) loaded-start
+2026-10-03T19:37:37 [16/28, eta 2 min] local/rc1-wss-member-r4: rc1-wss-member-r4=ok (9s) noisy(5.3 cores) loaded-start
+2026-10-03T19:37:47 [17/28, eta 2 min] local/v23-wss-member-r4: v23-wss-member-r4=ok (8s) noisy(5.4 cores) loaded-start
+2026-10-03T19:37:57 [18/28, eta 1 min] local/rc1-obfs-member-r4: rc1-obfs-member-r4=ok (8s) noisy(5.3 cores) loaded-start
+2026-10-03T19:38:07 [19/28, eta 1 min] local/v23-obfs-member-r4: v23-obfs-member-r4=ok (8s) noisy(5.5 cores) loaded-start
+2026-10-03T19:38:15 [20/28, eta 1 min] local/raw-r4: raw-r4=ok (5s) noisy(5.4 cores) loaded-start
+2026-10-03T19:38:22 [21/28, eta 1 min] local/raw-r5: raw-r5=ok (5s) noisy(5.5 cores) loaded-start
+2026-10-03T19:38:32 [22/28, eta 1 min] local/v23-obfs-member-r5: v23-obfs-member-r5=ok (8s) noisy(5.3 cores) loaded-start
+2026-10-03T19:38:42 [23/28, eta 1 min] local/rc1-obfs-member-r5: rc1-obfs-member-r5=ok (8s) noisy(4.7 cores) loaded-start
+2026-10-03T19:38:53 [24/28, eta 1 min] local/v23-wss-member-r5: v23-wss-member-r5=ok (9s) noisy(4.1 cores) loaded-start
+2026-10-03T19:39:03 [25/28, eta 1 min] local/rc1-wss-member-r5: rc1-wss-member-r5=ok (8s) noisy(5.2 cores)
+2026-10-03T19:39:42 [26/28, eta 0 min] game-loss/r1: raw-r1=ok, v23-obfs-member-r1=ok, rc1-obfs-member-r1=ok, v23-wss-member-r1=ok, rc1-wss-member-r1=ok (37s) noisy(6.1 cores) loaded-start
+2026-10-03T19:40:21 [27/28, eta 1 min] game-loss/r2: raw-r2=ok, v23-obfs-member-r2=ok, rc1-obfs-member-r2=ok, v23-wss-member-r2=ok, rc1-wss-member-r2=ok (37s) noisy(7.1 cores) loaded-start
+2026-10-03T19:41:00 [28/28, eta 1 min] game-loss/r3: raw-r3=ok, v23-obfs-member-r3=ok, rc1-obfs-member-r3=ok, v23-wss-member-r3=ok, rc1-wss-member-r3=ok (37s) noisy(6.7 cores) loaded-start

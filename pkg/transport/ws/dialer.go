@@ -120,15 +120,75 @@ func Dial(opts DialOpts) (*Conn, error) {
 // DialContext bounds DNS, TCP, TLS and HTTP Upgrade with the caller's
 // context. The internal handshake limit can only shorten that budget.
 func DialContext(ctx context.Context, opts DialOpts) (*Conn, error) {
-	u, err := url.Parse(opts.URL)
+	dialer, target, headers, err := newGorillaDialer(opts, false)
 	if err != nil {
-		return nil, fmt.Errorf("ws dial: invalid url: %w", err)
+		return nil, err
 	}
 
-	dialer := websocket.Dialer{
+	// Gorilla applies deadlines but does not interrupt an HTTP Upgrade read
+	// on cancellation alone. Close the acquired socket until ownership is
+	// handed to the caller, and join any cancellation already in progress.
+	var stopCancel func() bool
+	var canceled chan struct{}
+	wrapDial := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+		return func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+			c, err := dial(dialCtx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			canceled = make(chan struct{})
+			stopCancel = context.AfterFunc(ctx, func() { _ = c.Close(); close(canceled) })
+			return c, nil
+		}
+	}
+	if dialer.NetDialTLSContext != nil {
+		dialer.NetDialTLSContext = wrapDial(dialer.NetDialTLSContext)
+	} else {
+		dialer.NetDialContext = wrapDial(dialer.NetDialContext)
+	}
+	wsConn, resp, err := dialer.DialContext(ctx, target, headers)
+	if stopCancel != nil && !stopCancel() {
+		<-canceled
+	}
+	if ctx.Err() != nil {
+		if wsConn != nil {
+			_ = wsConn.Close()
+		}
+		err = ctx.Err()
+	}
+	if resp != nil && resp.Body != nil {
+		// Тело ответа на апгрейд не читается ни в одной ветке; без закрытия
+		// соединение с неудачным рукопожатием остается в пуле keep-alive.
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, dialError(err, resp)
+	}
+	return WrapWithLimit(wsConn, opts.ReadLimit), nil
+}
+
+func dialError(err error, resp *http.Response) error {
+	if resp != nil {
+		return fmt.Errorf("ws dial: %w (status %d)", err, resp.StatusCode)
+	}
+	return fmt.Errorf("ws dial: %w", err)
+}
+
+// newGorillaDialer turns DialOpts into a gorilla dialer, its URL and the
+// request headers. ownTLS moves the crypto/tls handshake out of gorilla into
+// NetDialTLSContext, with the same configuration and the same checks, so
+// that the dial hook sees where the plaintext upgrade request ends.
+func newGorillaDialer(opts DialOpts, ownTLS bool) (*websocket.Dialer, string, http.Header, error) {
+	u, err := url.Parse(opts.URL)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("ws dial: invalid url: %w", err)
+	}
+
+	dialer := &websocket.Dialer{
 		Subprotocols:     namedSubprotocols(opts.Subprotocols),
 		HandshakeTimeout: wsHandshakeTimeout,
 		WriteBufferSize:  writeBufferSize(opts.WriteBufferSize),
+		NetDialContext:   (&net.Dialer{}).DialContext,
 	}
 
 	headers := make(http.Header)
@@ -152,12 +212,12 @@ func DialContext(ctx context.Context, opts DialOpts) (*Conn, error) {
 
 	pinCheck, err := utls.NewPinChecker(opts.PinSHA256)
 	if err != nil {
-		return nil, fmt.Errorf("ws dial: %w", err)
+		return nil, "", nil, fmt.Errorf("ws dial: %w", err)
 	}
 
 	if opts.TLSFingerprint != "" {
 		if u.Scheme != "wss" {
-			return nil, fmt.Errorf("ws dial: TLS fingerprint requires a wss URL")
+			return nil, "", nil, fmt.Errorf("ws dial: TLS fingerprint requires a wss URL")
 		}
 		// Gorilla skips its TLS layer when NetDialTLSContext supplies it.
 		dialer.NetDialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -200,52 +260,37 @@ func DialContext(ctx context.Context, opts DialOpts) (*Conn, error) {
 				tlsCfg.VerifyConnection = pinCheck
 			}
 		}
-		dialer.TLSClientConfig = tlsCfg
+		if ownTLS && u.Scheme == "wss" {
+			dialer.NetDialTLSContext = dialTLS(tlsCfg)
+		} else {
+			dialer.TLSClientConfig = tlsCfg
+		}
 	}
+	return dialer, u.String(), headers, nil
+}
 
-	// Gorilla applies deadlines but does not interrupt an HTTP Upgrade read
-	// on cancellation alone. Close the acquired socket until ownership is
-	// handed to the caller, and join any cancellation already in progress.
-	var stopCancel func() bool
-	var canceled chan struct{}
-	wrapDial := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
-		return func(dialCtx context.Context, network, addr string) (net.Conn, error) {
-			c, err := dial(dialCtx, network, addr)
-			if err != nil {
+// dialTLS is the handshake gorilla v1.5.3 performs itself (client.go,
+// tls_handshake.go): same configuration, same session cache, same
+// ClientHello.
+func dialTLS(cfg *tls.Config) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		raw, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		tc := tls.Client(raw, cfg.Clone())
+		if err := tc.HandshakeContext(ctx); err != nil {
+			_ = raw.Close()
+			return nil, err
+		}
+		if !cfg.InsecureSkipVerify {
+			if err := tc.VerifyHostname(cfg.ServerName); err != nil {
+				_ = tc.Close()
 				return nil, err
 			}
-			canceled = make(chan struct{})
-			stopCancel = context.AfterFunc(ctx, func() { _ = c.Close(); close(canceled) })
-			return c, nil
 		}
+		return tc, nil
 	}
-	if dialer.NetDialTLSContext != nil {
-		dialer.NetDialTLSContext = wrapDial(dialer.NetDialTLSContext)
-	} else {
-		dialer.NetDialContext = wrapDial((&net.Dialer{}).DialContext)
-	}
-	wsConn, resp, err := dialer.DialContext(ctx, u.String(), headers)
-	if stopCancel != nil && !stopCancel() {
-		<-canceled
-	}
-	if ctx.Err() != nil {
-		if wsConn != nil {
-			_ = wsConn.Close()
-		}
-		err = ctx.Err()
-	}
-	if resp != nil && resp.Body != nil {
-		// Тело ответа на апгрейд не читается ни в одной ветке; без закрытия
-		// соединение с неудачным рукопожатием остается в пуле keep-alive.
-		_ = resp.Body.Close()
-	}
-	if err != nil {
-		if resp != nil {
-			return nil, fmt.Errorf("ws dial: %w (status %d)", err, resp.StatusCode)
-		}
-		return nil, fmt.Errorf("ws dial: %w", err)
-	}
-	return WrapWithLimit(wsConn, opts.ReadLimit), nil
 }
 
 // namedSubprotocols drops empty entries from a subprotocol list and returns

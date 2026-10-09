@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -26,23 +28,47 @@ func startUDPAssociate(t testing.TB) (app, tunnel net.Conn, done chan struct{}) 
 	t.Helper()
 	app, clientSide := tcpPair(t)
 	tunnel, obfsSide := tcpPair(t)
-	return app, tunnel, runUDPAssociate(t, clientSide, obfsSide, "example.com", clientParams{}, nil)
+	return app, tunnel, runUDPAssociate(t, clientSide, "example.com", clientParams{OptimisticConnect: true}, nil, dialled(obfsSide))
+}
+
+// dialled hands the association a tunnel the test already holds, as one
+// whose request is out.
+func dialled(c net.Conn) tunnelDial {
+	return func(cfg clientParams, _ []byte) (net.Conn, clientParams, error) {
+		cfg.sentRequest(c)
+		return c, cfg, nil
+	}
 }
 
 // runUDPAssociate runs the client's UDP handler and ends it with the test.
 // The handler writes its closing line through the process's logger, so one
 // still running after its test put that line into the logs the next test
 // captured.
-func runUDPAssociate(t testing.TB, clientConn, obfsConn net.Conn, dest string, cfg clientParams, req []byte) chan struct{} {
+func runUDPAssociate(t testing.TB, clientConn net.Conn, dest string, cfg clientParams, req []byte, dial tunnelDial) chan struct{} {
 	t.Helper()
+	var mu sync.Mutex
+	var tunnels []net.Conn
+	recorded := func(cfg clientParams, req []byte) (net.Conn, clientParams, error) {
+		c, used, err := dial(cfg, req)
+		if c != nil {
+			mu.Lock()
+			tunnels = append(tunnels, c)
+			mu.Unlock()
+		}
+		return c, used, err
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		handleUDPAssociate(clientConn, obfsConn, dest, cfg, req)
+		associateUDP(clientConn, dest, cfg, req, recorded)
 	}()
 	t.Cleanup(func() {
 		_ = clientConn.Close()
-		_ = obfsConn.Close()
+		mu.Lock()
+		for _, c := range tunnels {
+			_ = c.Close()
+		}
+		mu.Unlock()
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
@@ -115,15 +141,26 @@ func TestHalfAReplyIsNotAWorkingTunnel(t *testing.T) {
 		t.Fatalf("closing the server's half: %v", err)
 	}
 
-	reply := readAppReply(t, app)
-	if reply[1] == 0x00 {
-		t.Fatalf("the client told its application the UDP tunnel is up after one byte from the server: % x", reply)
-	}
+	readAppReply(t, app)
+	associationEnded(t, app, done)
+}
 
+// associationEnded asserts that the client closed the application's SOCKS5
+// connection, which is how an association that already answered success is
+// taken back (RFC 1928, section 7).
+func associationEnded(t testing.TB, app net.Conn, done chan struct{}) {
+	t.Helper()
+	_ = app.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var b [1]byte
+	if n, err := app.Read(b[:]); err == nil {
+		t.Fatalf("the application got %d more bytes instead of the end of its association", n)
+	} else if ne := net.Error(nil); errors.As(err, &ne) && ne.Timeout() {
+		t.Fatal("the application's connection is still open on an association the server did not accept")
+	}
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the handler is still running on a tunnel that answered with one byte")
+		t.Fatal("the handler is still running on an association the server did not accept")
 	}
 }
 
@@ -206,25 +243,21 @@ func TestAReplyTheClientCannotParseIsNotASuccess(t *testing.T) {
 			if _, err := tunnel.Write(tc.reply); err != nil {
 				t.Fatalf("writing the reply: %v", err)
 			}
-			if err := tunnel.(*net.TCPConn).CloseWrite(); err != nil {
-				t.Fatalf("closing the server's half: %v", err)
-			}
+			// The end of the stream is for the reply that stops short. A
+			// reply refused by its first bytes may have closed the tunnel
+			// already, and this fails with ENOTCONN.
+			_ = tunnel.(*net.TCPConn).CloseWrite()
 
-			reply := readAppReply(t, app)
-			if reply[1] == 0x00 {
-				t.Fatalf("the client accepted %s and told its application the tunnel is up", tc.name)
-			}
-
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				t.Fatalf("the handler is still running after %s", tc.name)
-			}
+			readAppReply(t, app)
+			associationEnded(t, app, done)
 		})
 	}
 }
 
-func TestARefusalFromTheServerReachesTheApplication(t *testing.T) {
+// The application was told success before the server answered, so a refusal
+// reaches it as the end of the association, and the log says why.
+func TestARefusalFromTheServerEndsTheAssociation(t *testing.T) {
+	logs := captureLogs(t)
 	app, tunnel, done := startUDPAssociate(t)
 
 	// Connection not allowed by ruleset, bound to nothing.
@@ -233,14 +266,11 @@ func TestARefusalFromTheServerReachesTheApplication(t *testing.T) {
 		t.Fatalf("writing the refusal: %v", err)
 	}
 
-	reply := readAppReply(t, app)
-	if !bytes.Equal(reply, refusal) {
-		t.Fatalf("the application got % x, want the server's own refusal % x", reply, refusal)
+	if reply := readAppReply(t, app); reply[1] != 0x00 {
+		t.Fatalf("the application was answered % x before the server, want success", reply)
 	}
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the handler is still running after the server refused the tunnel")
+	associationEnded(t, app, done)
+	if logged(logs, `msg="Server rejected the UDP association"`, "status=2") != 1 {
+		t.Fatalf("the refusal was logged as:\n%s", logs)
 	}
 }

@@ -34,7 +34,7 @@ func TestAWildcardHubAnswersFromTheAddressItWasAsked(t *testing.T) {
 				t.Skipf("cannot listen on %s: %v", name, err)
 			}
 			defer hub.Close()
-			registered := hub.Register(server.keys)
+			registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 			defer hub.Remove(registered)
 			c, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")}, &net.UDPAddr{IP: net.ParseIP("127.0.0.2"), Port: hub.Port()})
 			if err != nil {
@@ -82,7 +82,7 @@ func TestTheSourceOfTheAnswersMovesOnlyWhenTheNewAddressLeads(t *testing.T) {
 		t.Skipf("cannot listen on the wildcard address: %v", err)
 	}
 	defer hub.Close()
-	registered := hub.Register(server.keys)
+	registered := hub.RegisterPeer(server.keys, netip.MustParseAddr("127.0.0.1"))
 	defer hub.Remove(registered)
 	c, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
@@ -121,5 +121,10 @@ func TestTheSourceOfTheAnswersMovesOnlyWhenTheNewAddressLeads(t *testing.T) {
 	to("127.0.0.2")
 	to("127.0.0.1")
 	to("127.0.0.1")
-	answersFrom("127.0.0.1", "two newest datagrams to the new address")
+	answersFrom("127.0.0.2", "fresh datagrams are not return-path proof")
+	proveReturnPath(t, client, c, func(wire []byte) error {
+		_, err := c.WriteToUDPAddrPort(wire, netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(hub.Port())))
+		return err
+	})
+	answersFrom("127.0.0.1", "verified return path at the new source")
 }

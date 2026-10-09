@@ -182,10 +182,12 @@ and from nowhere else.
 panel deciding what to show. `Admin.Actor()` is the account itself, without its
 key, and `Admin.Role()` is what it may do.
 
-A handle holds a name, not a role. Every call re-reads the account, so a
-demotion, a removal or a disabling reaches the handles that were issued before
-it: an admin that demotes itself has demoted itself, and a handle to an account
-that is gone fails rather than falling back to the least privileged role.
+A handle pins the account incarnation that existed at `As`, rather than the
+current owner of a reusable name. Every call reads that incarnation's current
+role and policy. Demotion, expiry, disabling, removal or replacement reaches
+existing handles. Removing an account and recreating the same name and ID does
+not revive an old handle. Ordinary reloads retaining the same ID preserve its
+binding; changing the name revokes handles issued under the old name.
 Issuing a handle is not authentication - the embedding application still has to
 establish who the request is from.
 
@@ -193,5 +195,26 @@ The tunnel key never travels with the account list. It is what an account is on
 the wire, so a listing that carried one would let anyone with
 `view accounts` raise a tunnel as any member; handing a key out is
 `manage accounts`, which only `admin` has.
+
+### Runtime controls and run IDs
+
+`UpdateWhitelist`, `UpdateTimeouts`, `UpdateHandshakeTimeout` and
+`UpdateSessionTimeouts` retain their latest values on the `Server`, including
+calls before the first `Start` or while stopped. Each new listener inherits
+those values after `Stop` followed by `Start`. Timeout updates apply to the
+next accepted connection; established sessions keep their original budgets.
+Invalid whitelist updates do not replace the last valid restriction.
+
+`Boot()` is safe during concurrent startup. Each accepted `Start` creates a
+new eight-digit hexadecimal run ID used in the service log and session journal.
+Before the first run it returns a provisional ID created by `NewServer`;
+`Stop` retains the last run ID. Rejected overlapping `Start` calls do not
+change it.
+
+Authenticated TCP and UDP sessions pin the same account incarnation for access
+checks and traffic counters. Replacement or removal/recreation revokes old
+sessions at their existing policy-check boundaries; neither their traffic nor
+permissions are reassigned to the new owner of the name. This does not change
+native UDP probe cadence or the wire format.
 
 [Documentation index](../README.md) · [Project home](../../README.md)

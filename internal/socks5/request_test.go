@@ -15,6 +15,12 @@ type MockConn struct {
 	buf bytes.Buffer
 }
 
+func TestEmptyDomainIsRejectedBeforeResolution(t *testing.T) {
+	if addr, err := readAddrSpec(bytes.NewReader([]byte{fqdnAddress, 0, 0, 80})); err == nil {
+		t.Fatalf("empty domain accepted as %v", addr)
+	}
+}
+
 func (m *MockConn) Write(b []byte) (int, error) {
 	return m.buf.Write(b)
 }

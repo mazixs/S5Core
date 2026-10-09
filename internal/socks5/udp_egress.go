@@ -55,7 +55,7 @@ func newRotatingUDP(bindIP net.IP) (*rotatingUDP, error) {
 }
 
 func (e *rotatingUDP) open() (*net.UDPConn, error) {
-	return udpbuf.ListenUDP("udp", &net.UDPAddr{IP: e.bindIP, Port: 0})
+	return udpbuf.ListenUnicast("udp", &net.UDPAddr{IP: e.bindIP, Port: 0})
 }
 
 // current returns the socket to use now. A reader keeps it to ask replaced

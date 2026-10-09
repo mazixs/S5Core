@@ -1,0 +1,89 @@
+{
+  "files": {
+    "acceptance.json": "40f533a131d56359c0dd0caa857d0800bb052ec92bfc99d8510573892132a6c7",
+    "build-source.json": "a0cfe10bbed6ee70ed505ee598901fd72ac3c6e1b0b19e327bbb4f3bd743c059",
+    "cells.json": "570b42e42b607811d9c3f8c615d8a5ecda3e24b0ae353de9454568474cd1b940",
+    "socket-review.json": "cfa29c168b81892ed710cb56a9b055eaf918180a65ff6da87cd0f9098db05e62",
+    "summary.json": "16484285f22e13143cabc6a100aefdb4c7523adcf59f4113f1565ef65a098f70"
+  },
+  "release_binaries": {
+    "version": "v2.4.0-rc2",
+    "commit": "ba3f104c1260ccb7aadfb0107f72bf73cd6b4b09",
+    "toolchain": "go version go1.26.8 linux/amd64",
+    "files": [
+      {
+        "name": "s5core-linux-amd64",
+        "goos": "linux",
+        "goarch": "amd64",
+        "sha256": "6a829ef96c26cca512debf2da25084d427bbe2d35b213488b47d6fd2cb5fd257"
+      },
+      {
+        "name": "s5core-linux-arm64",
+        "goos": "linux",
+        "goarch": "arm64",
+        "sha256": "e58bded17405cba7a9396d5dcffbf5ad1ac70f838839b65b23cf77c397af2289"
+      },
+      {
+        "name": "s5core-darwin-amd64",
+        "goos": "darwin",
+        "goarch": "amd64",
+        "sha256": "ad354ec401045b697b57a6bacc32101999f21c288751b9173ad38fedc3f5d382"
+      },
+      {
+        "name": "s5core-darwin-arm64",
+        "goos": "darwin",
+        "goarch": "arm64",
+        "sha256": "a268f223debd53f4201d18d3614ba332ea1429581289f1174d35fc7ccc4cba52"
+      },
+      {
+        "name": "s5core-windows-amd64.exe",
+        "goos": "windows",
+        "goarch": "amd64",
+        "sha256": "4a068e75469034bfa3c1a5a98643abc16c0f7df3b660741917ef8687902c29ec"
+      },
+      {
+        "name": "s5client-linux-amd64",
+        "goos": "linux",
+        "goarch": "amd64",
+        "sha256": "2e677fb92a652db5267e847125ca0f404c9a8ae1f460a29f15274f4ab5d5788e"
+      },
+      {
+        "name": "s5client-linux-arm64",
+        "goos": "linux",
+        "goarch": "arm64",
+        "sha256": "3d5abe166ab3403533a69493563c0a0916a45073207f6d4a184acf450ab65ff8"
+      },
+      {
+        "name": "s5client-darwin-amd64",
+        "goos": "darwin",
+        "goarch": "amd64",
+        "sha256": "4f65a44d70a0666f171afa78a1cb197271e6f6b92bbfef7a00208766c27a6d64"
+      },
+      {
+        "name": "s5client-darwin-arm64",
+        "goos": "darwin",
+        "goarch": "arm64",
+        "sha256": "bfd5c4033240e8917c5ab9049b2294d6400b0f0c6ed91f64ec632bab0261b8e4"
+      },
+      {
+        "name": "s5client-windows-amd64.exe",
+        "goos": "windows",
+        "goarch": "amd64",
+        "sha256": "a56bd3779d16fd9da6d720c72a10282f6a71f44f782afdeaa2761ad4c397eb7b"
+      },
+      {
+        "name": "s5client-linux-mips-softfloat",
+        "goos": "linux",
+        "goarch": "mips",
+        "sha256": "074cf71105854f11ce607098f7b0e26043f95bae8d5fe2c079d94ed6f197f16c"
+      },
+      {
+        "name": "s5client-linux-mipsle-softfloat",
+        "goos": "linux",
+        "goarch": "mipsle",
+        "sha256": "874c05a848cccf0200ee131e697041ba9fabb4b4384c30177d8c876ab81c5ac0"
+      }
+    ],
+    "field_acceptance": "pending"
+  }
+}

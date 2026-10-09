@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"slices"
 	"strings"
@@ -17,32 +18,63 @@ import (
 	"github.com/mazixs/S5Core/pkg/veil"
 )
 
+func TestPathLossWarningsReportOnlyTheCurrentEpisodeWriteErrors(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logs := captureLogs(t)
+		l := startLiveness(t, nil)
+		l.at(time.Millisecond)
+		stop := make(chan struct{})
+		defer close(stop)
+		l.input(stop)
+		l.at(time.Second)
+		l.path.writeFailure.Store(true)
+		l.at(4 * time.Second)
+		if logged(logs, "Native UDP path lost") != 1 || l.client.stats.probeWriteErrors.Load() == 0 {
+			t.Fatal("first write-error incident missing")
+		}
+		l.path.writeFailure.Store(false)
+		l.at(7 * time.Second)
+		if !l.client.up.Load() {
+			t.Fatal("path did not recover")
+		}
+		l.path.dropDown.Store(true)
+		l.at(10 * time.Second)
+		if logged(logs, "Native UDP path lost") != 2 || logged(logs, "Native UDP path lost", "probe_write_errors=0") != 1 {
+			t.Fatal("previous episode errors leaked into a new loss", logs.String())
+		}
+	})
+}
+
 // The liveness of the native path, in a testing/synctest bubble so that the
 // assertions can be exact. The path is in memory: the client's end is a
 // datagramConn, and the server's end answers every probe it receives. Jitter
 // is zero, so an active association is probed every 400 ms exactly.
 
 type memPath struct {
-	server   *nativeudp.Session
-	toClient chan []byte
-	errs     chan error
-	closed   chan struct{}
-	dropUp   atomic.Bool
-	dropDown atomic.Bool
-	lose     func(probe int64) bool
-	onHeard  func(counter uint64) // a heard probe, with its counter
-	probes   atomic.Int64
-	data     atomic.Int64
-	mu       sync.Mutex
-	heard    []time.Duration // when a probe said the client hears the server
-	bare     []time.Duration // when a probe did not
-	start    time.Time
+	server       *nativeudp.Session
+	toClient     chan []byte
+	errs         chan error
+	closed       chan struct{}
+	dropUp       atomic.Bool
+	dropDown     atomic.Bool
+	writeFailure atomic.Bool
+	lose         func(probe int64) bool
+	onHeard      func(counter uint64) // a heard probe, with its counter
+	probes       atomic.Int64
+	data         atomic.Int64
+	mu           sync.Mutex
+	heard        []time.Duration // when a probe said the client hears the server
+	bare         []time.Duration // when a probe did not
+	start        time.Time
 	// sizes answers like a server with the search for the limit
 	// (docs/veil-spec.md, 10.7), and limit drops what is longer both ways.
-	sizes     bool
-	limit     int
-	loseSized func(size int) bool
-	announced []int // the limits the probes of the path said
+	sizes             bool
+	limit             int
+	loseSized         func(size int) bool
+	legacyLimits      bool
+	loseLimitACK      func(nativeudp.Probe) bool
+	loseLimitProposal func(nativeudp.Probe) bool
+	announced         []int // the limits the probes of the path said
 	// ptb has a datagram past limit answered with a PTB, which a connected
 	// socket reports by failing its next call.
 	ptb     bool
@@ -51,6 +83,9 @@ type memPath struct {
 }
 
 func (p *memPath) Write(b []byte) (int, error) {
+	if p.writeFailure.Load() {
+		return 0, syscall.ENOBUFS
+	}
 	if p.tooBig.Swap(false) {
 		p.refused.Add(1)
 		return 0, syscall.EMSGSIZE
@@ -74,6 +109,9 @@ func (p *memPath) Write(b []byte) (int, error) {
 				}
 				break
 			}
+			if p.loseLimitProposal != nil && p.loseLimitProposal(probe) {
+				return n, nil
+			}
 			p.mu.Lock()
 			at := time.Since(p.start)
 			heard := probe.Heard
@@ -95,7 +133,11 @@ func (p *memPath) Write(b []byte) (int, error) {
 					break
 				}
 				if probe.Limit != 0 {
-					p.server.SetLimit(probe.Limit)
+					if p.legacyLimits {
+						p.server.SetLimit(probe.Limit)
+					} else {
+						p.server.ApplyProbeLimit(probe)
+					}
 				}
 				p.reflect(probe, extended, n)
 			}
@@ -105,6 +147,80 @@ func (p *memPath) Write(b []byte) (int, error) {
 	}
 	return len(b), nil
 }
+
+func TestLocalProbeWriteFailuresAreVisibleAndRecoveryKeepsWorking(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLiveness(t, nil)
+		l.at(time.Millisecond)
+		if !l.client.up.Load() {
+			t.Fatal("path was not verified")
+		}
+		accepted := l.client.stats.probesSent.Load()
+		l.path.writeFailure.Store(true)
+		l.client.used(l.client.clock(time.Now()))
+		l.at(2 * time.Second)
+		if l.client.stats.probeWriteErrors.Load() == 0 || l.client.stats.probesSent.Load() != accepted {
+			t.Fatal("local failures were hidden or counted as successful sends")
+		}
+		if l.client.up.Load() {
+			t.Fatal("failed probes no longer mark the path unavailable")
+		}
+		errors := l.client.stats.probeWriteErrors.Load()
+		l.path.writeFailure.Store(false)
+		l.at(12 * time.Second)
+		if !l.client.up.Load() || l.client.stats.probesSent.Load() <= accepted || l.client.stats.probeWriteErrors.Load() != errors {
+			t.Fatal("a recovered socket did not restore the native path")
+		}
+	})
+}
+
+func TestNativeRecoversAfterNinetyMinutesOfInitialUDPBlock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var current atomic.Pointer[liveness]
+		var syncs atomic.Int64
+		signal := func() {
+			l := current.Load()
+			syncs.Add(1)
+			l.path.server.Resync(l.client.tellNext.Load())
+			l.client.session.Resync(l.path.server.Next())
+		}
+		l := startLivenessPath(t, nil, 0, signal, nil, func(path *memPath) { path.dropUp.Store(true) })
+		current.Store(l)
+		l.at(90 * time.Minute)
+		if next := l.client.session.Next(); next < 500 || next > 550 {
+			t.Fatalf("initial-block probe cadence changed: next=%d", next)
+		}
+		if l.client.up.Load() {
+			t.Fatal("blocked UDP was marked up")
+		}
+		l.path.dropUp.Store(false)
+		l.at(90*time.Minute + nativeRetryMax + time.Second)
+		if !l.client.up.Load() || syncs.Load() == 0 {
+			t.Fatalf("path stayed down after initial block: syncs=%d", syncs.Load())
+		}
+	})
+}
+
+func TestSizeProbeEMSGSIZEIsNotAPathWriteFailure(t *testing.T) {
+	psk, secret := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40)
+	keys, err := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := newNativeClient(&failingProbeSocket{}, nativeudp.NewSession(keys), func() {})
+	if err := n.sendProbe(nativeudp.Probe{Size: 1400, Generation: 1}); !errors.Is(err, syscall.EMSGSIZE) {
+		t.Fatalf("size probe error: %v", err)
+	}
+	if n.stats.probeWriteErrors.Load() != 0 {
+		t.Fatal("MTU boundary reported as a path write error")
+	}
+}
+
+type failingProbeSocket struct{}
+
+func (*failingProbeSocket) Write([]byte) (int, error) { return 0, syscall.EMSGSIZE }
+func (*failingProbeSocket) Read([]byte) (int, error)  { return 0, net.ErrClosed }
+func (*failingProbeSocket) RemoteAddr() net.Addr      { return memServer }
 
 func (p *memPath) answer(kind byte, d []byte) {
 	// A path that drops everything spends no counter of the server: the
@@ -121,6 +237,12 @@ func (p *memPath) answer(kind byte, d []byte) {
 
 // reflect answers a probe as a server with the search does.
 func (p *memPath) reflect(probe nativeudp.Probe, extended bool, n int) {
+	if p.loseLimitACK != nil && p.loseLimitACK(probe) {
+		return
+	}
+	if p.legacyLimits {
+		probe.Generation = 0
+	}
 	if p.dropDown.Load() {
 		return
 	}
@@ -372,7 +494,8 @@ func TestEveryRetryOfALostPathTellsTheServer(t *testing.T) {
 // A path whose probes are never answered, as behind a front on another host,
 // meets the rule of a lost path at 7 s: the probes at 0, 1 and 3 s are
 // unanswered, the first of them 7 s ago. The client says so once, naming
-// where the probes go, and tells the server nothing: no datagram went native.
+// where the probes go. Counter-sync repeats at the existing retry cadence,
+// so an initial long block cannot permanently exhaust the server window.
 func TestAPathThatNeverAnswersIsReportedOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logs := captureLogs(t)
@@ -390,8 +513,9 @@ func TestAPathThatNeverAnswersIsReportedOnce(t *testing.T) {
 		if n := logged(logs, line...); n != 1 {
 			t.Fatalf("%d reports in a minute, want 1:\n%s", n, logs)
 		}
-		if got := l.signalled(); len(got) != 0 {
-			t.Fatalf("the server was told at %v", got)
+		want := []time.Duration{7 * time.Second, 15 * time.Second, 25 * time.Second, 35 * time.Second, 45 * time.Second, 55 * time.Second}
+		if got := l.signalled(); !slices.Equal(got, want) {
+			t.Fatalf("counter-sync at %v, want %v", got, want)
 		}
 	})
 }

@@ -5,6 +5,7 @@ package nativeudp
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"log/slog"
@@ -49,6 +50,10 @@ const (
 
 var ErrPacket = errors.New("nativeudp: invalid or replayed datagram")
 
+// ErrPayloadTooLarge leaves the association usable. A concurrent limit
+// change can make a previously checked payload too large; use TCP fallback.
+var ErrPayloadTooLarge = errors.New("nativeudp: payload exceeds current limit")
+
 // Packet is a verified application datagram. A packet from a hub holds a
 // pooled buffer, and Data is valid until Release. Counter is the sender's
 // counter of it, which orders what the client says by UDP against what it
@@ -91,20 +96,24 @@ type Session struct {
 	// twice or walking the map.
 	recvRing [window][8]byte
 	answers  atomic.Pointer[route]
-	// candidate is a new route that the newest datagram came by once; only
-	// the hub's reader touches it.
-	candidate route
-	packets   chan Packet
-	heard     chan struct{}
+	// Only the hub reader changes this bounded return-path proof state.
+	candidate        route
+	routeToken       [16]byte
+	routeExpires     time.Time
+	routeChallengeAt time.Time
+	legacyPeer       netip.Addr
+	packets          chan Packet
+	heard            chan struct{}
 	// heardTop is the highest counter of a heard probe plus one: probes that
 	// come while one is pending share one wake, and the newest must survive.
 	heardTop atomic.Uint64
 	closed   atomic.Bool
-	// resynced is the last resync the hub made, under its lock.
+	// resynced is the last resync the hub made, under recvMu.
 	resynced time.Time
 	// limit is the longest datagram this side puts on the wire, 0 for
 	// MaxWire until SetLimit.
-	limit atomic.Int32
+	limit      atomic.Int32
+	negotiated atomic.Uint64
 }
 
 func NewSession(keys veil.DatagramKeys) *Session {
@@ -160,6 +169,9 @@ func (t *tagger) tag(counter uint64) [8]byte {
 
 // Limit is the longest datagram this side puts on the wire.
 func (s *Session) Limit() int {
+	if v := s.negotiated.Load(); v != 0 {
+		return int(v & 0xffff)
+	}
 	if l := s.limit.Load(); l != 0 {
 		return int(l)
 	}
@@ -171,6 +183,37 @@ func (s *Session) Limit() int {
 // reports whether this call set it.
 func (s *Session) SetLimit(wire int) bool {
 	return s.limit.CompareAndSwap(0, int32(min(max(wire, BaseWire), MaxWire)))
+}
+
+// NegotiatedLimit returns the last accepted recovery generation and limit.
+func (s *Session) NegotiatedLimit() (uint32, int) {
+	v := s.negotiated.Load()
+	return uint32(v >> 16), int(v & 0xffff)
+}
+
+// ApplyProbeLimit accepts authenticated proposals monotonically. A repeated
+// generation can only repeat its original value; delayed proposals cannot
+// overwrite a newer generation. Legacy peers keep the one-shot contract.
+func (s *Session) ApplyProbeLimit(p Probe) bool {
+	if p.Limit == 0 {
+		return false
+	}
+	if p.Generation == 0 {
+		return s.SetLimit(p.Limit)
+	}
+	if p.Limit < BaseWire || p.Limit > MaxWire {
+		return false
+	}
+	value := uint64(p.Generation)<<16 | uint64(p.Limit)
+	for {
+		old := s.negotiated.Load()
+		if uint32(old>>16) >= p.Generation {
+			return old == value
+		}
+		if s.negotiated.CompareAndSwap(old, value) {
+			return true
+		}
+	}
 }
 
 // overhead is what the wire adds to a payload: the tag, the kind, the pad
@@ -188,7 +231,7 @@ func (s *Session) Seal(dst []byte, kind byte, payload []byte) ([]byte, error) {
 	}
 	limit := s.MaxPayload()
 	if len(payload) > limit {
-		return nil, ErrPacket
+		return nil, ErrPayloadTooLarge
 	}
 	return s.seal(dst, kind, payload, 0, min(32, limit-len(payload)))
 }
@@ -255,8 +298,8 @@ func (s *Session) Open(wire []byte) (Packet, error) {
 }
 
 // claim authenticates a datagram and takes its counter, so that a replay is
-// refused, without moving the window: the hub opens outside its own lock and
-// moves the window under it.
+// refused, without moving the window. Both authentication and tag generation
+// run outside the shared hub lock; only publishing index changes holds it.
 func (s *Session) claim(wire []byte) (Packet, uint64, error) {
 	var p Packet
 	if len(wire) < 8+2+s.keys.Recv.Overhead() || len(wire) > MaxWire {
@@ -294,6 +337,10 @@ func (s *Session) claim(wire []byte) (Packet, uint64, error) {
 func (s *Session) settle(counter uint64, moved func(tag [8]byte, added bool)) (newest, kept bool) {
 	s.recvMu.Lock()
 	defer s.recvMu.Unlock()
+	return s.settleLocked(counter, moved)
+}
+
+func (s *Session) settleLocked(counter uint64, moved func(tag [8]byte, added bool)) (newest, kept bool) {
 	newest = !s.recvAny || counter > s.recvHigh
 	s.recvAny = true
 	s.advance(counter, moved)
@@ -347,6 +394,13 @@ func (s *Session) resync(next uint64, moved func(tag [8]byte, added bool)) {
 	}
 	s.recvMu.Lock()
 	defer s.recvMu.Unlock()
+	s.resyncLocked(next, moved)
+}
+
+func (s *Session) resyncLocked(next uint64, moved func(tag [8]byte, added bool)) {
+	if next == 0 || next > ^uint64(0)-lookAhead {
+		return
+	}
 	if s.recvAny && next-1 <= s.recvHigh {
 		return
 	}
@@ -398,18 +452,22 @@ type route struct {
 // Hub is the single UDP socket shared by all native associations on a node.
 // Unknown tags, failed AEAD and replays are silently discarded.
 type Hub struct {
-	conn        *net.UDPConn
-	source      sourceFamily
-	mu          sync.Mutex
-	sessions    map[*Session]struct{}
-	index       map[[8]byte]*Session
-	spent       map[[8]byte]*Session
-	accepted    atomic.Uint64
-	tagDrops    atomic.Uint64
-	replayDrops atomic.Uint64
-	authDrops   atomic.Uint64
-	readErrors  atomic.Uint64
-	logger      *slog.Logger
+	conn                *net.UDPConn
+	source              sourceFamily
+	mu                  sync.Mutex
+	sessions            map[*Session]struct{}
+	index               map[[8]byte]*Session
+	spent               map[[8]byte]*Session
+	accepted            atomic.Uint64
+	tagDrops            atomic.Uint64
+	replayDrops         atomic.Uint64
+	authDrops           atomic.Uint64
+	readErrors          atomic.Uint64
+	dataEnqueued        atomic.Uint64
+	dataQueueDrops      atomic.Uint64
+	probeACKQueueDrops  atomic.Uint64
+	probeACKWriteErrors atomic.Uint64
+	logger              *slog.Logger
 	// write is writeTo on the hub's socket; a test stalls it.
 	write func(wire, oob []byte, to netip.AddrPort) error
 	// acks are the probes that wait for their answers. The reader does not
@@ -420,23 +478,34 @@ type Hub struct {
 
 // ackRequest is a probe to answer, and how long it was on the wire.
 type ackRequest struct {
-	s        *Session
-	probe    Probe
-	extended bool
-	wire     int
+	s         *Session
+	probe     Probe
+	extended  bool
+	wire      int
+	route     *route
+	challenge bool
+	token     [16]byte
 }
 
 // Stats is a cumulative, bounded-label view of the native UDP endpoint.
 type Stats struct {
 	Accepted, TagDrops, ReplayDrops, AuthDrops, ReadErrors uint64
 	Active                                                 int
+	DataEnqueued, DataQueueDrops, ProbeACKQueueDrops       uint64
+	ProbeACKWriteErrors                                    uint64
 }
 
 func (h *Hub) Stats() Stats {
 	h.mu.Lock()
 	active := len(h.sessions)
 	h.mu.Unlock()
-	return Stats{h.accepted.Load(), h.tagDrops.Load(), h.replayDrops.Load(), h.authDrops.Load(), h.readErrors.Load(), active}
+	return Stats{
+		Accepted: h.accepted.Load(), TagDrops: h.tagDrops.Load(), ReplayDrops: h.replayDrops.Load(),
+		AuthDrops: h.authDrops.Load(), ReadErrors: h.readErrors.Load(), Active: active,
+		DataEnqueued: h.dataEnqueued.Load(), DataQueueDrops: h.dataQueueDrops.Load(),
+		ProbeACKQueueDrops:  h.probeACKQueueDrops.Load(),
+		ProbeACKWriteErrors: h.probeACKWriteErrors.Load(),
+	}
 }
 
 // Listen opens the hub. logger gets the socket's read errors; nil discards
@@ -484,11 +553,23 @@ const ackQueue = 256
 
 func (h *Hub) answer() {
 	for a := range h.acks {
-		r := a.s.answers.Load()
+		r := a.route
+		if r == nil {
+			r = a.s.answers.Load()
+		}
 		if r == nil || a.s.closed.Load() {
 			continue
 		}
-		_ = a.s.SealWriteAnswer(a.probe, a.extended, a.wire, func(wire []byte) error { return h.write(wire, r.oob, r.peer) })
+		write := func(wire []byte) error { return h.write(wire, r.oob, r.peer) }
+		var err error
+		if a.challenge {
+			err = a.s.SealWriteChallenge(a.token, a.wire, write)
+		} else {
+			err = a.s.SealWriteAnswer(a.probe, a.extended, a.wire, write)
+		}
+		if err != nil {
+			h.probeACKWriteErrors.Add(1)
+		}
 	}
 }
 
@@ -496,7 +577,15 @@ func (h *Hub) Port() int    { return h.conn.LocalAddr().(*net.UDPAddr).Port }
 func (h *Hub) Close() error { return h.conn.Close() }
 
 func (h *Hub) Register(keys veil.DatagramKeys) *Session {
+	return h.RegisterPeer(keys, netip.Addr{})
+}
+
+// RegisterPeer permits the initial legacy route only from the authenticated
+// TCP peer's IP. An unknown peer requires proof. A legacy client reconnects
+// or uses TCP fallback after its mapping changes; it cannot migrate a route.
+func (h *Hub) RegisterPeer(keys veil.DatagramKeys, peer netip.Addr) *Session {
 	s := NewSession(keys)
+	s.legacyPeer = peer.Unmap()
 	h.mu.Lock()
 	h.sessions[s] = struct{}{}
 	for t := range s.recvTags {
@@ -508,39 +597,86 @@ func (h *Hub) Register(keys veil.DatagramKeys) *Session {
 
 // Remove drops every tag of the session, all of which are in its window.
 func (h *Hub) Remove(s *Session) {
+	// Every operation that needs both locks takes the session lock first.
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s.closed.Store(true)
 	delete(h.sessions, s)
-	s.recvMu.Lock()
-	defer s.recvMu.Unlock()
 	for c := low(s.recvHigh); c < s.recvTop; c++ {
 		h.forget(s, s.recvRing[c%window])
 	}
 }
 
 // resyncEvery bounds the work a client can ask of the hub: a resync computes
-// up to a window of tags under the hub's lock.
+// up to a window of tags outside the hub's lock.
 const resyncEvery = 100 * time.Millisecond
 
 // Resync is Session.Resync for a session of the hub, with the hub's index
 // kept in step. A resync within resyncEvery of the last is ignored; the
 // client's next one carries a later counter.
 func (h *Hub) Resync(s *Session, next uint64) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
 	now := time.Now()
 	if s.closed.Load() || (!s.resynced.IsZero() && now.Sub(s.resynced) < resyncEvery) {
 		return
 	}
 	s.resynced = now
-	s.resync(next, func(t [8]byte, added bool) {
-		if added {
-			h.index[t] = s
-			return
+	var changes tagChanges
+	s.resyncLocked(next, changes.record)
+	h.mu.Lock()
+	h.publish(s, &changes)
+	h.mu.Unlock()
+}
+
+// A jump retires at most one window and generates at most one window.
+// The fixed buffer keeps both memory and the index publication bounded.
+type tagChange struct {
+	tag   [8]byte
+	added bool
+}
+type tagChanges struct {
+	entries [2 * window]tagChange
+	n       int
+}
+
+func (c *tagChanges) record(tag [8]byte, added bool) {
+	c.entries[c.n] = tagChange{tag, added}
+	c.n++
+}
+
+// publish is called with h.mu held and the session receive lock held.
+// All HMAC work has already finished before the shared index is locked.
+func (h *Hub) publish(s *Session, changes *tagChanges) {
+	for _, change := range changes.entries[:changes.n] {
+		if change.added {
+			h.index[change.tag] = s
+		} else {
+			h.forget(s, change.tag)
 		}
-		h.forget(s, t)
-	})
+	}
+}
+
+func (h *Hub) settle(s *Session, tag [8]byte, counter uint64) (newest, accepted bool) {
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
+	if s.closed.Load() {
+		return false, false
+	}
+	var changes tagChanges
+	newest, kept := s.settleLocked(counter, changes.record)
+	h.mu.Lock()
+	h.publish(s, &changes)
+	if h.index[tag] == s {
+		delete(h.index, tag)
+	}
+	if kept {
+		h.spent[tag] = s
+	}
+	h.mu.Unlock()
+	return newest, true
 }
 
 // forget drops a tag of s from both indexes. Tags of two sessions can
@@ -562,30 +698,45 @@ func (h *Hub) Send(s *Session, kind byte, payload []byte) error {
 	return s.SealWrite(kind, payload, func(wire []byte) error { return h.write(wire, r.oob, r.peer) })
 }
 
-// follow moves the answers to a new route only once the newest datagram has
-// come by it twice in a row. A copy of one datagram that outran the original
-// from another address does not move them, and neither does an older
-// datagram held back and sent later; a client whose NAT mapping changed
-// moves with its second datagram. The hub's address the client wrote to
-// follows the same rule: it used to move with any datagram, and one copy
-// sent to another address of the host moved the source of every answer.
-func (s *Session) follow(h *Hub, peer netip.AddrPort, from netip.Addr) {
+// follow requires reception at the candidate before moving application
+// replies. A member can authenticate datagrams with a spoofed source, so
+// authentication alone is insufficient. Proofs expire after five seconds;
+// at most one bounded challenge per second is reflected per association.
+func (s *Session) follow(h *Hub, peer netip.AddrPort, from netip.Addr, probe Probe, isProbe bool, wire int) bool {
 	cur := s.answers.Load()
-	switch {
-	case cur == nil:
-	case cur.peer == peer && cur.from == from:
-		s.candidate = route{}
-		return
-	case s.candidate.peer != peer || s.candidate.from != from:
-		s.candidate = route{peer: peer, from: from}
-		return
+	if cur != nil && cur.peer == peer && cur.from == from {
+		return true
 	}
-	s.candidate = route{}
 	moved := &route{peer: peer, from: from}
 	if from.IsValid() {
 		moved.oob = sourceControl(h.source, from)
 	}
-	s.answers.Store(moved)
+	if cur == nil && !probe.RouteProof && s.legacyPeer.IsValid() && peer.Addr().Unmap() == s.legacyPeer {
+		s.answers.Store(moved)
+		return true
+	}
+	if !isProbe || !probe.RouteProof {
+		return false
+	}
+	now := time.Now()
+	if probe.RouteEcho && now.Before(s.routeExpires) && s.candidate.peer == peer && s.candidate.from == from && subtle.ConstantTimeCompare(probe.RouteToken[:], s.routeToken[:]) == 1 {
+		s.answers.Store(moved)
+		s.candidate, s.routeExpires = route{}, time.Time{}
+		return true
+	}
+	if probe.RouteEcho || (!s.routeChallengeAt.IsZero() && now.Sub(s.routeChallengeAt) < time.Second) {
+		return false
+	}
+	if _, err := rand.Read(s.routeToken[:]); err != nil {
+		return false
+	}
+	s.candidate, s.routeExpires, s.routeChallengeAt = *moved, now.Add(5*time.Second), now
+	select {
+	case h.acks <- ackRequest{s: s, wire: wire, route: moved, challenge: true, token: s.routeToken}:
+	default:
+		h.probeACKQueueDrops.Add(1)
+	}
+	return false
 }
 
 // read ends only when the socket is closed. Any other error is about one
@@ -596,13 +747,6 @@ func (h *Hub) read() {
 	var b [MaxWire + 1]byte
 	var oob [sourceSpace]byte
 	var s *Session
-	moved := func(t [8]byte, added bool) {
-		if added {
-			h.index[t] = s
-			return
-		}
-		h.forget(s, t)
-	}
 	var failed int
 	var logged time.Time
 	for {
@@ -641,43 +785,40 @@ func (h *Hub) read() {
 			continue
 		}
 		h.mu.Unlock()
-		// Register, Remove and Resync wait for the window to move, not for
-		// the datagram to be decrypted.
+		// Authentication and receive-window HMAC work use the session lock.
+		// They never run while holding the shared hub index.
 		p, counter, err := s.claim(b[:n])
 		if err != nil {
 			h.authDrops.Add(1)
 			continue
 		}
-		h.mu.Lock()
-		if s.closed.Load() {
+		newest, accepted := h.settle(s, t, counter)
+		if !accepted {
 			h.tagDrops.Add(1)
-			h.mu.Unlock()
 			continue
 		}
-		newest, kept := s.settle(counter, moved)
 		h.accepted.Add(1)
-		if h.index[t] == s {
-			delete(h.index, t)
+		var from netip.Addr
+		if h.source != sourceOff {
+			from, _ = destinationOf(oob[:oobn])
 		}
-		if kept {
-			h.spent[t] = s
+		var probe Probe
+		var extended bool
+		if p.Kind == KindProbe {
+			probe, extended = ParseProbe(p.Data)
 		}
-		h.mu.Unlock()
-		if newest {
-			var from netip.Addr
-			if h.source != sourceOff {
-				from, _ = destinationOf(oob[:oobn])
+		cur := s.answers.Load()
+		if cur == nil || cur.peer != peer || cur.from != from {
+			if !newest || !s.follow(h, peer, from, probe, p.Kind == KindProbe, n) {
+				continue
 			}
-			s.follow(h, peer, from)
 		}
 		if p.Kind == KindProbe {
-			probe, extended := ParseProbe(p.Data)
-			if probe.Limit != 0 {
-				s.SetLimit(probe.Limit)
-			}
+			s.ApplyProbeLimit(probe)
 			select {
-			case h.acks <- ackRequest{s: s, probe: probe, extended: extended, wire: n}:
+			case h.acks <- ackRequest{s: s, probe: probe, extended: extended, wire: n, route: s.answers.Load()}:
 			default:
+				h.probeACKQueueDrops.Add(1)
 			}
 			if probe.Heard {
 				s.hear(counter)
@@ -691,7 +832,9 @@ func (h *Hub) read() {
 		packet := Packet{Kind: KindData, Data: buf[:copy(buf[:], p.Data)], Counter: counter, buf: buf}
 		select {
 		case s.packets <- packet:
+			h.dataEnqueued.Add(1)
 		default:
+			h.dataQueueDrops.Add(1)
 			packet.Release()
 		}
 	}

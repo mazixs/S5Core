@@ -20,11 +20,10 @@ func startSized(t *testing.T, limit int, loseSized func(int) bool) *liveness {
 	})
 }
 
-// searchProbes reports whether n probes are one, two or three whole rounds.
-// One round ends the search on a narrow path too when two of its sizes land
-// within 17 bytes of the path, about one search in sixteen.
+// With no random loss a narrow path takes up to three search rounds, each
+// followed by confirmation of its unanswered sizes and a fresh control.
 func searchProbes(n uint64) bool {
-	return n == 7 || n == 11 || n == 15
+	return n >= 9 && n <= 30
 }
 
 func (l *liveness) announced() []int {
@@ -216,6 +215,89 @@ func TestTheEighthDroppedDatagramMovesTheLongOnesTo0x83(t *testing.T) {
 		}
 		if l.client.stats.droppedSent.Load() != nativeOversizeDrops || l.client.stats.droppedRecv.Load() != nativeOversizeDrops-1 {
 			t.Fatalf("dropped %d sent, %d received", l.client.stats.droppedSent.Load(), l.client.stats.droppedRecv.Load())
+		}
+	})
+}
+
+// A blocked native port must not discard datagrams already carried by a
+// working tunnel, including the first packets before any probe answered.
+func TestOversizeDatagramsUseTCPWhileNativeUnavailable(t *testing.T) {
+	for _, elapsed := range []time.Duration{0, 20 * time.Second} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) { p.dropUp.Store(true) })
+				l.at(elapsed)
+				if l.client.up.Load() {
+					t.Fatal("a blocked path was verified")
+				}
+				for range 12 {
+					if got := l.client.carry(make([]byte, l.client.session.MaxPayload()+1)); got != byTunnel {
+						t.Fatalf("oversize datagram went by %v, want TCP", got)
+					}
+					if !l.client.tcpAnswer(nativeudp.MaxWire) {
+						t.Fatal("an answer carried by TCP was discarded")
+					}
+				}
+				if !l.client.bounded.Load() || l.client.stats.droppedSent.Load() != 0 || l.client.stats.droppedRecv.Load() != 0 {
+					t.Fatal("unavailable native consumed the oversize drop allowance")
+				}
+			})
+		})
+	}
+}
+
+func TestInitialSizeProbeLossDoesNotCapAHealthyPath(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sizes := 0
+		l := startSized(t, 0, func(size int) bool {
+			if size <= 200 {
+				return false
+			}
+			sizes++
+			return sizes <= 6
+		})
+		l.at(time.Second)
+		limit := l.client.session.Limit()
+		if !l.client.up.Load() || limit < nativeudp.MaxWire-8 {
+			t.Fatalf("healthy native path capped at %d after initial probe loss", limit)
+		}
+		if got := l.announced(); len(got) == 0 || got[0] != limit || l.path.server.Limit() != limit {
+			t.Fatalf("client limit %d, server limit %d, announced %v", limit, l.path.server.Limit(), got)
+		}
+		if l.client.carry(make([]byte, 1200+10)) != byNative {
+			t.Fatal("a minimum IPv4 QUIC Initial did not stay native")
+		}
+		if l.client.carry(make([]byte, 1200+22)) != byNative {
+			t.Fatal("a minimum IPv6 QUIC Initial did not stay native")
+		}
+		probes := l.client.stats.sizeProbes.Load()
+		l.at(30 * time.Second)
+		if l.client.stats.sizeProbes.Load() != probes {
+			t.Fatal("size probes continued after confirmation")
+		}
+	})
+}
+
+func TestOversizeDatagramsUseTCPWhenAVerifiedPathStopsBeingHeard(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLiveness(t, nil)
+		l.at(100 * time.Millisecond)
+		if l.client.carry([]byte("input")) != byNative {
+			t.Fatal("the healthy game flow left native")
+		}
+		l.path.dropUp.Store(true)
+		l.at(1100 * time.Millisecond)
+		if !l.client.up.Load() || l.client.hears(l.client.clock(time.Now())) {
+			t.Fatal("the test did not reach an unheard, still verified path")
+		}
+		long := l.client.session.MaxPayload() + 1
+		if l.client.carry(make([]byte, long)) != byTunnel || !l.client.tcpAnswer(long) {
+			t.Fatal("an unheard native path dropped a working TCP fallback packet")
+		}
+		l.path.dropUp.Store(false)
+		l.at(2 * time.Second)
+		if l.client.carry(make([]byte, long)) != dropped || l.client.stats.droppedSent.Load() != 1 {
+			t.Fatal("the restored path lost its PMTU drop policy")
 		}
 	})
 }

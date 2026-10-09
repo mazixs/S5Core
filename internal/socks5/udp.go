@@ -83,6 +83,9 @@ func parseUDPHeaderInto(payload []byte, addr *AddrSpec) (int, error) {
 			return 0, fmt.Errorf("udp payload too short for domain length")
 		}
 		domainLen := int(payload[headerLen])
+		if domainLen == 0 {
+			return 0, errEmptyDomain
+		}
 		if len(payload) < headerLen+1+domainLen+2 {
 			return 0, fmt.Errorf("udp payload too short for domain")
 		}

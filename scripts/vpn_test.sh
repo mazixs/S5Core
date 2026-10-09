@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S5Core VPN Proxy — route ALL system TCP and UDP through obfuscated tunnel using tun2socks.
+# S5Core VPN Proxy — route IPv4 TCP and UDP through obfuscated tunnel using tun2socks.
 #
 # Usage:
 #   sudo ./vpn_test.sh start    — enable transparent proxy
@@ -30,8 +30,10 @@ ORIG_USER="${SUDO_USER:-$USER}"
 ORIG_HOME="$(getent passwd "$ORIG_USER" | cut -d: -f6)"
 
 TUN2SOCKS_BIN="${ORIG_HOME}/go/bin/tun2socks"  # Or the path where you installed tun2socks
-TUN2SOCKS_PID="/tmp/s5core_tun2socks.pid"
-S5CLIENT_PID="/tmp/s5core_s5client.pid"
+RUNTIME_DIR="/run/s5core-vpn"
+TUN2SOCKS_PID="$RUNTIME_DIR/tun2socks.json"
+S5CLIENT_PID="$RUNTIME_DIR/s5client.json"
+PID_HELPER="$(cd -- "$(dirname -- "$0")" && pwd)/vpn_process.py"
 # ================================
 
 GREEN='\033[0;32m'
@@ -44,6 +46,25 @@ check_root() {
         echo -e "${RED}ERROR: Run with sudo${NC}"
         exit 1
     fi
+}
+
+prepare_state() {
+    command -v python3 >/dev/null && command -v flock >/dev/null || { echo "python3 and flock are required" >&2; exit 1; }
+    umask 077
+    if [ -L "$RUNTIME_DIR" ]; then echo "Refusing a linked runtime directory" >&2; exit 1; fi
+    if [ ! -e "$RUNTIME_DIR" ]; then mkdir -m 700 -- "$RUNTIME_DIR"; fi
+    if [ ! -d "$RUNTIME_DIR" ] || [ "$(stat -c '%u:%a' -- "$RUNTIME_DIR")" != '0:700' ]; then
+        echo "Runtime directory must be root-owned with mode 700" >&2; exit 1
+    fi
+    exec 9> "$RUNTIME_DIR/lock"
+    flock -n 9 || { echo "Another VPN operation is running" >&2; exit 1; }
+}
+
+owned_alive() { [ -f "$1" ] && python3 "$PID_HELPER" alive "$1" "$2"; }
+record_child() {
+    local pid="$1" record="$2" executable="$3"
+    rm -f -- "$record"
+    python3 "$PID_HELPER" record "$record" "$executable" "$pid"
 }
 
 check_deps() {
@@ -66,8 +87,8 @@ check_deps() {
 }
 
 start_s5client() {
-    if [ -f "$S5CLIENT_PID" ] && kill -0 "$(cat "$S5CLIENT_PID")" 2>/dev/null; then
-        echo -e "${YELLOW}s5client already running (PID: $(cat "$S5CLIENT_PID"))${NC}"
+    if owned_alive "$S5CLIENT_PID" "$S5CLIENT_BIN"; then
+        echo -e "${YELLOW}s5client already running ${NC}"
         return
     fi
 
@@ -78,21 +99,23 @@ start_s5client() {
     OBFS_MTU="${OBFS_MTU}" \
     PROXY_USER="${PROXY_USER}" \
     PROXY_PASS="${PROXY_PASS}" \
-    nohup "$S5CLIENT_BIN" > /tmp/s5client.log 2>&1 &
+    nohup "$S5CLIENT_BIN" 9>&- > "$RUNTIME_DIR/s5client.log" 2>&1 &
 
-    echo $! > "$S5CLIENT_PID"
+    child_pid=$!
+    sleep 0.1
+    record_child "$child_pid" "$S5CLIENT_PID" "$S5CLIENT_BIN"
     sleep 1
 
-    if kill -0 "$(cat "$S5CLIENT_PID")" 2>/dev/null; then
-        echo -e "${GREEN}s5client started (PID: $(cat "$S5CLIENT_PID"))${NC}"
+    if owned_alive "$S5CLIENT_PID" "$S5CLIENT_BIN"; then
+        echo -e "${GREEN}s5client started ${NC}"
     else
-        echo -e "${RED}s5client failed to start. Check /tmp/s5client.log${NC}"
+        echo -e "${RED}s5client failed to start. Check ${RUNTIME_DIR}/s5client.log${NC}"
         exit 1
     fi
 }
 
 start_tun2socks() {
-    if [ -f "$TUN2SOCKS_PID" ] && kill -0 "$(cat "$TUN2SOCKS_PID")" 2>/dev/null; then
+    if owned_alive "$TUN2SOCKS_PID" "$TUN2SOCKS_BIN"; then
         echo -e "${YELLOW}tun2socks already running${NC}"
         return
     fi
@@ -103,14 +126,16 @@ start_tun2socks() {
     ip link set dev "$TUN_NAME" up
 
     echo "Starting tun2socks..."
-    nohup "$TUN2SOCKS_BIN" -device "$TUN_NAME" -proxy "socks5://${S5CLIENT_LISTEN}" > /tmp/tun2socks.log 2>&1 &
-    echo $! > "$TUN2SOCKS_PID"
+    nohup "$TUN2SOCKS_BIN" 9>&- -device "$TUN_NAME" -proxy "socks5://${S5CLIENT_LISTEN}" > "$RUNTIME_DIR/tun2socks.log" 2>&1 &
+    child_pid=$!
+    sleep 0.1
+    record_child "$child_pid" "$TUN2SOCKS_PID" "$TUN2SOCKS_BIN"
     sleep 1
 
-    if kill -0 "$(cat "$TUN2SOCKS_PID")" 2>/dev/null; then
-        echo -e "${GREEN}tun2socks started (PID: $(cat "$TUN2SOCKS_PID"))${NC}"
+    if owned_alive "$TUN2SOCKS_PID" "$TUN2SOCKS_BIN"; then
+        echo -e "${GREEN}tun2socks started ${NC}"
     else
-        echo -e "${RED}tun2socks failed. Check /tmp/tun2socks.log${NC}"
+        echo -e "${RED}tun2socks failed. Check ${RUNTIME_DIR}/tun2socks.log${NC}"
         exit 1
     fi
 }
@@ -126,8 +151,8 @@ setup_routing() {
          echo -e "${RED}Could not determine default gateway.${NC}"
          exit 1
     fi
-    echo "$DEFAULT_GW" > /tmp/s5core_default_gw
-    echo "$DEFAULT_IF" > /tmp/s5core_default_if
+    echo "$DEFAULT_GW" > "$RUNTIME_DIR/default_gw"
+    echo "$DEFAULT_IF" > "$RUNTIME_DIR/default_if"
 
     # 1. Route to S5Core server via the original default gateway
     ip route add "${SERVER_IP}" via "$DEFAULT_GW" dev "$DEFAULT_IF" 2>/dev/null || true
@@ -147,9 +172,9 @@ setup_routing() {
 teardown_routing() {
     echo "Restoring routing..."
     
-    if [ -f /tmp/s5core_default_gw ]; then
-        DEFAULT_GW=$(cat /tmp/s5core_default_gw)
-        DEFAULT_IF=$(cat /tmp/s5core_default_if)
+    if [ -f "$RUNTIME_DIR/default_gw" ]; then
+        DEFAULT_GW=$(cat "$RUNTIME_DIR/default_gw")
+        DEFAULT_IF=$(cat "$RUNTIME_DIR/default_if")
         
         ip route del 0.0.0.0/1 dev "$TUN_NAME" 2>/dev/null || true
         ip route del 128.0.0.0/1 dev "$TUN_NAME" 2>/dev/null || true
@@ -159,7 +184,7 @@ teardown_routing() {
         ip route del 172.16.0.0/12 via "$DEFAULT_GW" dev "$DEFAULT_IF" 2>/dev/null || true
         ip route del 192.168.0.0/16 via "$DEFAULT_GW" dev "$DEFAULT_IF" 2>/dev/null || true
         
-        rm -f /tmp/s5core_default_gw /tmp/s5core_default_if
+        rm -f "$RUNTIME_DIR/default_gw" "$RUNTIME_DIR/default_if"
     fi
     
     ip link delete "$TUN_NAME" 2>/dev/null || true
@@ -170,13 +195,13 @@ teardown_routing() {
 stop_processes() {
     if [ -f "$TUN2SOCKS_PID" ]; then
         echo "Stopping tun2socks..."
-        kill "$(cat "$TUN2SOCKS_PID")" 2>/dev/null || true
+        python3 "$PID_HELPER" stop "$TUN2SOCKS_PID" "$TUN2SOCKS_BIN" || echo "tun2socks identity no longer matches; no signal sent" >&2
         rm -f "$TUN2SOCKS_PID"
     fi
 
     if [ -f "$S5CLIENT_PID" ]; then
         echo "Stopping s5client..."
-        kill "$(cat "$S5CLIENT_PID")" 2>/dev/null || true
+        python3 "$PID_HELPER" stop "$S5CLIENT_PID" "$S5CLIENT_BIN" || echo "s5client identity no longer matches; no signal sent" >&2
         rm -f "$S5CLIENT_PID"
     fi
 
@@ -185,11 +210,12 @@ stop_processes() {
 
 do_start() {
     check_root
+    prepare_state
     check_deps
 
     echo "========================================"
     echo "  Starting S5Core VPN (tun2socks)"
-    echo "  ALL Traffic (TCP+UDP) → tun0 → s5client → [obfs] → ${SERVER_IP}:${OBFS_PORT}"
+    echo "  IPv4 traffic (TCP+UDP) → tun0 → s5client → [obfs] → ${SERVER_IP}:${OBFS_PORT}"
     echo "========================================"
     echo ""
 
@@ -199,8 +225,8 @@ do_start() {
 
     echo ""
     echo -e "${GREEN}✅ VPN is ACTIVE${NC}"
-    echo -e "   All system traffic (including UDP/DNS) goes through obfuscated tunnel."
-    echo -e "   Zero WebRTC leaks."
+    echo -e "   IPv4 routes are configured through the tunnel."
+    echo -e "   IPv6 and WebRTC leaks are not tested by this script."
     echo ""
     echo "   To verify IP: curl https://ifconfig.me"
     echo "   To stop:      sudo $0 stop"
@@ -208,6 +234,7 @@ do_start() {
 
 do_stop() {
     check_root
+    prepare_state
 
     echo "========================================"
     echo "  Stopping S5Core VPN"
@@ -222,16 +249,18 @@ do_stop() {
 }
 
 do_status() {
+    check_root
+    prepare_state
     echo "=== S5Core VPN Status ==="
 
-    if [ -f "$S5CLIENT_PID" ] && kill -0 "$(cat "$S5CLIENT_PID")" 2>/dev/null; then
-        echo -e "s5client:   ${GREEN}RUNNING${NC} (PID: $(cat "$S5CLIENT_PID"))"
+    if owned_alive "$S5CLIENT_PID" "$S5CLIENT_BIN"; then
+        echo -e "s5client:   ${GREEN}RUNNING${NC} "
     else
         echo -e "s5client:   ${RED}STOPPED${NC}"
     fi
 
-    if [ -f "$TUN2SOCKS_PID" ] && kill -0 "$(cat "$TUN2SOCKS_PID")" 2>/dev/null; then
-        echo -e "tun2socks:  ${GREEN}RUNNING${NC} (PID: $(cat "$TUN2SOCKS_PID"))"
+    if owned_alive "$TUN2SOCKS_PID" "$TUN2SOCKS_BIN"; then
+        echo -e "tun2socks:  ${GREEN}RUNNING${NC} "
     else
         echo -e "tun2socks:  ${RED}STOPPED${NC}"
     fi

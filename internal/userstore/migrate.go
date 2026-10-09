@@ -129,7 +129,7 @@ func (s *Store) Identities() []identity.Identity {
 	accounts := make([]UserAccount, 0, len(s.users))
 	deltas := make([]int64, 0, len(s.users))
 	for _, entry := range s.users {
-		accounts = append(accounts, entry.account)
+		accounts = append(accounts, entry.account.clone())
 		deltas = append(deltas, entry.trafficDelta.Load())
 	}
 	s.mu.RUnlock()

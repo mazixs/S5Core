@@ -23,9 +23,15 @@ import (
 )
 
 func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	tel, err := InitTelemetry(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	plainPort, obfsPort := reservePort(t), reservePort(t)
 	srv := startServer(t, Config{
-		Port: plainPort, ListenIP: "127.0.0.1", RequireAuth: false,
+		Telemetry: tel,
+		Port:      plainPort, ListenIP: "127.0.0.1", RequireAuth: false,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK,
 		ObfsMaxPadding: 32, ObfsMTU: 1400, UDPPort: reserveUDPPort(t),
@@ -54,6 +60,7 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 	if code := socksOver(t, stream, socks5.UDPNativeCommand, []byte{1, 0, 0, 0, 0, 0, 0}); code != 0 {
 		t.Fatalf("native reply code %d", code)
 	}
+	streamBefore := counterValue(t, reader, "s5core_tcp_stream_bytes_in")
 	_ = stream.SetDeadline(time.Time{})
 	keys, err := obfs.DatagramKeysOf(stream)
 	if err != nil {
@@ -86,7 +93,8 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 	if err != nil || p.Kind != nativeudp.KindProbeAck {
 		t.Fatalf("probe: %v %+v", err, p)
 	}
-	body := socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("game tick"))
+	want := bytes.Repeat([]byte{'g'}, 100)
+	body := socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, want)
 	wire, err = client.Seal(nil, nativeudp.KindData, body)
 	if err != nil {
 		t.Fatal(err)
@@ -99,14 +107,15 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err = client.Open(b[:n])
-	if err != nil || p.Kind != nativeudp.KindData || !bytes.HasSuffix(p.Data, []byte("game tick")) {
+	if err != nil || p.Kind != nativeudp.KindData || !bytes.HasSuffix(p.Data, want) {
 		t.Fatalf("native response: %v %+v", err, p)
 	}
 	// A datagram by 0x83 on the same association reaches its target, and the
 	// answer stays native: the client sends by 0x83 what is too big for
 	// native, and the answers used to follow it to TCP for as long as the
 	// client sent nothing native (finding 1 of the third review).
-	body = socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, []byte("by 0x83"))
+	want = bytes.Repeat([]byte{'t'}, 100)
+	body = socksDatagram(&socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: echo.LocalAddr().(*net.UDPAddr).Port}, want)
 	frame := make([]byte, 2+len(body))
 	binary.BigEndian.PutUint16(frame[:2], uint16(len(body)))
 	copy(frame[2:], body)
@@ -118,8 +127,20 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the answer to a datagram by 0x83 did not come native: %v", err)
 	}
-	if p, err = client.Open(b[:n]); err != nil || p.Kind != nativeudp.KindData || !bytes.HasSuffix(p.Data, []byte("by 0x83")) {
+	if p, err = client.Open(b[:n]); err != nil || p.Kind != nativeudp.KindData || !bytes.HasSuffix(p.Data, want) {
 		t.Fatalf("native answer: %v %+v", err, p)
+	}
+	_ = stream.Close()
+	for until := time.Now().Add(3 * time.Second); srv.connsEnded.Load() == 0 && time.Now().Before(until); {
+		time.Sleep(time.Millisecond)
+	}
+	for _, metric := range []string{"s5core_traffic_bytes_in", "s5core_traffic_bytes_out"} {
+		if got := counterValue(t, reader, metric); got != 200 {
+			t.Fatalf("%s=%d, want 200", metric, got)
+		}
+	}
+	if got := counterValue(t, reader, "s5core_tcp_stream_bytes_in") - streamBefore; got != 112 {
+		t.Fatalf("TCP stream delta=%d, want one fallback frame of 112 bytes", got)
 	}
 }
 
@@ -144,12 +165,13 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
+	outcomes := []string{"accepted", "tag", "replay", "auth", "read_error", "data_enqueued", "probe_ack_write_error"}
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
 			switch m.Name {
 			case "s5core_native_udp_packets_total":
 				sum, ok := m.Data.(metricdata.Sum[int64])
-				if !ok || len(sum.DataPoints) != 5 {
+				if !ok || len(sum.DataPoints) != len(outcomes) {
 					t.Fatalf("packet metric: %T %+v", m.Data, m.Data)
 				}
 				for _, p := range sum.DataPoints {
@@ -167,7 +189,7 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 				if !ok || len(gauge.DataPoints) != 1 || gauge.DataPoints[0].Attributes.Len() != 0 {
 					t.Fatalf("sessions metric: %T %+v", m.Data, m.Data)
 				}
-			case "s5core_native_udp_datagrams_total", "s5core_native_udp_route_events_total", "s5core_native_udp_stream_drops_total":
+			case "s5core_native_udp_datagrams_total", "s5core_native_udp_route_events_total", "s5core_native_udp_stream_drops_total", "s5core_native_udp_queue_drops_total":
 				sum, ok := m.Data.(metricdata.Sum[int64])
 				if !ok {
 					t.Fatalf("%s: %T", m.Name, m.Data)
@@ -185,7 +207,7 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 			}
 		}
 	}
-	for _, label := range []string{"accepted", "tag", "replay", "auth", "read_error"} {
+	for _, label := range outcomes {
 		if !seen[label] {
 			t.Fatalf("outcome %q missing: %+v", label, seen)
 		}
@@ -204,13 +226,15 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 		"s5core_native_udp_route_events_total event=stale_heard",
 		"s5core_native_udp_stream_drops_total reason=queue",
 		"s5core_native_udp_stream_drops_total reason=age",
+		"s5core_native_udp_queue_drops_total queue=data",
+		"s5core_native_udp_queue_drops_total queue=probe_ack",
 	}
 	for _, series := range fixed {
 		if !seen[series] {
 			t.Fatalf("series %q missing: %+v", series, seen)
 		}
 	}
-	if len(seen) != 5+len(fixed) {
+	if len(seen) != len(outcomes)+len(fixed) {
 		t.Fatalf("series beyond the fixed sets: %+v", seen)
 	}
 }
@@ -324,6 +348,26 @@ func (f *nativeFixture) native(t *testing.T, kind byte) (nativeudp.Packet, error
 	}
 }
 
+// byNative has the target answer every 20 ms until one answer comes
+// natively: the probe ack and the switch of the answers to native are two
+// steps inside the server, and an answer sent once between them goes by TCP.
+func (f *nativeFixture) byNative(t *testing.T, word string) (nativeudp.Packet, error) {
+	t.Helper()
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(20 * time.Millisecond):
+				_, _ = f.target.WriteToUDPAddrPort([]byte(word), f.relay)
+			}
+		}
+	}()
+	return f.native(t, nativeudp.KindData)
+}
+
 // byTCP has the target answer every 20 ms until one answer comes by the
 // control connection, and returns it: a frame on the connection and the
 // target's datagrams race inside the server.
@@ -416,10 +460,7 @@ func TestTheCountersResyncAfterMoreLostThanTheWindow(t *testing.T) {
 	if _, err := f.native(t, nativeudp.KindProbeAck); err != nil {
 		t.Fatalf("the probe after the resync was not answered: %v", err)
 	}
-	if _, err := f.target.WriteToUDPAddrPort([]byte("back"), f.relay); err != nil {
-		t.Fatal(err)
-	}
-	if p, err := f.native(t, nativeudp.KindData); err != nil || !bytes.HasSuffix(p.Data, []byte("back")) {
+	if p, err := f.byNative(t, "back"); err != nil || !bytes.HasSuffix(p.Data, []byte("back")) {
 		t.Fatalf("native answer after the resync: %v %+v", err, p)
 	}
 }
@@ -444,19 +485,7 @@ func TestOnlyAProbeThatHearsTheServerBringsTheAnswersBack(t *testing.T) {
 	}
 
 	f.send(t, nativeudp.KindProbe, []byte{nativeudp.ProbeHeard})
-	stop := make(chan struct{})
-	defer close(stop)
-	go func() {
-		for {
-			select {
-			case <-stop:
-				return
-			case <-time.After(20 * time.Millisecond):
-				_, _ = f.target.WriteToUDPAddrPort([]byte("heard"), f.relay)
-			}
-		}
-	}()
-	if p, err := f.native(t, nativeudp.KindData); err != nil || !bytes.HasSuffix(p.Data, []byte("heard")) {
+	if p, err := f.byNative(t, "heard"); err != nil || !bytes.HasSuffix(p.Data, []byte("heard")) {
 		t.Fatalf("the answers did not come back native after a heard probe: %v %+v", err, p)
 	}
 }
@@ -479,7 +508,7 @@ func TestANativeSendSaysWhenThePathIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	a := &nativeAssociation{hub: hub, session: hub.Register(serverKeys)}
+	a := &nativeAssociation{hub: hub, session: hub.RegisterPeer(serverKeys, netip.MustParseAddr("127.0.0.1"))}
 	gone := func(stage string, err error, cause error) {
 		t.Helper()
 		if !errors.Is(err, socks5.ErrNativePathGone) || !errors.Is(err, cause) {
@@ -521,6 +550,9 @@ func TestANativeSendSaysWhenThePathIsGone(t *testing.T) {
 	}
 	if err := nativeSendError(nil); err != nil {
 		t.Fatalf("no error came back as %v", err)
+	}
+	if err := nativeSendError(nativeudp.ErrPayloadTooLarge); !errors.Is(err, socks5.ErrNativePayloadTooLarge) || errors.Is(err, socks5.ErrNativePathGone) {
+		t.Fatalf("size-limit race killed the path: %v", err)
 	}
 }
 

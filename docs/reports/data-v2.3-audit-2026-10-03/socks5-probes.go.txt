@@ -1,0 +1,87 @@
+package socks5
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// The probe records the released behavior; it is not an acceptance test.
+func TestAuditTailAddressNeverTried(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var addrs []string
+	for i := 1; i <= 7; i++ {
+		addrs = append(addrs, fmt.Sprintf("192.0.2.%d:443", i))
+	}
+	d := newScriptDial(func(ctx context.Context, addr string, n int) (net.Conn, error) {
+		if addr == addrs[6] {
+			a, b := net.Pipe()
+			_ = b.Close()
+			return a, nil
+		}
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+	})
+	start := time.Now()
+	conn, err := dialResolved(ctx, d.dial, candidatesFor(ctx, addrs...))
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("seventh address unexpectedly reached")
+	}
+	if err == nil || len(d.at(addrs[6])) != 0 || len(d.all()) != 6 {
+		t.Fatalf("unexpected outcome: %v, calls=%d", err, len(d.all()))
+	}
+	t.Logf("resolved_addresses=7 reachable_index=7 attempted=%d skipped_live_address=true elapsed=%s error=%v", len(d.all()), time.Since(start), err)
+	// The same reachable address, before the total cap, connects.
+	conn, err = dialResolved(ctx, d.dial, candidatesFor(ctx, addrs[6]))
+	if err != nil || conn == nil {
+		t.Fatalf("reachable address control: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func TestAuditIPv6MaximumDatagramOverflowsTunnelPrefix(t *testing.T) {
+	egress, err := newRotatingUDP(net.ParseIP("::1"))
+	if err != nil {
+		t.Skip(err)
+	}
+	a, b := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	server, err := New(&Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tunnel := &udpTunnel{s: server, req: &Request{}, tunnelCtx: ctx, cancel: cancel, tcpConn: a, egress: egress, acct: &udpAccount{}, errCh: make(chan error, 1)}
+	done := make(chan struct{})
+	go func() { defer close(done); tunnel.answers() }()
+	defer func() { cancel(); _ = a.Close(); _ = b.Close(); _ = egress.Close(); <-done }()
+	sender, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.ParseIP("::1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sender.Close()
+	payload := bytes.Repeat([]byte{'x'}, 65527)
+	if _, err = sender.WriteToUDP(payload, egress.current().LocalAddr().(*net.UDPAddr)); err != nil {
+		t.Skipf("large IPv6 UDP not supported: %v", err)
+	}
+	_ = b.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var prefix [2]byte
+	if _, err = io.ReadFull(b, prefix[:]); err != nil {
+		t.Fatal(err)
+	}
+	actual := make([]byte, len(payload)+22)
+	if _, err = io.ReadFull(b, actual); err != nil {
+		t.Fatal(err)
+	}
+	length := int(binary.BigEndian.Uint16(prefix[:]))
+	if length != 13 || len(actual) != 65549 {
+		t.Fatalf("prefix=%d actual=%d", length, len(actual))
+	}
+	t.Logf("real_ipv6_udp_payload=65527 ipv6_socks_frame=%d declared_16bit_frame_length=%d framing_corrupted=true", len(actual), length)
+}

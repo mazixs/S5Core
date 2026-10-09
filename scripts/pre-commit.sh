@@ -7,7 +7,7 @@
 # это баг скрипта или workflow, а не "особенность окружения".
 #
 # Воспроизводимый прогон в том же окружении, что и CI:
-#   docker run --rm -v "$PWD":/src -w /src golang:1.26.8 ./scripts/pre-commit.sh
+#   docker run --rm -v "$PWD":/src -w /src golang:1.26.9 ./scripts/pre-commit.sh
 #
 # Переменные окружения:
 #   SKIP_LINT=1   пропустить golangci-lint (нужна сеть для установки)
@@ -19,7 +19,7 @@
 
 set -uo pipefail
 
-GO_VERSION_EXPECTED="1.26.8"
+GO_VERSION_EXPECTED="1.26.9"
 GOLANGCI_LINT_VERSION="v2.14.0"
 # Закреплено, как и golangci-lint выше: @latest означает, что один и тот же
 # коммит проверяется разными сканерами у разработчика и в CI, и "у меня было
@@ -163,9 +163,29 @@ else
 	bad "govulncheck недоступен и не установился (причина выше) - SKIP_VULN=1 чтобы пропустить"
 fi
 
+step "Отдельный Go-модуль стендов"
+if (cd scripts/matrix && go mod verify && go vet ./...); then
+	ok "matrix: модули и vet"
+else
+	bad "matrix: модули или vet"
+fi
+if [ "${SKIP_VULN:-0}" != "1" ] && command -v govulncheck >/dev/null 2>&1; then
+	if (cd scripts/matrix && govulncheck ./...); then ok "matrix: вызываемых уязвимостей нет"; else bad "matrix: govulncheck"; fi
+fi
+
 if [ "${SKIP_SLOW:-0}" = "1" ]; then
 	printf '\n   тесты и сборка пропущены (SKIP_SLOW=1)\n'
 else
+	step "Python: journal, matrix и независимая диагностика"
+	if command -v python3 >/dev/null 2>&1; then
+		if python3 -m unittest discover -s scripts/tests; then ok "journal tests"; else bad "journal tests"; fi
+		if python3 -m unittest discover -s scripts/matrix/tests; then ok "matrix Python tests"; else bad "matrix Python tests"; fi
+		if python3 scripts/test_netwatch.py; then ok "netwatch tests"; else bad "netwatch tests"; fi
+	else
+		bad "python3 необходим для проверки скриптов"
+	fi
+	step "Тесты Go-модуля стендов"
+	if (cd scripts/matrix && go test -race -count=1 ./...); then ok "matrix Go tests"; else bad "matrix Go tests"; fi
 	step "Тесты с детектором гонок"
 	report_dir="${CI_REPORT_DIR:-.ci-reports}"
 	mkdir -p "$report_dir" && rm -f coverage.txt "$report_dir/tests.jsonl" "$report_dir/summary.md" "$report_dir/metrics.json"
@@ -194,6 +214,17 @@ else
 	else
 		printf '%s\n' "$benchmark_output"
 		bad "бенчмарки"
+	fi
+
+	# Windows test sources compile separately from the release binaries: a
+	# Unix-only syscall in a test does not affect go build. The exec wrapper
+	# confirms compilation only; these foreign binaries are not executed.
+	step "Компиляция тестов Windows amd64 (без исполнения)"
+	if windows_test_output="$(CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -exec=true ./... 2>&1)"; then
+		ok "все test packages Windows amd64 компилируются"
+	else
+		printf '%s\n' "$windows_test_output"
+		bad "компиляция тестов Windows amd64"
 	fi
 
 	# Цели берутся из release.yml, а не перечисляются здесь: иначе поломка

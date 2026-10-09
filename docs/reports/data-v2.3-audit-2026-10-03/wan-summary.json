@@ -1,0 +1,263 @@
+{
+  "method": "8 sequential HTTPS requests per path/target/reuse cell, timeout 8s. HTTP/2, full body read and SHA-256 collected. New release clients run locally against existing test servers; router path is local SSH forward to existing router SOCKS listener. This bypasses mihomo, LAN traffic interception and browser HTTP/3.",
+  "excluded_runs": "The initial local-client run lacked per-member tunnel credentials and was discarded. Its authentication failures are not release failures.",
+  "targets": {
+    "html": "https://example.com/",
+    "static_js": "https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
+  },
+  "groups": [
+    {
+      "path": "A-release-client",
+      "target": "html",
+      "reuse_requested": false,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        577
+      ],
+      "hashes_200": [
+        "25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484"
+      ],
+      "reused_200": 0,
+      "p50_total_ms_200": 198.414,
+      "p95_total_ms_200": 207.464,
+      "p50_connect_ms_200": 92.328
+    },
+    {
+      "path": "DE-release-client",
+      "target": "html",
+      "reuse_requested": false,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        577
+      ],
+      "hashes_200": [
+        "25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484"
+      ],
+      "reused_200": 0,
+      "p50_total_ms_200": 236.957,
+      "p95_total_ms_200": 329.316,
+      "p50_connect_ms_200": 106.993
+    },
+    {
+      "path": "A-router-existing",
+      "target": "html",
+      "reuse_requested": false,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        577
+      ],
+      "hashes_200": [
+        "25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484"
+      ],
+      "reused_200": 0,
+      "p50_total_ms_200": 207.799,
+      "p95_total_ms_200": 273.981,
+      "p50_connect_ms_200": 95.683
+    },
+    {
+      "path": "A-release-client",
+      "target": "static_js",
+      "reuse_requested": false,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        87533
+      ],
+      "hashes_200": [
+        "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a"
+      ],
+      "reused_200": 0,
+      "p50_total_ms_200": 321.506,
+      "p95_total_ms_200": 354.216,
+      "p50_connect_ms_200": 93.068
+    },
+    {
+      "path": "DE-release-client",
+      "target": "static_js",
+      "reuse_requested": false,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        87533
+      ],
+      "hashes_200": [
+        "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a"
+      ],
+      "reused_200": 0,
+      "p50_total_ms_200": 372.259,
+      "p95_total_ms_200": 558.103,
+      "p50_connect_ms_200": 106.671
+    },
+    {
+      "path": "A-router-existing",
+      "target": "static_js",
+      "reuse_requested": false,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        87533
+      ],
+      "hashes_200": [
+        "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a"
+      ],
+      "reused_200": 0,
+      "p50_total_ms_200": 322.929,
+      "p95_total_ms_200": 347.972,
+      "p50_connect_ms_200": 93.095
+    },
+    {
+      "path": "A-release-client",
+      "target": "html",
+      "reuse_requested": true,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        577
+      ],
+      "hashes_200": [
+        "25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484"
+      ],
+      "reused_200": 7,
+      "p50_total_ms_200": 51.833,
+      "p95_total_ms_200": 206.189,
+      "p50_connect_ms_200": 0.0
+    },
+    {
+      "path": "DE-release-client",
+      "target": "html",
+      "reuse_requested": true,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        577
+      ],
+      "hashes_200": [
+        "25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484"
+      ],
+      "reused_200": 7,
+      "p50_total_ms_200": 55.891,
+      "p95_total_ms_200": 223.75,
+      "p50_connect_ms_200": 0.0
+    },
+    {
+      "path": "A-router-existing",
+      "target": "html",
+      "reuse_requested": true,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 6,
+        "403": 2
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        577
+      ],
+      "hashes_200": [
+        "25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484"
+      ],
+      "reused_200": 5,
+      "p50_total_ms_200": 54.706,
+      "p95_total_ms_200": 210.118,
+      "p50_connect_ms_200": 0.0
+    },
+    {
+      "path": "A-release-client",
+      "target": "static_js",
+      "reuse_requested": true,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        87533
+      ],
+      "hashes_200": [
+        "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a"
+      ],
+      "reused_200": 7,
+      "p50_total_ms_200": 63.048,
+      "p95_total_ms_200": 330.679,
+      "p50_connect_ms_200": 0.0
+    },
+    {
+      "path": "DE-release-client",
+      "target": "static_js",
+      "reuse_requested": true,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        87533
+      ],
+      "hashes_200": [
+        "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a"
+      ],
+      "reused_200": 7,
+      "p50_total_ms_200": 97.589,
+      "p95_total_ms_200": 558.504,
+      "p50_connect_ms_200": 0.0
+    },
+    {
+      "path": "A-router-existing",
+      "target": "static_js",
+      "reuse_requested": true,
+      "n": 8,
+      "transport_errors": 0,
+      "statuses": {
+        "200": 8
+      },
+      "complete_body_samples": 8,
+      "bytes_200": [
+        87533
+      ],
+      "hashes_200": [
+        "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a"
+      ],
+      "reused_200": 7,
+      "p50_total_ms_200": 65.534,
+      "p95_total_ms_200": 331.226,
+      "p50_connect_ms_200": 0.0
+    }
+  ]
+}

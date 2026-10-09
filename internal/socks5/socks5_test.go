@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -15,12 +16,14 @@ func TestSOCKS5_Connect(t *testing.T) {
 	// Create a local listener
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Errorf("err: %v", err)
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = l.Close() })
 	go func() {
 		conn, err := l.Accept()
 		if err != nil {
-			t.Errorf("err: %v", err)
+			t.Error(err)
+			return
 		}
 		defer func() { _ = conn.Close() }()
 
@@ -50,19 +53,25 @@ func TestSOCKS5_Connect(t *testing.T) {
 		t.Errorf("err: %v", err)
 	}
 
-	// Start listening
-	go func() {
-		if err := serv.ListenAndServe("tcp", "127.0.0.1:12365"); err != nil {
-			t.Errorf("err: %v", err)
-		}
-	}()
-	time.Sleep(10 * time.Millisecond)
-
-	// Get a local conn
-	conn, err := net.Dial("tcp", "127.0.0.1:12365")
+	proxy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Errorf("err: %v", err)
+		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serv.ServeContext(ctx, proxy) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = proxy.Close()
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Error(err)
+		}
+	})
+	conn, err := net.Dial("tcp", proxy.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
 
 	// Connect, auth and connec to local
 	req := bytes.NewBuffer(nil)
@@ -107,13 +116,4 @@ func TestSOCKS5_Connect(t *testing.T) {
 	if !bytes.Equal(out, expected) {
 		t.Errorf("bad: %v", out)
 	}
-}
-
-// ListenAndServe is used to create a listener and serve on it.
-func (s *Server) ListenAndServe(network, addr string) error {
-	l, err := net.Listen(network, addr)
-	if err != nil {
-		return err
-	}
-	return s.ServeContext(context.Background(), l)
 }

@@ -32,6 +32,22 @@ const (
 	testHandshakeTimeout = 15 * time.Second
 )
 
+func TestZeroReloadBudgetsMatchStartupDefaults(t *testing.T) {
+	srv, err := NewServer(Config{Port: "0", ListenIP: "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipe := newListenerPipeline(newPipeListener(), TransportPlain, srv.cfg, nil, nil, nil)
+	t.Cleanup(func() { _ = pipe.Close() })
+	srv.pipelines = []*listenerPipeline{pipe}
+	srv.UpdateHandshakeTimeout(0)
+	srv.UpdateSessionTimeouts(0, 0, 0)
+	got := pipe.sla()
+	if got.Handshake != DefaultHandshakeTimeout || got.Dial != DefaultDialTimeout || got.FrameBody != DefaultFrameTimeout || got.Grace != 0 {
+		t.Fatalf("reload SLA: %+v", got)
+	}
+}
+
 // timeoutPair returns a timeoutConn and the peer end of the pipe it wraps.
 // The deadlines belong to the session the wrapper asks, so the pair carries
 // one in the state a freshly accepted connection is in.

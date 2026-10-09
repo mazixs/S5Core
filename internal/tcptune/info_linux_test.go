@@ -39,6 +39,10 @@ func TestInfoOfALivePath(t *testing.T) {
 	if info.RTT <= 0 {
 		t.Errorf("no round trip measured: %+v", info)
 	}
+	// Each answer acknowledges the byte it answers.
+	if sent, ok := InfoOf(c); !ok || sent.BytesAcked < 5 {
+		t.Errorf("five bytes answered, %d acknowledged", sent.BytesAcked)
+	}
 }
 
 func TestAClosedSocketHasNoInfo(t *testing.T) {
@@ -46,5 +50,29 @@ func TestAClosedSocketHasNoInfo(t *testing.T) {
 	_ = s.Close()
 	if info, ok := InfoOf(s); ok {
 		t.Fatalf("a closed socket has TCP info: %+v", info)
+	}
+}
+
+func TestAPeerThatClosedLeavesTheSocketOutOfEstablished(t *testing.T) {
+	c, s := tcpPair(t)
+	if info, ok := InfoOf(c); !ok || info.State != StateEstablished {
+		t.Fatalf("a live socket is in state %d, ok=%v", info.State, ok)
+	}
+	// Bytes ahead of the FIN, as a TLS close_notify would be: the state
+	// still says the peer is gone.
+	if _, err := s.Write([]byte("alert")); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		info, ok := InfoOf(c)
+		if ok && info.State != StateEstablished {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the socket is still established after the peer closed: %+v", info)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

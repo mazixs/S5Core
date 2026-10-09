@@ -54,7 +54,10 @@ const (
 const (
 	// A round of size probes ends this long after the control's answer, or
 	// as long again as the control took if that is longer.
-	nativeSearchSlack = 25 * time.Millisecond
+	nativeSearchSlack        = 25 * time.Millisecond
+	nativeRecoveryEvery      = 30 * time.Second
+	nativeRecoverySearches   = 3
+	nativeLimitAnnouncements = 3
 	// A datagram longer than native carries is dropped, and this many dropped
 	// one way move the long ones of the association to 0x83: the size search
 	// of quic-go loses a few, an application that keeps sending them would
@@ -168,7 +171,10 @@ type datagramConn interface {
 // counters of both sides, so that datagrams lost past the window do not end
 // the path.
 type nativeClient struct {
-	conn    datagramConn
+	conn datagramConn
+	// epoch keeps the Go monotonic clock. Liveness counters store durations
+	// from it, never wall timestamps that can jump during NTP adjustment.
+	epoch   time.Time
 	logID   string
 	session *nativeudp.Session
 	// signal asks for the empty frame to be written, and must not wait for
@@ -197,8 +203,10 @@ type nativeClient struct {
 	deafAt atomic.Int64
 	acked  chan struct{}
 	// sized gets the answers to size probes, by size.
-	sized chan int
-	poked chan struct{}
+	sized             chan nativeudp.Answer
+	limitACK          chan nativeudp.Answer
+	recoverySupported atomic.Bool
+	poked             chan struct{}
 	// server is how the server answers probes (serverUnknown until it does).
 	server atomic.Int32
 	// bounded is set while datagrams longer than native carries are dropped
@@ -211,10 +219,13 @@ type nativeClient struct {
 // nativeStats is where the datagrams of the association went, for the line
 // that logs its end: delivery alone does not say which path carried them.
 type nativeStats struct {
-	sent, sentOversize, sentTCP atomic.Uint64
-	received, receivedTCP       atomic.Uint64
-	droppedSent, droppedRecv    atomic.Uint64
-	sizeProbes                  atomic.Uint64
+	sent, sentOversize, sentTCP                  atomic.Uint64
+	received, receivedTCP                        atomic.Uint64
+	droppedSent, droppedRecv                     atomic.Uint64
+	sizeProbes                                   atomic.Uint64
+	dataWriteErrors, readErrors, rejectedPackets atomic.Uint64
+	probesSent, probeWriteErrors                 atomic.Uint64
+	sizeProbesSent, sizeProbeTooBig              atomic.Uint64
 }
 
 func (n *nativeClient) logStats() []any {
@@ -223,6 +234,11 @@ func (n *nativeClient) logStats() []any {
 		dropped = n.writer.Dropped()
 	}
 	return []any{"native_sent", n.stats.sent.Load(), "tcp_sent_oversize", n.stats.sentOversize.Load(),
+		"native_probes_sent", n.stats.probesSent.Load(), "native_probe_write_errors", n.stats.probeWriteErrors.Load(),
+		"size_probes_sent", n.stats.sizeProbesSent.Load(), "size_probe_too_big", n.stats.sizeProbeTooBig.Load(),
+		"native_up", n.up.Load(), "native_heard", n.hears(n.clock(time.Now())),
+		"native_data_write_errors", n.stats.dataWriteErrors.Load(), "native_read_errors", n.stats.readErrors.Load(),
+		"native_rejected_packets", n.stats.rejectedPackets.Load(),
 		"tcp_sent_other", n.stats.sentTCP.Load(), "native_received", n.stats.received.Load(),
 		"tcp_received", n.stats.receivedTCP.Load(), "tunnel_drops", dropped,
 		"native_limit", n.session.Limit(), "size_probes", n.stats.sizeProbes.Load(),
@@ -232,11 +248,13 @@ func (n *nativeClient) logStats() []any {
 var heardProbe = []byte{nativeudp.ProbeHeard}
 
 func newNativeClient(conn datagramConn, session *nativeudp.Session, signal func()) *nativeClient {
-	n := &nativeClient{conn: conn, session: session, signal: signal, jitter: rand.Float64, draw: rand.IntN,
-		acked: make(chan struct{}, 1), sized: make(chan int, 16), poked: make(chan struct{}, 1)}
+	n := &nativeClient{conn: conn, epoch: time.Now(), session: session, signal: signal, jitter: rand.Float64, draw: rand.IntN,
+		acked: make(chan struct{}, 1), sized: make(chan nativeudp.Answer, 16), limitACK: make(chan nativeudp.Answer, 16), poked: make(chan struct{}, 1)}
 	n.told.Store(true)
 	n.bounded.Store(true)
 	n.deafAt.Store(math.MaxInt64)
+	n.lastUsed.Store(-int64(nativeActiveFor))
+	n.lastSeen.Store(-int64(nativeFresh))
 	return n
 }
 
@@ -259,14 +277,32 @@ func (n *nativeClient) write(wire []byte) error {
 // sendProbe sends a probe the server reads: the form of 2.3.0-rc1 to a server
 // that answered like one, the extended form to any other.
 func (n *nativeClient) sendProbe(p nativeudp.Probe) error {
+	var err error
 	if n.server.Load() != serverLegacy {
-		return n.session.SealWriteProbe(p, n.write)
+		// Search controls can be as short as 48 bytes and start only after a
+		// normal ACK. Keep their geometry; ordinary probes establish routes.
+		p.RouteProof = p.Size == 0
+		err = n.session.SealWriteProbe(p, n.write)
+	} else {
+		var payload []byte
+		if p.Heard {
+			payload = heardProbe
+		}
+		err = n.send(nativeudp.KindProbe, payload)
 	}
-	var payload []byte
-	if p.Heard {
-		payload = heardProbe
+	if p.Size != 0 && errors.Is(err, syscall.EMSGSIZE) {
+		// Reaching the interface MTU is an expected size-search outcome.
+		// It says nothing about whether ordinary control probes can leave.
+		n.stats.sizeProbeTooBig.Add(1)
+	} else if err != nil {
+		n.stats.probeWriteErrors.Add(1)
+	} else if p.Size != 0 {
+		n.stats.sizeProbesSent.Add(1)
+	} else {
+		// Only local socket acceptance, never proof of the peer's receipt.
+		n.stats.probesSent.Add(1)
 	}
-	return n.send(nativeudp.KindProbe, payload)
+	return err
 }
 
 // tell asks the server to answer by TCP, with the counter the client is at
@@ -299,6 +335,8 @@ func (n *nativeClient) signalFrame() []byte {
 // row are overdue. Datagrams, the signal and ProbeHeard all follow it, so one
 // lost answer, a longer RTT or a first datagram after a pause keep the
 // association native (finding F3 of docs/reports/v2.3-rc1-audit-2026-09-26.md).
+func (n *nativeClient) clock(now time.Time) int64 { return int64(now.Sub(n.epoch)) + 1 }
+
 func (n *nativeClient) hears(now int64) bool {
 	return n.up.Load() && (now-n.lastSeen.Load() < int64(nativeFresh) || now < n.deafAt.Load())
 }
@@ -330,10 +368,11 @@ func (n *nativeClient) used(now int64) {
 }
 
 // drop reports whether a datagram longer than native carries is dropped: it
-// is while the association is bounded, and the nativeOversizeDrops-th dropped
-// one way ends that (docs/veil-spec.md, 10.7).
+// is while the association is bounded and the native path is verified and
+// heard. An unavailable path must not make a working TCP fallback lose data.
+// The nativeOversizeDrops-th dropped one way ends that (docs/veil-spec.md, 10.7).
 func (n *nativeClient) drop(count *atomic.Uint64) bool {
-	if !n.bounded.Load() {
+	if !n.bounded.Load() || !n.hears(n.clock(time.Now())) {
 		return false
 	}
 	if count.Add(1) >= nativeOversizeDrops && n.bounded.Swap(false) {
@@ -346,7 +385,7 @@ func (n *nativeClient) drop(count *atomic.Uint64) bool {
 // carry sends d natively when it can. A datagram it leaves byTunnel is the
 // caller's to send by 0x83.
 func (n *nativeClient) carry(d []byte) carried {
-	now := time.Now().UnixNano()
+	now := n.clock(time.Now())
 	n.used(now)
 	if len(d) > n.session.MaxPayload() {
 		if n.drop(&n.stats.droppedSent) {
@@ -368,7 +407,12 @@ func (n *nativeClient) carry(d []byte) carried {
 		n.stats.sentTCP.Add(1)
 		return byTunnel
 	}
-	if n.send(nativeudp.KindData, d) != nil {
+	if err := n.send(nativeudp.KindData, d); err != nil {
+		if errors.Is(err, nativeudp.ErrPayloadTooLarge) {
+			n.stats.sentOversize.Add(1)
+			return byTunnel
+		}
+		n.stats.dataWriteErrors.Add(1)
 		n.poke()
 		n.stats.sentTCP.Add(1)
 		return byTunnel
@@ -394,7 +438,7 @@ func (n *nativeClient) tcpAnswer(size int) bool {
 			return false
 		}
 	} else if n.up.Load() && !n.told.Load() {
-		n.used(time.Now().UnixNano())
+		n.used(n.clock(time.Now()))
 	}
 	n.stats.receivedTCP.Add(1)
 	return true
@@ -414,6 +458,7 @@ func (n *nativeClient) run(deliver func([]byte)) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
+			n.stats.readErrors.Add(1)
 			// An ICMP error is an answer about one datagram, not the end of
 			// the socket: the probes decide whether the path works. The
 			// pause keeps an error that repeats from spinning the loop.
@@ -426,13 +471,24 @@ func (n *nativeClient) run(deliver func([]byte)) {
 		failed = false
 		p, err := n.session.Open(b[:r])
 		if err != nil {
+			n.stats.rejectedPackets.Add(1)
 			continue
 		}
-		now := time.Now().UnixNano()
-		n.lastSeen.Store(now)
+		now := n.clock(time.Now())
 		switch p.Kind {
 		case nativeudp.KindProbeAck:
-			size, sizes := nativeudp.AnswerSize(p.Data)
+			answer, sizes := nativeudp.ParseAnswer(p.Data)
+			if answer.RouteChallenge {
+				// A challenge is not confirmation of the application route.
+				// Echo once immediately; ordinary probing cadence is unchanged.
+				_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: answer.RouteToken})
+				continue
+			}
+			n.lastSeen.Store(now)
+			size := answer.Size
+			if answer.Generation != 0 {
+				n.recoverySupported.Store(true)
+			}
 			if sizes {
 				n.server.CompareAndSwap(serverUnknown, serverSizes)
 			} else {
@@ -442,17 +498,24 @@ func (n *nativeClient) run(deliver func([]byte)) {
 				// An answer to a size probe is as long as the probe was.
 				if size == r {
 					select {
-					case n.sized <- size:
+					case n.sized <- answer:
 					default:
 					}
 				}
 				break
+			}
+			if answer.Limit != 0 {
+				select {
+				case n.limitACK <- answer:
+				default:
+				}
 			}
 			select {
 			case n.acked <- struct{}{}:
 			default:
 			}
 		case nativeudp.KindData:
+			n.lastSeen.Store(now)
 			n.used(now)
 			if len(p.Data) > n.session.MaxPayload() && n.drop(&n.stats.droppedRecv) {
 				break
@@ -475,21 +538,27 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		reported   bool          // a path never heard was logged
 		srtt       time.Duration // of probes answered while alone, 0 before the first
 		// The search for the limit of the path (docs/veil-spec.md, 10.7).
-		search    *nativeudp.Search
-		roundAt   time.Time // when the round in flight went out, zero when none is
-		roundEnd  time.Time
-		roundWait bool // a round waits for the next answer
-		announce  int  // the limit found, 0 until then
+		search             *nativeudp.Search
+		roundAt            time.Time // when the round in flight went out, zero when none is
+		roundEnd           time.Time
+		roundWait          bool   // a round waits for the next answer
+		announce           int    // the limit found, 0 until then
+		generation         uint32 = 1
+		announceGeneration uint32 = 1
+		recovering         bool
+		recoveries         int
+		recoveryAt         time.Time
+		pendingLimit       int
+		announcements      int
+		probeErrorBaseline uint64
 	)
-	active := func(now time.Time) bool { return now.UnixNano()-n.lastUsed.Load() < int64(nativeActiveFor) }
+	active := func(now time.Time) bool { return n.clock(now)-n.lastUsed.Load() < int64(nativeActiveFor) }
 	probe := func(now time.Time) {
-		heard := n.hears(now.UnixNano())
+		heard := n.hears(n.clock(now))
 		switch {
-		case verified && !n.up.Load():
-			// A path lost after it was verified tells the server with every
-			// retry until it is back: a native datagram sent just before the
-			// loss can arrive after the first signal and turn the answers
-			// back to the dead path.
+		case !n.up.Load() && (verified || missedProbeWindow(unanswered, firstSent, now)):
+			// Synchronize even before the first native answer. Long initial
+			// blocking spends counters just like a previously working path.
 			n.tell(true)
 		case !heard && active(now):
 			// An active association that stopped hearing the server: the
@@ -499,13 +568,33 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		if heard {
 			n.told.Store(false)
 		}
-		_ = n.sendProbe(nativeudp.Probe{Heard: heard, Limit: announce})
+		if pendingLimit != 0 {
+			if announcements >= nativeLimitAnnouncements {
+				// The server may have received the proposal even though every
+				// acknowledgement was lost. Cancel with a newer generation of
+				// the still-committed limit; keep announcing that generation on
+				// ordinary probes so losing the first cancellation is harmless.
+				// No extra probes or size searches are added by the rollback.
+				generation++
+				announceGeneration = generation
+				announce = n.session.Limit()
+				n.session.ApplyProbeLimit(nativeudp.Probe{Generation: generation, Limit: announce})
+				pendingLimit = 0
+				recoveryAt = now.Add(nativeRecoveryEvery)
+				slog.Info("Native UDP limit proposal unconfirmed; retaining committed limit", "conn", n.logID,
+					"limit", announce, "generation", generation)
+			} else {
+				announcements++
+			}
+		}
 		if unanswered == 0 {
 			firstSent = now
+			probeErrorBaseline = n.stats.probeWriteErrors.Load()
 		}
+		_ = n.sendProbe(nativeudp.Probe{Heard: heard, Limit: announce, Generation: announceGeneration})
 		unanswered++
 		if unanswered == 2 {
-			n.deafAt.Store(now.Add(max(nativeAnswerWait, 2*srtt)).UnixNano())
+			n.deafAt.Store(n.clock(now.Add(max(nativeAnswerWait, 2*srtt))))
 		}
 		lastProbe = now
 		draw = n.jitter()
@@ -530,11 +619,11 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		if !ok || !n.up.Load() || n.told.Load() || !active(now) {
 			return time.Time{}, false
 		}
-		return time.Unix(0, at), true
+		return n.epoch.Add(time.Duration(at - 1)), true
 	}
 	sendRound := func(now time.Time) {
 		for _, size := range search.Round() {
-			_ = n.session.SealWriteProbe(nativeudp.Probe{Size: size}, n.write)
+			_ = n.sendProbe(nativeudp.Probe{Size: size, Generation: generation})
 			n.stats.sizeProbes.Add(1)
 		}
 		roundAt, roundEnd, roundWait = now, now.Add(max(2*srtt, nativeAnswerWait)), false
@@ -551,8 +640,21 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			}
 			return
 		}
-		announce = search.Limit()
+		candidate := search.Limit()
+		if recovering {
+			recovering = false
+			if candidate > n.session.Limit() {
+				announce, pendingLimit = candidate, candidate
+				announceGeneration, announcements = generation, 0
+				probe(now)
+			} else {
+				recoveryAt = now.Add(nativeRecoveryEvery)
+			}
+			return
+		}
+		announce = candidate
 		n.session.SetLimit(announce)
+		recoveryAt = now.Add(nativeRecoveryEvery)
 		if announce < nativeudp.FloorWire {
 			slog.Info("Native UDP path is narrower than the smallest QUIC packet to an IPv6 address",
 				"limit", announce, "size_probes", search.Sent())
@@ -562,7 +664,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		probe(now)
 	}
 	// The timer is set for a probe unless one of these says otherwise.
-	toTell, toSearch := false, false
+	toTell, toSearch, toRecover := false, false, false
 	wait := func(now time.Time) time.Duration {
 		next := nextProbe(now)
 		at, ok := deafening(now)
@@ -574,10 +676,16 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		if toSearch {
 			next, toTell = roundEnd, false
 		}
+		toRecover = !recoveryAt.IsZero() && roundAt.IsZero() && !roundWait && pendingLimit == 0 &&
+			n.up.Load() && n.recoverySupported.Load() && n.session.Limit() < nativeudp.MaxWire-8 &&
+			recoveries < nativeRecoverySearches && recoveryAt.Before(next)
+		if toRecover {
+			next, toTell, toSearch = recoveryAt, false, false
+		}
 		return next.Sub(now)
 	}
 	missed := func(now time.Time) bool {
-		return unanswered >= nativeMisses && now.Sub(firstSent) >= nativeMissSpan
+		return missedProbeWindow(unanswered, firstSent, now)
 	}
 	// lost runs before every probe, not only on the timer: under traffic a
 	// poke probes first and the timer never fires. The probe that follows
@@ -587,7 +695,8 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			return false
 		}
 		n.up.Store(false)
-		slog.Warn("Native UDP path lost; association using 0x83", "conn", n.logID, "unanswered_probes", unanswered)
+		slog.Warn("Native UDP path lost; association using 0x83", "conn", n.logID, "unanswered_probes", unanswered,
+			"probe_write_errors", n.stats.probeWriteErrors.Load()-probeErrorBaseline)
 		unanswered, retry = 0, nativeRetryFirst
 		return true
 	}
@@ -633,7 +742,11 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 				}
 				sendRound(time.Now())
 			}
-		case size := <-n.sized:
+		case answer := <-n.sized:
+			if recovering && answer.Generation != generation {
+				break
+			}
+			size := answer.Size
 			if roundAt.IsZero() {
 				break
 			}
@@ -646,6 +759,14 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			if all {
 				endRound(now)
 			}
+		case answer := <-n.limitACK:
+			if pendingLimit != 0 && answer.Generation == announceGeneration && answer.Limit == pendingLimit {
+				if n.session.ApplyProbeLimit(nativeudp.Probe{Generation: answer.Generation, Limit: answer.Limit}) {
+					slog.Info("Native UDP limit recovered", "conn", n.logID, "limit", answer.Limit, "generation", answer.Generation)
+				}
+				pendingLimit = 0
+				recoveryAt = time.Now().Add(nativeRecoveryEvery)
+			}
 		case <-n.poked:
 			if now := time.Now(); n.up.Load() && now.Sub(lastProbe) >= nativeActiveEvery {
 				lost(now)
@@ -653,12 +774,20 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			}
 		case <-t.C:
 			now := time.Now()
+			if toRecover {
+				recoveries++
+				generation++
+				recovering = true
+				search = nativeudp.NewSearch(n.draw)
+				sendRound(now)
+				break
+			}
 			if toSearch {
 				endRound(now)
 				break
 			}
 			if toTell {
-				if _, ok := deafening(now); ok && !n.hears(now.UnixNano()) {
+				if _, ok := deafening(now); ok && !n.hears(n.clock(now)) {
 					n.tell(false)
 				}
 				break
@@ -677,4 +806,8 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		}
 		t.Reset(wait(time.Now()))
 	}
+}
+
+func missedProbeWindow(unanswered int, firstSent, now time.Time) bool {
+	return unanswered >= nativeMisses && now.Sub(firstSent) >= nativeMissSpan
 }

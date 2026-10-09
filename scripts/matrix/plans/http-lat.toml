@@ -1,0 +1,97 @@
+# Connection setup: RC3 against RC4 with each of its parts (R4-13 in
+# docs/plan/v2.4-rc4.md). Set the two refs to the builds being compared.
+# TFO concerns the obfs listener only, so the wss series runs without it. The
+# warm spare opens without TFO, so TFO is measured without it.
+name = "http-lat"
+description = "Установка соединения: raw, RC3 и RC4 (с прогревом, без него и с TFO без прогрева)"
+base = "rc3"
+candidate = "rc4"
+
+[defaults]
+auth = "member"
+scale = 0.3
+scenario_timeout = "2m"
+hang_grace = "20s"
+settle = "2s"
+retries = 1
+server_procs = 2
+client_procs = 2
+gen_procs = 2
+
+[env.server]
+UDP_PORT = "41443"
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+
+[env.client]
+UDP_NATIVE = "true"
+OBFS_MAX_PADDING = "256"
+OBFS_MTU = "1400"
+KEEPALIVE_MIN = "10s"
+KEEPALIVE_MAX = "20s"
+WS_MIN_FRAME = "256"
+WS_MAX_FRAME = "4096"
+LOG_LEVEL = "info"
+
+[variants.raw]
+direct = true
+title = "raw"
+
+[variants.rc3]
+ref = "e81bc752f1ee1d3c733a38a0d6e8dd4e64bb0402"
+title = "2.4 RC3"
+
+[variants.rc4]
+ref = "HEAD"
+title = "2.4 RC4"
+
+[variants.rc4cold]
+ref = "HEAD"
+title = "RC4 без прогрева"
+env.client = { PREWARM = "false" }
+
+[variants.rc4tfo]
+ref = "HEAD"
+title = "RC4 с TFO без прогрева"
+env.server = { OBFS_TFO = "true" }
+env.client = { OBFS_TFO = "true", PREWARM = "false" }
+
+[cpus]
+loopback = "0-5,8-13"
+raw = "0,8"
+obfs = ["1,9", "2,10", "3,11", "4,12"]
+wss = ["5,13", "6,14", "7,15"]
+
+[guard]
+max_foreign_cores = 3.0
+load_wait = "30s"
+
+[[series]]
+name = "lo"
+title = "loopback"
+rounds = 4
+transports = ["obfs", "wss"]
+variants = ["raw", "rc3", "rc4"]
+only = ["=tcp/connect", "=http/small-new", "=https/small-new", "=http/small-reuse", "=https/small-reuse", "=h3/small-new", "=https/large"]
+
+[[series]]
+name = "rtt40-obfs"
+title = "netem RTT 40 ms, obfs"
+network = { rtt_ms = 40 }
+rounds = 5
+transports = ["obfs"]
+variants = ["raw", "rc3", "rc4", "rc4cold", "rc4tfo"]
+compare = [["rc3", "rc4"], ["rc3", "rc4cold"], ["rc4cold", "rc4tfo"]]
+only = ["=tcp/connect", "=http/small-new", "=https/small-new", "=http/small-reuse", "=https/small-reuse", "=h2/small-new", "=h3/small-new", "=udp/rtt-64"]
+
+[[series]]
+name = "rtt40-wss"
+title = "netem RTT 40 ms, wss"
+network = { rtt_ms = 40 }
+rounds = 5
+transports = ["wss"]
+variants = ["raw", "rc3", "rc4", "rc4cold"]
+compare = [["rc3", "rc4"], ["rc3", "rc4cold"]]
+only = ["=tcp/connect", "=http/small-new", "=https/small-new", "=http/small-reuse", "=https/small-reuse", "=h2/small-new", "=h3/small-new", "=udp/rtt-64"]

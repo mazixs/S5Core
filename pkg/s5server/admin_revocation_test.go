@@ -24,7 +24,7 @@ func writeUsers(t *testing.T, path string, accounts []userstore.UserAccount) {
 }
 
 // A handle from Server.As is not a session and not a capability: it holds a
-// name, and the store answers for that name every time. These tests are that
+// binding, and the store answers for that incarnation every time. These tests are that
 // property from the three directions it can be lost - a demotion, a removal
 // and a disabling - plus the one thing the listing must never carry.
 //

@@ -1,0 +1,53 @@
+{
+  "cells/local/v23-wss-member-r1/server.log": [
+    "{\"time\":\"2026-10-03T16:35:40.236089288Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"42598bcd\",\"rcvbuf_drops\":1599}"
+  ],
+  "cells/local/v23-obfs-member-r3/server.log": [
+    "{\"time\":\"2026-10-03T16:36:55.683304245Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"4a93684b\",\"rcvbuf_drops\":318}"
+  ],
+  "cells/local/v23-wss-member-r4/server.log": [
+    "{\"time\":\"2026-10-03T16:37:47.364875947Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"432b0ff5\",\"rcvbuf_drops\":1140}"
+  ],
+  "cells/local/rc1-wss-member-r1/server.log": [
+    "{\"time\":\"2026-10-03T16:35:50.436449928Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"13c64d40\",\"rcvbuf_drops\":1910}"
+  ],
+  "cells/local/v23-obfs-member-r5/server.log": [
+    "{\"time\":\"2026-10-03T16:38:32.188798235Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"11b6b4c3\",\"rcvbuf_drops\":1509}"
+  ],
+  "cells/local/rc1-wss-member-r3/server.log": [
+    "{\"time\":\"2026-10-03T16:37:26.327302462Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"ef03e5f9\",\"rcvbuf_drops\":1121}"
+  ],
+  "cells/local/v23-obfs-member-r1/server.log": [
+    "{\"time\":\"2026-10-03T16:35:20.226967999Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"50bb5e04\",\"rcvbuf_drops\":193}"
+  ],
+  "cells/local/rc1-obfs-member-r5/server.log": [
+    "{\"time\":\"2026-10-03T16:38:42.180164913Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"31ba9220\",\"rcvbuf_drops\":45}"
+  ],
+  "cells/local/rc1-obfs-member-r2/server.log": [
+    "{\"time\":\"2026-10-03T16:36:21.255621196Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"dfbe5f60\",\"rcvbuf_drops\":441}"
+  ],
+  "cells/local/v23-obfs-member-r4/server.log": [
+    "{\"time\":\"2026-10-03T16:38:07.574837983Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"c7617996\",\"rcvbuf_drops\":2215}"
+  ],
+  "cells/local/rc1-obfs-member-r3/server.log": [
+    "{\"time\":\"2026-10-03T16:37:05.475534923Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"173834f9\",\"rcvbuf_drops\":1041}"
+  ],
+  "cells/local/rc1-obfs-member-r1/server.log": [
+    "{\"time\":\"2026-10-03T16:35:30.005853927Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"cc999f9c\",\"rcvbuf_drops\":1434}"
+  ],
+  "cells/local/rc1-obfs-member-r4/server.log": [
+    "{\"time\":\"2026-10-03T16:37:57.359320233Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"4f36f045\",\"rcvbuf_drops\":2651}"
+  ],
+  "cells/local/v23-wss-member-r2/server.log": [
+    "{\"time\":\"2026-10-03T16:36:11.266625376Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"80d36ab8\",\"rcvbuf_drops\":1211}"
+  ],
+  "cells/local/v23-wss-member-r3/server.log": [
+    "{\"time\":\"2026-10-03T16:37:15.915067633Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"c8b4b3a8\",\"rcvbuf_drops\":707}"
+  ],
+  "cells/local/v23-wss-member-r5/server.log": [
+    "{\"time\":\"2026-10-03T16:38:52.812064535Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"95c4cd7b\",\"rcvbuf_drops\":309}"
+  ],
+  "cells/local/rc1-wss-member-r2/server.log": [
+    "{\"time\":\"2026-10-03T16:36:00.846295415Z\",\"level\":\"WARN\",\"msg\":\"Datagrams were dropped on a full UDP receive buffer\",\"event\":\"udp_rcvbuf_drops\",\"boot\":\"6ec6c805\",\"rcvbuf_drops\":119}"
+  ]
+}

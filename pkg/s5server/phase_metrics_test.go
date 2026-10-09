@@ -112,7 +112,7 @@ func TestPhaseMetricsExplainTimeToFirstByte(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	const plainPort = "19081"
+	plainPort := reservePort(t)
 	startServer(t, Config{
 		Port:            plainPort,
 		ListenIP:        "127.0.0.1",

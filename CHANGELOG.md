@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optimistic TCP and UDP setup, one bounded warm spare per client, advertised
+  WSS early data and opt-in TCP Fast Open for the obfs transport. See the
+  [RC4 setup measurements](docs/benchmarks/connection-setup-2026-10-06.md) for
+  local and same-path ARM/WAN results and their limitations.
+
+### Fixed
+
+- Bind sessions, traffic accounting and administrative access to the account
+  incarnation, and retain updated SDK restrictions across server restarts.
+- Synchronize run identifiers, harden replay and reload accounting boundaries,
+  and recover negotiated native UDP limits after correlated probe loss.
+- Use Go 1.26.9 and patched networking dependencies for both Go modules.
+
+### Documentation
+
+- Anonymize operational node and client identifiers, retain reproducible
+  measurements, and exclude local-only configuration from the published tree.
+- Extended Discord voice acceptance remains open; setup benchmarks do not
+  establish resolution of intermittent outgoing voice loss.
+
+## [Unreleased]
+
+## [2.4.0-rc2] - 2026-10-04
+
+- Recover native UDP limits after correlated size-probe loss using up to three
+  bounded searches, optional authenticated generations and exact server
+  acknowledgements. Wide healthy paths keep their existing probe budget and
+  liveness cadence. Older peers retain one-shot limit negotiation.
+- Reject stale, conflicting and out-of-range limit proposals. The client keeps
+  its previous limit until the exact recovery proposal is acknowledged.
+- Make README navigation English while preserving detailed Russian technical
+  reports separately, and replace the remaining absolute local report link.
+- Local validation: 943 tests passed, 7 skipped, all 12 build targets and binary
+  smoke passed. Correlated-loss recovery passed 100 race-enabled model repeats.
+  Windows runtime and prolonged Discord acceptance remain separate checks.
+
+## [2.4.0-rc1] - 2026-10-04
+
+### Fixed
+
+- Use working TCP fallback for oversized UDP datagrams while the native path
+  is unavailable or no longer heard. Retain the existing native size policy
+  on a verified, healthy path.
+- Reconfirm missing size probes before lowering the native UDP limit, so loss
+  of the initial probe round does not immediately become a permanent size cap.
+- Allow fast failed CONNECT attempts to release a slot for later DNS
+  candidates, with at most 32 candidates, six attempts in flight and five
+  additional backup sockets per CONNECT.
+- Drop UDP responses that cannot fit the complete 16-bit SOCKS5 tunnel frame
+  before writing any part, preserving the following frame.
+- Compile the SIGTERM regression only on Unix; compile all Windows test
+  packages in the quality pipeline.
+
+### Added
+
+- Passive UDP relay stage counters and fixed drop reasons, including native
+  data/probe-ACK queue losses, DNS overload/failure and target socket write
+  errors. Successful writes confirm local kernel acceptance, not remote delivery.
+- Opt-in `UDP_DIAGNOSTICS_INTERVAL=5s` reports for incident recording, correlated
+  between client and server by the existing connection ID. The default is `0`;
+  native routing and liveness probe intervals are unchanged. See
+  [temporary UDP diagnostics](docs/guides/configuration.md#temporary-udp-diagnostics).
+
+### Validation scope
+
+- The local quality gate passed 934 tests, race checks, Windows test compilation,
+  12 release build targets, binary smoke and budgets
+  ([evidence](docs/reports/data-udp-observability-2026-10-04/validation.json)).
+- This candidate starts field acceptance. Intermittent outgoing Discord voice
+  loss remains unexplained; an hour without a failure is not acceptance.
+  Windows execution, ARM runtime and extended same-path WAN checks remain open.
+
 ## [2.3.0] - 2026-10-02
 
 ### Upgrade notes

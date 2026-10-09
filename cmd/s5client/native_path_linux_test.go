@@ -178,7 +178,7 @@ func newNativeRig(t *testing.T) *nativeRig {
 	hop := newNativeHop(t, udpPort)
 	target := newStreamer(t)
 
-	clientCfg := clientParams{ServerAddr: addr, PSK: cfg.ObfsPSK, MTU: 1400, MaxPadding: 32, Transport: "obfs", UDPNative: true, HandshakeTimeout: 3 * time.Second}
+	clientCfg := clientParams{ServerAddr: addr, PSK: cfg.ObfsPSK, MTU: 1400, MaxPadding: 32, Transport: "obfs", UDPNative: true, HandshakeTimeout: 3 * time.Second, OptimisticConnect: true}
 	req := []byte{5, socks5.UDPNativeCommand, 0, 1, 0, 0, 0, 0, 0, 0}
 	stream, _, err := dialAttempt(clientCfg.attempt(), req)
 	if err != nil {
@@ -190,7 +190,7 @@ func newNativeRig(t *testing.T) *nativeRig {
 	control := &meteredConn{Conn: stream}
 	conn := &rerouted{meteredConn: control, remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.2"), Port: p}}
 	app, handlerSide := tcpPair(t)
-	runUDPAssociate(t, handlerSide, conn, "", clientCfg, req)
+	runUDPAssociate(t, handlerSide, "", clientCfg, req, dialled(conn))
 	reply := readAppReply(t, app)
 	if reply[1] != 0 {
 		t.Fatalf("application refused: %x", reply)

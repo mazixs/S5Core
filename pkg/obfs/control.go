@@ -67,7 +67,16 @@ type Advice struct {
 	MaxPadding    int
 	KeepaliveMin  time.Duration
 	KeepaliveMax  time.Duration
+
+	// Capabilities says what the listener that accepted this tunnel can
+	// take from a client, as Cap* bits. Unlike the fields above it is a
+	// fact about the listener, not an opinion of the operator.
+	Capabilities uint16
 }
+
+// CapWSEarlyData: the wss listener accepts WebSocket frames sent right
+// behind the upgrade request, before its 101 (docs/veil-spec.md, 8.5).
+const CapWSEarlyData uint16 = 1 << 0
 
 // TLV types. Hello and Advice have separate namespaces: the kind byte of the
 // frame says which one applies.
@@ -82,6 +91,7 @@ const (
 	adviceMaxPadding   = 0x05
 	adviceKeepaliveMin = 0x06
 	adviceKeepaliveMax = 0x07
+	adviceCapabilities = 0x08
 )
 
 // maxControlString bounds every string field. A version is a tag or a
@@ -129,6 +139,7 @@ func encodeAdvice(a Advice) []byte {
 	out = appendUint16TLV(out, adviceMaxPadding, a.MaxPadding)
 	out = appendUint16TLV(out, adviceKeepaliveMin, int(a.KeepaliveMin/time.Second))
 	out = appendUint16TLV(out, adviceKeepaliveMax, int(a.KeepaliveMax/time.Second))
+	out = appendUint16TLV(out, adviceCapabilities, int(a.Capabilities))
 	return out
 }
 
@@ -142,7 +153,7 @@ func decodeAdvice(payload []byte) (Advice, error) {
 		case adviceTransport:
 			a.Transport = string(value)
 			return nil
-		case adviceWSMinFrame, adviceWSMaxFrame, adviceWSMaxJitter, adviceMaxPadding, adviceKeepaliveMin, adviceKeepaliveMax:
+		case adviceWSMinFrame, adviceWSMaxFrame, adviceWSMaxJitter, adviceMaxPadding, adviceKeepaliveMin, adviceKeepaliveMax, adviceCapabilities:
 			if len(value) != 2 {
 				return fmt.Errorf("advice field 0x%02x is %d bytes, want 2", typ, len(value))
 			}
@@ -160,6 +171,8 @@ func decodeAdvice(payload []byte) (Advice, error) {
 				a.KeepaliveMin = time.Duration(n) * time.Second
 			case adviceKeepaliveMax:
 				a.KeepaliveMax = time.Duration(n) * time.Second
+			case adviceCapabilities:
+				a.Capabilities = uint16(n)
 			}
 		}
 		return nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -128,7 +129,7 @@ func socksUDPHeader(d []byte) bool {
 	case addrIPv6:
 		return len(d) >= 4+net.IPv6len+2
 	case addrFQDN:
-		return len(d) >= 5 && len(d) >= 5+int(d[4])+2
+		return len(d) >= 5 && d[4] != 0 && len(d) >= 5+int(d[4])+2
 	}
 	return false
 }
@@ -137,70 +138,244 @@ func socksUDPHeader(d []byte) bool {
 // refuses is logged once rather than per association.
 var tuneUDPTunnel = tcptune.Tuner(nil)
 
-// handleUDPAssociate handles the client side of UDP Associate.
-// It opens a local UDP socket, tells the application its address,
-// and then multiplexes UDP packets over the obfuscated TCP tunnel.
-// wireReq is the request dialAttempt sent, 0x83 or 0x84.
-func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg clientParams, wireReq []byte) {
+// Datagrams the application sends before the server has answered its
+// association are written behind the request (docs/veil-spec.md, 10.2). A
+// 0x84 request also keeps them within this bound for a second connection: a
+// server that predates 0x84 refuses it and drops what followed.
+const (
+	earlyQueueDatagrams = 32
+	earlyQueueBytes     = 64 << 10
+)
+
+// udpSetup is the part of an association that lasts until the server has
+// answered it: the datagrams sent meanwhile and the tunnel of the current
+// attempt, which an application that leaves closes. Its lock is taken per
+// datagram during setup only.
+type udpSetup struct {
+	mu         sync.Mutex
+	closed     bool
+	retry      bool // the request may be refused and asked again by 0x83
+	onSpare    bool // the attempt runs on a spare or an early upgrade and may be set up again
+	conn       net.Conn
+	queue      [][]byte
+	bytes      int
+	taken      int
+	takenBytes int
+	lost       int
+	lostBytes  int
+	writeErr   error
+
+	// tunnelMu has its own lock, since mu is held across writes.
+	tunnelMu     sync.Mutex
+	current      net.Conn
+	left         bool
+	closedTunnel bool
+}
+
+type earlyFate int
+
+const (
+	notEarly earlyFate = iota
+	earlyTaken
+)
+
+// add takes a datagram while the association is being set up. It is written
+// behind the request, or held until the request is out; past the bound and
+// with no request out yet, it is lost.
+func (e *udpSetup) add(d []byte) earlyFate {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return notEarly
+	}
+	e.taken++
+	e.takenBytes += len(d)
+	hold := (e.conn == nil || e.retry || e.onSpare) && len(e.queue) < earlyQueueDatagrams && e.bytes+len(d) <= earlyQueueBytes
+	if !hold && e.conn == nil {
+		e.lost++
+		e.lostBytes += len(d)
+		return earlyTaken
+	}
+	frame := binary.BigEndian.AppendUint16(make([]byte, 0, 2+len(d)), uint16(len(d)))
+	frame = append(frame, d...)
+	if hold {
+		e.queue = append(e.queue, frame)
+		e.bytes += len(d)
+	}
+	if e.conn != nil {
+		e.write(frame)
+	}
+	return earlyTaken
+}
+
+// write sends to the tunnel of the current attempt. A tunnel that fails a
+// write is closed, which ends the wait for its reply; the error is kept,
+// since the reader would only see the closed connection.
+func (e *udpSetup) write(b []byte) {
+	if _, err := e.conn.Write(b); err != nil {
+		if e.writeErr == nil {
+			e.writeErr = err
+		}
+		_ = e.conn.Close()
+		e.conn = nil
+	}
+}
+
+// attach is given the tunnel of an attempt once its request is out, and the
+// datagrams held so far follow the request in one write. Only a request
+// that may be asked again, or one on a spare, keeps them afterwards.
+func (e *udpSetup) attach(c net.Conn) {
+	if !e.track(c) {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.conn = c
+	if len(e.queue) > 0 {
+		e.write(bytes.Join(e.queue, nil))
+	}
+	if !e.retry && !e.onSpare {
+		e.queue, e.bytes = nil, 0
+	}
+}
+
+// spare is told the attempt runs on a spare or an early upgrade: until the
+// server answers, it may be set up again on a fresh transport, and the
+// datagrams held go with the request once more.
+func (e *udpSetup) spare() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onSpare = true
+}
+
+func (e *udpSetup) track(c net.Conn) bool {
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+	if e.left {
+		_ = c.Close()
+		e.closedTunnel = true
+		return false
+	}
+	e.current = c
+	return true
+}
+
+// accepted is told the server took the request: nothing is asked again, so
+// nothing is kept for it.
+func (e *udpSetup) accepted() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.retry, e.onSpare = false, false
+	e.queue, e.bytes = nil, 0
+}
+
+// detach leaves the tunnel the server refused. The held datagrams wait for
+// the next request; those past the bound went with the refused one only.
+func (e *udpSetup) detach() {
+	e.tunnelMu.Lock()
+	e.current = nil
+	e.tunnelMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.conn, e.retry, e.onSpare, e.writeErr = nil, false, false, nil
+	e.lost = e.taken - len(e.queue)
+	e.lostBytes = e.takenBytes - e.bytes
+}
+
+// restart leaves the tunnel of an attempt on a spare or an early upgrade that
+// is set up again on a fresh transport. The held datagrams follow the request
+// again; those past the bound went with the first tunnel. The request is the same and may still be
+// refused and asked again.
+func (e *udpSetup) restart() {
+	e.tunnelMu.Lock()
+	e.current = nil
+	e.tunnelMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.conn, e.onSpare, e.writeErr = nil, false, nil
+	e.lost = e.taken - len(e.queue)
+	e.lostBytes = e.takenBytes - e.bytes
+}
+
+// earlyCount is what the setup did with the datagrams it took.
+type earlyCount struct {
+	taken, lost, sentBytes int
+	writeErr               error
+}
+
+// close ends the setup. A write that failed behind an accepted request is
+// returned: the tunnel it closed is not one to relay over.
+func (e *udpSetup) close() earlyCount {
+	e.tunnelMu.Lock()
+	e.current = nil
+	e.tunnelMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.closed, e.conn, e.queue = true, nil, nil
+	return earlyCount{taken: e.taken, lost: e.lost, sentBytes: e.takenBytes - e.lostBytes, writeErr: e.writeErr}
+}
+
+// abandon is called when the application leaves. The tunnel being set up
+// for it is closed, unless setup has already ended.
+func (e *udpSetup) abandon() {
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+	e.left = true
+	if e.current != nil {
+		_ = e.current.Close()
+		e.closedTunnel = true
+	}
+}
+
+func (e *udpSetup) hasLeft() bool {
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+	return e.left
+}
+
+// abandoned says the setup closed the tunnel itself because the application
+// left: its failure says nothing of the path. A failure before that, a dial
+// that timed out among them, still counts.
+func (e *udpSetup) abandoned() bool {
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+	return e.closedTunnel
+}
+
+// failure names the write that closed the tunnel instead of the read of a
+// closed connection that followed it.
+func (e *udpSetup) failure(err error) error {
+	e.mu.Lock()
+	werr := e.writeErr
+	e.mu.Unlock()
+	if werr == nil {
+		return err
+	}
+	return &tunnelError{phase: tunnelPhaseOf(err), err: fmt.Errorf("writing a datagram behind the request: %w", werr)}
+}
+
+// tunnelDial opens the tunnel of an association and writes its request.
+type tunnelDial func(attempt clientParams, request []byte) (net.Conn, clientParams, error)
+
+// handleUDPAssociate handles the client side of UDP Associate. With
+// OPTIMISTIC_CONNECT the application is told its local port at once and the
+// tunnel is opened meanwhile: waiting for the server cost it two round trips
+// before its first datagram (docs/plan/draft.md, Ч-3). wireReq is the
+// request, 0x83 or 0x84.
+func handleUDPAssociate(clientConn net.Conn, dest string, attempt clientParams, wireReq []byte) {
+	associateUDP(clientConn, dest, attempt, wireReq, dialAttempt)
+}
+
+func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []byte, dial tunnelDial) {
+	defer func() { _ = clientConn.Close() }()
 	requestedNative := len(wireReq) > 1 && wireReq[1] == socks5.UDPNativeCommand
 	command := socks5.UDPTunnelCommand
 	if requestedNative {
 		command = socks5.UDPNativeCommand
 	}
-	// 1. Read the server's reply to the association.
-	// This read is still covered by the handshake deadline set in
-	// dialObfsTunnel: the custom command is the one place where a server
-	// that does not understand it would simply never answer.
-	slog.Info("UDP Associate: waiting for server reply", "command", fmt.Sprintf("%#x", command))
-	serverReply, err := readSOCKSReply(obfsConn)
-	if err != nil {
-		wrapped := &tunnelError{phase: phaseConnectReply, err: err}
-		logTunnelFailure(wrapped, dest, cfg)
-		_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-		return
-	}
-	if requestedNative && mayPredateNative(serverReply[1]) {
-		// A server that predates 0x84 refuses it: S5Core 2.2 by its command
-		// rule, a plain SOCKS5 server as unsupported. The same answer from a
-		// 2.3 server refuses UDP itself, so the association asks again by
-		// 0x83 on a fresh connection, and the server is remembered only when
-		// that one is accepted. A refusal of 0x83 goes to the application.
-		refusal := serverReply[1]
-		_ = obfsConn.Close()
-		fallback := append([]byte(nil), wireReq...)
-		fallback[1] = socks5.UDPTunnelCommand
-		requestedNative, command = false, socks5.UDPTunnelCommand
-		obfsConn, cfg, err = dialAttempt(cfg, fallback)
-		if err != nil {
-			// dialAttempt named the phase that failed, and the hint and the
-			// transport policy both depend on it.
-			logTunnelFailure(err, dest, cfg)
-			_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(err), 0, 1, 0, 0, 0, 0, 0, 0})
-			return
-		}
-		defer obfsConn.Close()
-		if serverReply, err = readSOCKSReply(obfsConn); err != nil {
-			wrapped := &tunnelError{phase: phaseConnectReply, err: err}
-			logTunnelFailure(wrapped, dest, cfg)
-			_, _ = clientConn.Write([]byte{socks5Ver, replyForTunnelError(wrapped), 0, 1, 0, 0, 0, 0, 0, 0})
-			return
-		}
-		if serverReply[1] == socks5Success {
-			rememberNoNative(cfg, fmt.Sprintf("0x84 refused with %#x", refusal))
-		}
-	}
-	// The tunnel is up; the relay below must not inherit the setup deadline.
-	clearDeadline(obfsConn)
-	if serverReply[1] != 0x00 {
-		slog.Error("Server rejected the UDP association", "command", fmt.Sprintf("%#x", command), "status", serverReply[1])
-		_, _ = clientConn.Write(serverReply)
-		return
-	}
-	if cfg.UDPTunnelTCPTuning {
-		tuneUDPTunnel(obfsConn)
-	}
+	optimistic := cfg.OptimisticConnect
 
-	// 2. Open a local UDP socket for the application to send packets to
+	// 1. Open a local UDP socket for the application to send packets to.
 	// We bind to the same IP the client connected to (usually 127.0.0.1)
 	localIP, _, _ := net.SplitHostPort(clientConn.LocalAddr().String())
 	udpAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(localIP, "0"))
@@ -208,7 +383,6 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 		slog.Error("Failed to resolve bind address", "ip", localIP, "error", err)
 		return
 	}
-
 	udpConn, err := udpbuf.ListenUDP("udp", udpAddr)
 	if err != nil {
 		slog.Error("Failed to bind local UDP socket", "error", err)
@@ -216,56 +390,35 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 		return
 	}
 	defer func() { _ = udpConn.Close() }()
-	var native *nativeClient
-	if requestedNative {
-		if port := binary.BigEndian.Uint16(serverReply[len(serverReply)-2:]); port == 0 {
-			// The server knows 0x84 and has no native path to offer.
-			rememberNoNative(cfg, "no native port")
-		} else if n, c, err := dialNative(obfsConn, port); err != nil {
-			slog.Warn("Native UDP unavailable; association using 0x83", "error", err)
-		} else {
-			native = n
-			defer func() { _ = c.Close() }()
-		}
-	}
 
-	// 3. Send success response to application with our local UDP port
 	boundAddr := udpConn.LocalAddr().(*net.UDPAddr)
 	// VER, REP=success, RSV, then BND.ADDR and BND.PORT.
 	tcpReply := socks5.AppendAddr([]byte{socks5Ver, 0x00, 0x00}, &socks5.AddrSpec{IP: boundAddr.IP, Port: boundAddr.Port})
-
-	if _, err := clientConn.Write(tcpReply); err != nil {
-		slog.Error("Failed to send UDP Associate reply", "error", err)
-		return
+	answer := func() bool {
+		if _, err := clientConn.Write(tcpReply); err != nil {
+			slog.Error("Failed to send UDP Associate reply", "error", err)
+			return false
+		}
+		return true
+	}
+	// An application told success already learns of a failure by the end of
+	// its connection, as RFC 1928 has it; one still waiting gets the code.
+	refuse := func(reply []byte) {
+		if !optimistic {
+			_, _ = clientConn.Write(reply)
+		}
 	}
 
-	id := obfs.LogIDOf(obfsConn)
-	slog.Info("UDP Tunnel established", "conn", id, "local_udp", boundAddr.String())
-	opened := time.Now()
-	var stats assocStats
-
-	// 4. Multiplexing Loop
+	// The reader of the application holds what it reads in setup until the
+	// server has answered. obfsConn and native are set before setup is
+	// closed, and the reader takes them only after that.
+	setup := &udpSetup{retry: requestedNative}
 	errCh := make(chan assocEnd, 4)
+	var stats assocStats
 	var clientUDPAddr atomic.Pointer[netip.AddrPort]
-	if native != nil {
-		// The datagrams native does not carry wait for the stream on the
-		// writer's goroutine, not on the one that reads the application:
-		// one too big for native used to hold every short one behind it
-		// (finding F1 of docs/reports/v2.3-rc1-audit-2026-09-26.md).
-		defer native.writer.Stop()
-		go func() {
-			if err := native.writer.Run(); err != nil {
-				errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel write failed: %w", err)}
-			}
-		}()
-		go native.run(func(d []byte) {
-			if peer := clientUDPAddr.Load(); peer != nil {
-				if _, err := udpConn.WriteToUDPAddrPort(d, *peer); err == nil {
-					stats.addReceived(len(d))
-				}
-			}
-		})
-	}
+	var steady atomic.Bool
+	var obfsConn net.Conn
+	var native *nativeClient
 
 	// The application may send datagrams from the address it opened the SOCKS5
 	// connection from, and from nothing else: the port this client announced
@@ -287,7 +440,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 	}
 
 	// Go routine A: Read from application (UDP) -> write to obfsConn (TCP)
-	go func() {
+	readApp := func() {
 		bufPtr := udpReadBufPool.Get().(*[]byte)
 		buf := *bufPtr
 		defer udpReadBufPool.Put(bufPtr)
@@ -299,7 +452,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 			}
 
 			// Validate it's from the same IP as the TCP connection
+			stats.localIn.Add(1)
 			if src.Addr().Unmap() != appIP {
+				stats.sourceDrops.Add(1)
 				continue // Drop packets from strangers
 			}
 			// A datagram without a SOCKS5 UDP header is not the application
@@ -309,6 +464,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 			// back carried a valid header, so the two ends looped
 			// (docs/benchmarks/matrix-2026-09-22/README.md).
 			if !socksUDPHeader(buf[:n]) {
+				stats.headerDrops.Add(1)
 				continue
 			}
 
@@ -317,8 +473,14 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 			// socket: the address is a value, and storing a value needs a
 			// pointer to put it behind.
 			if cur := clientUDPAddr.Load(); cur == nil || *cur != src {
+				if cur != nil {
+					stats.portChanges.Add(1)
+				}
 				stored := src
 				clientUDPAddr.Store(&stored)
+			}
+			if !steady.Load() && setup.add(buf[:n]) == earlyTaken {
+				continue
 			}
 			stats.addSent(n)
 
@@ -343,8 +505,164 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 				return
 			}
 			udpFramePool.Put(framePtr)
+			stats.streamSent.Add(1)
 		}
+	}
+
+	// 2. Tell the application its port before the server answers, unless
+	// it asked for the server's own code.
+	if optimistic {
+		if !answer() {
+			return
+		}
+		go readApp()
+	}
+
+	// Go routine C: the application leaving ends the association, and in
+	// setup closes the tunnel being opened for it.
+	go func() {
+		var b [1]byte
+		_, err := clientConn.Read(b[:])
+		setup.abandon()
+		errCh <- assocEnd{endApplication, fmt.Errorf("app tcp connection closed: %w", err)}
 	}()
+
+	failed := func(err error) {
+		if setup.abandoned() {
+			slog.Debug("UDP Associate: the application left during setup", "error", err)
+			return
+		}
+		err = setup.failure(err)
+		logTunnelFailure(err, dest, cfg)
+		refuse([]byte{socks5Ver, replyForTunnelError(err), 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+	}
+
+	// 3. Open the tunnel and read the server's reply to the association.
+	// The read is still covered by the handshake deadline set in
+	// dialObfsTunnel: the custom command is the one place where a server
+	// that does not understand it would simply never answer. A tunnel the
+	// application no longer waits for fails without telling the transport
+	// policy anything.
+	slog.Info("UDP Associate: waiting for server reply", "command", fmt.Sprintf("%#x", command))
+	cfg.requestSent = setup.attach
+	cfg.setup = setup
+	conn, used, err := dial(cfg, wireReq)
+	cfg = used
+	if err != nil {
+		// dialAttempt named the phase that failed, and the hint and the
+		// transport policy both depend on it.
+		failed(err)
+		return
+	}
+	obfsConn = conn
+	defer func() { _ = obfsConn.Close() }()
+	serverReply, err := readSOCKSReply(obfsConn)
+	if err != nil {
+		failed(&tunnelError{phase: phaseConnectReply, err: err})
+		return
+	}
+	if requestedNative && mayPredateNative(serverReply[1]) {
+		// A server that predates 0x84 refuses it: S5Core 2.2 by its command
+		// rule, a plain SOCKS5 server as unsupported. The same answer from a
+		// 2.3 server refuses UDP itself, so the association asks again by
+		// 0x83 on a fresh connection, and the server is remembered only when
+		// that one is accepted. The datagrams held for it follow the new
+		// request.
+		refusal := serverReply[1]
+		setup.detach()
+		_ = obfsConn.Close()
+		if setup.hasLeft() {
+			return
+		}
+		fallback := append([]byte(nil), wireReq...)
+		fallback[1] = socks5.UDPTunnelCommand
+		requestedNative, command = false, socks5.UDPTunnelCommand
+		conn, used, err := dial(cfg, fallback)
+		cfg = used
+		if err != nil {
+			failed(err)
+			return
+		}
+		obfsConn = conn
+		if serverReply, err = readSOCKSReply(obfsConn); err != nil {
+			failed(&tunnelError{phase: phaseConnectReply, err: err})
+			return
+		}
+		if serverReply[1] == socks5Success {
+			rememberNoNative(cfg, fmt.Sprintf("0x84 refused with %#x", refusal))
+		}
+	}
+	// The tunnel is up; the relay below must not inherit the setup deadline.
+	clearDeadline(obfsConn)
+	if serverReply[1] != 0x00 {
+		slog.Error("Server rejected the UDP association", "command", fmt.Sprintf("%#x", command), "status", serverReply[1])
+		refuse(serverReply)
+		return
+	}
+	setup.accepted()
+	if cfg.UDPTunnelTCPTuning {
+		tuneUDPTunnel(obfsConn)
+	}
+	if requestedNative {
+		if port := binary.BigEndian.Uint16(serverReply[len(serverReply)-2:]); port == 0 {
+			// The server knows 0x84 and has no native path to offer.
+			rememberNoNative(cfg, "no native port")
+		} else if n, c, err := dialNative(obfsConn, port); err != nil {
+			slog.Warn("Native UDP unavailable; association using 0x83", "error", err)
+		} else {
+			native = n
+			defer func() { _ = c.Close() }()
+		}
+	}
+	// From here the reader of the application sends by itself, and on a
+	// native association the writer below is the only one of the tunnel.
+	early := setup.close()
+	if early.writeErr != nil {
+		failed(&tunnelError{phase: phaseConnectReply, err: early.writeErr})
+		return
+	}
+	stats.sent.Add(uint64(early.taken - early.lost))
+	stats.sentBytes.Add(uint64(early.sentBytes))
+	stats.streamSent.Add(uint64(early.taken - early.lost))
+	steady.Store(true)
+	if !optimistic {
+		if !answer() {
+			return
+		}
+		go readApp()
+	}
+
+	id := obfs.LogIDOf(obfsConn)
+	established := []any{"conn", id, "local_udp", boundAddr.String()}
+	if early.taken > 0 {
+		established = append(established, "early_datagrams", early.taken, "early_dropped", early.lost)
+	}
+	slog.Info("UDP Tunnel established", established...)
+	opened := time.Now()
+
+	if native != nil {
+		// The datagrams native does not carry wait for the stream on the
+		// writer's goroutine, not on the one that reads the application:
+		// one too big for native used to hold every short one behind it
+		// (finding F1 of docs/reports/v2.3-rc1-audit-2026-09-26.md).
+		defer native.writer.Stop()
+		go func() {
+			if err := native.writer.Run(); err != nil {
+				errCh <- assocEnd{endTunnel, fmt.Errorf("tunnel write failed: %w", err)}
+			}
+		}()
+		go native.run(func(d []byte) {
+			if peer := clientUDPAddr.Load(); peer != nil {
+				if _, err := udpConn.WriteToUDPAddrPort(d, *peer); err == nil {
+					stats.addReceived(len(d))
+				} else {
+					stats.appWriteErrors.Add(1)
+				}
+			} else {
+				stats.appUnknownDrops.Add(1)
+			}
+		})
+	}
 
 	// Go routine B: Read from obfsConn (TCP) -> write to application (UDP)
 	go func() {
@@ -388,6 +706,7 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 			// Must know where the client is to send UDP back
 			addr := clientUDPAddr.Load()
 			if addr == nil {
+				stats.appUnknownDrops.Add(1)
 				slog.Warn("Dropping returning UDP packet because client address unknown")
 				udpFramePool.Put(framePtr)
 				continue
@@ -395,6 +714,9 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 
 			_, err := udpConn.WriteToUDPAddrPort(frameBuf, *addr)
 			udpFramePool.Put(framePtr)
+			if err != nil {
+				stats.appWriteErrors.Add(1)
+			}
 			if errors.Is(err, net.ErrClosed) {
 				// The association is being torn down; answers still in the
 				// tunnel have nowhere to go.
@@ -409,21 +731,15 @@ func handleUDPAssociate(clientConn net.Conn, obfsConn net.Conn, dest string, cfg
 		}
 	}()
 
-	// Go routine C: Monitor TCP connection from application
-	go func() {
-		var b [1]byte
-		_, err := clientConn.Read(b[:])
-		errCh <- assocEnd{endApplication, fmt.Errorf("app tcp connection closed: %w", err)}
-	}()
-
 	extra := func() []any {
 		attrs := []any{"conn", id}
+		attrs = append(attrs, stats.diagnostics().attrs()...)
 		if native != nil {
 			attrs = append(attrs, native.logStats()...)
 		}
 		return attrs
 	}
-	report := startAssocReport(&stats, opened, extra)
+	report := startAssocReport(&stats, opened, extra, cfg.UDPDiagnosticsInterval)
 	end := <-errCh
 	report.stop()
 	minutes.udp.Add(1)

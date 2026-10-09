@@ -1,0 +1,512 @@
+{
+  "batches": {
+    "game-loss/r1": {
+      "attempts": 1,
+      "cells": {
+        "game-loss/raw-r1": "ok",
+        "game-loss/rc1-obfs-member-r1": "ok",
+        "game-loss/rc1-wss-member-r1": "ok",
+        "game-loss/v23-obfs-member-r1": "ok",
+        "game-loss/v23-wss-member-r1": "ok"
+      },
+      "finished": "2026-10-03T19:39:42",
+      "foreign_cores": 6.07,
+      "noisy": true,
+      "seconds": 37.0,
+      "start": {
+        "load_cores": 6.58,
+        "mem_mb": 11988,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "game-loss/r2": {
+      "attempts": 1,
+      "cells": {
+        "game-loss/raw-r2": "ok",
+        "game-loss/rc1-obfs-member-r2": "ok",
+        "game-loss/rc1-wss-member-r2": "ok",
+        "game-loss/v23-obfs-member-r2": "ok",
+        "game-loss/v23-wss-member-r2": "ok"
+      },
+      "finished": "2026-10-03T19:40:21",
+      "foreign_cores": 7.1,
+      "noisy": true,
+      "seconds": 36.6,
+      "start": {
+        "load_cores": 6.45,
+        "mem_mb": 12132,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "game-loss/r3": {
+      "attempts": 1,
+      "cells": {
+        "game-loss/raw-r3": "ok",
+        "game-loss/rc1-obfs-member-r3": "ok",
+        "game-loss/rc1-wss-member-r3": "ok",
+        "game-loss/v23-obfs-member-r3": "ok",
+        "game-loss/v23-wss-member-r3": "ok"
+      },
+      "finished": "2026-10-03T19:41:00",
+      "foreign_cores": 6.73,
+      "noisy": true,
+      "seconds": 36.8,
+      "start": {
+        "load_cores": 7.05,
+        "mem_mb": 12095,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/raw-r1": {
+      "attempts": 1,
+      "cells": {
+        "local/raw-r1": "ok"
+      },
+      "finished": "2026-10-03T19:35:10",
+      "foreign_cores": 4.77,
+      "noisy": true,
+      "seconds": 5.2,
+      "start": {
+        "load_cores": 4.81,
+        "mem_mb": 12230,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/raw-r2": {
+      "attempts": 1,
+      "cells": {
+        "local/raw-r2": "ok"
+      },
+      "finished": "2026-10-03T19:36:38",
+      "foreign_cores": 5.0,
+      "noisy": true,
+      "seconds": 5.2,
+      "start": {
+        "load_cores": 5.11,
+        "mem_mb": 12331,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/raw-r3": {
+      "attempts": 1,
+      "cells": {
+        "local/raw-r3": "ok"
+      },
+      "finished": "2026-10-03T19:36:46",
+      "foreign_cores": 5.45,
+      "noisy": true,
+      "seconds": 5.2,
+      "start": {
+        "load_cores": 6.07,
+        "mem_mb": 12363,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/raw-r4": {
+      "attempts": 1,
+      "cells": {
+        "local/raw-r4": "ok"
+      },
+      "finished": "2026-10-03T19:38:15",
+      "foreign_cores": 5.39,
+      "noisy": true,
+      "seconds": 5.2,
+      "start": {
+        "load_cores": 5.54,
+        "mem_mb": 12132,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/raw-r5": {
+      "attempts": 1,
+      "cells": {
+        "local/raw-r5": "ok"
+      },
+      "finished": "2026-10-03T19:38:22",
+      "foreign_cores": 5.49,
+      "noisy": true,
+      "seconds": 5.2,
+      "start": {
+        "load_cores": 6.07,
+        "mem_mb": 12076,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-obfs-member-r1": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-obfs-member-r1": "ok"
+      },
+      "finished": "2026-10-03T19:35:30",
+      "foreign_cores": 2.37,
+      "noisy": false,
+      "seconds": 7.8,
+      "start": {
+        "load_cores": 2.55,
+        "mem_mb": 12157,
+        "quiet": true
+      },
+      "status": "done"
+    },
+    "local/rc1-obfs-member-r2": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-obfs-member-r2": "ok"
+      },
+      "finished": "2026-10-03T19:36:21",
+      "foreign_cores": 4.85,
+      "noisy": true,
+      "seconds": 8.0,
+      "start": {
+        "load_cores": 5.23,
+        "mem_mb": 12363,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-obfs-member-r3": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-obfs-member-r3": "ok"
+      },
+      "finished": "2026-10-03T19:37:05",
+      "foreign_cores": 3.91,
+      "noisy": true,
+      "seconds": 7.8,
+      "start": {
+        "load_cores": 4.53,
+        "mem_mb": 12306,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-obfs-member-r4": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-obfs-member-r4": "ok"
+      },
+      "finished": "2026-10-03T19:37:57",
+      "foreign_cores": 5.28,
+      "noisy": true,
+      "seconds": 8.0,
+      "start": {
+        "load_cores": 5.68,
+        "mem_mb": 12113,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-obfs-member-r5": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-obfs-member-r5": "ok"
+      },
+      "finished": "2026-10-03T19:38:42",
+      "foreign_cores": 4.73,
+      "noisy": true,
+      "seconds": 8.0,
+      "start": {
+        "load_cores": 4.68,
+        "mem_mb": 12019,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-wss-member-r1": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-wss-member-r1": "ok"
+      },
+      "finished": "2026-10-03T19:35:50",
+      "foreign_cores": 3.37,
+      "noisy": true,
+      "seconds": 8.2,
+      "start": {
+        "load_cores": 2.48,
+        "mem_mb": 12329,
+        "quiet": true
+      },
+      "status": "done"
+    },
+    "local/rc1-wss-member-r2": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-wss-member-r2": "ok"
+      },
+      "finished": "2026-10-03T19:36:01",
+      "foreign_cores": 4.86,
+      "noisy": true,
+      "seconds": 8.4,
+      "start": {
+        "load_cores": 5.25,
+        "mem_mb": 12349,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-wss-member-r3": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-wss-member-r3": "ok"
+      },
+      "finished": "2026-10-03T19:37:26",
+      "foreign_cores": 5.64,
+      "noisy": true,
+      "seconds": 8.4,
+      "start": {
+        "load_cores": 5.43,
+        "mem_mb": 12281,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-wss-member-r4": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-wss-member-r4": "ok"
+      },
+      "finished": "2026-10-03T19:37:37",
+      "foreign_cores": 5.33,
+      "noisy": true,
+      "seconds": 8.6,
+      "start": {
+        "load_cores": 6.03,
+        "mem_mb": 11908,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/rc1-wss-member-r5": {
+      "attempts": 1,
+      "cells": {
+        "local/rc1-wss-member-r5": "ok"
+      },
+      "finished": "2026-10-03T19:39:03",
+      "foreign_cores": 5.19,
+      "noisy": true,
+      "seconds": 8.4,
+      "start": {
+        "load_cores": 2.96,
+        "mem_mb": 12045,
+        "quiet": true
+      },
+      "status": "done"
+    },
+    "local/v23-obfs-member-r1": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-obfs-member-r1": "ok"
+      },
+      "finished": "2026-10-03T19:35:20",
+      "foreign_cores": 3.68,
+      "noisy": true,
+      "seconds": 8.0,
+      "start": {
+        "load_cores": 5.25,
+        "mem_mb": 12257,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-obfs-member-r2": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-obfs-member-r2": "ok"
+      },
+      "finished": "2026-10-03T19:36:31",
+      "foreign_cores": 4.88,
+      "noisy": true,
+      "seconds": 8.0,
+      "start": {
+        "load_cores": 4.96,
+        "mem_mb": 12387,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-obfs-member-r3": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-obfs-member-r3": "ok"
+      },
+      "finished": "2026-10-03T19:36:56",
+      "foreign_cores": 5.2,
+      "noisy": true,
+      "seconds": 8.0,
+      "start": {
+        "load_cores": 5.48,
+        "mem_mb": 12270,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-obfs-member-r4": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-obfs-member-r4": "ok"
+      },
+      "finished": "2026-10-03T19:38:07",
+      "foreign_cores": 5.48,
+      "noisy": true,
+      "seconds": 8.2,
+      "start": {
+        "load_cores": 5.64,
+        "mem_mb": 12054,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-obfs-member-r5": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-obfs-member-r5": "ok"
+      },
+      "finished": "2026-10-03T19:38:32",
+      "foreign_cores": 5.3,
+      "noisy": true,
+      "seconds": 8.2,
+      "start": {
+        "load_cores": 5.64,
+        "mem_mb": 12043,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-wss-member-r1": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-wss-member-r1": "ok"
+      },
+      "finished": "2026-10-03T19:35:40",
+      "foreign_cores": 2.98,
+      "noisy": false,
+      "seconds": 8.2,
+      "start": {
+        "load_cores": 2.47,
+        "mem_mb": 12284,
+        "quiet": true
+      },
+      "status": "done"
+    },
+    "local/v23-wss-member-r2": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-wss-member-r2": "ok"
+      },
+      "finished": "2026-10-03T19:36:11",
+      "foreign_cores": 4.97,
+      "noisy": true,
+      "seconds": 8.4,
+      "start": {
+        "load_cores": 5.19,
+        "mem_mb": 12443,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-wss-member-r3": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-wss-member-r3": "ok"
+      },
+      "finished": "2026-10-03T19:37:16",
+      "foreign_cores": 5.41,
+      "noisy": true,
+      "seconds": 8.4,
+      "start": {
+        "load_cores": 4.96,
+        "mem_mb": 12304,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-wss-member-r4": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-wss-member-r4": "ok"
+      },
+      "finished": "2026-10-03T19:37:47",
+      "foreign_cores": 5.43,
+      "noisy": true,
+      "seconds": 8.4,
+      "start": {
+        "load_cores": 5.58,
+        "mem_mb": 12059,
+        "quiet": false
+      },
+      "status": "done"
+    },
+    "local/v23-wss-member-r5": {
+      "attempts": 1,
+      "cells": {
+        "local/v23-wss-member-r5": "ok"
+      },
+      "finished": "2026-10-03T19:38:53",
+      "foreign_cores": 4.11,
+      "noisy": true,
+      "seconds": 8.6,
+      "start": {
+        "load_cores": 5.82,
+        "mem_mb": 12000,
+        "quiet": false
+      },
+      "status": "done"
+    }
+  },
+  "build": {
+    "matrix": {
+      "built": "2026-10-03T19:32:15",
+      "matrix_sha256": "0c2d65682192b8d4c32e5543cfb548104e68e486228371ce235189b22c3a2a76",
+      "sha256": "0c2d65682192b8d4c32e5543cfb548104e68e486228371ce235189b22c3a2a76"
+    },
+    "rc1": {
+      "built": "2026-10-03T19:32:18",
+      "commit": "65650535fbfd79b3d9a4f4281fd85d4c85aa667a",
+      "dirty": true,
+      "ref": "worktree",
+      "s5client_sha256": "6fb5355c619f22969595c09161b016cc2526f4a1357bddf20c3cf7231bf1db46",
+      "s5core_sha256": "3960a0cb6bed93f1cd018f047e0da8cc7ff60d90a1de41380fd97e8e5cd853b4"
+    },
+    "v23": {
+      "built": "2026-10-03T19:32:17",
+      "commit": "e04ba5c03b3d41bda8cc7031e9e3e77a969d482c",
+      "dirty": false,
+      "ref": "v2.3.0",
+      "s5client_sha256": "c90292fd5385c19135e710f3836186c093ced5e46d2a2fe62a40e3ac78b63692",
+      "s5core_sha256": "d48f2ab07690c9b2513daa574ce9c1805149a2e89a378fb8e6a52b7413a4c984"
+    }
+  },
+  "created": "2026-10-03T19:35:03",
+  "hash": "cddf13e94f7f6838",
+  "plan": "raw-23-24rc1-loaded-20261003",
+  "scenarios": {
+    "game-loss": [
+      "game/64hz-200b"
+    ],
+    "local": [
+      "tcp/connect",
+      "https/small-new",
+      "https/small-reuse",
+      "https/large",
+      "https/upload",
+      "https/small-reuse-under-bulk",
+      "h2/small-reuse",
+      "h3/small-reuse",
+      "h3/large",
+      "h3/upload",
+      "udp/rtt-64",
+      "udp/rtt-64-under-bulk",
+      "udp/stream-40mbit"
+    ]
+  },
+  "state": "finished",
+  "updated": "2026-10-03T19:41:00"
+}

@@ -233,8 +233,7 @@ func FuzzFrameRoundTrip(f *testing.F) {
 		if cfg.MTU == 0 {
 			budget = DefaultMTU - frameOverhead
 		}
-		budget = min(budget, 65535-(minCiphertext-16))
-		wantRefusal := (cfg.MTU > 0 && cfg.MTU <= frameOverhead) || (withHello && len(encodeHello(hello)) > budget)
+		wantRefusal := ValidateMTU(cfg.MTU) != nil || (withHello && len(encodeHello(hello)) > budget)
 		if _, err := NewClientConn(&fuzzWire{}, cfg); (err != nil) != wantRefusal {
 			t.Fatalf("MTU %d, hello of %d bytes: NewClientConn err=%v, want refusal=%v", cfg.MTU, len(encodeHello(hello)), err, wantRefusal)
 		}
@@ -247,7 +246,7 @@ func FuzzFrameRoundTrip(f *testing.F) {
 		// The server's MTU sizes only its own frames and buffers; one with no
 		// room for a payload is refused where it is configured.
 		smtu := int(serverMTU)
-		if smtu <= frameOverhead {
+		if smtu < MinMTU {
 			smtu = 0
 		}
 		srv := newFuzzServer(t, wire, serverScheme, smtu, history)

@@ -30,6 +30,9 @@ type AuthContext struct {
 	// Keys depend on the used auth method.
 	// For UserPassauth contains Username
 	Payload map[string]string
+	// Account is captured during authentication, before a name can be
+	// replaced. TCP and every UDP mode use its status and counter together.
+	Account *SessionAccount
 }
 
 type Authenticator interface {
@@ -49,13 +52,14 @@ func (a NoAuthAuthenticator) GetCode() uint8 {
 
 func (a NoAuthAuthenticator) Authenticate(reader io.Reader, writer io.Writer, _ string) (*AuthContext, error) {
 	_, err := writer.Write([]byte{Socks5Version, NoAuth})
-	return &AuthContext{NoAuth, nil}, err
+	return &AuthContext{Method: NoAuth}, err
 }
 
 // UserPassAuthenticator is used to handle username/password based
 // authentication
 type UserPassAuthenticator struct {
 	Credentials CredentialStore
+	BindAccount func(username string) *SessionAccount
 }
 
 func (a UserPassAuthenticator) GetCode() uint8 {
@@ -101,7 +105,15 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer, 
 	// Verify the password
 	userStr := string(userBuf[:userLen])
 	passStr := string(passBuf[:passLen])
-	if validFrom(a.Credentials, userStr, passStr, source) {
+	var account *SessionAccount
+	if a.BindAccount != nil {
+		account = a.BindAccount(userStr)
+	}
+	valid := validFrom(a.Credentials, userStr, passStr, source)
+	if a.BindAccount != nil && (account == nil || account.Status() != SessionAllowed) {
+		valid = false
+	}
+	if valid {
 		if _, err := writer.Write([]byte{userAuthVersion, authSuccess}); err != nil {
 			return nil, connFailure("auth", "result_write", err)
 		}
@@ -114,7 +126,7 @@ func (a UserPassAuthenticator) Authenticate(reader io.Reader, writer io.Writer, 
 	}
 
 	// Done
-	return &AuthContext{UserPassAuth, map[string]string{"Username": userStr}}, nil
+	return &AuthContext{Method: UserPassAuth, Payload: map[string]string{"Username": userStr}, Account: account}, nil
 }
 
 // tunnelIdentity is who the transport says this connection belongs to, or
@@ -167,7 +179,20 @@ func (s *Server) authenticate(conn io.Writer, bufConn io.Reader, source, identit
 	// only NoAuth then gets "no acceptable methods", and one that offers a
 	// password gets it checked - by a credential store that turns the same
 	// account away for the same reason.
-	if identity != "" && !s.tunnelIdentityAllowed(identity) {
+	var account *SessionAccount
+	allowed := true
+	if identity != "" {
+		if s.config.TunnelAccount != nil {
+			account = s.config.TunnelAccount(identity)
+			allowed = account != nil && account.Status() == SessionAllowed
+			if allowed {
+				identity = account.Name
+			}
+		} else {
+			allowed = s.tunnelIdentityAllowed(identity)
+		}
+	}
+	if identity != "" && !allowed {
 		s.config.Logger.Debug("socks: the tunnel identity may no longer connect",
 			"identity", identity)
 		identity = ""
@@ -188,7 +213,7 @@ func (s *Server) authenticate(conn io.Writer, bufConn io.Reader, source, identit
 			if err != nil {
 				return nil, connFailure("auth", "method_write", err)
 			}
-			return &AuthContext{NoAuth, map[string]string{"Username": identity}}, nil
+			return &AuthContext{Method: NoAuth, Payload: map[string]string{"Username": identity}, Account: account}, nil
 		}
 		// A member whose client insists on a password still gets one
 		// checked below: the identity is an offer, not a requirement, and

@@ -1,0 +1,55 @@
+=== RUN   TestOversizeDatagramsUseTCPWhileNativeUnavailable
+=== RUN   TestOversizeDatagramsUseTCPWhileNativeUnavailable/0s
+=== RUN   TestOversizeDatagramsUseTCPWhileNativeUnavailable/20s
+2000/01/01 02:00:07 INFO Native UDP not answering; association using 0x83 conn="" addr=192.0.2.1:4000 unanswered_probes=3
+--- PASS: TestOversizeDatagramsUseTCPWhileNativeUnavailable (0.01s)
+    --- PASS: TestOversizeDatagramsUseTCPWhileNativeUnavailable/0s (0.00s)
+    --- PASS: TestOversizeDatagramsUseTCPWhileNativeUnavailable/20s (0.00s)
+=== RUN   TestInitialSizeProbeLossDoesNotCapAHealthyPath
+2000/01/01 02:00:00 INFO Native UDP verified for association conn=""
+2000/01/01 02:00:01 INFO Native UDP carrying application datagrams conn=""
+--- PASS: TestInitialSizeProbeLossDoesNotCapAHealthyPath (0.00s)
+=== RUN   TestOversizeDatagramsUseTCPWhenAVerifiedPathStopsBeingHeard
+2000/01/01 02:00:00 INFO Native UDP verified for association conn=""
+2000/01/01 02:00:00 INFO Native UDP carrying application datagrams conn=""
+--- PASS: TestOversizeDatagramsUseTCPWhenAVerifiedPathStopsBeingHeard (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/cmd/s5client	1.028s
+=== RUN   TestAFastRefusalDoesNotSkipAReachableTailAddress
+--- PASS: TestAFastRefusalDoesNotSkipAReachableTailAddress (0.00s)
+=== RUN   TestDNSCandidateCoverageHasABoundedPolicy
+=== RUN   TestDNSCandidateCoverageHasABoundedPolicy/32
+=== RUN   TestDNSCandidateCoverageHasABoundedPolicy/33
+--- PASS: TestDNSCandidateCoverageHasABoundedPolicy (0.00s)
+    --- PASS: TestDNSCandidateCoverageHasABoundedPolicy/32 (0.00s)
+    --- PASS: TestDNSCandidateCoverageHasABoundedPolicy/33 (0.00s)
+=== RUN   TestFailedBackupsDoNotCreateAnUnboundedSequence
+--- PASS: TestFailedBackupsDoNotCreateAnUnboundedSequence (0.00s)
+=== RUN   TestDNSPendingDropsCountBothBounds
+=== RUN   TestDNSPendingDropsCountBothBounds/packets
+=== RUN   TestDNSPendingDropsCountBothBounds/workers
+--- PASS: TestDNSPendingDropsCountBothBounds (0.01s)
+    --- PASS: TestDNSPendingDropsCountBothBounds/packets (0.01s)
+    --- PASS: TestDNSPendingDropsCountBothBounds/workers (0.00s)
+=== RUN   TestUDPAnswerFrameLimitKeepsTheStreamSynchronized
+=== RUN   TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp4/native_fallback=false
+=== RUN   TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp4/native_fallback=true
+=== RUN   TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp6/native_fallback=false
+=== RUN   TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp6/native_fallback=true
+--- PASS: TestUDPAnswerFrameLimitKeepsTheStreamSynchronized (0.00s)
+    --- PASS: TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp4/native_fallback=false (0.00s)
+    --- PASS: TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp4/native_fallback=true (0.00s)
+    --- PASS: TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp6/native_fallback=false (0.00s)
+    --- PASS: TestUDPAnswerFrameLimitKeepsTheStreamSynchronized/udp6/native_fallback=true (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/internal/socks5	1.029s
+=== RUN   TestDataQueueDropsAreCountedAndTheQueueRecovers
+--- PASS: TestDataQueueDropsAreCountedAndTheQueueRecovers (0.01s)
+=== RUN   TestProbeACKQueueDropsAreCountedWithoutBlockingData
+--- PASS: TestProbeACKQueueDropsAreCountedWithoutBlockingData (0.01s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/nativeudp	1.029s
+=== RUN   TestUDPDropMetricsCountOnlyFixedReasons
+--- PASS: TestUDPDropMetricsCountOnlyFixedReasons (0.00s)
+PASS
+ok  	github.com/mazixs/S5Core/pkg/s5server	1.015s

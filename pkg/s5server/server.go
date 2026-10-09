@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,13 +34,21 @@ type Server struct {
 	socks5        *socks5.Server
 	nativeHub     atomic.Pointer[nativeudp.Hub]
 	nativeMetrics metric.Registration
+	udpMetrics    metric.Registration
 	// nativeCounters is shared by every 0x84 association of the server.
 	nativeCounters *socks5.NativeCounters
+	udpCounters    *socks5.UDPRelayCounters
+	lifeMu         sync.Mutex
+	run            *serverRun
+	running        bool
 
 	// mu защищает поля слушателей: они заполняются в Start, а читаются
 	// из Stop, WSAddr, Addr, UpdateWhitelist и UpdateTimeouts - как правило
 	// из другой горутины (Start блокируется до остановки сервера).
 	mu sync.Mutex
+	// controls survives Stop/Start and is applied before publishing any new
+	// pipeline. cfg is immutable; runtime updates never race its readers.
+	controls listenerControls
 	// pipelines holds every listener the server runs, so that the controls
 	// that are documented as affecting "the server" - the whitelist, the
 	// timeouts - reach all of them. UpdateWhitelist used to touch only the
@@ -52,7 +61,9 @@ type Server struct {
 	// members is the table the obfuscation layer resolves a client's
 	// identity against, nil when no user file is configured. It is rebuilt
 	// on reload and kept warm by a goroutine started in Start.
-	members *veil.Directory
+	members        *veil.Directory
+	memberMu       sync.Mutex
+	membersChanged chan struct{}
 	// saltHistory is shared by every obfuscated listener: a replay recorded
 	// on the obfs port and sent again over WebSocket is the same replay.
 	saltHistory *obfs.SaltHistory
@@ -74,7 +85,7 @@ type Server struct {
 
 	// boot names this server's process in its markers; journal is the
 	// session journal while Start runs, nil when SessionLog is off.
-	boot       string
+	boot       atomic.Value // string, replaced at the beginning of each Start
 	started    time.Time
 	journal    atomic.Pointer[sessionJournal]
 	endMetrics *connEndMetrics
@@ -83,10 +94,17 @@ type Server struct {
 	reloads    atomic.Int64
 	stopped    atomic.Bool
 
-	logger     *slog.Logger
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-	wg         sync.WaitGroup
+	logger *slog.Logger
+	wg     sync.WaitGroup
+}
+
+// Each Start owns one cleanup and its completion. Stop cancels that run and
+// waits for its owner; it never races WaitGroup.Wait against startup's Add.
+type serverRun struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
+	stopErr error // published by closing done
 }
 
 // udpTunnelTuner builds the hook that tunes the socket of a 0x83 or 0x84 tunnel. A
@@ -96,6 +114,10 @@ var udpTunnelTuner = tcptune.Tuner
 // NewServer initializes a new SOCKS5 server with the given configuration.
 func NewServer(cfg Config) (*Server, error) {
 	if err := ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
+	whitelist, err := parseWhitelist(cfg.AllowedIPs)
+	if err != nil {
 		return nil, err
 	}
 
@@ -113,6 +135,9 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.HandshakeTimeout == 0 {
 		cfg.HandshakeTimeout = DefaultHandshakeTimeout
 	}
+	if cfg.ObfsEnabled || cfg.WSEnabled {
+		warnShortHandshake(logger, cfg.HandshakeTimeout)
+	}
 	// A zero dial budget is not "no limit", it is the operating system's own
 	// two minutes, and a client waits out every one of them in the Dialing
 	// state. Same for a frame that never completes.
@@ -127,11 +152,15 @@ func NewServer(cfg Config) (*Server, error) {
 
 	var server *Server
 	nativeCounters := new(socks5.NativeCounters)
+	udpCounters := new(socks5.UDPRelayCounters)
 	socks5conf := &socks5.Config{
-		Logger:          cfg.Logger,
-		Dial:            cfg.Dial,
-		DenyPrivateDest: cfg.DenyPrivateDest,
-		NativeCounters:  nativeCounters,
+		Logger:                 cfg.Logger,
+		Dial:                   cfg.Dial,
+		DenyPrivateDest:        cfg.DenyPrivateDest,
+		NativeCounters:         nativeCounters,
+		UDPRelayCounters:       udpCounters,
+		UDPDiagnosticsInterval: cfg.UDPDiagnosticsInterval,
+		OnUDPReport:            udpReportHook(logger, cfg.UDPDiagnosticsInterval),
 		// A node without UDP_PORT, or a listener without obfs keys, answers
 		// 0x84 with port 0: the client then stays on 0x83 without another
 		// connection.
@@ -147,12 +176,15 @@ func NewServer(cfg Config) (*Server, error) {
 			if err != nil {
 				return nil, err
 			}
-			return &nativeAssociation{hub: hub, session: hub.Register(keys)}, nil
+			host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+			peer, _ := netip.ParseAddr(host)
+			return &nativeAssociation{hub: hub, session: hub.RegisterPeer(keys, peer)}, nil
 		},
 	}
 	socks5conf.ObservePhase, socks5conf.CountPhase = phaseHooks(cfg.Telemetry)
 	socks5conf.ObserveHalfClose = halfCloseHook(cfg.Telemetry)
 	socks5conf.OnAssociationEnd = associationEndHook(cfg.Telemetry)
+	socks5conf.OnUDPDrop = udpDropHook(cfg.Telemetry)
 	socks5conf.OnConnEnd = func(conn net.Conn, end *socks5.ConnEnd) { server.connEnded(conn, end) }
 	if !cfg.UDPTunnelTCPTuningOff {
 		socks5conf.OnUDPTunnel = udpTunnelTuner(logger)
@@ -192,26 +224,37 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		socks5:      srv,
-		logger:      logger,
-		userStore:   uStore,
-		members:     members,
-		saltHistory: obfs.NewSaltHistory(cfg.ObfsReplayWindow),
-		sessions:    session.NewRegistry(sessionTransitionObserver(cfg.Telemetry)),
+		cfg:            cfg,
+		controls:       controlsFrom(cfg, whitelist),
+		socks5:         srv,
+		logger:         logger,
+		userStore:      uStore,
+		members:        members,
+		membersChanged: make(chan struct{}, 1),
+		saltHistory:    obfs.NewSaltHistory(cfg.ObfsReplayWindow),
+		sessions:       session.NewRegistry(sessionTransitionObserver(cfg.Telemetry)),
 
 		nativeCounters: nativeCounters,
+		udpCounters:    udpCounters,
 
-		boot:       logging.NewBoot(),
 		endMetrics: newConnEndMetrics(cfg.Telemetry),
 		minutes:    newMinuteSummary(),
 	}
+	s.boot.Store(logging.NewBoot())
 	server = s
 	gauge, err := registerSessionGauge(cfg.Telemetry, s.sessions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register the session gauge: %w", err)
 	}
 	s.sessionGauge = gauge
+	udpMetrics, err := registerUDPRelayMetrics(cfg.Telemetry, udpCounters)
+	if err != nil {
+		if gauge != nil {
+			_ = gauge.Unregister()
+		}
+		return nil, fmt.Errorf("failed to register UDP relay metrics: %w", err)
+	}
+	s.udpMetrics = udpMetrics
 	// ValidateConfig has already refused an advice that does not parse or
 	// names a transport this server does not run.
 	if advice, _ := ParseTransportAdvice(cfg.TransportAdvice); advice != nil {
@@ -277,6 +320,9 @@ func setupAccounts(cfg Config, logger *slog.Logger, conf *socks5.Config) (*users
 		}
 		members = directory
 		conf.TunnelIdentity = obfs.IdentityOf
+		conf.TunnelAccount = func(reference string) *socks5.SessionAccount {
+			return boundSession(uStore.BindMember(reference))
+		}
 	}
 
 	if cfg.Fail2BanRetries > 0 {
@@ -290,9 +336,27 @@ func setupAccounts(cfg Config, logger *slog.Logger, conf *socks5.Config) (*users
 		})
 	}
 
-	cator := socks5.UserPassAuthenticator{Credentials: store}
+	cator := socks5.UserPassAuthenticator{Credentials: store, BindAccount: func(username string) *socks5.SessionAccount {
+		return boundSession(uStore.Bind(username))
+	}}
 	conf.AuthMethods = []socks5.Authenticator{cator}
 	return uStore, members, nil
+}
+
+func boundSession(binding *userstore.Binding) *socks5.SessionAccount {
+	if binding == nil {
+		return nil
+	}
+	return &socks5.SessionAccount{Name: binding.Name(), Counter: binding.Counter(), Status: func() socks5.SessionStatus {
+		switch binding.Status() {
+		case userstore.SessionQuotaExceeded:
+			return socks5.SessionQuotaExceeded
+		case userstore.SessionExpired:
+			return socks5.SessionExpired
+		default:
+			return socks5.SessionAllowed
+		}
+	}}
 }
 
 // ReloadUsers reloads the user store from the configured file.
@@ -320,9 +384,22 @@ func (s *Server) ReloadUsers() error {
 // and the API path did not: RemoveUser deleted the account and left its key
 // working, and AddUser created an account the tunnel could not name.
 func (s *Server) refreshMembers() error {
+	if err := s.rebuildMembers(); err != nil {
+		return err
+	}
+	select {
+	case s.membersChanged <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (s *Server) rebuildMembers() error {
 	if s.members == nil {
 		return nil
 	}
+	s.memberMu.Lock()
+	defer s.memberMu.Unlock()
 	if err := s.members.SetMembers(tunnelMembers(s.userStore)); err != nil {
 		return fmt.Errorf("failed to rebuild the tunnel member directory: %w", err)
 	}
@@ -338,7 +415,7 @@ func tunnelMembers(store *userstore.Store) []veil.Member {
 	accounts := store.TunnelMembers()
 	members := make([]veil.Member, 0, len(accounts))
 	for _, a := range accounts {
-		members = append(members, veil.Member{ID: a.Username, Key: a.Key})
+		members = append(members, veil.Member{ID: a.Reference, Key: a.Key})
 	}
 	return members
 }
@@ -395,7 +472,8 @@ func (s *Server) SetRole(username string, role Role) error {
 	return s.refreshMembers()
 }
 
-// UpdateWhitelist updates allowed IPs on the fly, on every listener at once.
+// UpdateWhitelist updates allowed IPs on every listener and retains the
+// validated list for subsequent Start calls, including updates while stopped.
 // It is the process owner's API and performs no role check; see Server.As.
 func (s *Server) UpdateWhitelist(ips []string) error {
 	whitelist, err := parseWhitelist(ips)
@@ -403,7 +481,10 @@ func (s *Server) UpdateWhitelist(ips []string) error {
 		return err
 	}
 
-	for _, p := range s.allPipelines() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.controls.whitelist = whitelist
+	for _, p := range s.pipelines {
 		p.setWhitelist(whitelist)
 	}
 	return nil
@@ -463,9 +544,13 @@ func (s *Server) allPipelines() []*listenerPipeline {
 // through UpdateHandshakeTimeout.
 //
 // "On the fly" means from the next accepted connection onward: the values are
-// copied into the connection wrapper at Accept time.
+// copied into the connection wrapper at Accept time. The latest values also
+// survive Stop/Start on this Server, even when updated while stopped.
 func (s *Server) UpdateTimeouts(read, write time.Duration) {
-	for _, p := range s.allPipelines() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.controls.read, s.controls.write = read, write
+	for _, p := range s.pipelines {
 		p.setTimeouts(read, write)
 	}
 }
@@ -474,9 +559,31 @@ func (s *Server) UpdateTimeouts(read, write time.Duration) {
 // with the same "from the next connection onward" semantics as
 // UpdateTimeouts.
 func (s *Server) UpdateHandshakeTimeout(d time.Duration) {
-	for _, p := range s.allPipelines() {
+	if d == 0 {
+		d = DefaultHandshakeTimeout
+	}
+	if s.cfg.ObfsEnabled || s.cfg.WSEnabled {
+		warnShortHandshake(s.logger, d)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.controls.handshake = d
+	for _, p := range s.pipelines {
 		p.setHandshakeTimeout(d)
 	}
+}
+
+// spareAgeMax is the oldest a client's spare transport gets before a tunnel
+// takes it (cmd/s5client/prewarm.go). The server's handshake budget starts at
+// its accept, so a budget not above it closes spares before they are used.
+const spareAgeMax = 10 * time.Second
+
+func warnShortHandshake(logger *slog.Logger, d time.Duration) {
+	if d > spareAgeMax {
+		return
+	}
+	logger.Warn("HANDSHAKE_TIMEOUT is not above 10s: clients with PREWARM on lose their spare connections and wait out the budget on them",
+		"handshake_timeout", d)
 }
 
 // UpdateSessionTimeouts changes the three budgets that belong to the session
@@ -488,14 +595,37 @@ func (s *Server) UpdateHandshakeTimeout(d time.Duration) {
 // Same "from the next accepted connection onward" semantics as
 // UpdateTimeouts: a session's SLA is fixed when it is opened.
 func (s *Server) UpdateSessionTimeouts(dial, frame, grace time.Duration) {
-	for _, p := range s.allPipelines() {
+	if dial == 0 {
+		dial = DefaultDialTimeout
+	}
+	if frame == 0 {
+		frame = DefaultFrameTimeout
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.controls.dial, s.controls.frame, s.controls.grace = dial, frame, grace
+	for _, p := range s.pipelines {
 		p.setSessionTimeouts(dial, frame, grace)
 	}
 }
 
 // Start begins listening and serving traffic. It blocks until stopped.
 func (s *Server) Start(ctx context.Context) (err error) {
-	s.ctx, s.cancelFunc = context.WithCancel(ctx)
+	s.lifeMu.Lock()
+	if s.running {
+		s.lifeMu.Unlock()
+		return errors.New("server is already starting or running")
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	run := &serverRun{ctx: runCtx, cancel: cancel, done: make(chan struct{})}
+	s.run, s.running = run, true
+	s.started = time.Now()
+	s.stopped.Store(false)
+	s.boot.Store(logging.NewBoot())
+	s.mu.Lock()
+	s.pipelines, s.obfsListen, s.wsListen = nil, nil, nil
+	s.mu.Unlock()
+	s.lifeMu.Unlock()
 
 	// However this function ends, it leaves nothing listening. A server that
 	// failed to open its second or third listener used to keep the ones it
@@ -506,16 +636,38 @@ func (s *Server) Start(ctx context.Context) (err error) {
 	// The same applies when a serving goroutine reports a failure: one dead
 	// listener is a reason to stop the server, not a reason to keep the
 	// other two running unattended.
-	defer s.shutdownListeners()
-	s.started = time.Now()
+	defer func() {
+		run.cancel()
+		s.shutdownListeners()
+		if s.userStore != nil {
+			run.stopErr = s.userStore.StopPeriodicFlush()
+		}
+		if s.stopped.CompareAndSwap(false, true) {
+			s.minutes.emit(s.logger, s.journal.Load(), s.Boot())
+			s.closeJournal()
+		}
+		s.unregisterRunMetrics()
+		err = errors.Join(err, run.stopErr)
+		s.lifeMu.Lock()
+		s.running = false
+		close(run.done)
+		s.lifeMu.Unlock()
+	}()
+	if s.sessionGauge == nil {
+		s.sessionGauge, err = registerSessionGauge(s.cfg.Telemetry, s.sessions)
+		if err != nil {
+			return fmt.Errorf("failed to register the session gauge: %w", err)
+		}
+	}
+	if s.udpMetrics == nil {
+		s.udpMetrics, err = registerUDPRelayMetrics(s.cfg.Telemetry, s.udpCounters)
+		if err != nil {
+			return fmt.Errorf("failed to register UDP relay metrics: %w", err)
+		}
+	}
 	if err := s.openJournal(); err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			s.closeJournal()
-		}
-	}()
 	udpbuf.Report(s.logger)
 	if s.cfg.UDPPort != "" {
 		addr := s.listenAddr(s.cfg.UDPPort)
@@ -543,22 +695,17 @@ func (s *Server) Start(ctx context.Context) (err error) {
 		s.logger.Info("Connection limit set", "max_connections", s.cfg.MaxConnections)
 	}
 
-	initialWhitelist, err := parseWhitelist(s.cfg.AllowedIPs)
-	if err != nil {
-		return err
-	}
-
 	errCh := make(chan error, 3)
 	serve := func(p *listenerPipeline) {
 		s.mu.Lock()
+		p.applyControls(s.controls)
 		s.pipelines = append(s.pipelines, p)
 		s.mu.Unlock()
-		p.setWhitelist(initialWhitelist)
 
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			if err := s.socks5.ServeContext(s.ctx, p); err != nil {
+			if err := s.socks5.ServeContext(runCtx, p); err != nil {
 				select {
 				case errCh <- err:
 				default:
@@ -583,7 +730,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 	if s.cfg.ObfsEnabled && s.cfg.ObfsPort != "" {
 		obfsAddr := s.listenAddr(s.cfg.ObfsPort)
 
-		obfsListen, err := net.Listen("tcp", obfsAddr)
+		obfsListen, err := s.listenObfs(obfsAddr)
 		if err != nil {
 			return fmt.Errorf("failed to listen obfs on %s: %w", obfsAddr, err)
 		}
@@ -600,6 +747,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 			"max_padding", s.cfg.ObfsMaxPadding,
 			"mtu", s.cfg.ObfsMTU,
 			"psk_length", len(s.cfg.ObfsPSK),
+			"tfo", s.cfg.ObfsTFO,
 		)
 		serve(ol)
 	} else {
@@ -629,6 +777,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 			DecoyUpstream: s.cfg.WSDecoyUpstream,
 			Subprotocols:  subprotocols,
 			MaxFrame:      s.cfg.WSMaxFrame,
+			EarlyData:     s.cfg.wsEarlyData(),
 			Logger:        s.logger,
 		})
 		if err != nil {
@@ -637,7 +786,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 
 		wl := newListenerPipeline(tdl, TransportWS, s.cfg, s.cfg.Telemetry, limiter, s.sessions).
 			withShaper(s.cfg.WSMinFrame, s.cfg.WSMaxFrame, s.cfg.WSMaxJitter).
-			withAdvice(s.currentAdvice).
+			withAdvice(s.wsAdvice).
 			withObfs(s.obfsConfig(TransportWS))
 
 		s.mu.Lock()
@@ -658,19 +807,21 @@ func (s *Server) Start(ctx context.Context) (err error) {
 	transports := s.enabledTransports()
 	s.logger.Info("Active transports",
 		"event", "process_start",
-		"boot", s.boot,
+		"boot", s.Boot(),
 		"summary", transportSummary(s.cfg),
 		"version", buildinfo.Version(),
 		"go_version", buildinfo.GoVersion(),
 		"session_log", sessionLogMode(s.cfg),
 	)
-	go s.minutes.run(s.ctx, s.logger, s.journal.Load, s.boot)
+	s.wg.Add(1)
+	go func() { defer s.wg.Done(); s.minutes.run(runCtx, s.logger, s.journal.Load, s.Boot()) }()
 	s.cfg.Telemetry.RecordBuildInfo(buildinfo.Version(), buildinfo.GoVersion(), transports)
 
 	// Keep the member table ahead of the clock, so that crossing an hour
 	// boundary is not something a connection pays for.
 	if s.members != nil {
-		go s.members.Run(s.ctx)
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); s.maintainMembers(runCtx) }()
 	}
 
 	// Start periodic traffic flush if user store is configured
@@ -683,7 +834,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 	}
 
 	select {
-	case <-s.ctx.Done():
+	case <-runCtx.Done():
 		s.logger.Info("Server context canceled, shutting down...")
 		// Every listener, not just the plain one. Closing one of three left
 		// the other two accepting traffic after the server was told to stop.
@@ -815,29 +966,26 @@ func (s *Server) listenAddr(port string) string { return net.JoinHostPort(s.cfg.
 // listeners closed, live connections closed, connection handlers finished and
 // the traffic counters written to USERS_FILE.
 //
-// It is the call that flushes traffic, so a process that returns from Start
-// and exits without it loses everything accumulated since the last periodic
-// flush. Stop is safe to call after Start has already returned.
+// Start also performs this cleanup on cancellation or failure. Stop is safe
+// to call concurrently, repeatedly, and after Start has already returned.
+// Before Start has begun there is no run to cancel; pass a cancellable parent
+// context when scheduling startup itself must be cancellable.
 //
 // Live sessions are closed rather than waited for: a tunnelled session can
 // last hours, and waiting for one is not a shutdown.
 func (s *Server) Stop() error {
-	s.shutdownListeners()
-	// The flush comes after the wait, not before it. A relay half reports its
-	// bytes in batches of up to relay.FlushThreshold and hands over the last,
-	// unreported one only when the half ends - that is, when the connection
-	// is closed here. Saving the file first wrote it without those bytes, and
-	// whether they made it depended on which goroutine won: the handlers
-	// finishing or the save. Every live connection lost up to 64 KiB per
-	// direction on a restart, silently, and the shutdown test caught it about
-	// once in two dozen runs.
-	if s.userStore != nil {
-		s.userStore.StopPeriodicFlush()
+	s.lifeMu.Lock()
+	run := s.run
+	s.lifeMu.Unlock()
+	if run == nil {
+		return nil
 	}
-	if !s.started.IsZero() && s.stopped.CompareAndSwap(false, true) {
-		s.minutes.emit(s.logger, s.journal.Load(), s.boot)
-		s.closeJournal()
-	}
+	run.cancel()
+	<-run.done
+	return run.stopErr
+}
+
+func (s *Server) unregisterRunMetrics() {
 	// The gauge's callback holds the session registry. Leaving it registered
 	// keeps a stopped server's registry alive and reporting zeroes into the
 	// meter of whatever starts next in the same process.
@@ -845,16 +993,19 @@ func (s *Server) Stop() error {
 		_ = s.sessionGauge.Unregister()
 		s.sessionGauge = nil
 	}
-	return nil
+	if s.udpMetrics != nil {
+		_ = s.udpMetrics.Unregister()
+		s.udpMetrics = nil
+	}
 }
 
-// shutdownListeners cancels the server's context, closes every listener it
+// shutdownListeners closes every listener the run
 // started and waits for the goroutines serving them. Closing a listener stops
 // new connections; the cancelled context is what reaches the established
 // ones, and the wait is what makes "stopped" mean stopped rather than
 // "stopping". Idempotent: Close is once-only per listener and a second Wait
-// on a drained group returns at once, so Stop and a failed Start may both
-// call it.
+// on a drained group returns at once. Only the Start owner calls it, after
+// cancelling its run, before flushing counters and closing the journal.
 func (s *Server) shutdownListeners() {
 	s.mu.Lock()
 	nativeMetrics := s.nativeMetrics
@@ -862,9 +1013,6 @@ func (s *Server) shutdownListeners() {
 	s.mu.Unlock()
 	if nativeMetrics != nil {
 		_ = nativeMetrics.Unregister()
-	}
-	if s.cancelFunc != nil {
-		s.cancelFunc()
 	}
 	if h := s.nativeHub.Load(); h != nil {
 		_ = h.Close()

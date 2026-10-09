@@ -15,6 +15,10 @@ TUNNEL_PORT = {"obfs": 41443, "wss": 41444}
 # Plain SOCKS5 is shaped by the generator's address instead: its UDP relay port
 # is chosen per association, and a port filter would leave the datagrams out.
 CLIENT_IP = "127.0.0.2"
+# The client's warm spare (PREWARM) stays a server session until its age, at
+# most 10 s (prewarmAgeMax in cmd/s5client/prewarm.go); a cell waits that
+# long for the sessions to close before it calls one unclosed.
+SPARE_LINGER = 12
 
 DEFAULTS = {
     "auth": "member",
@@ -424,4 +428,4 @@ def cell_timeout(cell, n_scenarios):
     else:
         body = max(1, n_scenarios) * per
     # A WAN cell also starts and stops everything over ssh.
-    return body + 120 + seconds(st["settle"]) + (60 if cell["network"] == "wan" else 0)
+    return body + 120 + seconds(st["settle"]) + SPARE_LINGER + (60 if cell["network"] == "wan" else 0)

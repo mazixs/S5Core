@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "date": "2026-10-09",
+  "scope": "Local validation of the sanitized publication tree; no production deployment",
+  "go_toolchain": "1.26.9",
+  "x_net": "v0.60.0",
+  "quality_gate": {
+    "command": "./scripts/pre-commit.sh",
+    "exit_code": 0,
+    "passed": 1159,
+    "failed": 0,
+    "skipped": 6,
+    "coverage_percent": 77.9,
+    "release_build_targets": 12,
+    "binary_smoke": "passed",
+    "lint": "passed",
+    "govulncheck_main": "passed",
+    "govulncheck_matrix": "passed",
+    "race": "passed"
+  },
+  "skipped_tests": [
+    {
+      "package": "github.com/mazixs/S5Core/cmd/httpsprobe",
+      "test": "TestPerformanceProcesses"
+    },
+    {
+      "package": "github.com/mazixs/S5Core/internal/socks5",
+      "test": "TestPerformanceDNS"
+    },
+    {
+      "package": "github.com/mazixs/S5Core/pkg/nativeudp",
+      "test": "TestADatagramThroughTheHubCostsNoAllocations"
+    },
+    {
+      "package": "github.com/mazixs/S5Core/pkg/transport/ws",
+      "test": "TestPerformanceIdleConnections"
+    },
+    {
+      "package": "github.com/mazixs/S5Core/pkg/s5server",
+      "test": "TestTheEndOfAConnectionCostsFewAllocations"
+    },
+    {
+      "package": "github.com/mazixs/S5Core/cmd/s5client",
+      "test": "TestANativeDatagramCostsNoAllocations"
+    }
+  ],
+  "privacy": {
+    "working_credentials_found": 0,
+    "local_guidance_files_in_tree": 0,
+    "reviewed_scanner_false_positives": 61,
+    "private_snapshots_published": false,
+    "previous_public_history_rewritten": false
+  },
+  "limits": [
+    "Windows tests were compiled, not executed",
+    "Local checks do not prove prolonged Discord voice acceptance",
+    "No release tag or live-node deployment is part of this publication"
+  ]
+}

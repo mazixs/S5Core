@@ -366,9 +366,15 @@ func dialAttempt(attempt clientParams, connectReq []byte) (net.Conn, clientParam
 		return conn, attempt, err
 	}
 	if err != nil {
-		attempt.policy.onFailure(attempt, tunnelPhaseOf(err))
+		if (attempt.setup == nil || !attempt.setup.abandoned()) && countsAgainstThePath(err) {
+			attempt.policy.onFailure(attempt, tunnelPhaseOf(err))
+		}
 		return nil, attempt, err
 	}
-	attempt.policy.onSuccess(attempt)
+	// A deferred greeting has not been answered yet: the success is the
+	// caller's to report when it is (awaitConnectReply).
+	if !attempt.greetingDeferred() {
+		attempt.policy.onSuccess(attempt)
+	}
 	return conn, attempt, nil
 }

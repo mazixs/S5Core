@@ -2,14 +2,55 @@ package socks5
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+func TestSmallDNSDatagramsRetainOnlyTheirPayload(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		runtime.GC()
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		dispatchers := make([]*udpDispatcher, 20)
+		for i := range dispatchers {
+			d := newUDPDispatcher(context.Background(), func(ctx context.Context, _ string) (net.IP, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}, func([]byte, netip.AddrPort) bool { return true }, func() {}, nil)
+			dispatchers[i] = d
+			for range udpPendingLimit {
+				if !d.submit(&AddrSpec{FQDN: "held.example", Port: 53}, []byte("dns")) {
+					t.Fatal("unexpected early drop")
+				}
+			}
+		}
+		defer func() {
+			for _, d := range dispatchers {
+				d.close()
+				if len(d.slots) != 0 {
+					t.Error("pending memory retained after cancellation")
+				}
+			}
+		}()
+		synctest.Wait()
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		held := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+		t.Logf("20 associations, 1280 held three-byte datagrams: heap delta %d bytes", held)
+		if held > 8<<20 {
+			t.Fatalf("small DNS backlog retains %d bytes", held)
+		}
+		runtime.KeepAlive(dispatchers)
+	})
+}
 
 func TestDatagramDNSIsCoalescedCachedAndDoesNotBlockIP(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -24,7 +65,7 @@ func TestDatagramDNSIsCoalescedCachedAndDoesNotBlockIP(t *testing.T) {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
-		}, func(p []byte, _ netip.AddrPort) bool { sent <- string(p); return true }, func() {})
+		}, func(p []byte, _ netip.AddrPort) bool { sent <- string(p); return true }, func() {}, nil)
 		defer d.close()
 		addr := &AddrSpec{FQDN: "slow.example", Port: 53}
 		for i := range 10 {
@@ -88,7 +129,7 @@ func TestDatagramDNSQueueAndConcurrencyAreBoundedAndCancelled(t *testing.T) {
 			defer active.Add(-1)
 			<-ctx.Done()
 			return nil, ctx.Err()
-		}, func([]byte, netip.AddrPort) bool { t.Error("unresolved datagram delivered"); return false }, func() { flushed = true })
+		}, func([]byte, netip.AddrPort) bool { t.Error("unresolved datagram delivered"); return false }, func() { flushed = true }, nil)
 		for i := range 1000 {
 			d.submit(&AddrSpec{FQDN: fmt.Sprintf("name%d", i%10), Port: 53}, []byte("payload"))
 		}
@@ -124,7 +165,7 @@ func TestDatagramSendFailureReleasesPendingBuffers(t *testing.T) {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
-		}, func([]byte, netip.AddrPort) bool { calls++; return false }, func() {})
+		}, func([]byte, netip.AddrPort) bool { calls++; return false }, func() {}, nil)
 		for range 20 {
 			d.submit(&AddrSpec{FQDN: "one.example", Port: 53}, []byte("payload"))
 		}
@@ -150,7 +191,7 @@ func TestFullDNSQueueDoesNotDropIPDatagrams(t *testing.T) {
 			}
 			sent++
 			return true
-		}, func() {})
+		}, func() {}, nil)
 		defer d.close()
 		for range udpPendingLimit {
 			if !d.submit(&AddrSpec{FQDN: "blocked.example", Port: 53}, []byte("dns")) {
@@ -180,16 +221,56 @@ func TestADatagramThatNamesNothingIsNotSent(t *testing.T) {
 		}, func(_ []byte, to netip.AddrPort) bool {
 			t.Errorf("a datagram that names nothing was sent to %v", to)
 			return true
-		}, func() {})
+		}, func() {}, nil)
 		defer d.close()
 
-		_, nothing, err := ParseUDPHeader([]byte{0, 0, 0, fqdnAddress, 0, 0, 53, 'q'})
-		if err != nil {
-			t.Fatalf("the header does parse: %v", err)
+		_, _, err := ParseUDPHeader([]byte{0, 0, 0, fqdnAddress, 0, 0, 53, 'q'})
+		if !errors.Is(err, errEmptyDomain) {
+			t.Fatalf("empty domain header accepted: %v", err)
 		}
+		nothing := &AddrSpec{Port: 53}
 		if d.submit(nothing, []byte("q")) {
 			t.Fatal("the dispatcher took a datagram that names no destination")
 		}
 		synctest.Wait()
 	})
+}
+
+func TestDNSPendingDropsCountBothBounds(t *testing.T) {
+	for _, bound := range []string{"packets", "workers"} {
+		t.Run(bound, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var drops atomic.Uint64
+				d := newUDPDispatcher(context.Background(), func(ctx context.Context, _ string) (net.IP, error) {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}, func([]byte, netip.AddrPort) bool { return true }, func() {}, func(reason string) {
+					if reason != UDPDropDNSPending {
+						t.Errorf("unexpected drop reason: %s", reason)
+					}
+					drops.Add(1)
+				})
+				defer d.close()
+				limit := udpPendingLimit
+				if bound == "workers" {
+					limit = udpDNSWorkers
+				}
+				for i := range limit + 9 {
+					name := "blocked.example"
+					if bound == "workers" {
+						name = fmt.Sprintf("blocked%d.example", i)
+					}
+					d.submit(&AddrSpec{FQDN: name, Port: 53}, []byte("dns"))
+					synctest.Wait()
+				}
+				if drops.Load() != 9 || len(d.slots) != limit {
+					t.Fatalf("%s: drops=%d pending=%d", bound, drops.Load(), len(d.slots))
+				}
+				d.cancel()
+				if d.submit(&AddrSpec{FQDN: "canceled.example", Port: 53}, []byte("dns")) || drops.Load() != 9 {
+					t.Fatal("shutdown was counted as overload")
+				}
+			})
+		})
+	}
 }

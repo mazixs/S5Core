@@ -246,7 +246,7 @@ func TestTLVRoundTrips(t *testing.T) {
 		}
 	})
 	t.Run("advice with every field", func(t *testing.T) {
-		in := Advice{Transport: "ws", WSMinFrame: 1, WSMaxFrame: 65535, WSMaxJitterMs: 3, MaxPadding: 4, KeepaliveMin: 5 * time.Second, KeepaliveMax: 6 * time.Second}
+		in := Advice{Transport: "ws", WSMinFrame: 1, WSMaxFrame: 65535, WSMaxJitterMs: 3, MaxPadding: 4, KeepaliveMin: 5 * time.Second, KeepaliveMax: 6 * time.Second, Capabilities: CapWSEarlyData | 0x8000}
 		out, err := decodeAdvice(encodeAdvice(in))
 		if err != nil {
 			t.Fatal(err)

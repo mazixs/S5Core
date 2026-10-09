@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-03",
+  "base_commit": "65650535fbfd79b3d9a4f4281fd85d4c85aa667a",
+  "base_tree": "a5058fd4a0b0d8c48e03cc3e4ba335641e2da312",
+  "source_fingerprint": "e4405d496f6c139af848d3eb18b3133c3ebbed4efa48848f498f1085b1738193",
+  "toolchain": "go version go1.26.8 linux/amd64",
+  "local_http3_cases": 8,
+  "http3_phases": 48,
+  "http3_bytes": 150994944,
+  "runtime_architecture": "linux/amd64",
+  "ARM_runtime": false,
+  "WAN_acceptance": false,
+  "deployed": false,
+  "audit_evidence_files_verified": 49,
+  "binaries": {
+    "s5core": {
+      "bytes": 20876978,
+      "sha256": "3960a0cb6bed93f1cd018f047e0da8cc7ff60d90a1de41380fd97e8e5cd853b4"
+    },
+    "s5client": {
+      "bytes": 12358998,
+      "sha256": "6fb5355c619f22969595c09161b016cc2526f4a1357bddf20c3cf7231bf1db46"
+    },
+    "mtuprobe": {
+      "bytes": 13405765,
+      "sha256": "d624be379c2a4e1bb8b824b6c7dfc35ae4303b8bf642675f75a069f12e6e5128"
+    }
+  }
+}

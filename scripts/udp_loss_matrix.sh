@@ -33,7 +33,8 @@ LOSSES="${LOSSES:-0 1 3}"
 NET="${NET:-s5netem}"
 IMAGE="${IMAGE:-s5-netem:local}"
 PSK="${PSK:-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH}"
-OUT="${OUT:-/tmp/s5-udp-netem}"
+OUT="${OUT:-$(mktemp -d -t s5-udp-netem.XXXXXX)}"
+umask 077
 
 bold() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 

@@ -1,6 +1,7 @@
 package socks5
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"net/netip"
@@ -20,8 +21,7 @@ const (
 type udpDelivery struct {
 	name string
 	port int
-	buf  *[]byte
-	size int
+	buf  []byte
 }
 
 type udpResolution struct {
@@ -47,11 +47,12 @@ type udpDispatcher struct {
 	done       chan struct{}
 	sendMu     sync.Mutex
 	sendPacket func([]byte, netip.AddrPort) bool
+	drop       func(string)
 }
 
-func newUDPDispatcher(ctx context.Context, resolve func(context.Context, string) (net.IP, error), send func([]byte, netip.AddrPort) bool, flush func()) *udpDispatcher {
+func newUDPDispatcher(ctx context.Context, resolve func(context.Context, string) (net.IP, error), send func([]byte, netip.AddrPort) bool, flush func(), drop func(string)) *udpDispatcher {
 	ctx, cancel := context.WithCancel(ctx)
-	d := &udpDispatcher{ctx: ctx, cancel: cancel, input: make(chan udpDelivery, udpPendingLimit), slots: make(chan struct{}, udpPendingLimit), done: make(chan struct{}), sendPacket: send}
+	d := &udpDispatcher{ctx: ctx, cancel: cancel, input: make(chan udpDelivery, udpPendingLimit), slots: make(chan struct{}, udpPendingLimit), done: make(chan struct{}), sendPacket: send, drop: drop}
 	go d.run(resolve, flush)
 	return d
 }
@@ -71,6 +72,9 @@ func (d *udpDispatcher) submit(addr *AddrSpec, payload []byte) bool {
 			// Neither a name nor an address, which a header spells as a name
 			// of length zero. Sent as it was, the kernel read the
 			// unspecified address as this host.
+			if d.drop != nil {
+				d.drop(UDPDropInvalidHeader)
+			}
 			return false
 		}
 		return d.send(payload, netip.AddrPortFrom(ip.Unmap(), uint16(addr.Port)))
@@ -78,11 +82,12 @@ func (d *udpDispatcher) submit(addr *AddrSpec, payload []byte) bool {
 	select {
 	case d.slots <- struct{}{}:
 	default:
+		d.countPendingDrop()
 		return false
 	}
-	p := udpBufPool.Get().(*[]byte)
-	copy(*p, payload)
-	job := udpDelivery{name: addr.FQDN, port: addr.Port, buf: p, size: len(payload)}
+	// The read socket owns a maximum-sized buffer. A pending short datagram
+	// must not hold another 64 KiB slab until its DNS lookup completes.
+	job := udpDelivery{name: addr.FQDN, port: addr.Port, buf: bytes.Clone(payload)}
 	select {
 	case d.input <- job:
 		return true
@@ -106,8 +111,7 @@ func (d *udpDispatcher) close() {
 	}
 }
 
-func (d *udpDispatcher) release(job udpDelivery) {
-	udpBufPool.Put(job.buf)
+func (d *udpDispatcher) release(_ udpDelivery) {
 	<-d.slots
 }
 
@@ -135,7 +139,7 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 		if d.ctx.Err() != nil {
 			return false
 		}
-		return d.send((*job.buf)[:job.size], netip.AddrPortFrom(ip, uint16(job.port)))
+		return d.send(job.buf, netip.AddrPortFrom(ip, uint16(job.port)))
 	}
 	for {
 		select {
@@ -154,6 +158,7 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 				continue
 			}
 			if len(pending) >= udpDNSWorkers {
+				d.countPendingDrop()
 				d.release(job)
 				continue
 			}
@@ -181,6 +186,9 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 			}
 			for i, job := range jobs {
 				if !resolved {
+					if d.ctx.Err() == nil && d.drop != nil {
+						d.drop(UDPDropDNSFailed)
+					}
 					d.release(job)
 					continue
 				}
@@ -192,6 +200,12 @@ func (d *udpDispatcher) run(resolve func(context.Context, string) (net.IP, error
 				}
 			}
 		}
+	}
+}
+
+func (d *udpDispatcher) countPendingDrop() {
+	if d.drop != nil {
+		d.drop(UDPDropDNSPending)
 	}
 }
 

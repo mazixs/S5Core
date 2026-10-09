@@ -18,12 +18,16 @@ import (
 // from the dialler.
 func TestTheClientBoundsTheTunnelOfAConnectStream(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		set  time.Duration
-		want int
+		name       string
+		set        time.Duration
+		want       int
+		optimistic bool
 	}{
-		{"set", 7 * time.Second, 7000},
-		{"off", 0, 0},
+		{"set", 7 * time.Second, 7000, false},
+		{"off", 0, 0, false},
+		// The early success comes before the tunnel; the byte behind the
+		// reply says the reply, and the tuning with it, has been taken.
+		{"set optimistically", 7 * time.Second, 7000, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const psk = "01234567890123456789012345678901"
@@ -36,7 +40,7 @@ func TestTheClientBoundsTheTunnelOfAConnectStream(t *testing.T) {
 					return
 				}
 				_, _ = conn.Write([]byte{0x05, 0x00})
-				_, _ = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+				_, _ = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0, '!'})
 				_, _ = io.Copy(io.Discard, conn)
 			})
 			defer done()
@@ -57,13 +61,13 @@ func TestTheClientBoundsTheTunnelOfAConnectStream(t *testing.T) {
 			finished := make(chan struct{})
 			go func() {
 				defer close(finished)
-				handleClient(local, clientParams{ServerAddr: addr, PSK: psk, MTU: 1400, TunnelDeadTimeout: tc.set}, newDomainMatcher(nil))
+				handleClient(local, clientParams{ServerAddr: addr, PSK: psk, MTU: 1400, TunnelDeadTimeout: tc.set, OptimisticConnect: tc.optimistic}, newDomainMatcher(nil))
 			}()
 			go func() {
 				_, _ = app.Write([]byte{0x05, 0x01, 0x00})
 				_, _ = app.Write(clientRequest())
 			}()
-			var reply [2 + 10]byte
+			var reply [2 + 10 + 1]byte
 			if _, err := io.ReadFull(app, reply[:]); err != nil {
 				t.Fatal(err)
 			}

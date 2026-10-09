@@ -1,0 +1,24 @@
+goos: linux
+goarch: amd64
+pkg: github.com/mazixs/S5Core/pkg/obfs
+cpu: 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz
+BenchmarkRoundTrip/AESGCM/1400B-16         	   28500	     13091 ns/op	 106.94 MB/s	     10751 p50-ns	     20148 p95-ns	     30131 p99-ns	       0 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/1400B-16         	   27676	     12603 ns/op	 111.08 MB/s	     10607 p50-ns	     19467 p95-ns	     25928 p99-ns	       0 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/1400B-16         	   27945	     12403 ns/op	 112.88 MB/s	     10476 p50-ns	     19417 p95-ns	     25961 p99-ns	       0 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/4KiB-16          	   13083	     29255 ns/op	 140.01 MB/s	     23064 p50-ns	     45004 p95-ns	    130568 p99-ns	       0 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/4KiB-16          	   13316	     26720 ns/op	 153.29 MB/s	     22834 p50-ns	     43476 p95-ns	     78982 p99-ns	       0 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/4KiB-16          	   13489	     26885 ns/op	 152.35 MB/s	     22838 p50-ns	     42754 p95-ns	     83442 p99-ns	       0 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/32KiB-16         	    3798	     98526 ns/op	 332.58 MB/s	     86996 p50-ns	    149740 p95-ns	    414892 p99-ns	      10 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/32KiB-16         	    3100	     99885 ns/op	 328.06 MB/s	     87765 p50-ns	    147549 p95-ns	    453310 p99-ns	      13 B/op	       0 allocs/op
+BenchmarkRoundTrip/AESGCM/32KiB-16         	    4004	     94838 ns/op	 345.52 MB/s	     85666 p50-ns	    139208 p95-ns	    352075 p99-ns	       2 B/op	       0 allocs/op
+BenchmarkRelayUpload-16                    	    8760	     40333 ns/op	 812.44 MB/s	         2.726 cpu-s/GiB	       2 B/op	       0 allocs/op
+BenchmarkRelayUpload-16                    	    8972	     43076 ns/op	 760.70 MB/s	         2.802 cpu-s/GiB	       2 B/op	       0 allocs/op
+BenchmarkRelayUpload-16                    	    9568	     42024 ns/op	 779.75 MB/s	         2.785 cpu-s/GiB	       5 B/op	       0 allocs/op
+BenchmarkRelayDownload-16                  	   11197	     33072 ns/op	 990.82 MB/s	         2.178 cpu-s/GiB	       2 B/op	       0 allocs/op
+BenchmarkRelayDownload-16                  	   10000	     33699 ns/op	 972.36 MB/s	         2.212 cpu-s/GiB	       3 B/op	       0 allocs/op
+BenchmarkRelayDownload-16                  	   11844	     31012 ns/op	1056.64 MB/s	         2.071 cpu-s/GiB	       2 B/op	       0 allocs/op
+BenchmarkRelayMixedSmall-16                	    8581	     42038 ns/op	        28.00 p50-us	       314.0 p99-us	      12 B/op	       0 allocs/op
+BenchmarkRelayMixedSmall-16                	    8608	     39439 ns/op	        27.00 p50-us	       308.0 p99-us	       6 B/op	       0 allocs/op
+BenchmarkRelayMixedSmall-16                	    9405	     37069 ns/op	        27.00 p50-us	       266.0 p99-us	      11 B/op	       0 allocs/op
+PASS
+ok  	github.com/mazixs/S5Core/pkg/obfs	9.278s

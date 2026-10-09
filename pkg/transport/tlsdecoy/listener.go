@@ -60,6 +60,9 @@ type Config struct {
 	// MaxFrame is the server shaper's WS_MAX_FRAME, which sizes the
 	// upgrader's write buffer. Zero means ws.DefaultMaxFrame.
 	MaxFrame int
+	// EarlyData accepts WebSocket frames behind the upgrade request
+	// (ws.UpgraderOpts.EarlyData).
+	EarlyData bool
 	// Logger receives upstream failures. Nil means slog.Default.
 	Logger *slog.Logger
 }
@@ -169,7 +172,7 @@ func NewListener(cfg Config) (*Listener, error) {
 		tlsListener: tlsListener,
 		conns:       make(chan net.Conn, 64),
 		done:        make(chan struct{}),
-		upgrader:    ws.NewUpgrader(ws.UpgraderOpts{Path: cfg.WSPath, Subprotocols: cfg.Subprotocols, WriteBufferSize: cfg.MaxFrame}),
+		upgrader:    ws.NewUpgrader(ws.UpgraderOpts{Path: cfg.WSPath, Subprotocols: cfg.Subprotocols, WriteBufferSize: cfg.MaxFrame, EarlyData: cfg.EarlyData}),
 	}
 
 	decoy, err := newDecoyHandler(cfg)

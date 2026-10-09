@@ -1,0 +1,38 @@
+{
+  "README.md": {
+    "bytes": 4142,
+    "sha256": "53d225db9e842c4ebe6c3d8f80c53782041e0725cd7a5472c12be67d87eeada4"
+  },
+  "http3-local.json": {
+    "bytes": 75194,
+    "sha256": "c362557d81c08d115423800387cb1b6f87e393a8301d7ccd8321fbd7e300457e"
+  },
+  "metadata.json": {
+    "bytes": 934,
+    "sha256": "a4da7c46f2f6a82358318585726c14fa946dc677477563cec0f94da48d809e2d"
+  },
+  "mtu-acceptance.py": {
+    "bytes": 1787,
+    "sha256": "8abd21ef93cdedd23b623ca8afd198562c03c35fa4ddfe64274833118f20bc67"
+  },
+  "precommit.txt": {
+    "bytes": 6330,
+    "sha256": "636daeed453e2bd08c91499f03db50ddd4f2d71d453d96f5ebd07d7527e81034"
+  },
+  "quality-metrics.json": {
+    "bytes": 3225,
+    "sha256": "d2d2fe656f0a75e3fb15471da894dacea11c639a49bbc2759f8479c34dbbe519"
+  },
+  "quality-summary.md": {
+    "bytes": 3267,
+    "sha256": "18d86bc8af36d7b899ed72c6afa7021ba18c5ab49155084754bb6abc74e945c5"
+  },
+  "regressions.txt": {
+    "bytes": 3482,
+    "sha256": "b29a9c9ebbfa0805fb9419f832b3500c6b0bea3763b6f090a30a93896995e56d"
+  },
+  "source-files.json": {
+    "bytes": 62977,
+    "sha256": "5e80b42a70f70f5a8e26c201b74ddb905712075c574c97308757107c4490cb8c"
+  }
+}

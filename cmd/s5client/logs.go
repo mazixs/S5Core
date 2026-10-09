@@ -131,16 +131,21 @@ type minuteCounts struct {
 	closed [4]atomic.Int64 // by closedByIndex
 	failed atomic.Int64
 	// failedBy counts failures by tunnel phase.
-	failedBy [7]atomic.Int64
+	failedBy [len(phaseNames)]atomic.Int64
 	udp      atomic.Int64
 	open     atomic.Int64
+	// prewarmUsed and prewarmWasted are spare connections taken by a tunnel
+	// and closed unused (prewarm.go): the second is what prewarm costs and
+	// how often it puts an empty connection on the wire.
+	prewarmUsed   atomic.Int64
+	prewarmWasted atomic.Int64
 }
 
 var minutes minuteCounts
 
 var closedByNames = [...]string{closedByApp, closedByServer, closedByTunnelError, closedByTimeout}
 
-var phaseNames = [...]tunnelPhase{phaseDial, phaseGreeting, phaseAuth, phaseAuthRejected, phaseConnect, phaseConnectReply, ""}
+var phaseNames = [...]tunnelPhase{phaseDial, phaseGreeting, phaseAuth, phaseAuthRejected, phaseConnect, phaseConnectReply, phaseEarlyUpgrade, ""}
 
 func (m *minuteCounts) tcpClosed(by string) {
 	for i, name := range closedByNames {
@@ -185,7 +190,8 @@ func (m *minuteCounts) emit(boot string) {
 		}
 	}
 	udp := m.udp.Swap(0)
-	if total == 0 && failed == 0 && udp == 0 {
+	used, wasted := m.prewarmUsed.Swap(0), m.prewarmWasted.Swap(0)
+	if total == 0 && failed == 0 && udp == 0 && used == 0 && wasted == 0 {
 		return
 	}
 	attrs = append(attrs, "tcp_closed", total)
@@ -197,6 +203,9 @@ func (m *minuteCounts) emit(boot string) {
 		attrs = append(attrs, slog.Group("failed_phase", phases...))
 	}
 	attrs = append(attrs, "udp_closed", udp, "open", m.open.Load())
+	if used > 0 || wasted > 0 {
+		attrs = append(attrs, "prewarm_used", used, "prewarm_wasted", wasted)
+	}
 	slog.Info("Minute summary", attrs...)
 }
 

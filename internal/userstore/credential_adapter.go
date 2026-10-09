@@ -15,10 +15,17 @@ func NewCredentialAdapter(store *Store) *CredentialAdapter {
 // After a successful validation with a legacy plaintext password, it triggers
 // a lazy migration to Argon2id.
 func (a *CredentialAdapter) Valid(user, password string) bool {
-	if !a.store.IsValid(user, password) {
-		return false
+	ok, _ := a.ValidResult(user, password)
+	return ok
+}
+
+// ValidResult preserves verification overload through the brute-force guard.
+func (a *CredentialAdapter) ValidResult(user, password string) (bool, error) {
+	ok, err := a.store.ValidResult(user, password)
+	if !ok || err != nil {
+		return false, err
 	}
 	// Lazy migration: hash plaintext password on first successful use.
 	a.store.MigratePassword(user, password)
-	return true
+	return true, nil
 }

@@ -1,0 +1,98 @@
+{
+  "verified_utc": "2026-10-05T08:35:09.334183+00:00",
+  "version": "v2.4.0-rc3",
+  "source_revision": "e81bc752f1ee1d3c733a38a0d6e8dd4e64bb0402",
+  "nodes": [
+    {
+      "node": "A",
+      "version": "v2.4.0-rc3",
+      "server_sha256": "a8f3411e68a828caddb8933dfb4e5023c4074fa03a2d78c069b8c5fcb9492b63",
+      "client_sha256": "8f383510cda2a559449a776b5314f898b0b4dd49a4ad4f4da2df8a5b085a9b6a",
+      "image_id": "sha256:78b270de254d78ada9d734a89f1c43be17f3428bb5b007f8c6efddf5562e4a8b",
+      "server_started_utc": "2026-10-05T08:34:31.983775374Z",
+      "running": true,
+      "oom_killed": false,
+      "docker_restart_count": 0,
+      "replay_capacity": 100000,
+      "deploy_utc": "2026-10-05T08:34:30.553162+00:00",
+      "validated_utc": "2026-10-05T08:34:56.311269+00:00",
+      "native_probe": {
+        "egress_matches": true,
+        "http_ok": true,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "native_counter_probe": {
+        "egress_matches": true,
+        "http_ok": true,
+        "native_received": 19,
+        "native_sent": 19,
+        "tcp_sent": 0,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "fallback_probe": {
+        "egress_matches": true,
+        "http_ok": true,
+        "tcp_sent": 20,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "server_warn_error_lines": 0
+    },
+    {
+      "node": "C",
+      "version": "v2.4.0-rc3",
+      "server_sha256": "a8f3411e68a828caddb8933dfb4e5023c4074fa03a2d78c069b8c5fcb9492b63",
+      "client_sha256": "8f383510cda2a559449a776b5314f898b0b4dd49a4ad4f4da2df8a5b085a9b6a",
+      "image_id": "sha256:864c6807878f85caf15e7fbfc3582957a089ca5b6f058402018a268d600622cd",
+      "server_started_utc": "2026-10-05T08:32:38.238685184Z",
+      "running": true,
+      "oom_killed": false,
+      "docker_restart_count": 0,
+      "replay_capacity": 100000,
+      "deploy_utc": "2026-10-05T08:32:36.808369+00:00",
+      "validated_utc": "2026-10-05T08:33:03.355650+00:00",
+      "native_probe": {
+        "egress_matches": true,
+        "http_ok": true,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "native_counter_probe": {
+        "egress_matches": true,
+        "http_ok": true,
+        "native_received": 19,
+        "native_sent": 19,
+        "tcp_sent": 0,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "fallback_probe": {
+        "egress_matches": true,
+        "http_ok": true,
+        "tcp_sent": 20,
+        "udp_ok": 20,
+        "udp_sent": 20
+      },
+      "server_warn_error_lines": 0
+    },
+    {
+      "node": "D",
+      "version": "v2.4.0-rc3",
+      "server_sha256": "a8f3411e68a828caddb8933dfb4e5023c4074fa03a2d78c069b8c5fcb9492b63",
+      "client_sha256": "8f383510cda2a559449a776b5314f898b0b4dd49a4ad4f4da2df8a5b085a9b6a",
+      "image_id": "sha256:864c6807878f85caf15e7fbfc3582957a089ca5b6f058402018a268d600622cd",
+      "server_started_utc": "2026-10-05T02:07:15.514174333Z",
+      "running": true,
+      "oom_killed": false,
+      "docker_restart_count": 0,
+      "replay_capacity": 100000
+    }
+  ],
+  "limits": [
+    "Short probes do not establish long Discord stability.",
+    "Windows clients were not executed or deployed in this rollout.",
+    "No scheduled monitoring was enabled."
+  ]
+}

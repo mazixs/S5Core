@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "scope": "local source fixes for three followup findings; no live rollout or Discord acceptance",
+  "recorded_utc": "2026-10-05T09:21:49.731888+00:00",
+  "source_base_revision": "2886eb17cb83e16477b53b1a8fd6942173fc167b",
+  "source_file_sha256": {
+    "internal/socks5/account.go": "59cdbb09e63205dae7caad31773bea817ab083f227a24c09f3084bd737832c28",
+    "internal/socks5/account_binding_test.go": "ad4d6bcb1b4d5b0bc842d46250680df6cd3058d8845d2813e48599d34fd90200",
+    "internal/socks5/associate.go": "d212475ca21da704f00107e220acf2d7d7d7394e7b20999142eb3035e35f404e",
+    "internal/socks5/auth.go": "f66ac7e22e710586639fd69fa8fd046fd0821c10dffb9274d0b89356ebceb645",
+    "internal/socks5/request.go": "8970e5dcea75071ae56a8fdd9f64aebff614c591599cb1d721319a32f90b7d69",
+    "internal/socks5/socks5.go": "809489db0e1cb12d8c84354cbd72fd7bd92919176a17382878a3a249de3883e4",
+    "internal/userstore/binding.go": "2d5ee9f3df4d11987c7fb4be344f79ba24d0032cb3472f0fd82a33fdc9b88422",
+    "internal/userstore/binding_test.go": "e944e7b60c07c7340efa07dc5ab56ae277657e2966e652bb9953a93b5250bf27",
+    "internal/userstore/store.go": "45df891aa2bffa1886ae20ed53f5ede4c844460828b815cd2c1a1eb03108ee14",
+    "pkg/s5server/admin.go": "98febc42dac8bec8c82eb645b5ab3784af2f25c44348c71c71397a116171bc5e",
+    "pkg/s5server/admin_revocation_test.go": "31760b838ed96ec2a2908971e57f2284307e28af3ccf2793f4503b7a09d2f44c",
+    "pkg/s5server/controls.go": "6ede9a20f29c4ef27ee04f814c8ec09d3b2506538bc4fdc7514bc2163f89b47d",
+    "pkg/s5server/journal.go": "7fb7b04df57915f3ba14d796dfa43e1555154b738ced50176ce2a1a0167013f5",
+    "pkg/s5server/review_followup_test.go": "ec7d97e512397eda6a8bf8e5a9c8f2c846b6ae3fa37a51e367d9b9fa21496180",
+    "pkg/s5server/server.go": "0eea000c0f99fd88d70975fb4fc58e588e4d300915b22c5d68592493459a8df2"
+  },
+  "before": {
+    "connect_replacement_password": "failed: old connection did not close within three seconds",
+    "connect_replacement_member": "failed: old connection did not close within three seconds",
+    "admin_replacement": "failed: old handle adopted replacement",
+    "runtime_controls_restart": "failed: restrictions and budgets lost",
+    "boot_concurrency": "failed: data race detected",
+    "behavior_log_sha256": "10eaa182b0e1700c9343802f601ef736fbf7dc210b368b4fc64b07b414807d5b",
+    "boot_race_log_sha256": "3abfc0d5ce20081d3dfb351994549684a5385694f21e663bd00915eac4d2bed7"
+  },
+  "after": {
+    "focused_account_and_boot_race": "passed, uncached",
+    "concurrent_start_controls_race": "passed, uncached",
+    "focused_log_sha256": "3af06c83b8367e25136d3c80e6986ad88c94c6b79f041cee0183693fd926da5b",
+    "controls_log_sha256": "08205607f054437dca59497886a3e45c29286f32aae22e37adc71a40f2deecdd",
+    "full_gate": "passed",
+    "full_gate_exit_code": 0,
+    "full_gate_log_sha256": "89ffe2f4917598ce8ee8caaff54689aeb9bf3dd46223243c64fc45b0350e3129",
+    "go_tests": {
+      "passed": 1022,
+      "failed": 0,
+      "skipped": 6,
+      "packages": 39
+    },
+    "go_test_race": true,
+    "coverage_percent": 77.2,
+    "statement_count": 12066,
+    "coverage_floor_percent": 74.5,
+    "package_coverage_percent": {
+      "internal/socks5": 90.6,
+      "internal/userstore": 90.5,
+      "pkg/s5server": 89.1
+    },
+    "python_tests_passed": 128,
+    "release_builds": 12,
+    "windows_test_packages": "compiled, not executed",
+    "smoke": "passed: real core/client TCP, native UDP, metrics and logs",
+    "govulncheck_called_vulnerabilities": 0,
+    "vet": "passed",
+    "lint": "passed",
+    "budget_violations": []
+  },
+  "first_full_gate": {
+    "result": "failed",
+    "behavior_tests": "passed",
+    "builds_and_smoke": "passed",
+    "failures": [
+      "formatting of ignored local helpers",
+      "two errorlint findings in regression tests"
+    ],
+    "log_sha256": "b51652c24626360968884f084cb1687e3a505738c49e27ad9b1985b47899aab3",
+    "all_checks_repeated_after_repairs": true
+  },
+  "accepted_scenarios": [
+    "existing CONNECT through password and member authentication is revoked on account replacement",
+    "existing RFC UDP, TCP UDP and native UDP associations revoke at their existing policy boundaries",
+    "replacement quota does not inherit old traffic and remains enforced",
+    "old Admin cannot adopt replacement permissions",
+    "remove/recreate with identical ID does not revive old bindings",
+    "ordinary reload preserves current account policy and accounting",
+    "rename preserves accounting and revokes bindings under old name",
+    "replacement during password validation is refused",
+    "stale member roster cannot authenticate replacement",
+    "whitelist and all six connection budgets survive three server runs",
+    "controls updated before and during Start reach plain, obfs and TLS WebSocket listeners",
+    "concurrent Boot reads pass race detection over ten server runs"
+  ],
+  "boundaries": {
+    "live_nodes_modified": false,
+    "client_packages_modified": false,
+    "version_bumped": false,
+    "wire_format_modified": false,
+    "native_probe_cadence_modified": false,
+    "udp_revocation": "64 KiB payload boundary or first relayed payload after one second; quiet associations have no independent policy ticker",
+    "discord_incident_cause_established": false,
+    "wan_and_windows_runtime_accepted": false
+  }
+}

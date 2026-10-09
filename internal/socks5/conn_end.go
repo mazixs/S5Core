@@ -167,12 +167,15 @@ type ConnEnd struct {
 	NativeUp, NativeDown int64
 	PathMoves            int64
 	TunnelDrops          int64
+	// UDPRelay describes relay stages, not reception at the remote application.
+	UDPRelay UDPRelaySnapshot
 
 	Started  time.Time
 	Duration time.Duration
 
 	dgram     assocTotals
 	native    nativeTotals
+	udp       UDPRelayCounters
 	targetSet atomic.Bool
 }
 
@@ -334,6 +337,7 @@ func (e *ConnEnd) finish(err error) {
 	e.DatagramsDown = e.dgram.downN.Load()
 	e.NativeUp = e.native.up.Load()
 	e.NativeDown = e.native.down.Load()
+	e.UDPRelay = e.udp.Snapshot()
 	if e.Result != "" {
 		return
 	}

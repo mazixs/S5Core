@@ -115,7 +115,7 @@ func TestArgon2idRunsOncePerPasswordNotPerConnection(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	port := "19087"
+	port := reservePort(t)
 	startServer(t, Config{
 		Port:            port,
 		ListenIP:        "127.0.0.1",

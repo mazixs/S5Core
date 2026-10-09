@@ -1,0 +1,118 @@
+{
+  "schema": 1,
+  "scope": "D incident observations, not established cause or release acceptance",
+  "incidents": [
+    {
+      "start_utc": "2026-10-04T21:31:15Z",
+      "end_utc": "2026-10-04T21:36:18Z",
+      "native_data_queue_drops_delta": 93,
+      "udp_namespace_receive_buffer_drops_delta": 141,
+      "warn_utc": "2026-10-04T21:31:59Z",
+      "per_socket_attribution": false
+    },
+    {
+      "start_utc": "2026-10-04T21:49:40Z",
+      "end_utc": "2026-10-04T21:50:59Z",
+      "native_lost_events": 2,
+      "setup_timeouts": 41,
+      "setup_phases": {
+        "dial": 37,
+        "greeting": 2,
+        "connect_reply": 2
+      },
+      "server_minute_timeouts": 16,
+      "container_restart_count": 0,
+      "new_udp_queue_or_kernel_drops": 0
+    },
+    {
+      "start_utc": "2026-10-04T21:54:28Z",
+      "end_utc": "2026-10-04T21:55:11Z",
+      "native_lost_events": 9,
+      "associations": 7,
+      "matched_restores": 9,
+      "restore_seconds_min": 0.110908,
+      "restore_seconds_max": 7.119617,
+      "native_limit_min": 1393,
+      "native_limit_max": 1399,
+      "size_probe_counters_changed": false,
+      "server_target_in_period_2154": 196,
+      "new_udp_queue_or_kernel_drops": 0,
+      "setup_timeouts": 0
+    },
+    {
+      "start_utc": "2026-10-04T22:18:18Z",
+      "end_utc": "2026-10-04T22:19:28Z",
+      "user_reported_local": "2026-10-05T01:19:00+03:00",
+      "native_lost_events": 25,
+      "associations": 12,
+      "setup_timeouts": 4,
+      "setup_phases": {
+        "connect_reply": 2,
+        "dial": 2
+      },
+      "external_host_tcp_timeout_targets": 2,
+      "external_host_udp_timeouts": true,
+      "external_container_tcp_timeouts": true,
+      "external_container_udp_timeouts": true,
+      "local_metrics_available": true,
+      "container_restart_count": 0,
+      "oom": false,
+      "native_socket_drops": 0,
+      "container_tcp_retransmissions_before": 502,
+      "container_tcp_retransmissions_after": 883,
+      "conntrack_count_post": 246,
+      "conntrack_capacity": 65536,
+      "exact_failed_hop": "not established"
+    }
+  ],
+  "diagnostic": {
+    "interval_seconds": 10,
+    "duration_seconds": 86400,
+    "external_protocols": [
+      "dns_udp",
+      "tcp_443"
+    ],
+    "external_targets": 2,
+    "locations": [
+      "host",
+      "container_network_namespace"
+    ],
+    "max_log_bytes": 67108864,
+    "sample_resolution_limit_seconds": 10,
+    "automatic_codex_monitor": "paused",
+    "no_tunnel_restart": true
+  },
+  "code_observability": {
+    "client": [
+      "native_probes_sent",
+      "native_probe_write_errors"
+    ],
+    "server_packet_outcome": "probe_ack_write_error",
+    "deployed": false,
+    "changes_liveness_intervals": false
+  },
+  "tests": {
+    "focused_race_repetitions": 10,
+    "focused_fault_and_schema_checks": "passed",
+    "python_tests_passed": 5,
+    "full_gate": {
+      "passed": 945,
+      "failed": 0,
+      "skipped": 7,
+      "coverage_percent": 76.2,
+      "release_builds": 12
+    }
+  },
+  "first_host_only_checks": {
+    "samples": 35,
+    "since_utc": "2026-10-04T22:06:13.938329+00:00",
+    "until_utc": "2026-10-04T22:11:45.241989+00:00",
+    "resolver_b_udp_timeouts": 7,
+    "tcp_timeouts": 0,
+    "resolver_a_udp_timeouts": 0,
+    "collector_errors": 0,
+    "local_metrics_failures": 0,
+    "stopped_container": 0,
+    "causal_connection_to_incidents": false
+  }
+}

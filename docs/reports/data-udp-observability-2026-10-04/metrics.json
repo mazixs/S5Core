@@ -1,0 +1,106 @@
+{
+  "tests": {
+    "passed": 934,
+    "failed": 0,
+    "skipped": 7,
+    "packages": 38,
+    "package_seconds": 106.543,
+    "slowest": [
+      {
+        "name": "internal/passwordhash.TestAHashIsWrittenInTheStandardAlphabet",
+        "seconds": 42.73
+      },
+      {
+        "name": "cmd/s5client.TestHTTPSDefaultReadTimeout",
+        "seconds": 33.23
+      },
+      {
+        "name": "internal/passwordhash.TestAHashFromAnotherToolStillVerifies",
+        "seconds": 19.8
+      },
+      {
+        "name": "pkg/s5server.TestAReplayedFirstFlightIsAnsweredLikeGarbage",
+        "seconds": 7.24
+      },
+      {
+        "name": "pkg/s5server.TestInsideTheTunnelAReplayIsAnsweredLikeGarbage",
+        "seconds": 7.09
+      },
+      {
+        "name": "pkg/s5server.TestIntegration_FullSuite",
+        "seconds": 5.11
+      },
+      {
+        "name": "internal/passwordhash.TestAHashFromAnEarlierBuildStillVerifies",
+        "seconds": 5.03
+      },
+      {
+        "name": "pkg/obfs.TestFramingOverheadRatio",
+        "seconds": 4.42
+      },
+      {
+        "name": "pkg/nativeudp.TestTheSearchFindsTheLimitOfThePath",
+        "seconds": 4.29
+      },
+      {
+        "name": "internal/passwordhash.TestHashAndVerify",
+        "seconds": 4.05
+      }
+    ]
+  },
+  "coverage": {
+    "cmd/connlat": 20.858895705521473,
+    "cmd/fpcollect": 59.689922480620154,
+    "cmd/fpprobe": 25.11627906976744,
+    "cmd/httpsprobe": 56.19834710743802,
+    "cmd/idleprobe": 0,
+    "cmd/s5client": 76.71875,
+    "cmd/s5core": 50.73529411764706,
+    "cmd/stealthcheck": 0,
+    "cmd/udpprobe": 28.217821782178216,
+    "cmd/udpshape": 70.64083457526081,
+    "cmd/wirebench": 49.404761904761905,
+    "internal/acceptretry": 100,
+    "internal/buildinfo": 0,
+    "internal/diagnostics": 0,
+    "internal/identity": 81.64556962025317,
+    "internal/logging": 88.34498834498835,
+    "internal/passwordhash": 97.5,
+    "internal/relay": 94.73684210526316,
+    "internal/s5core": 91.66666666666667,
+    "internal/session": 95.13513513513513,
+    "internal/signals": 100,
+    "internal/socks5": 90.65573770491804,
+    "internal/stealth": 75.55555555555556,
+    "internal/tcptune": 84.50704225352112,
+    "internal/testcert": 0,
+    "internal/udpbuf": 82.1917808219178,
+    "internal/userstore": 90.70247933884298,
+    "internal/utls": 79.6875,
+    "pkg/nativeudp": 91.74528301886792,
+    "pkg/obfs": 90.16897081413211,
+    "pkg/s5server": 88.7072808320951,
+    "pkg/transport/tlsdecoy": 92.35668789808918,
+    "pkg/transport/ws": 91.57894736842105,
+    "pkg/veil": 87.43589743589743,
+    "scripts/metrics": 87.16814159292035,
+    "scripts/smoke": 0,
+    "scripts/testreport": 90.36144578313252,
+    "total": 76.08772550406792
+  },
+  "binaries": {
+    "s5client-darwin-amd64": 8762656,
+    "s5client-darwin-arm64": 8096130,
+    "s5client-linux-amd64": 8577186,
+    "s5client-linux-arm64": 7930018,
+    "s5client-linux-mips-softfloat": 9306305,
+    "s5client-linux-mipsle-softfloat": 9306305,
+    "s5client-windows-amd64.exe": 8920576,
+    "s5core-darwin-amd64": 14840224,
+    "s5core-darwin-arm64": 13824866,
+    "s5core-linux-amd64": 14397602,
+    "s5core-linux-arm64": 13369506,
+    "s5core-windows-amd64.exe": 14774784
+  },
+  "violations": []
+}

@@ -1,0 +1,35 @@
+{
+  "recorded_at_utc": "2026-10-03T22:23:15.718323+00:00",
+  "scope": "local Linux validation of passive UDP observability; Windows compile only",
+  "production_changed": false,
+  "discord_incident_reproduced": false,
+  "pre_commit": "pass",
+  "tests_passed": 934,
+  "tests_failed": 0,
+  "tests_skipped": 7,
+  "race_detector": "pass",
+  "windows_test_packages": "compile pass, not executed",
+  "release_build_targets": 12,
+  "binary_smoke": "pass",
+  "performance_budgets": "pass; no matched WAN benchmark of this observability patch",
+  "default_diagnostics_interval": "0 (disabled); existing client minute reporting retained",
+  "diagnostic_interval_example": "5s",
+  "new_metric": "s5core_udp_relay_datagrams_total{stage}",
+  "stages": [
+    "client_in",
+    "target_out",
+    "target_in",
+    "client_out"
+  ],
+  "limitations": [
+    "Socket write success means local kernel acceptance, not target reception",
+    "Native hub and TCP writer queue losses use separate counters",
+    "Cross-host windows and snapshots are not atomic or synchronized",
+    "Microphone capture and Discord voice encryption/control state are outside S5Core"
+  ],
+  "sha256": {
+    "summary.md": "25b4b8103143e66dd71e490cea3a923eeaee564a4eccb27b9ff3c5d8c14ff7d7",
+    "metrics.json": "08b3d3f8be42054eeb96aad82357714353aedc71fd9a28fc5c8a75a2e430f609",
+    "pre-commit.txt": "004f39955d1d4e511a7a2ec4ce7a98561684d5d7ba029382ec18aec1e177b085"
+  }
+}

@@ -1,0 +1,307 @@
+{
+  "version": "v2.4.0-rc2",
+  "source_commit": "ba3f104c1260ccb7aadfb0107f72bf73cd6b4b09",
+  "method": {
+    "client": "physical linux/arm64 router",
+    "server": "linux/amd64 WAN host",
+    "transports": [
+      "obfs",
+      "wss"
+    ],
+    "rounds_per_profile_variant_transport": 5,
+    "generator_scale": 0.05,
+    "load": "one router CPU busy-loop worker shared by all loaded cells; no affinity pinning",
+    "mbps_json_unit": "decimal MB/s, not Mbit/s",
+    "sign_test_min_two_sided_p_with_five_pairs": 0.0625,
+    "performance_improvement_proven": false,
+    "synthetic_voice_acceptance": false
+  },
+  "profiles": {
+    "quiet": {
+      "cells": 35,
+      "ok": 35,
+      "noisy": 0,
+      "foreign_cores_range": {
+        "client": [
+          0.055,
+          0.125
+        ],
+        "server": [
+          0.036,
+          0.073
+        ]
+      },
+      "scenario_errors": 0,
+      "nonzero_udp_loss_cells": [
+        {
+          "variant": "raw",
+          "transport": "direct",
+          "round": 3,
+          "scenario": "udp/rtt-64",
+          "loss_pct": 21
+        },
+        {
+          "variant": "raw",
+          "transport": "direct",
+          "round": 4,
+          "scenario": "udp/stream-40mbit",
+          "loss_pct": 1.7
+        },
+        {
+          "variant": "rc1",
+          "transport": "obfs",
+          "round": 5,
+          "scenario": "udp/stream-40mbit",
+          "loss_pct": 6
+        },
+        {
+          "variant": "rc2",
+          "transport": "wss",
+          "round": 1,
+          "scenario": "udp/rtt-64",
+          "loss_pct": 1
+        }
+      ]
+    },
+    "one_cpu_worker": {
+      "cells": 35,
+      "ok": 35,
+      "noisy": 0,
+      "foreign_cores_range": {
+        "client": [
+          1.063,
+          1.144
+        ],
+        "server": [
+          0.044,
+          0.086
+        ]
+      },
+      "scenario_errors": 0,
+      "nonzero_udp_loss_cells": [
+        {
+          "variant": "raw",
+          "transport": "direct",
+          "round": 3,
+          "scenario": "udp/stream-40mbit",
+          "loss_pct": 2.8
+        },
+        {
+          "variant": "raw",
+          "transport": "direct",
+          "round": 4,
+          "scenario": "udp/stream-40mbit",
+          "loss_pct": 0.5
+        }
+      ]
+    }
+  },
+  "medians": [
+    {
+      "profile": "quiet",
+      "variant": "raw",
+      "transport": "direct",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.27,
+      "https_large_MB_per_s": 11.27245370868285,
+      "h3_large_MB_per_s": 14.391227897041516,
+      "udp_rtt_p99_ms": 53.751,
+      "udp_stream_p99_ms": 52.363,
+      "max_udp_loss_pct": 21,
+      "cpu_s": null
+    },
+    {
+      "profile": "quiet",
+      "variant": "v23",
+      "transport": "obfs",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.753,
+      "https_large_MB_per_s": 10.763632483093149,
+      "h3_large_MB_per_s": 8.660616655367505,
+      "udp_rtt_p99_ms": 54.299,
+      "udp_stream_p99_ms": 733.415,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 0.94
+    },
+    {
+      "profile": "quiet",
+      "variant": "rc1",
+      "transport": "obfs",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.878,
+      "https_large_MB_per_s": 10.559091876771586,
+      "h3_large_MB_per_s": 11.159032735656309,
+      "udp_rtt_p99_ms": 54.342,
+      "udp_stream_p99_ms": 754.12,
+      "max_udp_loss_pct": 6,
+      "cpu_s": 0.9400000000000001
+    },
+    {
+      "profile": "quiet",
+      "variant": "rc2",
+      "transport": "obfs",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 53.068,
+      "https_large_MB_per_s": 10.570343066012647,
+      "h3_large_MB_per_s": 11.11027610543503,
+      "udp_rtt_p99_ms": 53.154,
+      "udp_stream_p99_ms": 741.215,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 0.95
+    },
+    {
+      "profile": "quiet",
+      "variant": "v23",
+      "transport": "wss",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.668,
+      "https_large_MB_per_s": 8.974473359520662,
+      "h3_large_MB_per_s": 9.965167208565525,
+      "udp_rtt_p99_ms": 53.517,
+      "udp_stream_p99_ms": 779.323,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 1.25
+    },
+    {
+      "profile": "quiet",
+      "variant": "rc1",
+      "transport": "wss",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 53.425,
+      "https_large_MB_per_s": 9.35329215851233,
+      "h3_large_MB_per_s": 9.024791217475666,
+      "udp_rtt_p99_ms": 53.762,
+      "udp_stream_p99_ms": 790.983,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 1.28
+    },
+    {
+      "profile": "quiet",
+      "variant": "rc2",
+      "transport": "wss",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 53.63,
+      "https_large_MB_per_s": 8.797567666047629,
+      "h3_large_MB_per_s": 9.802417452438013,
+      "udp_rtt_p99_ms": 54.85,
+      "udp_stream_p99_ms": 786.367,
+      "max_udp_loss_pct": 1,
+      "cpu_s": 1.25
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "raw",
+      "transport": "direct",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.712,
+      "https_large_MB_per_s": 12.479045058195242,
+      "h3_large_MB_per_s": 14.156652012741757,
+      "udp_rtt_p99_ms": 53.58,
+      "udp_stream_p99_ms": 55.011,
+      "max_udp_loss_pct": 2.8,
+      "cpu_s": null
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "v23",
+      "transport": "obfs",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.976,
+      "https_large_MB_per_s": 10.696672672984313,
+      "h3_large_MB_per_s": 10.968861340648976,
+      "udp_rtt_p99_ms": 53.472,
+      "udp_stream_p99_ms": 772.727,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 0.99
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "rc1",
+      "transport": "obfs",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 53.216,
+      "https_large_MB_per_s": 10.28384461665748,
+      "h3_large_MB_per_s": 10.358087610455355,
+      "udp_rtt_p99_ms": 54.848,
+      "udp_stream_p99_ms": 775.348,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 0.97
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "rc2",
+      "transport": "obfs",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.695,
+      "https_large_MB_per_s": 10.740762222510263,
+      "h3_large_MB_per_s": 10.901595047412407,
+      "udp_rtt_p99_ms": 56.021,
+      "udp_stream_p99_ms": 718.463,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 0.9400000000000001
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "v23",
+      "transport": "wss",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 53.792,
+      "https_large_MB_per_s": 9.331620665276196,
+      "h3_large_MB_per_s": 9.621404472184787,
+      "udp_rtt_p99_ms": 54.136,
+      "udp_stream_p99_ms": 783.277,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 1.26
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "rc1",
+      "transport": "wss",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.836,
+      "https_large_MB_per_s": 9.18947499100339,
+      "h3_large_MB_per_s": 9.361976277982732,
+      "udp_rtt_p99_ms": 54.873,
+      "udp_stream_p99_ms": 749.457,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 1.2799999999999998
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "rc2",
+      "transport": "wss",
+      "rounds": 5,
+      "https_small_reuse_p50_ms": 52.801,
+      "https_large_MB_per_s": 8.677145797169283,
+      "h3_large_MB_per_s": 9.264308967552514,
+      "udp_rtt_p99_ms": 54.527,
+      "udp_stream_p99_ms": 796.231,
+      "max_udp_loss_pct": 0,
+      "cpu_s": 1.24
+    }
+  ],
+  "observations": [
+    {
+      "profile": "quiet",
+      "variant": "rc2",
+      "transport": "obfs",
+      "round": 3,
+      "event": "native_path_lost_then_restored",
+      "count": 2,
+      "restoration_ms": [
+        1052,
+        53
+      ],
+      "cause": "unestablished"
+    },
+    {
+      "profile": "one_cpu_worker",
+      "variant": "rc2",
+      "transport": "wss",
+      "round": 2,
+      "event": "udp_rcvbuf_drops",
+      "count": 75,
+      "scope": "entire host network namespace; socket/application attribution unestablished"
+    }
+  ]
+}

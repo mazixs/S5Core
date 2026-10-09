@@ -16,34 +16,44 @@ import (
 
 func TestWhichAddressesAreThePrivateOnes(t *testing.T) {
 	for addr, want := range map[string]bool{
-		"127.0.0.1":            true,
-		"127.1.2.3":            true,
-		"::1":                  true,
-		"::ffff:127.0.0.1":     true,
-		"0.0.0.0":              true,
-		"::":                   true,
-		"169.254.169.254":      true,
-		"fe80::1":              true,
-		"10.0.0.1":             true,
-		"172.16.5.4":           true,
-		"192.168.1.1":          true,
-		"fd00::1":              true,
-		"::ffff:10.1.1.1":      true,
-		"100.64.0.1":           true,
-		"100.100.100.200":      true,
-		"224.0.0.251":          true,
-		"239.255.255.250":      true,
-		"ff02::fb":             true,
-		"ff05::c":              true,
-		"64:ff9b::a00:1":       true,
-		"64:ff9b::7f00:1":      true,
-		"64:ff9b::808:808":     false,
-		"8.8.8.8":              false,
-		"100.128.0.1":          false,
-		"172.32.0.1":           false,
-		"2001:4860:4860::8888": false,
-		"::ffff:8.8.8.8":       false,
-		"203.0.113.9":          false,
+		"127.0.0.1":              true,
+		"127.1.2.3":              true,
+		"::1":                    true,
+		"::ffff:127.0.0.1":       true,
+		"0.0.0.0":                true,
+		"::":                     true,
+		"169.254.169.254":        true,
+		"fe80::1":                true,
+		"10.0.0.1":               true,
+		"172.16.5.4":             true,
+		"192.168.1.1":            true,
+		"fd00::1":                true,
+		"::ffff:10.1.1.1":        true,
+		"100.64.0.1":             true,
+		"100.100.100.200":        true,
+		"224.0.0.251":            true,
+		"239.255.255.250":        true,
+		"ff02::fb":               true,
+		"ff05::c":                true,
+		"64:ff9b::a00:1":         true,
+		"64:ff9b::7f00:1":        true,
+		"64:ff9b::808:808":       false,
+		"8.8.8.8":                false,
+		"100.128.0.1":            false,
+		"172.32.0.1":             false,
+		"2001:4860:4860::8888":   false,
+		"::ffff:8.8.8.8":         false,
+		"255.255.255.255":        true,
+		"::ffff:255.255.255.255": true,
+		"240.1.2.3":              true,
+		"0.1.2.3":                true,
+		"198.19.1.2":             true,
+		"192.0.0.171":            true,
+		"192.0.0.9":              false,
+		"192.0.0.10":             false,
+		"168.63.129.16":          true,
+		"64:ff9b::ffff:ffff":     true,
+		"203.0.113.9":            false,
 	} {
 		if got := privateDestination(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("privateDestination(%s) = %v, want %v", addr, got, want)
@@ -360,8 +370,8 @@ func TestTheServersOwnAddressIsRefusedInEveryForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.own.read = func() []netip.Addr {
-		return []netip.Addr{netip.MustParseAddr("203.0.113.9"), netip.MustParseAddr("2001:db8::9")}
+	server.own.read = func() ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("203.0.113.9"), netip.MustParseAddr("2001:db8::9")}, nil
 	}
 	for addr, want := range map[string]bool{
 		"203.0.113.9":        true,
@@ -385,9 +395,9 @@ func TestTheServersOwnAddressIsRefusedInEveryForm(t *testing.T) {
 func TestTheServersAddressesAreReadOncePerMinute(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var reads int
-		own := &ownAddresses{read: func() []netip.Addr {
+		own := &ownAddresses{read: func() ([]netip.Addr, error) {
 			reads++
-			return []netip.Addr{netip.MustParseAddr("203.0.113.9")}
+			return []netip.Addr{netip.MustParseAddr("203.0.113.9")}, nil
 		}}
 		for range 1000 {
 			own.has(netip.MustParseAddr("198.51.100.1"))
@@ -399,6 +409,38 @@ func TestTheServersAddressesAreReadOncePerMinute(t *testing.T) {
 		own.has(netip.MustParseAddr("198.51.100.1"))
 		if reads != 2 {
 			t.Fatalf("%d reads after the list aged, want 2", reads)
+		}
+	})
+}
+
+func TestInterfaceReadFailureIsClosedAndRecovers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reads := 0
+		own := &ownAddresses{read: func() ([]netip.Addr, error) {
+			reads++
+			if reads == 1 {
+				return nil, errors.New("interface enumeration unavailable")
+			}
+			return []netip.Addr{netip.MustParseAddr("203.0.113.9")}, nil
+		}}
+		destination := netip.MustParseAddr("198.51.100.1")
+		if !own.has(destination) {
+			t.Fatal("interface error opened access")
+		}
+		for range 100 {
+			if !own.has(destination) {
+				t.Fatal("cached interface error opened access")
+			}
+		}
+		if reads != 1 {
+			t.Fatal("interface failure caused unbounded rereads")
+		}
+		time.Sleep(2 * time.Second)
+		if own.has(destination) || reads != 2 {
+			t.Fatal("interface enumeration did not recover")
+		}
+		if !own.has(netip.MustParseAddr("203.0.113.9")) {
+			t.Fatal("server address opened after recovery")
 		}
 	})
 }

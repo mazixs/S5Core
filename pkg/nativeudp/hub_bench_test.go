@@ -3,6 +3,7 @@ package nativeudp
 import (
 	"bytes"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func benchHub(b *testing.B) (*Hub, *Session, *Session, *net.UDPConn) {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = hub.Close() })
-	registered := hub.Register(serverKeys)
+	registered := hub.RegisterPeer(serverKeys, netip.MustParseAddr("127.0.0.1"))
 	b.Cleanup(func() { hub.Remove(registered) })
 	c, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: hub.Port()})
 	if err != nil {

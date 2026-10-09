@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/tlsdecoy"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
@@ -66,11 +67,9 @@ type Config struct {
 	ObfsPSK        string
 	ObfsMaxPadding int
 	ObfsMTU        int
-	// ObfsReplayWindow is how many session salts the server remembers, across
-	// all obfuscated listeners, to recognise a recorded connection sent again.
-	// Zero disables the check. It used to be a per-connection nonce window,
-	// which cost 82 KiB per connection and could not see across connections -
-	// the only place a replay actually happens.
+	// ObfsReplayWindow bounds authenticated salts retained across listeners
+	// for the whole clock window. Capacity exhaustion refuses new sessions;
+	// it never evicts a still-live recording. Zero disables the check.
 	ObfsReplayWindow int
 
 	// ObfsNodeID is this node's identity in the key derivation. It is never
@@ -101,6 +100,11 @@ type Config struct {
 	// keepalives of their own.
 	ObfsKeepaliveMin time.Duration
 	ObfsKeepaliveMax time.Duration
+	// ObfsTFO lets the obfs listener accept data in a SYN (TCP Fast Open,
+	// Linux only; net.ipv4.tcp_fastopen needs the server bit, 2). Off by
+	// default: a SYN with data is a shape a filter can see, and some paths
+	// drop it. It is for measuring what it saves on a given path.
+	ObfsTFO bool
 
 	// WebSocket-over-TLS (stealth transport) settings
 	WSEnabled     bool
@@ -113,12 +117,18 @@ type Config struct {
 	// listener is proxied to (plan task Ф5-6). Empty serves the built-in
 	// page instead, which is weaker cover - see docs/design/decoy.md.
 	WSDecoyUpstream string
+	// WSEarlyData is "auto" (the default, also when empty) or "off". With
+	// auto the WS listener accepts frames sent behind the upgrade request
+	// and says so in the advice frame (CapWSEarlyData), so a client saves
+	// the round trip of the 101 from its second connection on. Off restores
+	// gorilla's refusal of such a connection and stops announcing it.
+	WSEarlyData string
 	// TransportAdvice is what the server tells every client inside the
 	// tunnel, once it is up: which transport to use next and what shape
 	// to give its traffic (plan task Ф5-7). It is how a client on a router
 	// changes transport without anyone touching the router. The syntax is
-	// in ParseTransportAdvice; empty sends nothing. Changed on the fly by
-	// UpdateTransportAdvice.
+	// in ParseTransportAdvice; empty sends an advice frame without an
+	// opinion. Changed on the fly by UpdateTransportAdvice.
 	TransportAdvice string
 	// The shaping band. The defaults belong to the shaper itself
 	// (DefaultWSMinFrame and DefaultWSMaxFrame below, which are
@@ -135,7 +145,8 @@ type Config struct {
 	// those sockets retransmit sooner and do not double the wait on repeated
 	// loss (internal/tcptune), because every datagram behind a lost segment
 	// waits for that timer. The switch is for a path where it turns out worse.
-	UDPTunnelTCPTuningOff bool
+	UDPTunnelTCPTuningOff  bool
+	UDPDiagnosticsInterval time.Duration
 
 	// Multi-account settings
 	UsersFile            string        // Path to JSON file with user accounts
@@ -191,6 +202,20 @@ func DefaultConfig() Config {
 
 // ValidateConfig checks that the configuration is valid before starting the server.
 func ValidateConfig(cfg Config) error {
+	if cfg.KDFMemoryBudget < 0 {
+		return fmt.Errorf("KDF_MEMORY_BUDGET_MB must not be negative")
+	}
+	if cfg.ObfsRequireMemberKey && (!cfg.RequireAuth || cfg.UsersFile == "") {
+		return fmt.Errorf("OBFS_REQUIRE_MEMBER_KEY requires authentication and USERS_FILE")
+	}
+	if cfg.ObfsEnabled || cfg.WSEnabled {
+		if err := obfs.ValidateMTU(cfg.ObfsMTU); err != nil {
+			return err
+		}
+	}
+	if err := socks5.ValidateUDPDiagnosticsInterval(cfg.UDPDiagnosticsInterval); err != nil {
+		return err
+	}
 	if cfg.UDPPort != "" {
 		port, err := strconv.Atoi(cfg.UDPPort)
 		// Port 0 would announce an ephemeral port that no firewall or
@@ -258,6 +283,11 @@ func ValidateConfig(cfg Config) error {
 		if _, err := tlsdecoy.ValidateUpstream(cfg.WSDecoyUpstream); err != nil {
 			return fmt.Errorf("WS_DECOY_UPSTREAM is not usable: %w", err)
 		}
+		switch cfg.WSEarlyData {
+		case "", WSEarlyDataAuto, WSEarlyDataOff:
+		default:
+			return fmt.Errorf("WS_EARLY_DATA must be %q or %q, not %q", WSEarlyDataAuto, WSEarlyDataOff, cfg.WSEarlyData)
+		}
 	}
 	// An advice that sends clients to a transport this server does not run
 	// would have every client try it, fail, and come back - a migration to
@@ -283,9 +313,14 @@ func validateTelemetry(t *Telemetry) error {
 		// Telemetry is optional. Every call site checks for a nil Telemetry.
 		return nil
 	}
-	v := reflect.ValueOf(*t)
+	v := reflect.ValueOf(t).Elem()
 	for i := 0; i < v.NumField(); i++ {
 		f := v.Field(i)
+		// Private synchronization/cache state is lazily initialized. The
+		// meter and instrument interfaces must still all be present.
+		if v.Type().Field(i).PkgPath != "" && f.Kind() != reflect.Interface {
+			continue
+		}
 		switch f.Kind() {
 		case reflect.Interface, reflect.Pointer, reflect.Func, reflect.Map, reflect.Slice:
 			if f.IsNil() {

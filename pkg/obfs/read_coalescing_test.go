@@ -204,13 +204,13 @@ func TestCoalescedTerminalError(t *testing.T) {
 				if !bytes.Equal(got, payload) {
 					t.Fatalf("got %q, error %v", got, err)
 				}
-				if (failure == "fin" || failure == "wire-eof") && (consumer == "copy" || consumer == "bufio") && err != nil {
+				if failure == "fin" && (consumer == "copy" || consumer == "bufio") && err != nil {
 					t.Fatalf("clean EOF did not finish copy: %v", err)
 				}
-				if failure != "fin" && failure != "wire-eof" && err == nil {
+				if failure != "fin" && err == nil {
 					t.Fatal("lost terminal error")
 				}
-				if failure == "truncated" && !errors.Is(err, io.ErrUnexpectedEOF) {
+				if (failure == "truncated" || failure == "wire-eof") && !errors.Is(err, io.ErrUnexpectedEOF) {
 					t.Fatal(err)
 				}
 				buf := make([]byte, 1)

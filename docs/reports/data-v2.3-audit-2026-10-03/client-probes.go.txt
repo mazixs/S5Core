@@ -1,0 +1,79 @@
+package main
+
+import (
+	"github.com/mazixs/S5Core/pkg/nativeudp"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+func TestAuditOversizeDropsWhileNativeUnavailable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) { p.dropUp.Store(true) })
+		l.at(20 * time.Second)
+		if l.client.up.Load() {
+			t.Fatal("native path should remain unavailable")
+		}
+		size := l.client.session.MaxPayload() + 1
+		lost, tcp := 0, 0
+		for i := 0; i < 12; i++ {
+			switch l.client.carry(make([]byte, size)) {
+			case dropped:
+				lost++
+			case byTunnel:
+				tcp++
+			default:
+				t.Fatal("sent to dead path")
+			}
+		}
+		t.Logf("native_up=false payload_with_socks_header=%d dropped=%d tcp=%d", size, lost, tcp)
+		if lost != 8 || tcp != 4 {
+			t.Fatalf("unexpected released behavior: %d/%d", lost, tcp)
+		}
+	})
+}
+
+func TestAuditTCPAnswersDroppedWhileNativeUnavailable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) { p.dropUp.Store(true) })
+		l.at(20 * time.Second)
+		lost, delivered := 0, 0
+		for i := 0; i < 12; i++ {
+			if l.client.tcpAnswer(nativeudp.MaxWire) {
+				delivered++
+			} else {
+				lost++
+			}
+		}
+		t.Logf("native_up=false arrived_on_working_tcp=12 dropped=%d delivered=%d", lost, delivered)
+		if lost != 8 || delivered != 4 {
+			t.Fatalf("unexpected released behavior: %d/%d", lost, delivered)
+		}
+	})
+}
+
+func TestAuditInitialSizeProbeLossPermanentlyCapsHealthyPath(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sizeSeen := 0
+		l := startSized(t, 0, func(size int) bool {
+			if size <= 200 {
+				return false
+			}
+			sizeSeen++
+			return sizeSeen <= 6
+		})
+		l.at(time.Second)
+		earlyLimit := l.client.session.Limit()
+		earlyProbes := l.client.stats.sizeProbes.Load()
+		l.at(30 * time.Second)
+		limit := l.client.session.Limit()
+		t.Logf("actual_path_wire_limit=1400 lost_initial_size_probes=6 native_up=%t measured_limit=%d size_probes_before=%d after_30s=%d minimum_ipv4_quic_wire=1236", l.client.up.Load(), limit, earlyProbes, l.client.stats.sizeProbes.Load())
+		if !l.client.up.Load() || limit >= 1236 || limit != earlyLimit || earlyProbes != l.client.stats.sizeProbes.Load() {
+			t.Fatalf("unexpected behavior: limit=%d", limit)
+		}
+		result := l.client.carry(make([]byte, 1210)) // SOCKS IPv4 header plus minimum QUIC Initial.
+		if result != dropped {
+			t.Fatalf("smallest QUIC Initial was not dropped: %v", result)
+		}
+	})
+}

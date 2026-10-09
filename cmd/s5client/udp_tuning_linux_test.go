@@ -14,16 +14,14 @@ func TestTheClientTunesItsUDPTunnel(t *testing.T) {
 	for _, on := range []bool{true, false} {
 		app, clientSide := tcpPair(t)
 		tunnel, obfsSide := tcpPair(t)
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			handleUDPAssociate(clientSide, obfsSide, "example.com", clientParams{UDPTunnelTCPTuning: on}, nil)
-		}()
+		done := runUDPAssociate(t, clientSide, "example.com", clientParams{UDPTunnelTCPTuning: on, OptimisticConnect: true}, nil, dialled(obfsSide))
 		if _, err := tunnel.Write(udpTunnelReply); err != nil {
 			t.Fatal(err)
 		}
-		// The reply to the application comes after the tuning.
-		readAppReply(t, app)
+		// The application is answered before the server, so the tuning is
+		// done once an answer comes back: the loop that carries it starts
+		// after the tuning.
+		roundTrip(t, boundUDPPort(t, readAppReply(t, app)), tunnel)
 		raw, err := obfsSide.(*net.TCPConn).SyscallConn()
 		if err != nil {
 			t.Fatal(err)

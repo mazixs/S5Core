@@ -11,6 +11,54 @@ import (
 	"time"
 )
 
+func TestArchiveFailureKeepsAcceptingLogRecords(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "live.log")
+	archive := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(archive, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := OpenRotating(FileOptions{Path: path, ArchiveDir: archive, MaxSize: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	for _, record := range []string{"a\n", "b\n", "c\n", "d\n", "e\n"} {
+		if _, err := file.Write([]byte(record)); err != nil {
+			t.Errorf("record lost after archive failure: %v", err)
+		}
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "a\nb\nc\nd\ne\n" {
+		t.Fatalf("lost records: %q", body)
+	}
+	if err := os.Remove(archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(archive, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte("f\n")); err != nil {
+		t.Fatal(err)
+	}
+	names := archived(t, archive, "live-")
+	if len(names) != 1 {
+		t.Fatalf("rotation did not resume: %v", names)
+	}
+	saved, err := os.ReadFile(filepath.Join(archive, names[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := os.ReadFile(path)
+	if err != nil || string(saved)+string(live) != "a\nb\nc\nd\ne\nf\n" {
+		t.Fatalf("repaired rotation lost bytes: %q %q %v", saved, live, err)
+	}
+
+}
+
 func archived(t *testing.T, dir, prefix string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

@@ -1,0 +1,212 @@
+{
+  "base": "v23",
+  "candidate": "rc1",
+  "cpus": {
+    "loopback": "0-5,8-13",
+    "obfs": [
+      "1-2,9-10",
+      "3-4,11-12"
+    ],
+    "raw": "0,8",
+    "wss": [
+      "6,14",
+      "7,15"
+    ]
+  },
+  "description": "Matched local raw, v2.3.0 and audit remediation candidate 2.4 RC1",
+  "guard": {
+    "load_wait": "0s",
+    "max_foreign_cores": 3.0,
+    "min_free_mb": 1024
+  },
+  "hash": "cddf13e94f7f6838",
+  "name": "raw-23-24rc1-loaded-20261003",
+  "series": [
+    {
+      "compare": [
+        [
+          "v23",
+          "rc1"
+        ]
+      ],
+      "env": {
+        "client": {
+          "KEEPALIVE_MAX": "20s",
+          "KEEPALIVE_MIN": "10s",
+          "LOG_LEVEL": "info",
+          "OBFS_MAX_PADDING": "256",
+          "OBFS_MTU": "1400",
+          "UDP_NATIVE": "true",
+          "WS_MAX_FRAME": "4096",
+          "WS_MIN_FRAME": "256"
+        },
+        "server": {
+          "OBFS_MAX_PADDING": "256",
+          "OBFS_MTU": "1400",
+          "UDP_PORT": "41443",
+          "WS_MAX_FRAME": "4096",
+          "WS_MIN_FRAME": "256"
+        }
+      },
+      "kind": "probe",
+      "name": "local",
+      "network": "loopback",
+      "only": [
+        "=tcp/connect",
+        "=https/small-new",
+        "=https/small-reuse",
+        "=https/large",
+        "=https/upload",
+        "=https/small-reuse-under-bulk",
+        "=h2/small-reuse",
+        "=h3/small-reuse",
+        "=h3/large",
+        "=h3/upload",
+        "=udp/rtt-64",
+        "=udp/rtt-64-under-bulk",
+        "=udp/stream-40mbit"
+      ],
+      "rounds": 5,
+      "settings": {
+        "auth": [
+          "member"
+        ],
+        "capture": false,
+        "capture_packets": 200000,
+        "cell_timeout": "auto",
+        "client_procs": 4,
+        "flush": "60s",
+        "gen_procs": 4,
+        "hang_grace": "15s",
+        "idle": "75s",
+        "max_errors_in_row": 50,
+        "min_pairs": 3,
+        "retries": 1,
+        "sample_s": 0,
+        "scale": 0.3,
+        "scenario_timeout": "90s",
+        "server_procs": 4,
+        "settle": "2s",
+        "slow_ms": 0,
+        "soak": "300s",
+        "warmup": true,
+        "workers": 32
+      },
+      "title": "local",
+      "transports": [
+        "obfs",
+        "wss"
+      ],
+      "variants": [
+        "raw",
+        "v23",
+        "rc1"
+      ]
+    },
+    {
+      "compare": [
+        [
+          "v23",
+          "rc1"
+        ]
+      ],
+      "env": {
+        "client": {
+          "KEEPALIVE_MAX": "20s",
+          "KEEPALIVE_MIN": "10s",
+          "LOG_LEVEL": "info",
+          "OBFS_MAX_PADDING": "256",
+          "OBFS_MTU": "1400",
+          "UDP_NATIVE": "true",
+          "WS_MAX_FRAME": "4096",
+          "WS_MIN_FRAME": "256"
+        },
+        "server": {
+          "OBFS_MAX_PADDING": "256",
+          "OBFS_MTU": "1400",
+          "UDP_PORT": "41443",
+          "WS_MAX_FRAME": "4096",
+          "WS_MIN_FRAME": "256"
+        }
+      },
+      "kind": "probe",
+      "name": "game-loss",
+      "network": {
+        "loss_pct": 0.5,
+        "rate_mbit": 0.0,
+        "rtt_ms": 40.0
+      },
+      "only": [
+        "=game/64hz-200b"
+      ],
+      "rounds": 3,
+      "settings": {
+        "auth": [
+          "member"
+        ],
+        "capture": false,
+        "capture_packets": 200000,
+        "cell_timeout": "auto",
+        "client_procs": 4,
+        "flush": "60s",
+        "gen_procs": 4,
+        "hang_grace": "15s",
+        "idle": "75s",
+        "max_errors_in_row": 50,
+        "min_pairs": 3,
+        "retries": 1,
+        "sample_s": 0,
+        "scale": 0.00833334,
+        "scenario_timeout": "75s",
+        "server_procs": 4,
+        "settle": "2s",
+        "slow_ms": 0,
+        "soak": "300s",
+        "warmup": true,
+        "workers": 32
+      },
+      "title": "game-loss",
+      "transports": [
+        "obfs",
+        "wss"
+      ],
+      "variants": [
+        "raw",
+        "v23",
+        "rc1"
+      ]
+    }
+  ],
+  "variants": {
+    "raw": {
+      "direct": true,
+      "env": {
+        "client": {},
+        "server": {}
+      },
+      "patch": null,
+      "ref": null,
+      "title": "raw"
+    },
+    "rc1": {
+      "direct": false,
+      "env": {
+        "client": {},
+        "server": {}
+      },
+      "patch": null,
+      "ref": "worktree",
+      "title": "2.4 RC1 candidate: audit fixes, uncommitted"
+    },
+    "v23": {
+      "direct": false,
+      "env": {
+        "client": {},
+        "server": {}
+      },
+      "patch": null,
+      "ref": "v2.3.0",
+      "title": "2.3.0 release"
+    }
+  }
+}

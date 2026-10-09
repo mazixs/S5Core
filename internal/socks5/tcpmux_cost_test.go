@@ -142,7 +142,8 @@ func toTheEchoByName(echo netip.AddrPort) *AddrSpec {
 // of both halves of the server's 0x83 path: the frame read, the header, the
 // question put to the rules, the send, the read from the internet and the
 // frame written back. A destination given by name goes through the lookup
-// queue, whose answer is cached, and is held to the same budget.
+// queue, whose answer is cached. It owns one payload-sized pending copy;
+// IP datagrams still do not copy or enter the DNS queue.
 func TestADatagramThroughTheServerCostsNoAllocations(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -169,8 +170,12 @@ func TestADatagramThroughTheServerCostsNoAllocations(t *testing.T) {
 			// AllocsPerRun truncates to whole allocations per run, so a pool
 			// that a garbage collection emptied and that fills itself again
 			// does not fail this; one allocation on every datagram does.
-			if got := testing.AllocsPerRun(200, roundTrip); got > raceBudget() {
-				t.Errorf("one datagram through the server allocates %.0f times, want %.0f", got, raceBudget())
+			budget := raceBudget()
+			if c.name == "a name" {
+				budget++
+			}
+			if got := testing.AllocsPerRun(200, roundTrip); got > budget {
+				t.Errorf("one datagram through the server allocates %.0f times, want %.0f", got, budget)
 			}
 		})
 	}

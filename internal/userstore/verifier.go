@@ -5,9 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"sync"
 	"time"
 )
+
+// ErrVerificationUnavailable is not evidence of an incorrect password.
+var ErrVerificationUnavailable = errors.New("userstore: credential verification temporarily unavailable")
 
 // Argon2id is the right way to store a password file and the wrong thing to
 // run on every TCP connection. Measured on this code before the cache existed
@@ -79,6 +83,7 @@ const (
 type flight struct {
 	done chan struct{}
 	ok   bool
+	err  error
 }
 
 type verifierEntry struct {
@@ -140,7 +145,18 @@ func (c *verifierCache) check(username, password, hash string, now time.Time) (o
 	if !found {
 		return false, false
 	}
-	return hmac.Equal(entry.tag, c.tag(username, password)), true
+	ok = hmac.Equal(entry.tag, c.tag(username, password))
+	if ok {
+		// Only an accepted credential renews an active verifier. Wrong
+		// guesses cannot keep a dormant credential in memory indefinitely.
+		c.mu.Lock()
+		if current, exists := c.items[username]; exists && current.against == hash && hmac.Equal(current.tag, entry.tag) {
+			current.expires = now.Add(c.ttl)
+			c.items[username] = current
+		}
+		c.mu.Unlock()
+	}
+	return ok, true
 }
 
 // verify answers whether the password matches the hash, running the expensive
@@ -148,12 +164,18 @@ func (c *verifierCache) check(username, password, hash string, now time.Time) (o
 // Argon2id verification itself; it is a parameter so that this file stays
 // about scheduling and the KDF stays in one place.
 func (c *verifierCache) verify(username, password, hash string, now time.Time, slow func() bool) (ok bool, path VerifyPath) {
+	ok, path, _ = c.verifyResult(username, password, hash, now, func() (bool, error) { return slow(), nil })
+	return ok, path
+}
+
+func (c *verifierCache) verifyResult(username, password, hash string, now time.Time, slow func() (bool, error)) (ok bool, path VerifyPath, err error) {
 	if c == nil || c.items == nil {
-		return slow(), VerifyPathKDF
+		ok, err := slow()
+		return ok, VerifyPathKDF, err
 	}
 
 	if ok, known := c.check(username, password, hash, now); known {
-		return ok, VerifyPathCache
+		return ok, VerifyPathCache, nil
 	}
 
 	// The key names the whole question: this password, against this hash. The
@@ -167,9 +189,9 @@ func (c *verifierCache) verify(username, password, hash string, now time.Time, s
 	if existing, running := c.flights[key]; running {
 		c.mu.Unlock()
 		<-existing.done
-		return existing.ok, VerifyPathCoalesced
+		return existing.ok, VerifyPathCoalesced, existing.err
 	}
-	f := &flight{done: make(chan struct{})}
+	f := &flight{done: make(chan struct{}), err: ErrVerificationUnavailable}
 	c.flights[key] = f
 	c.mu.Unlock()
 
@@ -186,12 +208,12 @@ func (c *verifierCache) verify(username, password, hash string, now time.Time, s
 		close(f.done)
 	}()
 
-	f.ok = slow()
+	f.ok, f.err = slow()
 	if f.ok {
 		c.remember(username, password, hash, now)
 	}
 
-	return f.ok, VerifyPathKDF
+	return f.ok, VerifyPathKDF, f.err
 }
 
 // remember records a password that Argon2id has just accepted.

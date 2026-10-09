@@ -28,14 +28,15 @@ from datetime import datetime, timedelta, timezone
 UTC = timezone.utc
 MSK = timezone(timedelta(hours=3))
 
-# journalFields of pkg/s5server/journal_test.go; the test of this script compares the two. The script tests run by
-# hand (python3 -m unittest discover -s scripts/tests); scripts/pre-commit.sh does not run them.
+# journalFields of pkg/s5server/journal_test.go; the release gate checks that
+# the parser's closed schema covers the journal produced by the server.
 KNOWN_FIELDS = frozenset("""
 time level msg event seq boot version go_version pid transports session_log prev_unclean uptime_s conns open
 reload failed dropped conn account auth transport client cmd dst_net dst_port dst_kind result stage end
 server_timeouts resets dial_ms dial_tries dial_backups dial_backup_won first_byte_ms dur_ms up down dgram_up
 dgram_down rotations answered native_up native_down path_moves tunnel_drops assocs rcvbuf_drops tcp_rtt_ms
 tcp_unacked tcp_retransmits tcp_since_data_ms tcp_since_ack_ms
+udp_client_in udp_target_out udp_target_in udp_client_out udp_drops target_write_errors
 """.split())
 
 SESSION_EVENTS = ("conn_end", "assoc_end")
@@ -47,6 +48,7 @@ NUMERIC_FIELDS = frozenset("""
 seq pid uptime_s conns open reload dropped dst_port server_timeouts resets dial_ms dial_tries dial_backups
 first_byte_ms dur_ms up down dgram_up dgram_down rotations native_up native_down path_moves tunnel_drops assocs
 rcvbuf_drops tcp_rtt_ms tcp_unacked tcp_retransmits tcp_since_data_ms tcp_since_ack_ms
+udp_client_in udp_target_out udp_target_in udp_client_out udp_drops target_write_errors
 """.split())
 TCP_FIELDS = (("tcp_rtt_ms", "rtt, мс"), ("tcp_unacked", "unacked"), ("tcp_retransmits", "retransmits"),
               ("tcp_since_data_ms", "since_data, мс"), ("tcp_since_ack_ms", "since_ack, мс"))
