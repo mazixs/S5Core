@@ -175,7 +175,7 @@ $Config = [ordered]@{
     TunName           = "wintun"
     TunIp             = "198.18.0.1"
     TunPrefixLength   = 15
-    DnsServers        = @("192.0.2.200", "1.0.0.1")
+    DnsServers        = @("YOUR_PRIMARY_DNS_IP", "YOUR_SECONDARY_DNS_IP")
     DisableIPv6       = $true
     RouteLanRanges    = $true
     AutoBuildS5Client = $true
@@ -189,6 +189,7 @@ Notes:
 - Leave `Tun2SocksExe` empty to let the script auto-detect a `winget` installation.
 - Leave `WintunDll` empty if `wintun.dll` is already next to `tun2socks.exe`.
 - The `ObfsPsk` placeholder above is exactly 32 bytes long; replace it with your real PSK.
+- Replace both DNS placeholders with the resolver addresses you want to use.
 
 #### Commands
 

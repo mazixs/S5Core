@@ -33,7 +33,8 @@ coverage.txt
 *.pcapng
 
 # Local measurements: runs, work copies, suites
-bench/
+/bench/*
+!/bench/README.md
 
 # Go workspace file
 go.work
