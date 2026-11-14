@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-ARG GOLANG_VERSION="1.26.9"
-ARG GOLANG_DIGEST="sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c"
+ARG GOLANG_VERSION="1.27.4"
+ARG GOLANG_DIGEST="sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf"
 
 FROM --platform=$BUILDPLATFORM golang:${GOLANG_VERSION}-alpine@${GOLANG_DIGEST} AS builder
 # Release version for startup logs and s5core_build_info.
