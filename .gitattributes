@@ -1,34 +1,5 @@
 # Keep text files LF in the repository and in working trees on every platform.
 * text=auto eol=lf
 
-# Source, modules and scripts
-*.go text eol=lf
-*.mod text eol=lf
-*.sum text eol=lf
-*.py text eol=lf
-*.sh text eol=lf
-*.ps1 text eol=lf
-Dockerfile text eol=lf
-
-# Configuration
-*.yml text eol=lf
-*.toml text eol=lf
-*.json text eol=lf
-*.jsonl text eol=lf
-*.example text eol=lf
-.dockerignore text eol=lf
-.gitattributes text eol=lf
-.gitignore text eol=lf
-
-# Documentation, reports and benchmark data
-*.md text eol=lf
-*.txt text eol=lf
-*.html text eol=lf
-*.log text eol=lf
-*.patch text eol=lf
-LICENSE text eol=lf
-# Checksum lists must stay LF to pass `sha256sum -c`.
-SHA256SUMS text eol=lf
-
 # Binary fixtures
 *.bin binary
