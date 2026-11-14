@@ -79,3 +79,7 @@ skills-lock.json
 # Private agent guidance; retained locally, never published
 AGENTS.md
 CLAUDE.md
+
+# Local agent skill sets; retained locally, never published
+/agent/
+/.agents/
