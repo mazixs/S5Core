@@ -88,6 +88,10 @@ in one line, which is what a failure prints.
 
 ## SDK Usage (Embedding in your Go App)
 
+The module requires Go 1.27.0 or newer, and its `go.mod` sets `toolchain go1.27.4`.
+That directive is not a strict compiler pin, so check the actual `go version`
+when reproducing measurements or verifying an SDK build.
+
 S5Core is built to be the networking engine for your custom proxy managers or Web-UIs. You can import it and control the proxy programmatically.
 
 ```go
