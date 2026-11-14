@@ -1,8 +1,8 @@
 module github.com/mazixs/S5Core
 
-go 1.26.0
+go 1.27.0
 
-toolchain go1.26.9
+toolchain go1.27.4
 
 require (
 	github.com/caarlos0/env/v11 v11.4.0
