@@ -407,7 +407,7 @@ func dialOutcome(err error) string {
 		return DialRefused
 	case noRoute(err):
 		return DialNoRoute
-	case errors.Is(err, syscall.EHOSTUNREACH), errors.Is(err, syscall.EHOSTDOWN):
+	case socketErrno(err, syscall.EHOSTUNREACH), socketErrno(err, syscall.EHOSTDOWN):
 		return DialUnreachable
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded),
 		errors.As(err, &ne) && ne.Timeout():

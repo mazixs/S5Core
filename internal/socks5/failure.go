@@ -49,7 +49,7 @@ func classifyFailure(err error) FailureKind {
 		return FailureTimeout
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF),
 		errors.Is(err, net.ErrClosed), errors.Is(err, io.ErrClosedPipe),
-		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE):
+		socketErrno(err, syscall.ECONNRESET), socketErrno(err, syscall.EPIPE):
 		return FailureClosed
 	case errors.Is(err, ErrUserAuthFailed), errors.Is(err, ErrNoSupportedAuth):
 		return FailureAuth

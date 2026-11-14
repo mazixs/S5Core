@@ -45,7 +45,7 @@ func associationEnd(err error) string {
 		return EndedByAccount
 	case errors.Is(err, context.Canceled):
 		return EndedByShutdown
-	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE):
+	case socketErrno(err, syscall.ECONNRESET), socketErrno(err, syscall.EPIPE):
 		return EndedByReset
 	case errors.As(err, &ne) && ne.Timeout():
 		return EndedByTimeout
