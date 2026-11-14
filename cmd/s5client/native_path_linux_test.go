@@ -301,8 +301,20 @@ func (r *nativeRig) streamNative(within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
 		rd := r.control.read.Load()
-		first := r.await("state", 500*time.Millisecond)
-		if first && r.await("state", 500*time.Millisecond) && r.control.read.Load() == rd {
+		observedAt := time.Now()
+		received := 0
+		for time.Since(observedAt) < 500*time.Millisecond && time.Now().Before(deadline) {
+			if !r.await("state", min(500*time.Millisecond, time.Until(deadline))) {
+				break
+			}
+			received++
+			if r.control.read.Load() != rd {
+				break
+			}
+		}
+		// Two buffered TCP datagrams can be read immediately without changing
+		// the meter. Require a real observation window, not two quick reads.
+		if received >= 2 && time.Since(observedAt) >= 500*time.Millisecond && r.control.read.Load() == rd {
 			return true
 		}
 	}
