@@ -298,23 +298,23 @@ func (r *nativeRig) streamByControl(within time.Duration) bool {
 // control connection, or the time runs out.
 func (r *nativeRig) streamNative(within time.Duration) bool {
 	r.t.Helper()
+	const window = 500 * time.Millisecond
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
 		rd := r.control.read.Load()
 		observedAt := time.Now()
 		received := 0
-		for time.Since(observedAt) < 500*time.Millisecond && time.Now().Before(deadline) {
-			if !r.await("state", min(500*time.Millisecond, time.Until(deadline))) {
+		steady := true
+		// Datagrams already buffered from the TCP path return at once and prove
+		// nothing: the stream must keep arriving through a whole window.
+		for time.Since(observedAt) < window {
+			if !r.await("state", min(window, time.Until(deadline))) || r.control.read.Load() != rd {
+				steady = false
 				break
 			}
 			received++
-			if r.control.read.Load() != rd {
-				break
-			}
 		}
-		// Two buffered TCP datagrams can be read immediately without changing
-		// the meter. Require a real observation window, not two quick reads.
-		if received >= 2 && time.Since(observedAt) >= 500*time.Millisecond && r.control.read.Load() == rd {
+		if steady && received >= 2 {
 			return true
 		}
 	}
