@@ -70,7 +70,7 @@ jobs:
 
   windows-tests:
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 12
     permissions:
       contents: read
     defaults:
