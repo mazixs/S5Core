@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log"
 	"log/slog"
 	"net"
 	"strings"
@@ -52,14 +53,60 @@ func silentServer(t *testing.T) {
 	}
 }
 
-// captureLogs redirects slog to a buffer for the duration of the test.
+// captureLogs redirects slog to a buffer for the duration of the test. The
+// standard log package follows it, which is how slog.SetDefault works, and
+// is put back with it.
 func captureLogs(t *testing.T) *syncBuffer {
 	t.Helper()
 	buf := &syncBuffer{}
+	restoreStdLog(t)
 	original := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(original) })
 	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	return buf
+}
+
+// restoreStdLog puts the output and flags of the log package back when the
+// test ends. slog.SetDefault(original) does not: with the initial default
+// logger it leaves them as the capturing logger set them, so every later line
+// of the process went to the buffer of a finished test.
+func restoreStdLog(t testing.TB) {
+	t.Helper()
+	w, flags := log.Writer(), log.Flags()
+	t.Cleanup(func() {
+		log.SetOutput(w)
+		log.SetFlags(flags)
+	})
+}
+
+// The log package is routed into the capture while it lasts, and its output
+// and flags are what they were once it is over.
+func TestCaptureLogsPutsTheStandardLoggerBack(t *testing.T) {
+	logger, writer, flags := slog.Default(), log.Writer(), log.Flags()
+	t.Cleanup(func() {
+		log.SetOutput(writer)
+		log.SetFlags(flags)
+		slog.SetDefault(logger)
+	})
+
+	var logs *syncBuffer
+	t.Run("capturing", func(t *testing.T) {
+		logs = captureLogs(t)
+		log.Print("through the standard logger")
+		if got := linesOf(logs.String(), "through the standard logger"); len(got) != 1 {
+			t.Fatalf("%d lines from the standard logger in the capture, want 1:\n%s", len(got), logs)
+		}
+	})
+
+	if slog.Default() != logger {
+		t.Error("the default slog logger was not put back")
+	}
+	if log.Writer() != writer {
+		t.Errorf("the standard logger writes to %T, want what it wrote to before: %T", log.Writer(), writer)
+	}
+	if log.Flags() != flags {
+		t.Errorf("the standard logger has flags %d, want %d", log.Flags(), flags)
+	}
 }
 
 type syncBuffer struct {

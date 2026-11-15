@@ -229,6 +229,7 @@ func TestAnAssociationWithAQuietDirectionIsAWarning(t *testing.T) {
 // the first closing lines of rc3 said "age":6000000000.
 func TestTheAgeOfAnAssociationReadsAsADuration(t *testing.T) {
 	var buf bytes.Buffer
+	restoreStdLog(t)
 	original := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(original) })
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
