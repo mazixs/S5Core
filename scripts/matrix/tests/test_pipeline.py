@@ -111,10 +111,13 @@ class Plans(PlanFixture):
     def test_native_udp_metrics_keep_fixed_outcomes(self):
         gauges = cell.parse_gauges('s5core_native_udp_packets_total{outcome="accepted"} 42\n'
                                    's5core_native_udp_packets_total{outcome="replay"} 2\n'
-                                   's5core_native_udp_sessions 3\n')
+                                   's5core_native_udp_sessions 3\n'
+                                   's5core_native_udp_lost_total{otel_scope_name="a"} 5\n'
+                                   's5core_native_udp_late_total 1\n')
         self.assertEqual(gauges['native_udp_accepted'], 42)
         self.assertEqual(gauges['native_udp_replay'], 2)
         self.assertEqual(gauges['s5core_native_udp_sessions'], 3)
+        self.assertEqual((gauges['s5core_native_udp_lost_total'], gauges['s5core_native_udp_late_total']), (5, 1))
 
     def test_native_udp_paths_keep_one_key_per_label_set(self):
         g = cell.parse_gauges('s5core_native_udp_datagrams_total{direction="to_client",path="native"} 40\n'
@@ -298,12 +301,12 @@ class Plans(PlanFixture):
             path = os.path.join(d, "client.log")
             with open(path, "w") as f:
                 f.write('{"time":"2026-09-26T10:00:01.123456789+02:00","level":"WARN","msg":"Native UDP path lost; association using 0x83","unanswered_probes":3}\n')
-                f.write('{"time":"2026-09-26T10:00:02+02:00","level":"INFO","msg":"UDP Tunnel closed","reason":"x","native_sent":10,"tcp_sent_other":2}\n')
-                f.write('{"time":"2026-09-26T10:00:03+02:00","level":"INFO","msg":"UDP Tunnel closed","reason":"x","native_sent":5,"tcp_sent_other":1}\n')
+                f.write('{"time":"2026-09-26T10:00:02+02:00","level":"INFO","msg":"UDP Tunnel closed","reason":"x","native_sent":10,"tcp_sent_other":2,"native_lost":4,"native_late":0}\n')
+                f.write('{"time":"2026-09-26T10:00:03+02:00","level":"INFO","msg":"UDP Tunnel closed","reason":"x","native_sent":5,"tcp_sent_other":1,"native_lost":1,"native_late":2}\n')
             got = cell.native_log(path)
         self.assertEqual(got["events"], {"path_lost": 1})
         self.assertAlmostEqual(got["event_at"]["path_lost"][0] % 60, 1.123456, places=5)
-        self.assertEqual(got["stats"], {"native_sent": 15, "tcp_sent_other": 3})
+        self.assertEqual(got["stats"], {"native_sent": 15, "tcp_sent_other": 3, "native_lost": 5, "native_late": 2})
 
     def test_capture_disables_loopback_superpackets(self):
         commands = []

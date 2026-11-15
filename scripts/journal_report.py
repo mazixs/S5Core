@@ -34,8 +34,8 @@ KNOWN_FIELDS = frozenset("""
 time level msg event seq boot version go_version pid transports session_log prev_unclean uptime_s conns open
 reload failed dropped conn account auth transport client cmd dst_net dst_port dst_kind result stage end
 server_timeouts resets dial_ms dial_tries dial_backups dial_backup_won first_byte_ms dur_ms up down dgram_up
-dgram_down rotations answered native_up native_down path_moves tunnel_drops assocs rcvbuf_drops tcp_rtt_ms
-tcp_unacked tcp_retransmits tcp_since_data_ms tcp_since_ack_ms
+dgram_down rotations answered native_up native_down path_moves tunnel_drops native_lost native_late assocs
+rcvbuf_drops tcp_rtt_ms tcp_unacked tcp_retransmits tcp_since_data_ms tcp_since_ack_ms
 udp_client_in udp_target_out udp_target_in udp_client_out udp_drops target_write_errors
 """.split())
 
@@ -46,8 +46,8 @@ NOTE_EVENTS = ("silent_burst", "udp_rcvbuf_drops")
 CLUSTER_ENDS = ("server_timeout", "reset")
 NUMERIC_FIELDS = frozenset("""
 seq pid uptime_s conns open reload dropped dst_port server_timeouts resets dial_ms dial_tries dial_backups
-first_byte_ms dur_ms up down dgram_up dgram_down rotations native_up native_down path_moves tunnel_drops assocs
-rcvbuf_drops tcp_rtt_ms tcp_unacked tcp_retransmits tcp_since_data_ms tcp_since_ack_ms
+first_byte_ms dur_ms up down dgram_up dgram_down rotations native_up native_down path_moves tunnel_drops native_lost
+native_late assocs rcvbuf_drops tcp_rtt_ms tcp_unacked tcp_retransmits tcp_since_data_ms tcp_since_ack_ms
 udp_client_in udp_target_out udp_target_in udp_client_out udp_drops target_write_errors
 """.split())
 TCP_FIELDS = (("tcp_rtt_ms", "rtt, мс"), ("tcp_unacked", "unacked"), ("tcp_retransmits", "retransmits"),
@@ -529,6 +529,12 @@ class Journal:
         n["moved"] += num(d, "path_moves") > 0
         n["drops"] += num(d, "tunnel_drops")
         n["dropped"] += num(d, "tunnel_drops") > 0
+        # A server older than the loss counts writes neither field, and its zero is not "nothing lost".
+        n["counted"] += "native_lost" in d
+        n["lost"] += num(d, "native_lost")
+        n["lossy"] += num(d, "native_lost") > 0
+        n["late"] += num(d, "native_late")
+        n["reordered"] += num(d, "native_late") > 0
         reasons, share = native_state(d, self.opts.native_share)
         if reasons:
             key = (num(d, "path_moves"), num(d, "tunnel_drops"), -1 if share is None else -share)
@@ -818,17 +824,23 @@ def section_udp(j, out):
             f"доля native от `dgram_up`+`dgram_down`: {pct(n['up'] + n['down'], n['dgrams'])}.",
             f"- `path_moves` всего {n['moves']} (ассоциаций с переходом ответов на поток: {n['moved']}); "
             f"`tunnel_drops` всего {n['drops']} (ассоциаций с потерями на потоке: {n['dropped']}).",
+            f"- `native_lost` всего {n['lost']} (ассоциаций, где путь native потерял датаграммы клиента: "
+            f"{n['lossy']}); `native_late` всего {n['late']} (ассоциаций, где они пришли не по порядку: "
+            f"{n['reordered']})."
+            + (f" Без этих полей {n['n'] - n['counted']} из {n['n']}: сервер, который их записал, потери еще не "
+               "считал." if n["counted"] < n["n"] else ""),
             f"- Не удержали native: {j.flagged.count}. Признаки: `path_moves` > 0, `tunnel_drops` > 0, `low_native` "
             f"(доля native ниже {o.native_share:g} при {MIN_DGRAMS} и более датаграммах).", ""]
     rows = []
     for t, d, e, reasons, share in j.flagged.items():
         rows.append([fmt_t(t, True), text(d, "account") or "-", hms(num(d, "dur_ms")), e,
                      f"{num(d, 'dgram_up')}/{num(d, 'dgram_down')}", f"{num(d, 'native_up')}/{num(d, 'native_down')}",
+                     f"{num(d, 'native_lost')}/{num(d, 'native_late')}",
                      "-" if share is None else f"{100 * share:.0f}%", num(d, "path_moves"), num(d, "tunnel_drops"),
                      ", ".join(reasons)])
     out += [f"### Ассоциации, где native не удержался (показано {len(rows)} из {j.flagged.count})", ""]
-    out += table(["завершено", "аккаунт", "длительность", "end", "dgram up/down", "native up/down", "доля native",
-                  "path_moves", "tunnel_drops", "признаки"], rows, right={7, 8})
+    out += table(["завершено", "аккаунт", "длительность", "end", "dgram up/down", "native up/down", "native lost/late",
+                  "доля native", "path_moves", "tunnel_drops", "признаки"], rows, right={8, 9})
 
 
 def section_client(j, client, out):

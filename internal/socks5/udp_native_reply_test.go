@@ -156,6 +156,7 @@ type scriptedNative struct {
 	next     atomic.Uint64
 	errs     []error
 	calls    atomic.Int32
+	closed   atomic.Bool
 }
 
 func newScriptedNative(errs ...error) *scriptedNative {
@@ -165,9 +166,19 @@ func newScriptedNative(errs ...error) *scriptedNative {
 
 func (f *scriptedNative) Port() int          { return 40000 }
 func (f *scriptedNative) MaxPayload() int    { return 1300 }
-func (f *scriptedNative) Close()             {}
 func (f *scriptedNative) Resync(next uint64) { f.resynced <- next }
 func (f *scriptedNative) Next() uint64       { return f.next.Load() }
+
+// Close settles the window as the hub's does: lost grows by what is missing.
+func (f *scriptedNative) Close() { f.closed.Store(true) }
+
+// Loss is 7 lost and 2 late, plus the 3 still missing that Close settles.
+func (f *scriptedNative) Loss() (lost, late uint64) {
+	if f.closed.Load() {
+		return 10, 2
+	}
+	return 7, 2
+}
 func (f *scriptedNative) Receive(ctx context.Context, datagram func(uint64, []byte), heard func(uint64)) bool {
 	select {
 	case <-ctx.Done():

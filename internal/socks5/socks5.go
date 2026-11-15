@@ -188,6 +188,10 @@ type NativeAssociation interface {
 	// carries for the same reason (docs/veil-spec.md, 10.6).
 	Resync(next uint64)
 	Next() uint64
+	// Loss is what the native path did to the client's datagrams by their
+	// counters: lost never came, late came after a later one
+	// (docs/veil-spec.md, 10.6). After Close it is final.
+	Loss() (lost, late uint64)
 	Close()
 }
 

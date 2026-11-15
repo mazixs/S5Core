@@ -585,7 +585,12 @@ func (s *Server) handleUDPTcpmux(ctx context.Context, conn conn, req *Request) e
 		return err
 	}
 	if nativeSession != nil {
-		defer nativeSession.Close()
+		// Loss is read after Close: the window moves no more, and the record
+		// gets the count the server's totals got.
+		defer func() {
+			nativeSession.Close()
+			req.end.nativeLoss(nativeSession.Loss())
+		}()
 	}
 
 	if s.config.OnUDPTunnel != nil {

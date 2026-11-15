@@ -37,6 +37,8 @@ type nativeHop struct {
 	dropUp   atomic.Bool // client -> server
 	dropDown atomic.Bool // server -> client
 	lostUp   atomic.Int64
+	lostDown atomic.Int64
+	passed   atomic.Int64 // server -> client
 }
 
 func newNativeHop(t *testing.T, hubPort int) *nativeHop {
@@ -60,10 +62,15 @@ func newNativeHop(t *testing.T, hubPort int) *nativeHop {
 			h.mu.Lock()
 			front := h.front
 			h.mu.Unlock()
-			if c == nil || front == nil || h.dropDown.Load() {
+			if c == nil || front == nil {
+				continue
+			}
+			if h.dropDown.Load() {
+				h.lostDown.Add(1)
 				continue
 			}
 			_, _ = front.WriteToUDPAddrPort(b[:n], *c)
+			h.passed.Add(1)
 		}
 	}()
 	return h
@@ -169,6 +176,10 @@ type nativeRig struct {
 	app     *net.UDPConn
 	local   *net.UDPAddr
 	control *meteredConn
+	// socks is the application's SOCKS5 connection, whose close ends the
+	// association, and done closes once it has ended.
+	socks net.Conn
+	done  chan struct{}
 }
 
 func newNativeRig(t *testing.T) *nativeRig {
@@ -190,12 +201,13 @@ func newNativeRig(t *testing.T) *nativeRig {
 	control := &meteredConn{Conn: stream}
 	conn := &rerouted{meteredConn: control, remote: &net.TCPAddr{IP: net.ParseIP("127.0.0.2"), Port: p}}
 	app, handlerSide := tcpPair(t)
-	runUDPAssociate(t, handlerSide, "", clientCfg, req, dialled(conn))
+	done := runUDPAssociate(t, handlerSide, "", clientCfg, req, dialled(conn))
 	reply := readAppReply(t, app)
 	if reply[1] != 0 {
 		t.Fatalf("application refused: %x", reply)
 	}
-	return &nativeRig{t: t, hop: hop, target: target, app: appSocket(t), local: boundUDPPort(t, reply), control: control}
+	return &nativeRig{t: t, hop: hop, target: target, app: appSocket(t), local: boundUDPPort(t, reply), control: control,
+		socks: app, done: done}
 }
 
 func (r *nativeRig) send(payload string) {
@@ -390,6 +402,44 @@ func TestAClientThatIsNotHeardMovesToTCP(t *testing.T) {
 		}
 	}
 	t.Fatal("the client kept sending into a path the server does not hear")
+}
+
+// The closing line counts the server's datagrams the path lost. The hop drops
+// a few and the stream goes on past them; ten more passing leaves the gap in
+// the window, so only a final count has it. Not parallel: it reads the log.
+func TestTheClosingLineCountsWhatThePathLost(t *testing.T) {
+	logs := captureLogs(t)
+	r := newNativeRig(t)
+	r.verified()
+	r.startStream()
+	r.hop.dropDown.Store(true)
+	if !eventually(func() bool { return r.hop.lostDown.Load() >= 5 }) {
+		t.Fatal("the hop dropped nothing")
+	}
+	r.hop.dropDown.Store(false)
+	dropped, passed := r.hop.lostDown.Load(), r.hop.passed.Load()
+	if !eventually(func() bool { return r.hop.passed.Load() >= passed+10 }) {
+		t.Fatal("the stream did not resume")
+	}
+	_ = r.socks.Close()
+	select {
+	case <-r.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the association did not end")
+	}
+	lines := linesOf(logs.String(), "UDP Tunnel closed")
+	if len(lines) != 1 {
+		t.Fatalf("closing lines: %q", lines)
+	}
+	var lost int64 = -1
+	for _, field := range strings.Fields(lines[0]) {
+		if v, ok := strings.CutPrefix(field, "native_lost="); ok {
+			lost, _ = strconv.ParseInt(v, 10, 64)
+		}
+	}
+	if lost < dropped || !strings.Contains(lines[0], " native_late=") {
+		t.Fatalf("native_lost %d, want at least the %d the hop dropped: %s", lost, dropped, lines[0])
+	}
 }
 
 // servedPort is the server's end of a native path on a real socket: it answers

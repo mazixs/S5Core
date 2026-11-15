@@ -28,7 +28,8 @@ from .util import go_duration, netns_inode, proc_stat, read_json, seconds, set_p
 PORTS = {"plain": 41080, "obfs": 41443, "wss": 41444, "metrics": 41090, "client": 41081}
 GAUGES = ("s5core_sessions", "s5core_connections_active", "s5core_obfs_handshake_failures_total",
           "s5core_half_close_failures_total", "s5core_connections_rejected_total",
-          "s5core_native_udp_packets_total", "s5core_native_udp_sessions")
+          "s5core_native_udp_packets_total", "s5core_native_udp_sessions", "s5core_native_udp_lost_total",
+          "s5core_native_udp_late_total")
 NATIVE_PACKETS = "s5core_native_udp_packets_total"
 # The outcomes pkg/s5server/native_udp.go publishes; read_error is a failed socket read, not a datagram.
 NATIVE_DROPS = ("tag", "replay", "auth")
@@ -491,7 +492,8 @@ CLIENT_EVENTS = {
     "Native UDP not answering; association using 0x83": "not_answering",
     "Native UDP path restored": "restored",
 }
-CLIENT_STATS = ("native_sent", "tcp_sent_oversize", "tcp_sent_other", "native_received", "tcp_received", "tunnel_drops")
+CLIENT_STATS = ("native_sent", "tcp_sent_oversize", "tcp_sent_other", "native_received", "tcp_received", "tunnel_drops",
+                "native_lost", "native_late")
 
 
 def _log_time(v):
