@@ -44,6 +44,20 @@ The Go collector keeps its default families (`go_gc_duration_seconds`, `go_memst
 
 Both histograms have seven finite buckets, from 64 ns to about 117 ms, so their quantiles are interpolated: everything between 0.92 ms and 10.5 ms falls into one bucket.
 
+[`docs/operations/runtime.rules.yml`](../operations/runtime.rules.yml) holds recording rules over these families, per `job` and `instance`, named `instance:go_*`: GC pause and scheduler latency p95/p99 over five minutes (no sample when the window has no observations), GC cycle and allocation rates, the GC share of runtime CPU, mutex wait rate, runtime-managed memory and its share of `GOMEMLIMIT` when a limit is set, and whether the GC CPU limiter was activated. To use them, put the file next to the Prometheus configuration and list it under `rule_files`:
+
+```yaml
+rule_files:
+  - runtime.rules.yml
+```
+
+The fixtures in [`runtime.rules.test.yml`](../operations/runtime.rules.test.yml) run in CI. Locally, from the repository root:
+
+```bash
+promtool check rules docs/operations/runtime.rules.yml
+promtool test rules docs/operations/runtime.rules.test.yml
+```
+
 ### Where the time goes
 
 `s5core_connection_phase_seconds` records six phases, modelled on HAProxy's timing fields:

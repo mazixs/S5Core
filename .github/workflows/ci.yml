@@ -30,6 +30,13 @@ jobs:
     - name: scripts/pre-commit.sh
       run: ./scripts/pre-commit.sh
 
+    - name: Prometheus rules (promtool check and test)
+      if: ${{ !cancelled() }}
+      uses: docker://prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+      with:
+        entrypoint: /bin/sh
+        args: -c "promtool check rules docs/operations/runtime.rules.yml && promtool test rules docs/operations/runtime.rules.test.yml"
+
     - name: Upload coverage and test diagnostics
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
