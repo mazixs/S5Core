@@ -36,6 +36,11 @@ type measurement struct {
 	Bytes           int64   `json:"bytes"`
 	SHA256          string  `json:"sha256,omitempty"`
 	Error           string  `json:"error,omitempty"`
+	// With -flow-context: the probe's TCP connection, to find the request
+	// among the latency recorder's flows. Through s5client it is the remote
+	// of the client's application flow.
+	ConnectionLocal  string `json:"connection_local,omitempty"`
+	ConnectionRemote string `json:"connection_remote,omitempty"`
 }
 
 // Setup measures DialContext in full: direct DNS/TCP, or TCP to the proxy
@@ -69,6 +74,10 @@ func newTransport(socks string, roots *x509.CertPool, reuse, http2 bool, budget 
 }
 
 type timingKey struct{}
+
+// flowContextKey opts a request in to its connection's addresses.
+type flowContextKey struct{}
+
 type timing struct {
 	mu     sync.Mutex
 	result measurement
@@ -87,6 +96,7 @@ func measure(ctx context.Context, client *http.Client, target string) measuremen
 func measureBody(ctx context.Context, client *http.Client, target, method string, body io.Reader) measurement {
 	start := time.Now()
 	record := new(timing)
+	flowContext, _ := ctx.Value(flowContextKey{}).(bool)
 	var tlsStart, dnsStart time.Time
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(httptrace.DNSStartInfo) { record.mu.Lock(); dnsStart = time.Now(); record.mu.Unlock() },
@@ -104,6 +114,10 @@ func measureBody(ctx context.Context, client *http.Client, target, method string
 		GotConn: func(info httptrace.GotConnInfo) {
 			record.mu.Lock()
 			record.result.Reused = info.Reused
+			if flowContext {
+				record.result.ConnectionLocal = info.Conn.LocalAddr().String()
+				record.result.ConnectionRemote = info.Conn.RemoteAddr().String()
+			}
 			record.mu.Unlock()
 		},
 		GotFirstResponseByte: func() {
@@ -164,6 +178,7 @@ func run(args []string, output, stderr io.Writer) error {
 	count := flags.Int("count", 1, "number of sequential requests")
 	reuse := flags.Bool("reuse", false, "reuse HTTP connections")
 	http2 := flags.Bool("http2", true, "allow HTTP/2; negotiated protocol is reported")
+	flowContext := flags.Bool("flow-context", false, "report each request's local and remote TCP address, to match it with latency diagnostics flows")
 	ca := flags.String("ca", "", "PEM CA file to add to system roots")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -197,8 +212,12 @@ func run(args []string, output, stderr io.Writer) error {
 	client := &http.Client{Transport: tr, Timeout: *timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	encoder := json.NewEncoder(output)
 	failed := false
+	ctx := context.Background()
+	if *flowContext {
+		ctx = context.WithValue(ctx, flowContextKey{}, true)
+	}
 	for i := 0; i < *count; i++ {
-		result := measure(context.Background(), client, *target)
+		result := measure(ctx, client, *target)
 		if err := encoder.Encode(result); err != nil {
 			return err
 		}

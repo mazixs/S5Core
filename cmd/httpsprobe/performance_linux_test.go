@@ -22,9 +22,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/mazixs/S5Core/internal/testcert"
 )
@@ -33,6 +35,78 @@ type perfUsage struct {
 	CPUTicks     uint64 `json:"cpu_ticks"`
 	RSSBytes     uint64 `json:"rss_bytes"`
 	PeakRSSBytes uint64 `json:"peak_rss_bytes"`
+	OpenFDs      int    `json:"open_fds"`
+}
+
+// perfResource is one line of resources.jsonl: a case of one cycle, the idle
+// phase before the cases, or a hold of idle tunnels.
+type perfResource struct {
+	Mode, Scenario, Protocol, Reuse                      string
+	Cycle, Count                                         int
+	Scrapes, ScrapeErrors, ScrapeNanoseconds             int64
+	ScrapeInterval, RequestInterval, BulkInterval        string
+	MaxOfferDelayNanoseconds                             int64
+	LateOffers                                           int
+	BackgroundBytes, BackgroundRequests                  int64
+	Seconds, RecoverySeconds                             float64
+	ServerBefore, ServerAfter, ClientBefore, ClientAfter perfUsage
+	GeneratorBefore, GeneratorAfter                      perfUsage
+	ServerRecovered, ClientRecovered                     *perfUsage `json:",omitempty"`
+	RecoveredAtUTC                                       time.Time  `json:",omitzero"`
+	RecoveredMetricsAtUTC                                time.Time  `json:",omitzero"`
+	RecoveryIncident                                     string     `json:",omitempty"`
+	StartedAtUTC, EndedAtUTC                             time.Time  `json:",omitzero"`
+}
+
+// perfSlowTransport makes the generator a slow reader of response bodies.
+type perfSlowTransport struct {
+	base  http.RoundTripper
+	delay time.Duration
+}
+
+func (s perfSlowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	response, err := s.base.RoundTrip(r)
+	if err == nil {
+		response.Body = perfSlowBody{ReadCloser: response.Body, delay: s.delay}
+	}
+	return response, err
+}
+
+type perfSlowBody struct {
+	io.ReadCloser
+	delay time.Duration
+}
+
+func (b perfSlowBody) Read(p []byte) (int, error) {
+	if len(p) > 32<<10 {
+		p = p[:32<<10]
+	}
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		time.Sleep(b.delay)
+	}
+	return n, err
+}
+
+type perfSample struct {
+	measurement
+	offerDelay       time.Duration
+	scheduledTotalMS float64
+}
+
+// perfMeasure times a paced request from its planned start as well: the
+// inner timer of measureBody misses the wait for a free worker.
+func perfMeasure(planned time.Time, one func() measurement) perfSample {
+	var delay time.Duration
+	if !planned.IsZero() {
+		delay = max(time.Since(planned), 0)
+	}
+	m := one()
+	scheduledTotal := m.TotalMS
+	if !planned.IsZero() {
+		scheduledTotal = milliseconds(time.Since(planned))
+	}
+	return perfSample{measurement: m, offerDelay: delay, scheduledTotalMS: scheduledTotal}
 }
 
 func processUsage(t *testing.T, cmd *exec.Cmd) perfUsage {
@@ -53,6 +127,11 @@ func pidUsage(t *testing.T, pid int) perfUsage {
 	u, _ := strconv.ParseUint(f[11], 10, 64)
 	s, _ := strconv.ParseUint(f[12], 10, 64)
 	result := perfUsage{CPUTicks: u + s}
+	fds, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.OpenFDs = len(fds)
 	data, err = os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
 	if err != nil {
 		t.Fatal(err)
@@ -99,6 +178,17 @@ func perfList(name, fallback string) []string {
 	}
 	return strings.Split(s, ",")
 }
+
+func perfDuration(name string, fallback time.Duration) time.Duration {
+	if s := os.Getenv(name); s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil || d <= 0 {
+			panic(name + " must be a positive duration")
+		}
+		return d
+	}
+	return fallback
+}
 func perfProcess(t *testing.T, binary, ready, dir string, env []string) *exec.Cmd {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -110,7 +200,10 @@ func perfProcess(t *testing.T, binary, ready, dir string, env []string) *exec.Cm
 	}
 	cmd := exec.Command(binary)
 	// Do not inherit deployment credentials or listener settings.
-	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "LOG_LEVEL=error", "GOMAXPROCS=" + strconv.Itoa(perfInt("S5_PERF_PROCS", 16))}, env...)
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "LOG_LEVEL=error"}, env...)
+	if os.Getenv("S5_PERF_PROCS") != "auto" {
+		cmd.Env = append(cmd.Env, "GOMAXPROCS="+strconv.Itoa(perfInt("S5_PERF_PROCS", 16)))
+	}
 	if os.Getenv("S5_PERF_TRACE") == "1" {
 		cmd.Env = append(cmd.Env, "S5_TRACE=1", "GODEBUG=gctrace=1")
 	}
@@ -155,6 +248,16 @@ func TestPerformanceProcesses(t *testing.T) {
 	serverBin, clientBin, out := os.Getenv("S5_PERF_SERVER"), os.Getenv("S5_PERF_CLIENT"), os.Getenv("S5_PERF_OUT")
 	if serverBin == "" || clientBin == "" || out == "" {
 		t.Skip("set S5_PERF_SERVER, S5_PERF_CLIENT and fresh S5_PERF_OUT to run process benchmark")
+	}
+	diagnostics := os.Getenv("S5_PERF_DIAGNOSTICS")
+	switch diagnostics {
+	case "", "0", "1", "trace":
+	default:
+		t.Fatal("S5_PERF_DIAGNOSTICS must be 0, 1 or trace")
+	}
+	recording := diagnostics == "1" || diagnostics == "trace"
+	if os.Getenv("S5_PERF_RECOVERY_MARKERS") == "1" && !recording {
+		t.Fatal("S5_PERF_RECOVERY_MARKERS requires S5_PERF_DIAGNOSTICS")
 	}
 	if err := os.Mkdir(out, 0700); err != nil {
 		t.Fatal(err)
@@ -278,39 +381,70 @@ func TestPerformanceProcesses(t *testing.T) {
 				serverEnv = append(serverEnv, "WS_MAX_FRAME="+n)
 				clientEnv = append(clientEnv, "WS_MAX_FRAME="+n)
 			}
+			if recording {
+				// A directory per process; the run ID pairs the two proxies' incidents.
+				runID := "S5_DIAGNOSTICS_RUN_ID=" + uuid.New().String()
+				serverEnv = append(serverEnv, "S5_DIAGNOSTICS_DIR="+filepath.Join(dir, "server", "diagnostics"), runID)
+				clientEnv = append(clientEnv, "S5_DIAGNOSTICS_DIR="+filepath.Join(dir, "client", "diagnostics"), runID)
+				if diagnostics == "trace" {
+					serverEnv = append(serverEnv, "S5_DIAGNOSTICS_TRACE=1")
+					clientEnv = append(clientEnv, "S5_DIAGNOSTICS_TRACE=1")
+				}
+			}
 			var server, client *exec.Cmd
+			var proxies []string // the subdirectories of the running proxies
 			socks := ""
 			if mode != "direct" {
 				server = perfProcess(t, serverBin, plain, filepath.Join(dir, "server"), serverEnv)
 				socks = plain
+				proxies = append(proxies, "server")
 			}
 			if mode == "obfs" || mode == "wss" {
 				client = perfProcess(t, clientBin, clientAddr, filepath.Join(dir, "client"), clientEnv)
 				socks = clientAddr
+				proxies = append(proxies, "client")
 			}
 			// Real Prometheus scrapes run alongside requests. The server uses its SDK.
 			scrapeCtx, cancelScrape := context.WithCancel(context.Background())
 			var scrapeWG sync.WaitGroup
+			scrapeInterval := perfDuration("S5_PERF_SCRAPE_INTERVAL", 250*time.Millisecond)
+			var scrapes, scrapeErrors, scrapeNanos atomic.Int64
+			// The last scrape, saved at the end of a recovery period.
+			var lastMu sync.Mutex
+			var lastMetrics []byte
+			var lastMetricsAt time.Time
 			if server != nil {
 				scrapeWG.Go(func() {
 					hc := &http.Client{Timeout: time.Second}
-					ticker := time.NewTicker(250 * time.Millisecond)
+					ticker := time.NewTicker(scrapeInterval)
 					defer ticker.Stop()
 					for {
 						select {
 						case <-scrapeCtx.Done():
 							return
 						case <-ticker.C:
-							resp, e := hc.Get("http://" + metrics + "/metrics")
-							if e == nil {
-								_, _ = io.Copy(io.Discard, resp.Body)
-								_ = resp.Body.Close()
+							started := time.Now()
+							body, e := perfScrape(hc, metrics)
+							scrapeNanos.Add(time.Since(started).Nanoseconds())
+							if e != nil {
+								scrapeErrors.Add(1)
+								continue
 							}
+							scrapes.Add(1)
+							lastMu.Lock()
+							lastMetrics, lastMetricsAt = body, time.Now().UTC()
+							lastMu.Unlock()
 						}
 					}
 				})
 			}
-			defer func() { cancelScrape(); scrapeWG.Wait() }()
+			defer func() {
+				cancelScrape()
+				scrapeWG.Wait()
+				if n := scrapeErrors.Load(); n != 0 {
+					t.Errorf("%d of %d metrics scrapes failed", n, n+scrapes.Load())
+				}
+			}()
 			results, e := os.Create(filepath.Join(dir, "requests.jsonl"))
 			if e != nil {
 				t.Fatal(e)
@@ -323,149 +457,277 @@ func TestPerformanceProcesses(t *testing.T) {
 			}
 			defer usage.Close()
 			ue := json.NewEncoder(usage)
+			// begin records the processes and the scrape counters before a
+			// phase; the function it returns records them after it.
+			begin := func(r *perfResource) (end func()) {
+				r.ServerBefore, r.ClientBefore, r.GeneratorBefore = processUsage(t, server), processUsage(t, client), pidUsage(t, os.Getpid())
+				r.ScrapeInterval = scrapeInterval.String()
+				scraped, failed, spent := scrapes.Load(), scrapeErrors.Load(), scrapeNanos.Load()
+				started := time.Now()
+				r.StartedAtUTC = started.UTC()
+				return func() {
+					r.ServerAfter, r.ClientAfter, r.GeneratorAfter = processUsage(t, server), processUsage(t, client), pidUsage(t, os.Getpid())
+					r.Scrapes, r.ScrapeErrors, r.ScrapeNanoseconds = scrapes.Load()-scraped, scrapeErrors.Load()-failed, scrapeNanos.Load()-spent
+					r.Seconds = time.Since(started).Seconds()
+					r.EndedAtUTC = time.Now().UTC()
+				}
+			}
+			recovery := perfDuration("S5_PERF_RECOVERY_DURATION", 0)
+			// recoverAfter waits out the recovery period after a phase and
+			// records the processes and the server's last scrape, into file
+			// name, at its end.
+			recoverAfter := func(r *perfResource, name string) {
+				if recovery == 0 {
+					return
+				}
+				t.Logf("cycle=%d mode=%s case=%s recovery begins duration=%s", r.Cycle, mode, r.Scenario, recovery)
+				started := time.Now()
+				r.RecoveryIncident = perfRecoveryWait(t, dir, proxies, recovery)
+				r.ServerRecovered, r.ClientRecovered = new(processUsage(t, server)), new(processUsage(t, client))
+				r.RecoveredAtUTC, r.RecoverySeconds = time.Now().UTC(), time.Since(started).Seconds()
+				if server == nil {
+					return
+				}
+				lastMu.Lock()
+				body := lastMetrics
+				r.RecoveredMetricsAtUTC = lastMetricsAt
+				lastMu.Unlock()
+				if err := os.WriteFile(filepath.Join(dir, name), body, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if idle := perfDuration("S5_PERF_IDLE_DURATION", 0); idle > 0 {
+				r := perfResource{Mode: mode, Scenario: "idle"}
+				end := begin(&r)
+				t.Logf("mode=%s idle begins duration=%s", mode, idle)
+				perfWait(t, idle)
+				end()
+				if err := ue.Encode(r); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for _, protocol := range perfList("S5_PERF_PROTOCOLS", "h1,h2") {
 				for _, reuseMode := range perfList("S5_PERF_REUSE", "new,reuse") {
-					for _, scenario := range perfList("S5_PERF_CASES", "small,large,upload") {
-						h2, reuse := protocol == "h2", reuseMode == "reuse"
-						tr, e := newTransport(socks, roots, reuse, h2, 5*time.Second)
-						if e != nil {
-							t.Fatal(e)
-						}
-						tr.MaxIdleConnsPerHost = perfInt("S5_PERF_CONCURRENCY", 1)
-						target := origin.URL
-						if os.Getenv("S5_PERF_FQDN") == "1" {
-							target = strings.Replace(target, "127.0.0.1", "localhost", 1)
-							tr.TLSClientConfig.ServerName = "127.0.0.1"
-						}
-						hc := &http.Client{Transport: tr, Timeout: 70 * time.Second}
-						path := scenario
-						if scenario == "mixed" {
-							path = "small"
-						}
-						want := small
-						count := perfInt("S5_PERF_SMALL", 100)
-						switch scenario {
-						case "large":
-							want = large
-							count = perfInt("S5_PERF_LARGE", 15)
-						case "upload":
-							count = perfInt("S5_PERF_LARGE", 15)
-						case "upload-stream":
-							count = 1
-						case "stream":
-							want = bytes.Repeat(streamChunk, 350)
-							count = 1
-						}
-						expected := perfHash(want)
-						one := func() measurement {
-							if scenario == "upload-stream" {
-								reader, writer := io.Pipe()
-								done := make(chan error, 1)
-								go func() {
-									defer writer.Close()
-									for i := 0; i < 350; i++ {
-										time.Sleep(100 * time.Millisecond)
-										if _, e := writer.Write(streamChunk); e != nil {
-											done <- e
+					for cycle := range perfInt("S5_PERF_CYCLES", 1) {
+						for _, scenario := range perfList("S5_PERF_CASES", "small,large,upload") {
+							recovered := fmt.Sprintf("metrics-%s-%s-%s-cycle-%d-recovered.prom", protocol, reuseMode, scenario, cycle+1)
+							if scenario == "idle-tunnel" {
+								r := perfResource{Mode: mode, Scenario: scenario, Protocol: "raw_tcp", Reuse: "held", Cycle: cycle + 1}
+								end := begin(&r)
+								held, release := perfIdleTunnels(t, socks)
+								end()
+								release()
+								r.Count = held
+								recoverAfter(&r, recovered)
+								if err := ue.Encode(r); err != nil {
+									t.Fatal(err)
+								}
+								continue
+							}
+							h2, reuse := protocol == "h2", reuseMode == "reuse"
+							tr, e := newTransport(socks, roots, reuse, h2, 5*time.Second)
+							if e != nil {
+								t.Fatal(e)
+							}
+							tr.MaxIdleConnsPerHost = perfInt("S5_PERF_CONCURRENCY", 1)
+							target := origin.URL
+							if os.Getenv("S5_PERF_FQDN") == "1" {
+								target = strings.Replace(target, "127.0.0.1", "localhost", 1)
+								tr.TLSClientConfig.ServerName = "127.0.0.1"
+							}
+							var roundTripper http.RoundTripper = tr
+							if scenario == "slow-read" {
+								roundTripper = perfSlowTransport{base: tr, delay: perfDuration("S5_PERF_SLOW_READ_DELAY", 10*time.Millisecond)}
+							}
+							hc := &http.Client{Transport: roundTripper, Timeout: 70 * time.Second}
+							path := scenario
+							switch scenario {
+							case "mixed":
+								path = "small"
+							case "slow-read":
+								path = "large"
+							}
+							want := small
+							count := perfInt("S5_PERF_SMALL", 100)
+							switch scenario {
+							case "large", "slow-read":
+								want = large
+								count = perfInt("S5_PERF_LARGE", 15)
+							case "upload":
+								count = perfInt("S5_PERF_LARGE", 15)
+							case "upload-stream":
+								count = 1
+							case "stream":
+								want = bytes.Repeat(streamChunk, 350)
+								count = 1
+							}
+							expected := perfHash(want)
+							ctx := context.Background()
+							if os.Getenv("S5_PERF_FLOW_CONTEXT") == "1" {
+								ctx = context.WithValue(ctx, flowContextKey{}, true)
+							}
+							one := func() measurement {
+								if scenario == "upload-stream" {
+									reader, writer := io.Pipe()
+									done := make(chan error, 1)
+									go func() {
+										defer writer.Close()
+										for i := 0; i < 350; i++ {
+											time.Sleep(100 * time.Millisecond)
+											if _, e := writer.Write(streamChunk); e != nil {
+												done <- e
+												return
+											}
+										}
+										done <- nil
+									}()
+									m := measureBody(ctx, hc, target+"/upload-stream", http.MethodPost, reader)
+									_ = reader.Close()
+									if e := <-done; e != nil && m.Error == "" {
+										m.Error = e.Error()
+									}
+									return m
+								}
+
+								if scenario == "upload" {
+									return measureBody(ctx, hc, target+"/upload", http.MethodPost, bytes.NewReader(large))
+								}
+								return measure(ctx, hc, target+"/"+path)
+							}
+							for i := 0; i < 3 && scenario != "stream" && scenario != "upload-stream"; i++ {
+								m := one()
+								if m.Error != "" || m.Status != 200 || m.SHA256 != expected {
+									t.Fatalf("warmup: %+v", m)
+								}
+							}
+							minimum := perfDuration("S5_PERF_MIN_DURATION", 0)
+							if cycle == 0 {
+								minimum = max(minimum, perfDuration("S5_PERF_FIRST_DURATION", 0))
+							}
+							requestInterval := perfDuration("S5_PERF_REQUEST_INTERVAL", 0)
+							bulkInterval := perfDuration("S5_PERF_BULK_INTERVAL", 0)
+							r := perfResource{Mode: mode, Scenario: scenario, Protocol: protocol, Reuse: reuseMode, Cycle: cycle + 1,
+								RequestInterval: requestInterval.String(), BulkInterval: bulkInterval.String()}
+							t.Logf("cycle=%d mode=%s case=%s load begins minimum=%s", cycle+1, mode, scenario, minimum)
+							end := begin(&r)
+							start := time.Now()
+							bgCtx, stopBG := context.WithCancel(context.Background())
+							var bg sync.WaitGroup
+							var bulkBytes, bulkRequests int64 // the worker's, read after bg.Wait
+							if scenario == "mixed" {
+								bg.Go(func() {
+									bt, e := newTransport(socks, roots, true, h2, 5*time.Second)
+									if e != nil {
+										t.Error(e)
+										return
+									}
+									defer bt.CloseIdleConnections()
+									bc := &http.Client{Transport: bt, Timeout: 30 * time.Second}
+									for bgCtx.Err() == nil {
+										m := measure(bgCtx, bc, origin.URL+"/large")
+										if bgCtx.Err() != nil {
 											return
 										}
+										if m.Error != "" || m.SHA256 != largeHash {
+											t.Errorf("background bulk: %+v", m)
+											return
+										}
+										bulkBytes += m.Bytes
+										bulkRequests++
+										if bulkInterval > 0 {
+											select {
+											case <-bgCtx.Done():
+												return
+											case <-time.After(bulkInterval):
+											}
+										}
 									}
-									done <- nil
-								}()
-								m := measureBody(context.Background(), hc, target+"/upload-stream", http.MethodPost, reader)
-								_ = reader.Close()
-								if e := <-done; e != nil && m.Error == "" {
-									m.Error = e.Error()
+								})
+							}
+							// With S5_PERF_REQUEST_INTERVAL the requests are offered on a
+							// schedule, not as fast as the workers take them.
+							jobs := make(chan time.Time)
+							samples := make(chan perfSample)
+							var workers sync.WaitGroup
+							for w := 0; w < perfInt("S5_PERF_CONCURRENCY", 1); w++ {
+								workers.Go(func() {
+									for planned := range jobs {
+										samples <- perfMeasure(planned, one)
+									}
+								})
+							}
+							go func() {
+								for i := 0; i < count || time.Since(start) < minimum; i++ {
+									var planned time.Time
+									if requestInterval > 0 {
+										planned = start.Add(time.Duration(i) * requestInterval)
+										time.Sleep(time.Until(planned))
+									}
+									jobs <- planned
 								}
-								return m
-							}
-
-							if scenario == "upload" {
-								return measureBody(context.Background(), hc, target+"/upload", http.MethodPost, bytes.NewReader(large))
-							}
-							return measure(context.Background(), hc, target+"/"+path)
-						}
-						for i := 0; i < 3 && scenario != "stream" && scenario != "upload-stream"; i++ {
-							m := one()
-							if m.Error != "" || m.Status != 200 || m.SHA256 != expected {
-								t.Fatalf("warmup: %+v", m)
-							}
-						}
-						beforeS, beforeC := processUsage(t, server), processUsage(t, client)
-						beforeG := pidUsage(t, os.Getpid())
-						start := time.Now()
-						bgCtx, stopBG := context.WithCancel(context.Background())
-						var bg sync.WaitGroup
-						if scenario == "mixed" {
-							bg.Go(func() {
-								bt, e := newTransport(socks, roots, true, h2, 5*time.Second)
-								if e != nil {
+								close(jobs)
+								workers.Wait()
+								close(samples)
+							}()
+							for s := range samples {
+								m := s.measurement
+								r.Count++
+								r.MaxOfferDelayNanoseconds = max(r.MaxOfferDelayNanoseconds, s.offerDelay.Nanoseconds())
+								if requestInterval > 0 && s.offerDelay > requestInterval {
+									r.LateOffers++
+								}
+								if m.Error != "" || m.Status != 200 || m.SHA256 != expected || m.Bytes != int64(len(want)) {
+									t.Errorf("%s: invalid response: %+v", scenario, m)
+								}
+								if (h2 && m.Protocol != "HTTP/2.0") || (!h2 && m.Protocol != "HTTP/1.1") {
+									t.Errorf("protocol %s", m.Protocol)
+								}
+								if e := enc.Encode(struct {
+									Mode, Scenario, Protocol, Reuse string
+									Cycle                           int
+									Measurement                     measurement
+									OfferDelayNS                    int64   `json:"offer_delay_ns"`
+									ScheduledTotalMS                float64 `json:"scheduled_total_ms"`
+								}{mode, scenario, protocol, reuseMode, cycle + 1, m, s.offerDelay.Nanoseconds(), s.scheduledTotalMS}); e != nil {
 									t.Error(e)
-									return
 								}
-								defer bt.CloseIdleConnections()
-								bc := &http.Client{Transport: bt, Timeout: 30 * time.Second}
-								for bgCtx.Err() == nil {
-									m := measure(bgCtx, bc, origin.URL+"/large")
-									if bgCtx.Err() != nil {
-										return
-									}
-									if m.Error != "" || m.SHA256 != largeHash {
-										t.Errorf("background bulk: %+v", m)
-										return
-									}
-								}
-							})
-						}
-						jobs := make(chan int)
-						samples := make(chan measurement)
-						var workers sync.WaitGroup
-						for w := 0; w < perfInt("S5_PERF_CONCURRENCY", 1); w++ {
-							workers.Go(func() {
-								for range jobs {
-									samples <- one()
-								}
-							})
-						}
-						go func() {
-							for i := 0; i < count; i++ {
-								jobs <- i
 							}
-							close(jobs)
-							workers.Wait()
-							close(samples)
-						}()
-						for m := range samples {
-							if m.Error != "" || m.Status != 200 || m.SHA256 != expected || m.Bytes != int64(len(want)) {
-								t.Errorf("%s: invalid response: %+v", scenario, m)
-							}
-							if (h2 && m.Protocol != "HTTP/2.0") || (!h2 && m.Protocol != "HTTP/1.1") {
-								t.Errorf("protocol %s", m.Protocol)
-							}
-							if e := enc.Encode(struct {
-								Mode, Scenario, Protocol, Reuse string
-								Measurement                     measurement
-							}{mode, scenario, protocol, reuseMode, m}); e != nil {
+							stopBG()
+							bg.Wait()
+							end()
+							r.BackgroundBytes, r.BackgroundRequests = bulkBytes, bulkRequests
+							tr.CloseIdleConnections()
+							recoverAfter(&r, recovered)
+							if e := ue.Encode(r); e != nil {
 								t.Error(e)
 							}
 						}
-						stopBG()
-						bg.Wait()
-						afterS, afterC := processUsage(t, server), processUsage(t, client)
-						afterG := pidUsage(t, os.Getpid())
-						if e := ue.Encode(struct {
-							Mode, Scenario, Protocol, Reuse                      string
-							Count                                                int
-							Seconds                                              float64
-							ServerBefore, ServerAfter, ClientBefore, ClientAfter perfUsage
-							GeneratorBefore, GeneratorAfter                      perfUsage
-						}{mode, scenario, protocol, reuseMode, count, time.Since(start).Seconds(), beforeS, afterS, beforeC, afterC, beforeG, afterG}); e != nil {
-							t.Error(e)
-						}
-						tr.CloseIdleConnections()
+					}
+				}
+			}
+			if recording {
+				// The recorder makes its directory as it starts; a failure to
+				// start is only a line in process.log.
+				for _, proxy := range proxies {
+					if _, err := os.Stat(filepath.Join(dir, proxy, "diagnostics")); err != nil {
+						t.Errorf("latency diagnostics of the %s did not start: %v", proxy, err)
 					}
 				}
 			}
 		})
 	}
+}
+
+// perfScrape reads the server's metrics as Prometheus does.
+func perfScrape(hc *http.Client, addr string) ([]byte, error) {
+	resp, err := hc.Get("http://" + addr + "/metrics")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err == nil && resp.StatusCode != http.StatusOK {
+		err = fmt.Errorf("metrics: HTTP %d", resp.StatusCode)
+	}
+	return body, err
 }
