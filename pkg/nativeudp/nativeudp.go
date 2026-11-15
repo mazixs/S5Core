@@ -95,7 +95,13 @@ type Session struct {
 	// not, at counter % window: the window moves without computing a tag
 	// twice or walking the map.
 	recvRing [window][8]byte
-	answers  atomic.Pointer[route]
+	// loss is what the window made of the peer's counters. gotTop is the
+	// highest counter received plus one, not recvHigh: a resync moves
+	// recvHigh past counters that never came, and one of them coming is not
+	// late.
+	loss    Loss
+	gotTop  uint64
+	answers atomic.Pointer[route]
 	// Only the hub reader changes this bounded return-path proof state.
 	candidate        route
 	routeToken       [16]byte
@@ -343,6 +349,11 @@ func (s *Session) settle(counter uint64, moved func(tag [8]byte, added bool)) (n
 func (s *Session) settleLocked(counter uint64, moved func(tag [8]byte, added bool)) (newest, kept bool) {
 	newest = !s.recvAny || counter > s.recvHigh
 	s.recvAny = true
+	if counter < s.gotTop {
+		s.loss.Late++
+	} else {
+		s.gotTop = counter + 1
+	}
 	s.advance(counter, moved)
 	return newest, counter >= low(s.recvHigh)
 }
@@ -357,10 +368,18 @@ func (s *Session) advance(high uint64, moved func(tag [8]byte, added bool)) {
 		s.recvHigh = high
 		for c := from; c < min(low(high), s.recvTop); c++ {
 			retired := s.recvRing[c%window]
+			// A received counter's tag went with its claim, so a tag still
+			// here is a counter lost. The length tells without a lookup.
+			n := len(s.recvTags)
 			delete(s.recvTags, retired)
+			s.loss.Lost += uint64(n - len(s.recvTags))
 			if moved != nil {
 				moved(retired, false)
 			}
+		}
+		// The counters a resync jumped over never had a tag.
+		if l := low(high); l > s.recvTop {
+			s.loss.Lost += l - s.recvTop
 		}
 	}
 	for c := max(s.recvTop, low(s.recvHigh)); c < s.recvHigh+lookAhead; c++ {
@@ -406,6 +425,55 @@ func (s *Session) resyncLocked(next uint64, moved func(tag [8]byte, added bool))
 	}
 	s.recvAny = true
 	s.advance(next-1, moved)
+}
+
+// Loss is what the receive window made of the peer's datagrams, probes
+// included (docs/veil-spec.md, 10.6). Replays, foreign tags and datagrams
+// that fail authentication count in neither field.
+type Loss struct {
+	// Lost are the counters that left the window without coming, the ones a
+	// resync jumped over among them.
+	Lost uint64
+	// Late are the datagrams that came after one with a higher counter.
+	Late uint64
+}
+
+// Loss is what the window has counted so far. A counter still in the window
+// is not lost: it may yet come.
+func (s *Session) Loss() Loss {
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
+	return s.loss
+}
+
+// FinalLoss is Loss for an association that has ended: a counter still in the
+// window is lost as well when it has not come and a later one came or a
+// resync passed it. Hub.Remove takes those into Loss, and from then on
+// neither changes.
+func (s *Session) FinalLoss() Loss {
+	s.recvMu.Lock()
+	defer s.recvMu.Unlock()
+	l := s.loss
+	if !s.closed.Load() {
+		l.Lost += s.missing()
+	}
+	return l
+}
+
+// missing counts the counters from the bottom of the window to recvHigh that
+// have not come. The peer sealed every one: recvHigh came, or is below the
+// counter a resync gave.
+func (s *Session) missing() uint64 {
+	if !s.recvAny {
+		return 0
+	}
+	var n uint64
+	for c := low(s.recvHigh); c <= s.recvHigh; c++ {
+		if _, ok := s.recvTags[s.recvRing[c%window]]; ok {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *Session) Packets() <-chan Packet { return s.packets }
@@ -474,6 +542,9 @@ type Hub struct {
 	// write them itself: a write that waits for the socket would stop the
 	// reception of every session.
 	acks chan ackRequest
+	// loss is the sessions' Loss summed, under mu, which every move of a
+	// session's window already takes; a removed session leaves its final one.
+	loss Loss
 }
 
 // ackRequest is a probe to answer, and how long it was on the wire.
@@ -493,11 +564,14 @@ type Stats struct {
 	Active                                                 int
 	DataEnqueued, DataQueueDrops, ProbeACKQueueDrops       uint64
 	ProbeACKWriteErrors                                    uint64
+	// Lost and Late are the Loss of every session summed, with the final
+	// one of a removed session.
+	Lost, Late uint64
 }
 
 func (h *Hub) Stats() Stats {
 	h.mu.Lock()
-	active := len(h.sessions)
+	active, loss := len(h.sessions), h.loss
 	h.mu.Unlock()
 	return Stats{
 		Accepted: h.accepted.Load(), TagDrops: h.tagDrops.Load(), ReplayDrops: h.replayDrops.Load(),
@@ -505,6 +579,7 @@ func (h *Hub) Stats() Stats {
 		DataEnqueued: h.dataEnqueued.Load(), DataQueueDrops: h.dataQueueDrops.Load(),
 		ProbeACKQueueDrops:  h.probeACKQueueDrops.Load(),
 		ProbeACKWriteErrors: h.probeACKWriteErrors.Load(),
+		Lost:                loss.Lost, Late: loss.Late,
 	}
 }
 
@@ -596,12 +671,19 @@ func (h *Hub) RegisterPeer(keys veil.DatagramKeys, peer netip.Addr) *Session {
 }
 
 // Remove drops every tag of the session, all of which are in its window.
+// What has not come by then is lost: FinalLoss holds from here.
 func (h *Hub) Remove(s *Session) {
 	// Every operation that needs both locks takes the session lock first.
 	s.recvMu.Lock()
 	defer s.recvMu.Unlock()
+	if s.closed.Load() {
+		return
+	}
+	missing := s.missing()
+	s.loss.Lost += missing
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.loss.Lost += missing
 	s.closed.Store(true)
 	delete(h.sessions, s)
 	for c := low(s.recvHigh); c < s.recvTop; c++ {
@@ -625,9 +707,11 @@ func (h *Hub) Resync(s *Session, next uint64) {
 	}
 	s.resynced = now
 	var changes tagChanges
+	was := s.loss
 	s.resyncLocked(next, changes.record)
 	h.mu.Lock()
 	h.publish(s, &changes)
+	h.count(was, s.loss)
 	h.mu.Unlock()
 }
 
@@ -666,9 +750,11 @@ func (h *Hub) settle(s *Session, tag [8]byte, counter uint64) (newest, accepted 
 		return false, false
 	}
 	var changes tagChanges
+	was := s.loss
 	newest, kept := s.settleLocked(counter, changes.record)
 	h.mu.Lock()
 	h.publish(s, &changes)
+	h.count(was, s.loss)
 	if h.index[tag] == s {
 		delete(h.index, tag)
 	}
@@ -677,6 +763,12 @@ func (h *Hub) settle(s *Session, tag [8]byte, counter uint64) (newest, accepted 
 	}
 	h.mu.Unlock()
 	return newest, true
+}
+
+// count adds what a session's window counted since was, with h.mu held.
+func (h *Hub) count(was, now Loss) {
+	h.loss.Lost += now.Lost - was.Lost
+	h.loss.Late += now.Late - was.Late
 }
 
 // forget drops a tag of s from both indexes. Tags of two sessions can
