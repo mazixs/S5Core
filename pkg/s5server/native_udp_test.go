@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -189,6 +190,12 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 				if !ok || len(gauge.DataPoints) != 1 || gauge.DataPoints[0].Attributes.Len() != 0 {
 					t.Fatalf("sessions metric: %T %+v", m.Data, m.Data)
 				}
+			case "s5core_native_udp_lost_total", "s5core_native_udp_late_total":
+				sum, ok := m.Data.(metricdata.Sum[int64])
+				if !ok || !sum.IsMonotonic || len(sum.DataPoints) != 1 || sum.DataPoints[0].Attributes.Len() != 0 || sum.DataPoints[0].Value != 0 {
+					t.Fatalf("%s: %T %+v", m.Name, m.Data, m.Data)
+				}
+				seen[m.Name] = true
 			case "s5core_native_udp_datagrams_total", "s5core_native_udp_route_events_total", "s5core_native_udp_stream_drops_total", "s5core_native_udp_queue_drops_total":
 				sum, ok := m.Data.(metricdata.Sum[int64])
 				if !ok {
@@ -228,6 +235,8 @@ func TestNativeUDPMetricsHaveOnlyFixedOutcomes(t *testing.T) {
 		"s5core_native_udp_stream_drops_total reason=age",
 		"s5core_native_udp_queue_drops_total queue=data",
 		"s5core_native_udp_queue_drops_total queue=probe_ack",
+		"s5core_native_udp_lost_total",
+		"s5core_native_udp_late_total",
 	}
 	for _, series := range fixed {
 		if !seen[series] {
@@ -252,12 +261,23 @@ type nativeFixture struct {
 
 func newNativeFixture(t *testing.T) *nativeFixture {
 	t.Helper()
-	srv := startServer(t, Config{
+	f, _ := newNativeFixtureWith(t, nil)
+	return f
+}
+
+// newNativeFixtureWith lets adjust change the server's config.
+func newNativeFixtureWith(t *testing.T, adjust func(*Config)) (*nativeFixture, *Server) {
+	t.Helper()
+	cfg := Config{
 		Port: anyPort, ListenIP: "127.0.0.1", RequireAuth: false,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK,
 		ObfsMaxPadding: 32, ObfsMTU: 1400, UDPPort: reserveUDPPort(t),
-	})
+	}
+	if adjust != nil {
+		adjust(&cfg)
+	}
+	srv := startServer(t, cfg)
 	obfsPort := obfsPortOf(t, srv)
 	f := &nativeFixture{}
 	var err error
@@ -289,7 +309,7 @@ func newNativeFixture(t *testing.T) *nativeFixture {
 	if _, f.relay, err = f.target.ReadFromUDPAddrPort(b[:]); err != nil {
 		t.Fatalf("the datagram did not reach the target: %v", err)
 	}
-	return f
+	return f, srv
 }
 
 func (f *nativeFixture) send(t *testing.T, kind byte, payload []byte) {
@@ -487,6 +507,66 @@ func TestOnlyAProbeThatHearsTheServerBringsTheAnswersBack(t *testing.T) {
 	f.send(t, nativeudp.KindProbe, []byte{nativeudp.ProbeHeard})
 	if p, err := f.byNative(t, "heard"); err != nil || !bytes.HasSuffix(p.Data, []byte("heard")) {
 		t.Fatalf("the answers did not come back native after a heard probe: %v %+v", err, p)
+	}
+}
+
+// The counters and the journal's line of a native association say what the
+// path did to the client's datagrams: three sealed and never sent, and two
+// sent the wrong way round. While the association lives the three may still
+// come; once it ends they are lost.
+func TestTheEndOfANativeAssociationSaysWhatThePathLost(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	tel, err := InitTelemetry(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(t.TempDir(), "sessions.jsonl")
+	f, srv := newNativeFixtureWith(t, func(c *Config) {
+		c.Telemetry = tel
+		c.SessionLog, c.SessionLogFile = SessionLogAll, journal
+	})
+	target := &socks5.AddrSpec{IP: net.ParseIP("127.0.0.1"), Port: f.target.LocalAddr().(*net.UDPAddr).Port}
+	for range 3 {
+		if _, err := f.client.Seal(nil, nativeudp.KindData, socksDatagram(target, []byte("lost"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := f.client.Seal(nil, nativeudp.KindData, socksDatagram(target, []byte("first")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.client.Seal(nil, nativeudp.KindData, socksDatagram(target, []byte("second")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wire := range [][]byte{second, first} {
+		if _, err := f.udp.Write(wire); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var b [2048]byte
+	for range 2 {
+		if _, _, err := f.target.ReadFromUDPAddrPort(b[:]); err != nil {
+			t.Fatalf("a datagram did not reach the target: %v", err)
+		}
+	}
+	if lost, late := counterValue(t, reader, "s5core_native_udp_lost_total"), counterValue(t, reader, "s5core_native_udp_late_total"); lost != 0 || late != 1 {
+		t.Fatalf("while the association lives: lost %d, late %d; want 0, 1", lost, late)
+	}
+
+	_ = f.stream.Close()
+	for until := time.Now().Add(3 * time.Second); srv.connsEnded.Load() == 0 && time.Now().Before(until); {
+		time.Sleep(time.Millisecond)
+	}
+	if lost, late := counterValue(t, reader, "s5core_native_udp_lost_total"), counterValue(t, reader, "s5core_native_udp_late_total"); lost != 3 || late != 1 {
+		t.Fatalf("once it ended: lost %d, late %d; want 3, 1", lost, late)
+	}
+	if err := srv.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	ends := eventsOf(readJournal(t, journal), "assoc_end")
+	if len(ends) != 1 || ends[0]["native_lost"] != float64(3) || ends[0]["native_late"] != float64(1) {
+		t.Fatalf("assoc_end lines %v, want one with native_lost 3 and native_late 1", ends)
 	}
 }
 

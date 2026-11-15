@@ -49,6 +49,7 @@ var journalFields = map[string]bool{
 	"udp_client_in": true, "udp_target_out": true, "udp_target_in": true, "udp_client_out": true,
 	"udp_drops": true, "target_write_errors": true,
 	"native_up": true, "native_down": true, "path_moves": true, "tunnel_drops": true,
+	"native_lost": true, "native_late": true,
 	"assocs": true, "rcvbuf_drops": true,
 	"tcp_rtt_ms": true, "tcp_unacked": true, "tcp_retransmits": true, "tcp_since_data_ms": true, "tcp_since_ack_ms": true,
 }
@@ -618,6 +619,7 @@ func TestOnlyANativeAssociationReportsItsPath(t *testing.T) {
 	j.connEnd("0123456789ab", "obfs", "", &socks5.ConnEnd{
 		Command: socks5.AssociationNative, Result: socks5.ResultOK, ClosedBy: socks5.EndedByClient,
 		DatagramsUp: 30, DatagramsDown: 40, NativeUp: 25, NativeDown: 31, PathMoves: 2, TunnelDrops: 3,
+		NativeLost: 4, NativeLate: 5,
 	}, nil)
 	j.connEnd("0123456789ac", "obfs", "", &socks5.ConnEnd{
 		Command: socks5.AssociationTunnel, Result: socks5.ResultOK, ClosedBy: socks5.EndedByClient,
@@ -637,7 +639,8 @@ func TestOnlyANativeAssociationReportsItsPath(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[1]), &tunnel); err != nil {
 		t.Fatal(err)
 	}
-	for field, want := range map[string]float64{"native_up": 25, "native_down": 31, "path_moves": 2, "tunnel_drops": 3} {
+	for field, want := range map[string]float64{"native_up": 25, "native_down": 31, "path_moves": 2, "tunnel_drops": 3,
+		"native_lost": 4, "native_late": 5} {
 		if native[field] != want {
 			t.Errorf("%s = %v, want %v: %s", field, native[field], want, lines[0])
 		}

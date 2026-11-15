@@ -138,6 +138,11 @@ type Telemetry struct {
 	NativeUDPDatagrams   metric.Int64ObservableCounter
 	NativeUDPRouteEvents metric.Int64ObservableCounter
 	NativeUDPStreamDrops metric.Int64ObservableCounter
+	// NativeUDPLost and NativeUDPLate are what the native path did to the
+	// clients' datagrams by their counters: lost never came, late came after
+	// a later one. An association adds what is still missing as it ends.
+	NativeUDPLost metric.Int64ObservableCounter
+	NativeUDPLate metric.Int64ObservableCounter
 	// UDPReceiveDrops is the kernel's count of datagrams dropped on a full
 	// receive buffer, RcvbufErrors, which belongs to the network namespace:
 	// in a container it is the server's alone, and a host's count does not
@@ -349,6 +354,16 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 	if err != nil {
 		return nil, err
 	}
+	nativeLost, err := meter.Int64ObservableCounter("s5core_native_udp_lost_total",
+		metric.WithDescription("Native UDP datagrams of clients that never came, by their counters"))
+	if err != nil {
+		return nil, err
+	}
+	nativeLate, err := meter.Int64ObservableCounter("s5core_native_udp_late_total",
+		metric.WithDescription("Native UDP datagrams of clients that came after one with a higher counter"))
+	if err != nil {
+		return nil, err
+	}
 	udpReceiveDrops, err := meter.Int64ObservableCounter("s5core_udp_receive_buffer_drops_total",
 		metric.WithDescription("UDP datagrams the kernel dropped on a full receive buffer, in the server's network namespace"),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
@@ -442,6 +457,8 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 		NativeUDPDatagrams:   nativeDatagrams,
 		NativeUDPRouteEvents: nativeRouteEvents,
 		NativeUDPStreamDrops: nativeStreamDrops,
+		NativeUDPLost:        nativeLost,
+		NativeUDPLate:        nativeLate,
 		UDPReceiveDrops:      udpReceiveDrops,
 		TCPFastOpenPassive:   tcpFastOpenPassive,
 		UDPAssociationsEnded: udpAssociationsEnded,

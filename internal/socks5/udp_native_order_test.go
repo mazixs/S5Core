@@ -247,7 +247,8 @@ func TestTheCountersSayWhichPathEachDatagramTook(t *testing.T) {
 }
 
 // The record of a native association says what it carried by the native path,
-// how often its answers left it and what its stream dropped, so that one line
+// how often its answers left it, what its stream dropped and what the path
+// lost of the client's datagrams once the window is settled, so that one line
 // of the journal tells whether the path worked for that association alone
 // (docs/plan/draft.md, Ч-30).
 func TestTheRecordOfAnAssociationSaysWhatItCarriedNative(t *testing.T) {
@@ -270,6 +271,9 @@ func TestTheRecordOfAnAssociationSaysWhatItCarriedNative(t *testing.T) {
 		if e.Command != AssociationNative || e.NativeUp != 1 || e.NativeDown != 1 || e.PathMoves != 1 || e.TunnelDrops != 0 {
 			t.Fatalf("native up/down %d/%d, moves %d, drops %d, want 1/1, 1, 0",
 				e.NativeUp, e.NativeDown, e.PathMoves, e.TunnelDrops)
+		}
+		if e.NativeLost != 10 || e.NativeLate != 2 {
+			t.Fatalf("native lost/late %d/%d, want the settled 10/2", e.NativeLost, e.NativeLate)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the association never reported its end")

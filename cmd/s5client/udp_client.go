@@ -732,15 +732,15 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 		}
 	})
 
-	extra := func() []any {
+	extra := func(final bool) []any {
 		attrs := []any{"conn", id}
 		attrs = append(attrs, stats.diagnostics().attrs()...)
 		if native != nil {
-			attrs = append(attrs, native.logStats()...)
+			attrs = append(attrs, native.logStats(final)...)
 		}
 		return attrs
 	}
-	report := startAssocReport(&stats, opened, extra, cfg.UDPDiagnosticsInterval)
+	report := startAssocReport(&stats, opened, func() []any { return extra(false) }, cfg.UDPDiagnosticsInterval)
 	end := <-errCh
 	report.stop()
 	// The relays count a datagram after writing it, so the closing line waits
@@ -752,5 +752,5 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 	_ = udpConn.SetReadDeadline(time.Now())
 	relays.Wait()
 	minutes.udp.Add(1)
-	logAssocClosed(end, opened, stats.totals(), extra())
+	logAssocClosed(end, opened, stats.totals(), extra(true))
 }
