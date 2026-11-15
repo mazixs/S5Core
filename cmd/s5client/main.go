@@ -633,8 +633,17 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Step 6: Bidirectional relay
 	relayStart := time.Now()
+	tunnelReady(obfsConn, relayStart.Sub(setupStart))
 	r := relayAfter(clientConn, obfsConn, nil)
 	logRelayEnd(obfs.LogIDOf(obfsConn), dest, cfg, relayStart.Sub(setupStart), relayStart, r)
+}
+
+// tunnelReady records a CONNECT the server accepted on the latency
+// recorder's flow of its transport; setup is the setup_ms of its line.
+func tunnelReady(tunnel net.Conn, setup time.Duration) {
+	if f := diagnostics.FlowOf(tunnel); f != (diagnostics.Flow{}) {
+		f.TunnelSetup(setup, takenFromSpare(tunnel))
+	}
 }
 
 // logRelayEnd counts and logs a relay that ran, by the direction that ended

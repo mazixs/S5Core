@@ -57,6 +57,7 @@ func connectOptimistically(clientConn net.Conn, cfg clientParams, req []byte, de
 		if code != socks5Success {
 			return &refusedError{code: code}
 		}
+		tunnelReady(obfsConn, replyAt.Sub(setupStart))
 		// The handshake deadline has bounded the upstream's writes too; both
 		// transports take a deadline change while another goroutine writes.
 		clearDeadline(obfsConn)

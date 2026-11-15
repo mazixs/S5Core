@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/diagnostics"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/udpbuf"
 	"github.com/mazixs/S5Core/pkg/nativeudp"
@@ -48,6 +49,11 @@ const (
 	// wait doubles up to 10 s.
 	nativeRetryFirst = time.Second
 	nativeRetryMax   = 10 * time.Second
+	// The latency recorder takes the round trip of a probe answered alone
+	// only this long after the last probe the count lost track of, at a loss
+	// or at an answer while several were out: until then a late answer to
+	// that one could pass for the answer to this one.
+	nativeStrayFor = 10 * time.Second
 )
 
 // The limit of the path (docs/veil-spec.md, 10.7).
@@ -148,6 +154,7 @@ func dialNative(tunnel net.Conn, port uint16) (*nativeClient, *net.UDPConn, erro
 	}
 	n := newNativeClient(c, nativeudp.NewSession(keys), nil)
 	n.logID = obfs.LogIDOf(tunnel)
+	n.flow = diagnostics.FlowOf(tunnel)
 	n.writer = socks5.NewTunnelWriter(tunnel, n.signalFrame, nil)
 	n.signal = n.writer.Control
 	return n, c, nil
@@ -158,6 +165,7 @@ func dialNative(tunnel net.Conn, port uint16) (*nativeClient, *net.UDPConn, erro
 type datagramConn interface {
 	Read([]byte) (int, error)
 	Write([]byte) (int, error)
+	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
 }
 
@@ -176,6 +184,7 @@ type nativeClient struct {
 	// from it, never wall timestamps that can jump during NTP adjustment.
 	epoch   time.Time
 	logID   string
+	flow    diagnostics.Flow // the tunnel's, for the path's changes and the probes' round trips
 	session *nativeudp.Session
 	// signal asks for the empty frame to be written, and must not wait for
 	// the tunnel: a stream whose send buffer is full would hold the probes,
@@ -537,6 +546,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		verified   bool
 		reported   bool          // a path never heard was logged
 		srtt       time.Duration // of probes answered while alone, 0 before the first
+		strayUntil time.Time     // see nativeStrayFor
 		// The search for the limit of the path (docs/veil-spec.md, 10.7).
 		search             *nativeudp.Search
 		roundAt            time.Time // when the round in flight went out, zero when none is
@@ -697,6 +707,8 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		n.up.Store(false)
 		slog.Warn("Native UDP path lost; association using 0x83", "conn", n.logID, "unanswered_probes", unanswered,
 			"probe_write_errors", n.stats.probeWriteErrors.Load()-probeErrorBaseline)
+		n.flow.NativeLost(unanswered)
+		strayUntil = lastProbe.Add(nativeStrayFor)
 		unanswered, retry = 0, nativeRetryFirst
 		return true
 	}
@@ -712,12 +724,19 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			now := time.Now()
 			// Only the answer to a probe that went out alone says which probe
 			// it answers.
-			if unanswered == 1 {
-				if sample := now.Sub(lastProbe); srtt == 0 {
+			switch {
+			case unanswered == 1:
+				sample := now.Sub(lastProbe)
+				if srtt == 0 {
 					srtt = sample
 				} else {
 					srtt += (sample - srtt) / 8
 				}
+				if !now.Before(strayUntil) {
+					n.flow.NativeProbe(sample)
+				}
+			case unanswered > 1:
+				strayUntil = lastProbe.Add(nativeStrayFor)
 			}
 			unanswered = 0
 			n.deafAt.Store(math.MaxInt64)
@@ -725,8 +744,10 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			if !n.up.Swap(true) {
 				if verified {
 					slog.Info("Native UDP path restored", "conn", n.logID)
+					n.flow.NativeRestored()
 				} else {
 					slog.Info("Native UDP verified for association", "conn", n.logID)
+					n.flow.NativeVerified(n.conn.LocalAddr(), n.conn.RemoteAddr())
 				}
 				verified = true
 			}

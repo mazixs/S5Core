@@ -38,18 +38,25 @@ func startLatency(t *testing.T) (dir string, stop func()) {
 
 // latencyEvent is what these tests read of a line of an incident.
 type latencyEvent struct {
+	ElapsedNS int64  `json:"elapsed_ns"`
 	Flow      uint32 `json:"flow"`
 	Leg       string `json:"leg"`
 	Transport string `json:"transport"`
 	Kind      string `json:"kind"`
 	Data      struct {
-		Local          string `json:"local"`
-		Remote         string `json:"remote"`
-		OuterFlow      uint32 `json:"outer_flow"`
-		Evicted        bool   `json:"evicted"`
-		QueuedFrames   int    `json:"queued_frames"`
-		Writing        bool   `json:"writing"`
-		WriteElapsedNS int64  `json:"write_elapsed_ns"`
+		Local            string `json:"local"`
+		Remote           string `json:"remote"`
+		OuterFlow        uint32 `json:"outer_flow"`
+		Evicted          bool   `json:"evicted"`
+		QueuedFrames     int    `json:"queued_frames"`
+		Writing          bool   `json:"writing"`
+		WriteElapsedNS   int64  `json:"write_elapsed_ns"`
+		Boundary         string `json:"boundary"`
+		DurationNS       int64  `json:"duration_ns"`
+		Spare            bool   `json:"spare"`
+		State            string `json:"state"`
+		UnansweredProbes int    `json:"unanswered_probes"`
+		RTTNS            int64  `json:"rtt_ns"`
 	} `json:"data"`
 }
 
@@ -70,7 +77,12 @@ func saveIncident(t *testing.T, dir string, stop func()) []latencyEvent {
 		}
 	}
 	stop()
-	data, err := os.ReadFile(filepath.Join(dir, id+".events.jsonl"))
+	return readEvents(t, filepath.Join(dir, id+".events.jsonl"))
+}
+
+func readEvents(t *testing.T, path string) []latencyEvent {
+	t.Helper()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

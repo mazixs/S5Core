@@ -214,7 +214,7 @@ Per-account traffic accounting is separate from telemetry. Its batching threshol
 
 ## Latency diagnostics
 
-The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets, of the other side of their CONNECT relays and of the queue in front of the socket of a native UDP association in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection, per tunnel, per CONNECT relay and per native UDP association. On, it also reads the clock twice on every read and write of a recorded socket, and the writer of a recorded queue updates three atomics per frame without reading the clock again.
+The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements in memory: of the outer sockets, of the other side of their CONNECT relays, of the queue in front of the socket of a native UDP association and, on the client, of the setup of each CONNECT and of the native UDP path beside an association. When a spike starts, a native UDP path is lost or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, each place that could record costs one atomic load: an accepted connection of the server, a tunnel of the client, a CONNECT relay and a native UDP association on both ends, and on the client also an accepted CONNECT and the native path of an association; an answered probe of a native path costs one check of a pointer. On, it also reads the clock twice on every read and write of a recorded socket, and the writer of a recorded queue updates three atomics per frame without reading the clock again.
 
 ### Turning it on
 
@@ -238,11 +238,20 @@ When a recorded outer socket carries a CONNECT, the other side of the relay is r
 
 When a recorded outer socket carries a native UDP association (`0x84`), the queue in front of it is recorded too. The datagrams that do not go natively travel in `0x83` frames on that socket, and its writer holds them in a queue of up to 1024 frames and 2 MiB until the socket takes them: a frame past the queue is dropped, and so is a frame that waited 250 ms when its turn comes. The queue is part of the outer flow: it takes no slot and no token, a socket has at most one, and it never starts an incident. A `0x83` association, and a `0x84` one that a node without native UDP carries as `0x83`, has no such queue: its frames are written to the socket as they come, and a slow write shows in the socket's stage records.
 
+On the client an outer flow also holds what the client itself knows of its socket:
+
+- the setup of a CONNECT the server accepted: from the moment the client took up the request, before it dialed the transport or took a spare, until the server's reply came. It is the same time as `setup_ms` of the connection's `TCP Tunnel closed` line, recorded when the reply comes. A setup that failed and a CONNECT the server refused have no such record: their flow closes without it, and their log line says why;
+- the native UDP path of an association on it (`0x84`): when the path is first verified, when it is lost and the datagrams move to `0x83` frames on the socket, and when it is restored;
+- the round trip of each probe of that path that the client sent while no other probe was unanswered. The answer to a probe sent while another was still out does not say which of them it answers, and it is not recorded. Nor is the round trip of a probe answered less than 10 s after the sending of a probe the client stopped waiting for: one of those unanswered when the path was lost, or one of several out when an answer came. Until then a late answer to that probe could pass for the answer to the later one.
+
+The client's UDP socket of a native path is not a flow of its own: the verified path names its addresses, so that it can be found in a packet capture.
+
 For each flow the recorder keeps:
 
-- **stage records**: one read and one write in 512, and every write that took 25 ms or more. A read waits for the peer, so a long read is not recorded on its own; the longest read between two samples goes into the next socket sample instead;
+- **stage records**: one read and one write in 512, and every write that took 25 ms or more. A read waits for the peer, so a long read is not recorded on its own; the longest read between two samples goes into the next socket sample instead. On the client an outer flow that carried an accepted CONNECT also has the stage record of its setup;
 - **socket samples**: the kernel's counters at the open, every 500 ms, and at the close;
 - **queue records**, for an outer flow with a native UDP association: its queue every 500 ms, right after the socket sample;
+- **native path records**, on the client, for an outer flow with a native UDP association: the changes of the path and the round trips of its probes;
 - **flow records**: the addresses at the open, the number of reads and writes at the close.
 
 For the process it keeps the Go runtime metrics every 500 ms.
@@ -263,6 +272,14 @@ A datagram that goes by the stream of a native UDP association waits twice: in t
 
 The write is timed from the writer down, through the obfuscation; the socket's stage records time the part below the recorder's wrapper. A write held for long with no `slow` write on the socket when it ends spent its time above the socket. On Windows a socket sample has no `not_sent_bytes`; there a held write and `slow` writes are what shows a stream that does not take the data.
 
+The setup of a CONNECT is recorded when the server's reply comes, so it began `duration_ns` before its `elapsed_ns`. The `flow_open` of its flow falls in between: before it the client dialed the transport or took a spare, after it went the obfuscation, the SOCKS5 exchange and the server's connection to the destination. On a spare (`spare`) the dial came earlier, outside the setup. A setup tried again on a fresh transport, after its spare or its early upgrade failed, is recorded on the flow of the fresh transport, and its `duration_ns` holds the failed attempt too.
+
+The native path of an association and the samples of its tunnel are read side by side:
+
+- `rtt_ns` of a `native_probe` is the round trip of the client's datagrams to the server's native port and back; `rtt_us` of the socket sample is the kernel's round trip of the tunnel's TCP connection to the same server. A `rtt_ns` that grows while `rtt_us` stays means the delay arose on the UDP path or in the handling of the probes, not on the path of the tunnel's connection;
+- a recorded probe went out `rtt_ns` before its `elapsed_ns`. The probes of a busy association, one with a datagram either way in the last 2 s or with a probe unanswered, go out every 400–600 ms, those of an idle one every 10–20 s. While the path is up and the association busy, more than 600 ms between the sending of two recorded probes means probes in between whose answers were lost or came while the next probe was out, and then no round trip is recorded for 10 s after the last of them;
+- `lost` is the moment the client stopped sending datagrams natively, after `unanswered_probes` probes in a row went unanswered over at least a second, and `restored` the first answer after it; the probes in between go every 1 s, then 2, 4 and 8, then every 10 s. Between the two the datagrams travel in `0x83` frames on the tunnel's socket: their waits are those of the queue (`frame_wait_max_ns`, `queued_frames`) and of the socket (`not_sent_bytes`, `slow` writes) above.
+
 ### Incidents
 
 An incident starts in one of two ways:
@@ -270,9 +287,10 @@ An incident starts in one of two ways:
 - **by hand**: write `{"incident_id":"<UUID>"}` to `trigger.json` in the directory. The recorder looks at it every 500 ms and takes each marker once. A marker whose incident a previous process saved starts nothing;
 - **automatically**, per socket and against that socket's own floor:
   - the round trip time is at least 20 ms above the lowest round trip time of the socket and at least one and a half times it, for three samples in a row in which the socket moved data;
-  - or the retransmit timer fired: on Linux a sample taken while it keeps firing, on Windows one more timeout episode than at the sample before.
+  - or the retransmit timer fired: on Linux a sample taken while it keeps firing, on Windows one more timeout episode than at the sample before;
+  - or, on the client, the native UDP path of an association on the socket was lost (`native_path_lost`). The incident starts at the next sample, up to 500 ms after the loss, even if the socket was closed meanwhile.
 
-  One socket starts at most one incident in two minutes.
+  One socket starts at most one incident in two minutes, whichever of these started the one before.
 
 Only one incident is written at a time. A marker during an automatic incident takes it over: the incident gets the marker's ID, keeps the history already saved, and its 90 seconds start again at the marker. Any other trigger while an incident is written is counted in the manifest and dropped.
 
@@ -290,7 +308,7 @@ A file ending in `.partial` is an incident the process did not finish: it was ki
 
 The directory may hold up to 256 MiB, and the recorder leaves at least 256 MiB free on the volume. One events or trace file takes at most 64 MiB. When an incident needs room, the oldest incident that may go is removed with all its files: an automatic incident, by its trigger, or the files of one without a manifest, such as `.partial` files, by when they were last written. A manual incident is never removed, nor the automatic incident it took over, nor what the process is still writing, nor an incident whose manifest cannot be read. The budget counts the files directly in the directory: a subdirectory is neither counted nor touched. When nothing is left to remove, the recorder stops with one line in the log, `Latency diagnostics stopped`, and forwarding goes on. An incident that reaches its share of the budget ends early and its manifest says `truncated`.
 
-In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each), queue records (64 bytes each) and runtime samples (about 3 KiB each) come on top. With the most there can be, 32 outer flows each with its queue and 32 related flows, two minutes without traffic are about 23 400 records, under three quarters of the ring, with about 2.1 MiB of socket samples, 0.5 MiB of queue records and 0.7 MiB of runtime samples.
+In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each), queue records (64 bytes each), the addresses of a verified native path (about 100 bytes, once per association) and runtime samples (about 3 KiB each) come on top; a setup, a change of a native path and a probe's round trip take a record of the ring and nothing more. With the most there can be, 32 outer flows each with its queue, the keepalives of a native path and a related flow, two minutes without traffic are about 23 800 records, under three quarters of the ring, with about 2.1 MiB of socket samples, 0.5 MiB of queue records and 0.7 MiB of runtime samples. A busy native association adds the round trips of its probes, up to 300 in two minutes: 32 of them, each with its queue, make about 25 300 records in two minutes, which still fit the ring.
 
 ### Event schema
 
@@ -308,13 +326,15 @@ Every line has these fields:
 
 | `kind` | `data` |
 |---|---|
-| `stage` | `boundary` (`transport_read`, `transport_write`), `duration_ns`, `bytes`, `error`, `periodic` (one in 512), `slow` (a write of 25 ms or more) |
+| `stage` | `boundary` (`transport_read`, `transport_write`, `tunnel_setup`), `duration_ns`; for a read or a write also `bytes`, `error`, `periodic` (one in 512), `slow` (a write of 25 ms or more); for `tunnel_setup` also `spare` (set up on a spare transport) |
 | `socket` | `reason` (`open`, `periodic`, `close`), `available` (whether the kernel answered), `read_wait_max_ns` (periodic samples only: the longest read since the sample before), `tcp` |
 | `flow_open` | `local`, `remote`; for a related flow `outer_flow`, the outer flow it belongs to |
 | `flow_close` | `read_calls`, `write_calls`, and `evicted: true` for a socket closed under its wrapper |
 | `runtime` | each [runtime metric](https://pkg.go.dev/runtime/metrics) by its name: a number, `null` where this Go version lacks it, or for a histogram its bucket counts |
-| `spike` | `reason` (`rtt_excess`, `retransmit_timeout`), `incident_id` |
+| `spike` | `reason` (`rtt_excess`, `retransmit_timeout`, `native_path_lost`), `incident_id` |
 | `queue` | `queued_frames` and `queued_buffer_bytes` (the frames waiting in the queue at the sample and the buffers they take, by which the queue is bounded: 2 KiB for a frame of up to 2 KiB, 64 KiB for a longer one), `dropped_full_frames` and `dropped_age_frames` (frames dropped since the writer started: past the queue, or after waiting 250 ms), `frame_wait_max_ns` (the longest a frame written since the sample before waited in the queue), `writing` (a write to the socket has not returned yet), `write_elapsed_ns` (with `writing` only: how long that write has taken so far) |
+| `native_path` | `state`: `verified` (the first answer of the path, with `local` and `remote`, the addresses of the client's UDP socket), `lost` (the datagrams moved to `0x83`, with `unanswered_probes`, the probes in a row without an answer), `restored` (the first answer after a loss) |
+| `native_probe` | `rtt_ns`: from the sending of a probe of the native path to its answer, for a probe sent while no other probe was unanswered |
 
 `tcp` holds only the counters the kernel gave; a counter that an older kernel or another system does not have is left out rather than written as zero. Each name includes its unit:
 
@@ -337,7 +357,7 @@ Every line has these fields:
 
 | Field | Meaning |
 |---|---|
-| `schema` | `3`; an incident of schema `2` has no queue records, one of schema `1` holds outer flows only |
+| `schema` | `4`; an incident of schema `3` has no `tunnel_setup` stages, no `native_path` and `native_probe` records and no `native_path_lost` trigger, one of schema `2` has no queue records either, one of schema `1` holds outer flows only |
 | `incident_id`, `run_id`, `boot_id` | the incident; the run (`S5_DIAGNOSTICS_RUN_ID`); this start of the process |
 | `process_id`, `go_version`, `build_version`, `goos`, `goarch` | the process and its build |
 | `recorder_start_utc` | the wall clock at `elapsed_ns` 0 |
@@ -351,7 +371,11 @@ Every line has these fields:
 
 ### Limits
 
-- Besides the outer sockets only the other side of a CONNECT relay and the queue in front of the socket of a native UDP association are recorded. The datagrams themselves are not: neither the UDP sockets of a standard Associate or of a `0x83` or `0x84` association, nor native UDP packets, nor the datagrams the client holds until the server answers an association.
+- Besides the outer sockets only the other side of a CONNECT relay, the queue in front of the socket of a native UDP association and, on the client, the setup of an accepted CONNECT and the native path beside an association are recorded. The datagrams themselves are not: neither the UDP sockets of a standard Associate or of a `0x83` or `0x84` association, nor native UDP packets, nor the datagrams the client holds until the server answers an association. The client's UDP socket of a native path shows only by its addresses in the `verified` record.
+- Only a CONNECT the server accepted has a `tunnel_setup`: a setup that failed, a refused CONNECT and a UDP association have none.
+- The round trip of a probe includes the server's handling of it and the time the client took to read the answer.
+- Only a probe answered alone is recorded, and none for 10 s after a probe the client stopped waiting for. A busy association that loses one probe in a hundred loses the round trips of about a fifth of its probes; a path whose round trip is longer than the 400–600 ms between probes has none recorded, and the slowest answers are the ones left out. An answer that comes more than 10 s after its probe can still pass for the answer to a later one.
+- The server records neither the setup of a tunnel nor the native path: its native UDP associations start no incident.
 - A queue record shows the queue at the moment of its sample: a burst that comes and goes between two samples shows only in `frame_wait_max_ns` and in the drops.
 - On the client, an optimistic CONNECT whose tunnel is set up again on a fresh transport keeps its application flow tied to the flow of the first transport.
 - The first 32 outer sockets keep their slots for as long as they live, so on a busy server the recorded ones are not a sample of all of them.

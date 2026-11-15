@@ -146,7 +146,7 @@ func TestAnIncidentTiesTheRelatedFlowToItsOuterFlow(t *testing.T) {
 			{Flow: 1, Leg: "outer", Transport: "obfs", Local: "127.0.0.1:1080", Remote: "127.0.0.1:443"},
 			{Flow: 2, OuterFlow: 1, Leg: "target", Transport: "tcp", Local: "127.0.0.1:1080", Remote: "127.0.0.1:443"},
 		}
-		if m.Schema != 3 || !slices.Equal(m.Flows, want) {
+		if m.Schema != 4 || !slices.Equal(m.Flows, want) {
 			t.Fatalf("schema %d, flows %+v", m.Schema, m.Flows)
 		}
 		var raw struct {
@@ -221,29 +221,52 @@ func TestOnlyASelectedSocketStartsAnIncident(t *testing.T) {
 	})
 }
 
-// With every slot taken and each selected socket beside its related one and
-// its queue, two minutes of samples fit the ring without pushing any out, in
-// less than three quarters of it.
+// With every slot taken, two minutes of samples fit the ring without pushing
+// any out. Idle, each selected socket beside its related one, its queue and
+// the answers to the keepalive of a native path, every 10 s at the most,
+// take less than three quarters of it. Native associations under traffic,
+// whose probes are answered every 400 ms at the most, fit it.
 func TestTheWindowOfEverySocketFitsTheRing(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		r := testRecorder(t)
-		for range selectedSockets {
-			outer := ObserveConn(&fakeConn{}, "outer", "obfs")
-			_ = ObserveRelated(outer, &fakeConn{}, "target")
-			if ObserveQueue(outer, &fakeQueue{}) == nil {
-				t.Fatal("a queue was not watched")
-			}
-		}
-		if len(r.sockets) != 2*selectedSockets {
-			t.Fatalf("%d sampled", len(r.sockets))
-		}
-		for end := time.Now().Add(historyWindow + time.Minute); time.Now().Before(end); {
-			time.Sleep(sampleInterval)
-			r.tick(time.Now())
-		}
-		t.Logf("%d records held", r.ring.count)
-		if r.ring.overwritten != 0 || r.ring.count >= ringRecords*3/4 {
-			t.Fatalf("%d records held, %d overwritten", r.ring.count, r.ring.overwritten)
-		}
-	})
+	for _, c := range []struct {
+		name       string
+		related    bool
+		probeEvery time.Duration
+		under      int
+	}{
+		{"idle", true, 10 * time.Second, ringRecords * 3 / 4},
+		{"native under traffic", false, 400 * time.Millisecond, ringRecords},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := testRecorder(t)
+				var flows []Flow
+				for range selectedSockets {
+					outer := ObserveConn(&fakeConn{}, "outer", "obfs")
+					if c.related {
+						_ = ObserveRelated(outer, &fakeConn{}, "target")
+					}
+					if ObserveQueue(outer, &fakeQueue{}) == nil {
+						t.Fatal("a queue was not watched")
+					}
+					flows = append(flows, FlowOf(outer))
+				}
+				start := time.Now()
+				nextTick, nextProbe := start.Add(sampleInterval), start.Add(c.probeEvery)
+				for end := start.Add(historyWindow + time.Minute); time.Now().Before(end); {
+					time.Sleep(time.Until(nextTick))
+					for ; !nextProbe.After(time.Now()); nextProbe = nextProbe.Add(c.probeEvery) {
+						for _, f := range flows {
+							f.NativeProbe(time.Millisecond)
+						}
+					}
+					r.tick(time.Now())
+					nextTick = nextTick.Add(sampleInterval)
+				}
+				t.Logf("%d records held", r.ring.count)
+				if r.ring.overwritten != 0 || r.ring.count >= c.under {
+					t.Fatalf("%d records held, %d overwritten", r.ring.count, r.ring.overwritten)
+				}
+			})
+		})
+	}
 }
