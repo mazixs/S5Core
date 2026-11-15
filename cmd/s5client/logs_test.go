@@ -23,6 +23,7 @@ import (
 // Each run gets a file of its own, the last ones are kept in archive/, and a
 // run that ended without its closing line is named by the next one.
 func TestTheLogFileKeepsTheLastRuns(t *testing.T) {
+	restoreStdLog(t)
 	original := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(original) })
 	dir := t.TempDir()
@@ -163,6 +164,7 @@ func (e errWriter) Write([]byte) (int, error) { return 0, e.err }
 func TestATunnelEndsInOneLineThatNamesItLikeTheServer(t *testing.T) {
 	const psk = "01234567890123456789012345678901"
 	buf := &syncBuffer{}
+	restoreStdLog(t)
 	original := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(original) })
 	slog.SetDefault(slog.New(slog.NewJSONHandler(buf, nil)))
@@ -260,6 +262,7 @@ func TestATunnelEndsInOneLineThatNamesItLikeTheServer(t *testing.T) {
 func TestTheMinuteSummaryIsWrittenOnlyForABusyMinute(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		buf := &syncBuffer{}
+		restoreStdLog(t)
 		original := slog.Default()
 		defer slog.SetDefault(original)
 		slog.SetDefault(slog.New(slog.NewJSONHandler(buf, nil)))

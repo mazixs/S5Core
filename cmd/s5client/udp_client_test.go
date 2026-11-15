@@ -50,6 +50,7 @@ func appSocket(t testing.TB) *net.UDPConn {
 // stream the iteration counts do, and benchstat cannot read a line with a log
 // entry in the middle of it.
 func quietLogs(t testing.TB) {
+	restoreStdLog(t)
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })

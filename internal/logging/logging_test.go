@@ -3,6 +3,7 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"log/slog"
 	"os"
 	"strings"
@@ -101,6 +102,13 @@ func TestSetLevelFromEnv(t *testing.T) {
 func TestSetupInstallsDefault(t *testing.T) {
 	prev := slog.Default()
 	defer func() { slog.SetDefault(prev); SetLevel(slog.LevelInfo) }()
+	// slog.SetDefault leaves the output and flags of the log package as the
+	// installed logger set them.
+	w, flags := log.Writer(), log.Flags()
+	t.Cleanup(func() {
+		log.SetOutput(w)
+		log.SetFlags(flags)
+	})
 
 	t.Setenv(EnvVar, "warn")
 	var buf bytes.Buffer
