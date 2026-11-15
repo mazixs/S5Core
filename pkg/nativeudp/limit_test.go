@@ -129,8 +129,8 @@ func TestAProbeOfASizeIsAnsweredAtItsSize(t *testing.T) {
 			t.Fatalf("the answer to a probe of %d is %d on the wire", size, len(answer))
 		}
 		a, _ := open(t, client, answer)
-		if got, ok := AnswerSize(a.Data); !ok || got != size {
-			t.Fatalf("the answer to a probe of %d says %d (%v)", size, got, ok)
+		if got, ok := ParseAnswer(a.Data); !ok || got.Size != size {
+			t.Fatalf("the answer to a probe of %d says %d (%v)", size, got.Size, ok)
 		}
 	}
 	if err := client.SealWriteProbe(Probe{Size: MaxWire + 1}, func([]byte) error { return nil }); err == nil {
@@ -156,8 +156,8 @@ func TestAnAnswerIsNeverLongerThanItsProbe(t *testing.T) {
 			t.Fatalf("a probe of %d asking for %d got an answer of %d", n, asked, len(answer))
 		}
 		a, _ := open(t, client, answer)
-		if got, _ := AnswerSize(a.Data); got != len(answer) {
-			t.Fatalf("the answer of %d says %d", len(answer), got)
+		if got, _ := ParseAnswer(a.Data); got.Size != len(answer) {
+			t.Fatalf("the answer of %d says %d", len(answer), got.Size)
 		}
 	}
 }
@@ -180,7 +180,7 @@ func TestAProbeOfAnOlderClientGetsAnEmptyAnswer(t *testing.T) {
 		if len(a.Data) != 0 {
 			t.Fatalf("probe %x got the answer %x", data, a.Data)
 		}
-		if _, ok := AnswerSize(a.Data); ok {
+		if _, ok := ParseAnswer(a.Data); ok {
 			t.Fatal("an empty answer read as one of a server with the search")
 		}
 	}
@@ -219,8 +219,8 @@ func TestTheLimitOfTheClientBoundsTheAnswersOfTheHub(t *testing.T) {
 		if err != nil || a.Kind != KindProbeAck {
 			t.Fatalf("probe %+v: %v", p, err)
 		}
-		size, _ := AnswerSize(a.Data)
-		return size
+		answer, _ := ParseAnswer(a.Data)
+		return answer.Size
 	}
 	if got := probe(Probe{Size: 1377}); got != 1377 {
 		t.Fatalf("a probe of 1377 was answered as %d", got)
