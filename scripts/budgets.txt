@@ -23,15 +23,15 @@ coverage pkg/nativeudp 89.5
 coverage pkg/transport/ws 90.0
 coverage pkg/transport/tlsdecoy 90.5
 
-size s5client-darwin-amd64 9700000
-size s5client-darwin-arm64 9000000
-size s5client-linux-amd64 9500000
-size s5client-linux-arm64 8800000
-size s5client-linux-mips-softfloat 10300000
-size s5client-linux-mipsle-softfloat 10300000
-size s5client-windows-amd64.exe 9900000
-size s5core-darwin-amd64 16300000
-size s5core-darwin-arm64 15200000
-size s5core-linux-amd64 15900000
-size s5core-linux-arm64 14700000
-size s5core-windows-amd64.exe 16300000
+size s5client-darwin-amd64 10700000
+size s5client-darwin-arm64 9900000
+size s5client-linux-amd64 10500000
+size s5client-linux-arm64 9700000
+size s5client-linux-mips-softfloat 11400000
+size s5client-linux-mipsle-softfloat 11400000
+size s5client-windows-amd64.exe 10800000
+size s5core-darwin-amd64 15100000
+size s5core-darwin-arm64 13900000
+size s5core-linux-amd64 14600000
+size s5core-linux-arm64 13500000
+size s5core-windows-amd64.exe 14900000

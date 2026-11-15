@@ -87,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `s5core` now refuses destinations on the server's own machine and network:
   loopback, link-local (including a cloud's metadata service at
-  `192.0.2.209`), private, carrier-grade NAT, multicast and unspecified
+  `169.254.169.254`), private, carrier-grade NAT, multicast and unspecified
   addresses, the IPv4 address inside an IPv4-mapped or NAT64 (`64:ff9b::/96`)
   one, and the addresses of the server's own interfaces, for `CONNECT` and
   for UDP datagrams. The check is made on the address the
