@@ -3,7 +3,6 @@ package tcptune
 import (
 	"io"
 	"net"
-	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -101,6 +100,7 @@ func TestATruncatedTCPInfoLeavesBytesAckedUnknown(t *testing.T) {
 		SinceData: 1500 * time.Millisecond, SinceAck: 700 * time.Millisecond, State: StateEstablished}
 	counted := base
 	counted.BytesAcked, counted.BytesAckedKnown = 4096, true
+	ackedEnd := uint32(unsafe.Offsetof(ti.Bytes_acked) + unsafe.Sizeof(ti.Bytes_acked))
 	for _, tc := range []struct {
 		name string
 		n    uint32
@@ -108,8 +108,8 @@ func TestATruncatedTCPInfoLeavesBytesAckedUnknown(t *testing.T) {
 		ok   bool
 	}{
 		{"a current kernel", uint32(unsafe.Sizeof(ti)), counted, true},
-		{"ends at tcpi_bytes_acked", infoBytesAckedLen, counted, true},
-		{"one byte short of it", infoBytesAckedLen - 1, base, true},
+		{"ends at tcpi_bytes_acked", ackedEnd, counted, true},
+		{"one byte short of it", ackedEnd - 1, base, true},
 		{"older, ending at tcpi_max_pacing_rate", uint32(unsafe.Offsetof(ti.Bytes_acked)), base, true},
 		{"ending at tcpi_total_retrans", uint32(unsafe.Offsetof(ti.Pacing_rate)), base, true},
 		{"ends at tcpi_rtt", infoBaseLen, base, true},
@@ -124,14 +124,6 @@ func TestATruncatedTCPInfoLeavesBytesAckedUnknown(t *testing.T) {
 		})
 	}
 }
-
-// syscallOnly is a socket the walk finds only as a syscall.Conn.
-type syscallOnly struct {
-	net.Conn
-	sc syscall.Conn
-}
-
-func (s syscallOnly) SyscallConn() (syscall.RawConn, error) { return s.sc.SyscallConn() }
 
 func TestInfoOfASocketThatIsNotATCPConn(t *testing.T) {
 	c, s := tcpPair(t)
