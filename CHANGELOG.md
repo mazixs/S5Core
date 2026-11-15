@@ -60,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github.com/caarlos0/env/v11` to 11.4.2 and `go.opentelemetry.io/otel` to
   1.47.0 with its Prometheus exporter 0.69.0 in the main module, and the digest
   of the distroless base image and the pinned GitHub Actions.
+- Update `github.com/refraction-networking/utls` from 1.8.2 to a commit of its
+  master branch (`v1.8.3-0.20261108164504-a13c59ffe98b`), which carries current
+  browser profiles. `TLS_FINGERPRINT=chrome` now imitates Chrome 155 (was 133),
+  `firefox` Firefox 148 (was 120) and `safari` Safari 26.3 (was 16.0); `ios` is
+  still iOS 14 in uTLS and does not change. The JA3 and JA4 of `chrome`,
+  `firefox`, `safari` and `go` change, and the `firefox` and `safari` hellos
+  grow by about 1 KB because they now offer `X25519MLKEM768`. Browser presets
+  still do not resume TLS sessions. uTLS now pulls
+  `github.com/molecule-man/go-brrr` (MIT) in place of
+  `github.com/andybalholm/brotli`.
 
 ### Removed
 
