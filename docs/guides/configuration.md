@@ -203,7 +203,7 @@ behaviour: `Config.DenyPrivateDest` is false unless the application sets it.
 | `WS_HOST` | String | *Empty* | Overrides the `Host` header (domain fronting). It also decides the SNI unless `SERVER_NAME` is set. |
 | `WS_ORIGIN` | String | *Empty* | `Origin` header sent with the upgrade request. |
 | `WS_USER_AGENT` | String | *Empty* | `User-Agent` header sent with the upgrade request. |
-| `TLS_FINGERPRINT` | String | *Empty* | Browser TLS fingerprint to imitate (`chrome`, `firefox`, ...). Empty uses Go's own Client Hello, which is itself a fingerprint. |
+| `TLS_FINGERPRINT` | String | *Empty* | Browser TLS fingerprint to imitate (`chrome`, `firefox`, ...). `ios` is still iOS 14 (2020) in uTLS and does not pass for a current device; for Apple devices use `safari`. Empty uses Go's own Client Hello, which is itself a fingerprint. |
 | `WS_TLS_SESSION_CACHE` | Bool | `true` | Bounded TLS session caches scoped to this client configuration, separately for Go TLS and uTLS. Certificate and pin checks remain active. Browser presets without a resumption extension keep full handshakes. Set `false` for an A/B baseline. |
 | `SERVER_NAME` | String | *Empty* | SNI to present, and the name the certificate is verified against, when it must differ from the host in `WS_URL`. Falls back to `WS_HOST` and then to the host in `WS_URL`; setting it is how you move the SNI without moving the `Host` header. |
 | `WS_CA_FILE` | String | *Empty* | PEM file with the certificate authority (or the server certificate itself) to trust. It **replaces** the system roots, which is what a self-signed deployment wants. |
