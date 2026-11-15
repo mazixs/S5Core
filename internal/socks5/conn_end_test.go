@@ -13,6 +13,16 @@ import (
 	"github.com/mazixs/S5Core/internal/relay"
 )
 
+// ClosedBys is the closed set of ConnEnd.ClosedBy on a CONNECT.
+func ClosedBys() []string {
+	return []string{ClosedByClient, ClosedByTarget, ClosedByServerTimeout, ClosedByAccount, ClosedByShutdown, ClosedByReset}
+}
+
+// Commands is the closed set of ConnEnd.Command.
+func Commands() []string {
+	return []string{CmdConnect, CmdBind, AssociationPlain, AssociationTunnel, AssociationNative, CmdUnknown}
+}
+
 // Every error a handler returns lands on a name from the closed set, and a
 // refused login keeps no name at all.
 func TestTheEndOfAConnectionHasAClosedName(t *testing.T) {

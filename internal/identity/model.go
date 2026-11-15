@@ -11,7 +11,7 @@ import (
 // It is resolved before SOCKS5 is spoken, in constant time, from a tag in the
 // prologue - no password is involved and none can be.
 //
-// A Credential is a password, and it exists for the control panel and the
+// A credential is a password, and it exists for the control panel and the
 // API. It is checked by Argon2id, which costs 64 MiB and about a tenth of a
 // second, and that is affordable exactly because it is not on the connection
 // path.
@@ -174,14 +174,3 @@ type Identity struct {
 
 // HasKey reports whether this identity is resolvable by the tunnel on its own.
 func (i Identity) HasKey() bool { return len(i.Key) > 0 }
-
-// Credential is a password as the control panel knows it: an Argon2id PHC
-// string and nothing else. It never reaches the connection path.
-type Credential struct {
-	// Hash is the PHC-encoded Argon2id hash, empty when the account has no
-	// password at all - which is a normal state for a key-only account.
-	Hash string
-}
-
-// HasPassword reports whether there is anything to check.
-func (c Credential) HasPassword() bool { return c.Hash != "" }

@@ -81,14 +81,9 @@ func NewBoot() string {
 	return hex.EncodeToString(b[:])
 }
 
-// JournalLevels names the levels a journal line takes, in the order Lines
-// counts them.
+// JournalLevels names the levels a journal line takes, in the order
+// JournalLines counts them.
 func JournalLevels() []string { return []string{"info", "warn"} }
-
-// Lines counts the lines of one level that reached the file, Dropped the
-// lines that were lost.
-func (j *Journal) Lines(level int) uint64 { return j.lines[level].Load() }
-func (j *Journal) Dropped() uint64        { return j.dropped.Load() }
 
 // Every journal of the process together, for s5core_log_lines_total and
 // s5core_log_dropped_total: a metric is per process, and a scrape sees zeroes

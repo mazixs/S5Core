@@ -159,15 +159,10 @@ func (c *verifierCache) check(username, password, hash string, now time.Time) (o
 	return ok, true
 }
 
-// verify answers whether the password matches the hash, running the expensive
-// check at most once per credential pair even under a burst. slow is the
-// Argon2id verification itself; it is a parameter so that this file stays
+// verifyResult answers whether the password matches the hash, running the
+// expensive check at most once per credential pair even under a burst. slow is
+// the Argon2id verification itself; it is a parameter so that this file stays
 // about scheduling and the KDF stays in one place.
-func (c *verifierCache) verify(username, password, hash string, now time.Time, slow func() bool) (ok bool, path VerifyPath) {
-	ok, path, _ = c.verifyResult(username, password, hash, now, func() (bool, error) { return slow(), nil })
-	return ok, path
-}
-
 func (c *verifierCache) verifyResult(username, password, hash string, now time.Time, slow func() (bool, error)) (ok bool, path VerifyPath, err error) {
 	if c == nil || c.items == nil {
 		ok, err := slow()

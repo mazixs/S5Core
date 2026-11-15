@@ -66,6 +66,11 @@ func (f *memFile) lines(t *testing.T) []map[string]any {
 	return out
 }
 
+// Lines counts the lines of one level that reached the file, Dropped the
+// lines that were lost; production reads the process-wide counts instead.
+func (j *Journal) Lines(level int) uint64 { return j.lines[level].Load() }
+func (j *Journal) Dropped() uint64        { return j.dropped.Load() }
+
 // Whatever a value holds, the line stays one JSON object on one line.
 func TestAJournalLineSurvivesAnyValue(t *testing.T) {
 	f := &memFile{}
