@@ -27,7 +27,7 @@ func TestTheMetricsPortServesOnlyItsOwnPaths(t *testing.T) {
 		})
 	})
 
-	srv := newMetricsServer("")
+	srv := newMetricsServer("", testMetricsRegistry(t))
 	ts := httptest.NewUnstartedServer(srv.Handler)
 	ts.Start()
 	t.Cleanup(ts.Close)
@@ -65,7 +65,7 @@ func TestASilentClientIsDroppedByTheHeaderTimeout(t *testing.T) {
 	if _, ci := os.LookupEnv("CI"); ci && testing.Short() {
 		t.Skip("timing test")
 	}
-	srv := newMetricsServer("")
+	srv := newMetricsServer("", testMetricsRegistry(t))
 	if srv.ReadHeaderTimeout == 0 {
 		t.Fatal("the metrics server has no ReadHeaderTimeout")
 	}
@@ -116,7 +116,7 @@ func TestASilentClientIsDroppedByTheHeaderTimeout(t *testing.T) {
 }
 
 func TestTheMetricsServerHasEveryTimeoutSet(t *testing.T) {
-	srv := newMetricsServer("127.0.0.1:0")
+	srv := newMetricsServer("127.0.0.1:0", testMetricsRegistry(t))
 	for _, c := range []struct {
 		name string
 		got  time.Duration

@@ -49,11 +49,6 @@ const (
 	ClosedByReset         = "reset"
 )
 
-// ClosedBys is the closed set of ConnEnd.ClosedBy on a CONNECT.
-func ClosedBys() []string {
-	return []string{ClosedByClient, ClosedByTarget, ClosedByServerTimeout, ClosedByAccount, ClosedByShutdown, ClosedByReset}
-}
-
 // The command a connection carried, as the journal names it.
 const (
 	CmdConnect = "connect"
@@ -62,11 +57,6 @@ const (
 
 // CmdUnknown is a command this server does not know.
 const CmdUnknown = "unknown"
-
-// Commands is the closed set of ConnEnd.Command.
-func Commands() []string {
-	return []string{CmdConnect, CmdBind, AssociationPlain, AssociationTunnel, AssociationNative, CmdUnknown}
-}
 
 func commandName(cmd uint8) string {
 	switch cmd {

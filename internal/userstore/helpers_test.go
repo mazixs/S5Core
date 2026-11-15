@@ -1,5 +1,7 @@
 package userstore
 
+import "time"
+
 // Test helpers. Production asks SessionStatus and counts through
 // TrafficCounterFor.
 
@@ -23,6 +25,12 @@ func (s *Store) UserCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.users)
+}
+
+// verify is verifyResult for a KDF stand-in that cannot fail.
+func (c *verifierCache) verify(username, password, hash string, now time.Time, slow func() bool) (ok bool, path VerifyPath) {
+	ok, path, _ = c.verifyResult(username, password, hash, now, func() (bool, error) { return slow(), nil })
+	return ok, path
 }
 
 func (c *verifierCache) size() int {

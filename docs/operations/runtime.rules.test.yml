@@ -1,0 +1,237 @@
+rule_files:
+  - runtime.rules.yml
+evaluation_interval: 15s
+fuzzy_compare: true
+tests:
+  - name: populated window retains instance labels and units
+    interval: 30s
+    input_series:
+      - series: 'go_sched_pauses_total_gc_seconds_count{job="s5core",instance="a"}'
+        values: '0+6x10'
+      - series: 'go_sched_pauses_total_gc_seconds_bucket{job="s5core",instance="a",le="0.001"}'
+        values: '0+3x10'
+      - series: 'go_sched_pauses_total_gc_seconds_bucket{job="s5core",instance="a",le="0.01"}'
+        values: '0+6x10'
+      - series: 'go_sched_pauses_total_gc_seconds_bucket{job="s5core",instance="a",le="+Inf"}'
+        values: '0+6x10'
+      - series: 'go_sched_latencies_seconds_count{job="s5core",instance="a"}'
+        values: '0+6x10'
+      - series: 'go_sched_latencies_seconds_bucket{job="s5core",instance="a",le="0.001"}'
+        values: '0+3x10'
+      - series: 'go_sched_latencies_seconds_bucket{job="s5core",instance="a",le="0.01"}'
+        values: '0+6x10'
+      - series: 'go_sched_latencies_seconds_bucket{job="s5core",instance="a",le="+Inf"}'
+        values: '0+6x10'
+      - series: 'go_gc_cycles_total_gc_cycles_total{job="s5core",instance="a"}'
+        values: '0+6x10'
+      - series: 'go_gc_cycles_forced_gc_cycles_total{job="s5core",instance="a"}'
+        values: '0+3x10'
+      - series: 'go_memstats_alloc_bytes_total{job="s5core",instance="a"}'
+        values: '0+3000x10'
+      - series: 'go_memstats_mallocs_total{job="s5core",instance="a"}'
+        values: '0+30x10'
+      - series: 'go_gc_duration_seconds_sum{job="s5core",instance="a"}'
+        values: '0+0.3x10'
+      - series: 'go_cpu_classes_total_cpu_seconds_total{job="s5core",instance="a"}'
+        values: '0+60x10'
+      - series: 'go_cpu_classes_gc_total_cpu_seconds_total{job="s5core",instance="a"}'
+        values: '0+12x10'
+      - series: 'go_cpu_classes_gc_mark_assist_cpu_seconds_total{job="s5core",instance="a"}'
+        values: '0+3x10'
+      - series: 'go_cpu_classes_gc_mark_idle_cpu_seconds_total{job="s5core",instance="a"}'
+        values: '0+6x10'
+      - series: 'go_sync_mutex_wait_total_seconds_total{job="s5core",instance="a"}'
+        values: '0+90x10'
+      - series: 'go_memstats_sys_bytes{job="s5core",instance="a"}'
+        values: '1000+0x10'
+      - series: 'go_memstats_heap_released_bytes{job="s5core",instance="a"}'
+        values: '200+0x10'
+      - series: 'go_gc_gomemlimit_bytes{job="s5core",instance="a"}'
+        values: '1600+0x10'
+      - series: 'go_gc_limiter_last_enabled_gc_cycle{job="s5core",instance="a"}'
+        values: '0 0 0 0 0 7 7 7 7 7 7'
+      - series: 'process_start_time_seconds{job="s5core",instance="a"}'
+        values: '10+0x10'
+    promql_expr_test:
+      - expr: instance:go_gc_pause_observations:increase5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_pause_observations:increase5m",job="s5core",instance="a"}'
+            value: 60
+      - expr: instance:go_gc_pause_seconds:p95_5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_pause_seconds:p95_5m",job="s5core",instance="a"}'
+            value: 0.0091
+      - expr: instance:go_gc_pause_seconds:p99_5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_pause_seconds:p99_5m",job="s5core",instance="a"}'
+            value: 0.00982
+      - expr: instance:go_scheduler_observations:increase5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_scheduler_observations:increase5m",job="s5core",instance="a"}'
+            value: 60
+      - expr: instance:go_scheduler_seconds:p95_5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_scheduler_seconds:p95_5m",job="s5core",instance="a"}'
+            value: 0.0091
+      - expr: instance:go_scheduler_seconds:p99_5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_scheduler_seconds:p99_5m",job="s5core",instance="a"}'
+            value: 0.00982
+      - expr: instance:go_gc_cycles:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_cycles:rate5m",job="s5core",instance="a"}'
+            value: 0.2
+      - expr: instance:go_gc_forced_cycles:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_forced_cycles:rate5m",job="s5core",instance="a"}'
+            value: 0.1
+      - expr: instance:go_heap_allocation_bytes:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_heap_allocation_bytes:rate5m",job="s5core",instance="a"}'
+            value: 100
+      - expr: instance:go_heap_allocation_objects:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_heap_allocation_objects:rate5m",job="s5core",instance="a"}'
+            value: 1
+      - expr: instance:go_gc_pause_wall_time:percent5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_pause_wall_time:percent5m",job="s5core",instance="a"}'
+            value: 1
+      - expr: instance:go_gc_cpu_capacity:percent5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_cpu_capacity:percent5m",job="s5core",instance="a"}'
+            value: 20
+      - expr: instance:go_gc_assist_cpu_capacity:percent5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_assist_cpu_capacity:percent5m",job="s5core",instance="a"}'
+            value: 5
+      - expr: instance:go_gc_compulsory_cpu_capacity:percent5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_compulsory_cpu_capacity:percent5m",job="s5core",instance="a"}'
+            value: 10
+      - expr: instance:go_mutex_wait_seconds:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_mutex_wait_seconds:rate5m",job="s5core",instance="a"}'
+            value: 3
+      - expr: instance:go_runtime_memory:bytes
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_runtime_memory:bytes",job="s5core",instance="a"}'
+            value: 800
+      - expr: instance:go_runtime_memory_limit:percent
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_runtime_memory_limit:percent",job="s5core",instance="a"}'
+            value: 50
+      - expr: instance:go_gc_limiter_activated:bool5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_limiter_activated:bool5m",job="s5core",instance="a"}'
+            value: 1
+  - name: empty histogram window does not invent quantiles
+    interval: 30s
+    input_series:
+      - series: 'go_sched_pauses_total_gc_seconds_count{job="s5core",instance="a"}'
+        values: '0+0x10'
+      - series: 'go_sched_pauses_total_gc_seconds_bucket{job="s5core",instance="a",le="0.01"}'
+        values: '0+0x10'
+      - series: 'go_sched_pauses_total_gc_seconds_bucket{job="s5core",instance="a",le="+Inf"}'
+        values: '0+0x10'
+      - series: 'go_sched_latencies_seconds_count{job="s5core",instance="a"}'
+        values: '0+0x10'
+      - series: 'go_sched_latencies_seconds_bucket{job="s5core",instance="a",le="0.01"}'
+        values: '0+0x10'
+      - series: 'go_sched_latencies_seconds_bucket{job="s5core",instance="a",le="+Inf"}'
+        values: '0+0x10'
+    promql_expr_test:
+      - expr: instance:go_gc_pause_seconds:p99_5m
+        eval_time: 5m
+        exp_samples: []
+      - expr: instance:go_scheduler_seconds:p99_5m
+        eval_time: 5m
+        exp_samples: []
+      - expr: instance:go_gc_pause_observations:increase5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_pause_observations:increase5m",job="s5core",instance="a"}'
+            value: 0
+  - name: counter reset is a nonnegative rate and restart hides limiter inference
+    interval: 30s
+    input_series:
+      - series: 'go_gc_cycles_total_gc_cycles_total{job="s5core",instance="a"}'
+        values: '0 6 12 18 24 0 6 12 18 24 30'
+      - series: 'go_gc_limiter_last_enabled_gc_cycle{job="s5core",instance="a"}'
+        values: '0 0 0 0 0 0 7 7 7 7 7'
+      - series: 'process_start_time_seconds{job="s5core",instance="a"}'
+        values: '10 10 10 10 10 150 150 150 150 150 150'
+    promql_expr_test:
+      - expr: instance:go_gc_cycles:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="instance:go_gc_cycles:rate5m",job="s5core",instance="a"}'
+            value: 0.17777777777777778
+      - expr: instance:go_gc_limiter_activated:bool5m
+        eval_time: 5m
+        exp_samples: []
+  - name: unlimited zero or missing budgets and zero CPU capacity give no ratio
+    interval: 30s
+    input_series:
+      - series: 'go_memstats_sys_bytes{job="s5core",instance="unlimited"}'
+        values: '1000+0x10'
+      - series: 'go_memstats_heap_released_bytes{job="s5core",instance="unlimited"}'
+        values: '200+0x10'
+      - series: 'go_gc_gomemlimit_bytes{job="s5core",instance="unlimited"}'
+        values: '9223372036854775807+0x10'
+      - series: 'go_memstats_sys_bytes{job="s5core",instance="zero"}'
+        values: '1000+0x10'
+      - series: 'go_memstats_heap_released_bytes{job="s5core",instance="zero"}'
+        values: '200+0x10'
+      - series: 'go_gc_gomemlimit_bytes{job="s5core",instance="zero"}'
+        values: '0+0x10'
+      - series: 'go_memstats_sys_bytes{job="s5core",instance="missing"}'
+        values: '1000+0x10'
+      - series: 'go_memstats_heap_released_bytes{job="s5core",instance="missing"}'
+        values: '200+0x10'
+      - series: 'go_cpu_classes_total_cpu_seconds_total{job="s5core",instance="zero"}'
+        values: '0+0x10'
+      - series: 'go_cpu_classes_gc_total_cpu_seconds_total{job="s5core",instance="zero"}'
+        values: '0+12x10'
+      - series: 'go_cpu_classes_gc_mark_assist_cpu_seconds_total{job="s5core",instance="zero"}'
+        values: '0+3x10'
+      - series: 'go_cpu_classes_gc_mark_idle_cpu_seconds_total{job="s5core",instance="zero"}'
+        values: '0+18x10'
+    promql_expr_test:
+      - expr: instance:go_runtime_memory_limit:percent
+        eval_time: 5m
+        exp_samples: []
+      - expr: instance:go_gc_cpu_capacity:percent5m
+        eval_time: 5m
+        exp_samples: []
+      - expr: instance:go_gc_assist_cpu_capacity:percent5m
+        eval_time: 5m
+        exp_samples: []
+      - expr: instance:go_gc_compulsory_cpu_capacity:percent5m
+        eval_time: 5m
+        exp_samples: []
+  - name: missing sources stay missing
+    interval: 30s
+    input_series: []
+    promql_expr_test:
+      - expr: '{__name__=~"instance:go_.*"}'
+        eval_time: 5m
+        exp_samples: []

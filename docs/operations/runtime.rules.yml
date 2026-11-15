@@ -1,0 +1,54 @@
+groups:
+  - name: s5core_runtime
+    interval: 15s
+    rules:
+      - record: instance:go_gc_pause_observations:increase5m
+        expr: sum by (job, instance) (increase(go_sched_pauses_total_gc_seconds_count[5m]))
+      - record: instance:go_gc_pause_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (job, instance, le) (rate(go_sched_pauses_total_gc_seconds_bucket[5m])))
+          and on (job, instance) (instance:go_gc_pause_observations:increase5m > 0)
+      - record: instance:go_gc_pause_seconds:p99_5m
+        expr: |
+          histogram_quantile(0.99, sum by (job, instance, le) (rate(go_sched_pauses_total_gc_seconds_bucket[5m])))
+          and on (job, instance) (instance:go_gc_pause_observations:increase5m > 0)
+      - record: instance:go_scheduler_observations:increase5m
+        expr: sum by (job, instance) (increase(go_sched_latencies_seconds_count[5m]))
+      - record: instance:go_scheduler_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (job, instance, le) (rate(go_sched_latencies_seconds_bucket[5m])))
+          and on (job, instance) (instance:go_scheduler_observations:increase5m > 0)
+      - record: instance:go_scheduler_seconds:p99_5m
+        expr: |
+          histogram_quantile(0.99, sum by (job, instance, le) (rate(go_sched_latencies_seconds_bucket[5m])))
+          and on (job, instance) (instance:go_scheduler_observations:increase5m > 0)
+      - record: instance:go_gc_cycles:rate5m
+        expr: rate(go_gc_cycles_total_gc_cycles_total[5m])
+      - record: instance:go_gc_forced_cycles:rate5m
+        expr: rate(go_gc_cycles_forced_gc_cycles_total[5m])
+      - record: instance:go_heap_allocation_bytes:rate5m
+        expr: rate(go_memstats_alloc_bytes_total[5m])
+      - record: instance:go_heap_allocation_objects:rate5m
+        expr: rate(go_memstats_mallocs_total[5m])
+      - record: instance:go_gc_pause_wall_time:percent5m
+        expr: 100 * rate(go_gc_duration_seconds_sum[5m])
+      - record: instance:go_gc_cpu_capacity:percent5m
+        expr: 100 * rate(go_cpu_classes_gc_total_cpu_seconds_total[5m]) / (rate(go_cpu_classes_total_cpu_seconds_total[5m]) > 0)
+      - record: instance:go_gc_assist_cpu_capacity:percent5m
+        expr: 100 * rate(go_cpu_classes_gc_mark_assist_cpu_seconds_total[5m]) / (rate(go_cpu_classes_total_cpu_seconds_total[5m]) > 0)
+      - record: instance:go_gc_compulsory_cpu_capacity:percent5m
+        expr: |
+          100 * clamp_min(rate(go_cpu_classes_gc_total_cpu_seconds_total[5m]) - rate(go_cpu_classes_gc_mark_idle_cpu_seconds_total[5m]), 0)
+          / (rate(go_cpu_classes_total_cpu_seconds_total[5m]) > 0)
+      - record: instance:go_mutex_wait_seconds:rate5m
+        expr: rate(go_sync_mutex_wait_total_seconds_total[5m])
+      - record: instance:go_runtime_memory:bytes
+        expr: go_memstats_sys_bytes - go_memstats_heap_released_bytes
+      - record: instance:go_runtime_memory_limit:percent
+        expr: |
+          100 * instance:go_runtime_memory:bytes
+          / (go_gc_gomemlimit_bytes > 0 and go_gc_gomemlimit_bytes < 9e18)
+      - record: instance:go_gc_limiter_activated:bool5m
+        expr: |
+          (delta(go_gc_limiter_last_enabled_gc_cycle[5m]) > bool 0)
+          and on (job, instance) (changes(process_start_time_seconds[5m]) == 0)
