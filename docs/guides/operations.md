@@ -234,7 +234,7 @@ The server records each connection accepted on its listeners: plain SOCKS5, obfs
 
 At most 32 outer sockets are recorded at once: the first to arrive take the slots, and a closed socket gives its slot back. New sockets are admitted at a burst of 32, then eight a second. A socket closed under a wrapper nobody closed is noticed at the next sample and gives its slot back too.
 
-When a recorded outer socket carries a CONNECT, the other side of the relay is recorded as a flow of its own, a *related* flow: on the server the connection to the destination (`leg` `target`), on the client the application's connection (`leg` `application`). Its `flow_open` names the outer flow in `outer_flow`. A related flow takes no slot and no admission token, and an outer flow has one at a time, so there are at most 32 of them too. Its samples never start an incident: on the server its path is the destination's network, not the tunnel's. An incident started by its outer flow or by hand holds it like any other flow.
+When a recorded outer socket carries a CONNECT, the other side of the relay is recorded as a flow of its own, a *related* flow: on the server the connection to the destination (`leg` `target`), on the client the application's connection (`leg` `application`). Its `flow_open` names the outer flow in `outer_flow`. A related flow takes no slot and no admission token. An outer flow has one at a time, and at most 32 related flows are recorded at once, counting one that outlives its outer flow. Its samples never start an incident: on the server its path is the destination's network, not the tunnel's. An incident started by its outer flow or by hand holds it like any other flow.
 
 For each flow the recorder keeps:
 

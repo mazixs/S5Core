@@ -14,7 +14,8 @@ import (
 const (
 	// selectedSockets is the most sockets selected at once: the first to
 	// come take the slots, a closed one gives its slot back. The socket
-	// related to a selected one takes none (ObserveRelated).
+	// related to a selected one takes none, and there are at most as many
+	// related sockets (ObserveRelated).
 	selectedSockets = 32
 	// newSocketBurst and newSocketsPerSecond bound how fast sockets are
 	// selected, so a burst of short connections cannot churn the ring.
@@ -170,8 +171,8 @@ func observe(c net.Conn, leg, transport string) net.Conn {
 // is a socket it selected, and related itself otherwise. related is the
 // other side of outer's relay, leg says which; it is recorded as a flow of
 // its own that names outer's flow. It takes no slot and no token and starts
-// no incident, and a selected socket has one at a time. Off, it costs one
-// atomic load.
+// no incident; a selected socket has one at a time, and there are at most
+// selectedSockets of them. Off, it costs one atomic load.
 func ObserveRelated(outer, related net.Conn, leg string) net.Conn {
 	if current.Load() == nil {
 		return related
@@ -194,8 +195,10 @@ func observeRelated(outer, related net.Conn, leg string) net.Conn {
 	}
 	r.mu.Lock()
 	// A selected socket of this recorder, still sampled, without a related
-	// one yet.
-	if _, sampled := r.sockets[o]; !sampled || o.outer != nil || o.related != nil {
+	// one yet. A related socket can outlive its outer one, whose slot goes
+	// to another, so their number is bounded on its own.
+	if _, sampled := r.sockets[o]; !sampled || o.outer != nil || o.related != nil ||
+		len(r.sockets)-r.taken >= selectedSockets {
 		r.mu.Unlock()
 		return related
 	}

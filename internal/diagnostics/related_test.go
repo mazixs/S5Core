@@ -75,7 +75,9 @@ func TestARelatedSocketNeedsASelectedOuterSocket(t *testing.T) {
 }
 
 // A related socket takes neither a slot nor a token, and a selected socket
-// has one at a time; the slots stay with the selected ones.
+// has one at a time; the slots stay with the selected ones. A related socket
+// that outlives its outer one still counts: there are never more related
+// sockets than slots.
 func TestARelatedSocketTakesNoSlotAndComesOneAtATime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := testRecorder(t)
@@ -107,11 +109,20 @@ func TestARelatedSocketTakesNoSlotAndComesOneAtATime(t *testing.T) {
 			t.Fatal("a related socket closed left no place for the next one")
 		}
 		_ = outers[1].Close()
-		if _, ok := ObserveConn(&fakeConn{}, "outer", "obfs").(*observedConn); !ok {
+		replacement, ok := ObserveConn(&fakeConn{}, "outer", "obfs").(*observedConn)
+		if !ok {
 			t.Fatal("a selected socket closed beside a live related one kept its slot")
 		}
 		if r.taken != selectedSockets || len(r.sockets) != 2*selectedSockets {
 			t.Fatalf("%d taken, %d sampled", r.taken, len(r.sockets))
+		}
+		over := &fakeConn{}
+		if got := ObserveRelated(replacement, over, "target"); got != over {
+			t.Fatal("more related sockets than slots")
+		}
+		_ = related[1].Close()
+		if _, ok := ObserveRelated(replacement, over, "target").(*observedConn); !ok {
+			t.Fatal("a related socket that outlived its outer one kept its place")
 		}
 	})
 }
