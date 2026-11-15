@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -71,6 +72,31 @@ const (
 	nativeOversizeDrops = 8
 )
 
+// The search for a faster route (docs/veil-spec.md, 10.6.1). A provider can
+// spread the flows to one server over routes by the hash of their addresses
+// and ports, and the source port of the native socket is the client's to
+// choose.
+const (
+	// The search starts once the association is this old, and only while it
+	// is active: most associations end before it.
+	nativeRouteAfter = 3 * time.Second
+	// A candidate goes this long after the one before, and a second after
+	// the last challenge: the server reflects one a second.
+	nativeRouteEvery     = 1200 * time.Millisecond
+	nativeChallengeEvery = time.Second
+	// A candidate wins when its round trip is shorter than the shortest of
+	// the last nativeRouteSamples of the route by nativeRouteGain, or by
+	// nativeRouteShare percent of it if that is more.
+	nativeRouteGain    = 10 * time.Millisecond
+	nativeRouteShare   = 15
+	nativeRouteSamples = 8
+	// The replaced socket is read this long after the server answered on the
+	// new one, for its datagrams still on the way.
+	nativeRouteDrain = time.Second
+	// maxRouteCandidates bounds UDP_NATIVE_ROUTE_CANDIDATES.
+	maxRouteCandidates = 8
+)
+
 // What the server answers probes with, known from its first answer.
 const (
 	serverUnknown int32 = iota
@@ -131,33 +157,52 @@ func udpCommandFor(cfg clientParams) byte {
 }
 
 // dialNative opens the native path to the port the server announced, on the
-// address the tunnel reached, with the keys of the tunnel.
-func dialNative(tunnel net.Conn, port uint16) (*nativeClient, *net.UDPConn, error) {
+// address the tunnel reached, with the keys of the tunnel. The client owns
+// every socket of the path from then on, and close closes them.
+func dialNative(tunnel net.Conn, port uint16, candidates int) (*nativeClient, error) {
 	keys, err := obfs.DatagramKeysOf(tunnel)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	host, _, err := net.SplitHostPort(tunnel.RemoteAddr().String())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	remote, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, strconv.Itoa(int(port))))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	c, err := udpbuf.DialUDP("udp", nil, remote)
+	c, err := dialRoute(remote)
 	if err != nil {
-		return nil, nil, err
-	}
-	if err := nativeudp.DontFragment(c); err != nil {
-		slog.Debug("Native UDP socket may fragment datagrams longer than the path", "error", err)
+		return nil, err
 	}
 	n := newNativeClient(c, nativeudp.NewSession(keys), nil)
+	n.dial = func() (datagramConn, error) {
+		c, err := dialRoute(remote)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
+	n.candidates = candidates
 	n.logID = obfs.LogIDOf(tunnel)
 	n.flow = diagnostics.FlowOf(tunnel)
 	n.writer = socks5.NewTunnelWriter(tunnel, n.signalFrame, nil)
 	n.signal = n.writer.Control
-	return n, c, nil
+	return n, nil
+}
+
+// dialRoute opens a socket to the server's native port. A candidate's is
+// opened as the first one: the source port is the kernel's pick.
+func dialRoute(remote *net.UDPAddr) (*net.UDPConn, error) {
+	c, err := udpbuf.DialUDP("udp", nil, remote)
+	if err != nil {
+		return nil, err
+	}
+	if err := nativeudp.DontFragment(c); err != nil {
+		slog.Debug("Native UDP socket may fragment datagrams longer than the path", "error", err)
+	}
+	return c, nil
 }
 
 // datagramConn is the client's connected UDP socket to the server's native
@@ -167,6 +212,23 @@ type datagramConn interface {
 	Write([]byte) (int, error)
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
+	Close() error
+}
+
+// nativeSocket is one socket of the path: the current one, a candidate, or
+// the one a move replaced. retired is set before the client closes it: the
+// end of any other socket is the end of the association.
+type nativeSocket struct {
+	datagramConn
+	retired atomic.Bool
+}
+
+// challenge is a route challenge that came on a socket other than the
+// current one, at the client's clock.
+type challenge struct {
+	s     *nativeSocket
+	at    int64
+	token [16]byte
 }
 
 // nativeClient starts on 0x83 and moves datagrams to native once a probe is
@@ -179,7 +241,32 @@ type datagramConn interface {
 // counters of both sides, so that datagrams lost past the window do not end
 // the path.
 type nativeClient struct {
-	conn datagramConn
+	// conn is the current socket: every probe and native datagram goes by it.
+	conn atomic.Pointer[nativeSocket]
+	// dial opens a socket for a candidate route, at most candidates of them
+	// per association (UDP_NATIVE_ROUTE_CANDIDATES).
+	dial       func() (datagramConn, error)
+	candidates int
+	// moving is set from the win of a candidate until the server answers on
+	// it: the application's datagrams go by 0x83 meanwhile, since the server
+	// takes native ones only from the address it answers. carrying orders it
+	// against the native sends of carry.
+	moving   atomic.Bool
+	carrying sync.RWMutex
+	// proves is set once the server challenged the route, challengeAt is
+	// when the last challenge came on the current socket. challenges hands
+	// watch the ones that come on another.
+	proves      atomic.Bool
+	challengeAt atomic.Int64
+	challenges  chan challenge
+	deliver     func([]byte)
+	// sockets are the open sockets, ended is set by close; readers are their
+	// readers, and done ends watch.
+	mu      sync.Mutex
+	sockets []*nativeSocket
+	ended   bool
+	readers sync.WaitGroup
+	done    chan struct{}
 	// epoch keeps the Go monotonic clock. Liveness counters store durations
 	// from it, never wall timestamps that can jump during NTP adjustment.
 	epoch   time.Time
@@ -216,9 +303,10 @@ type nativeClient struct {
 	limitACK          chan nativeudp.Answer
 	recoverySupported atomic.Bool
 	poked             chan struct{}
-	// echoAt is when run echoed a route challenge, 0 once the echo's answer
-	// came; echoRTT is the round trip of that answer, 0 once watch took it.
-	echoAt  int64
+	// echoAt is when the last route challenge was echoed, 0 once the echo's
+	// answer came; echoRTT is the round trip of that answer, 0 once watch
+	// took it.
+	echoAt  atomic.Int64
 	echoRTT atomic.Int64
 	// server is how the server answers probes (serverUnknown until it does).
 	server atomic.Int32
@@ -239,6 +327,8 @@ type nativeStats struct {
 	dataWriteErrors, readErrors, rejectedPackets atomic.Uint64
 	probesSent, probeWriteErrors                 atomic.Uint64
 	sizeProbesSent, sizeProbeTooBig              atomic.Uint64
+	routeCandidates                              atomic.Uint64
+	routeMoved                                   atomic.Bool
 }
 
 func (n *nativeClient) logStats() []any {
@@ -255,14 +345,19 @@ func (n *nativeClient) logStats() []any {
 		"tcp_sent_other", n.stats.sentTCP.Load(), "native_received", n.stats.received.Load(),
 		"tcp_received", n.stats.receivedTCP.Load(), "tunnel_drops", dropped,
 		"native_limit", n.session.Limit(), "size_probes", n.stats.sizeProbes.Load(),
-		"dropped_oversize_sent", n.stats.droppedSent.Load(), "dropped_oversize_received", n.stats.droppedRecv.Load()}
+		"dropped_oversize_sent", n.stats.droppedSent.Load(), "dropped_oversize_received", n.stats.droppedRecv.Load(),
+		"native_route_candidates", n.stats.routeCandidates.Load(), "native_route_moved", n.stats.routeMoved.Load()}
 }
 
 var heardProbe = []byte{nativeudp.ProbeHeard}
 
 func newNativeClient(conn datagramConn, session *nativeudp.Session, signal func()) *nativeClient {
-	n := &nativeClient{conn: conn, epoch: time.Now(), session: session, signal: signal, jitter: rand.Float64, draw: rand.IntN,
-		acked: make(chan struct{}, 1), sized: make(chan nativeudp.Answer, 16), limitACK: make(chan nativeudp.Answer, 16), poked: make(chan struct{}, 1)}
+	n := &nativeClient{epoch: time.Now(), session: session, signal: signal, jitter: rand.Float64, draw: rand.IntN,
+		acked: make(chan struct{}, 1), sized: make(chan nativeudp.Answer, 16), limitACK: make(chan nativeudp.Answer, 16), poked: make(chan struct{}, 1),
+		challenges: make(chan challenge, 1), done: make(chan struct{})}
+	first := &nativeSocket{datagramConn: conn}
+	n.conn.Store(first)
+	n.sockets = []*nativeSocket{first}
 	n.told.Store(true)
 	n.bounded.Store(true)
 	n.deafAt.Store(math.MaxInt64)
@@ -275,16 +370,63 @@ func (n *nativeClient) send(kind byte, payload []byte) error {
 	return n.session.SealWrite(kind, payload, n.write)
 }
 
-func (n *nativeClient) write(wire []byte) error {
-	_, err := n.conn.Write(wire)
+func (n *nativeClient) write(wire []byte) error { return writeOn(n.current(), wire) }
+
+func writeOn(c datagramConn, wire []byte) error {
+	_, err := c.Write(wire)
 	if errors.Is(err, syscall.EMSGSIZE) {
 		// The PTB for an earlier datagram, reported by the next call on the
 		// connected socket: this one was not sent. Under IP_PMTUDISC_PROBE
 		// the socket does not size datagrams by it, so a second EMSGSIZE is
 		// about this datagram (docs/veil-spec.md, 10.7).
-		_, err = n.conn.Write(wire)
+		_, err = c.Write(wire)
 	}
 	return err
+}
+
+func (n *nativeClient) current() *nativeSocket { return n.conn.Load() }
+
+// listen adds s to the sockets of the path, unless it is one, and starts its
+// reader. Once the association has ended it closes s instead.
+func (n *nativeClient) listen(s *nativeSocket) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ended {
+		_ = s.Close()
+		return false
+	}
+	if !slices.Contains(n.sockets, s) {
+		n.sockets = append(n.sockets, s)
+	}
+	n.readers.Add(1)
+	go n.read(s)
+	return true
+}
+
+// retire closes a socket the path no longer uses.
+func (n *nativeClient) retire(s *nativeSocket) {
+	s.retired.Store(true)
+	_ = s.Close()
+	n.mu.Lock()
+	n.sockets = slices.DeleteFunc(n.sockets, func(o *nativeSocket) bool { return o == s })
+	n.mu.Unlock()
+}
+
+// close ends the association: every socket of the path and the watcher.
+func (n *nativeClient) close() {
+	n.mu.Lock()
+	if n.ended {
+		n.mu.Unlock()
+		return
+	}
+	n.ended = true
+	sockets := n.sockets
+	n.sockets = nil
+	n.mu.Unlock()
+	close(n.done)
+	for _, s := range sockets {
+		_ = s.Close()
+	}
 }
 
 // sendProbe sends a probe the server reads: the form of 2.3.0-rc1 to a server
@@ -411,6 +553,14 @@ func (n *nativeClient) carry(d []byte) carried {
 		n.stats.sentTCP.Add(1)
 		return byTunnel
 	}
+	// A move to a faster route sets moving under the write lock, so that no
+	// datagram checked here before it goes out after.
+	n.carrying.RLock()
+	defer n.carrying.RUnlock()
+	if n.moving.Load() {
+		n.stats.sentTCP.Add(1)
+		return byTunnel
+	}
 	// Up but not heard lately: the association just woke from idle, or the
 	// path is failing. The answers go by TCP until the probe answers which,
 	// and nothing is logged.
@@ -457,18 +607,32 @@ func (n *nativeClient) tcpAnswer(size int) bool {
 	return true
 }
 
-// run reads the native socket until it is closed and probes the path while it
-// does. deliver gets the server's datagrams.
+// run probes the path and reads its sockets until close, or until a socket
+// the client did not retire is closed. deliver gets the server's datagrams,
+// from every socket that is read.
 func (n *nativeClient) run(deliver func([]byte)) {
-	done := make(chan struct{})
-	defer close(done)
-	go n.watch(done)
+	n.deliver = deliver
+	if n.listen(n.current()) {
+		n.watch()
+	}
+	n.readers.Wait()
+}
+
+// read reads s until it is closed. An answer speaks for the path only on the
+// current socket. On another a challenge goes to watch, which knows whether
+// it answers a candidate, and any other answer is to a probe of the route
+// the path left.
+func (n *nativeClient) read(s *nativeSocket) {
+	defer n.readers.Done()
 	var b [nativeudp.MaxWire + 1]byte
 	failed := false
 	for {
-		r, err := n.conn.Read(b[:])
+		r, err := s.Read(b[:])
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
+				if !s.retired.Load() {
+					n.close()
+				}
 				return
 			}
 			n.stats.readErrors.Add(1)
@@ -488,15 +652,33 @@ func (n *nativeClient) run(deliver func([]byte)) {
 			continue
 		}
 		now := n.clock(time.Now())
+		current := n.current() == s
 		switch p.Kind {
 		case nativeudp.KindProbeAck:
 			answer, sizes := nativeudp.ParseAnswer(p.Data)
 			if answer.RouteChallenge {
+				if !current {
+					select {
+					case n.challenges <- challenge{s: s, at: now, token: answer.RouteToken}:
+					default:
+					}
+					continue
+				}
 				// A challenge is not confirmation of the application route.
 				// Echo once immediately; ordinary probing cadence is unchanged.
-				n.echoAt = now
+				n.proves.Store(true)
+				n.challengeAt.Store(now)
+				n.echoAt.Store(now)
 				_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: answer.RouteToken})
 				continue
+			}
+			if !current {
+				continue
+			}
+			// The server answers on the socket the path moves to: it moved.
+			// Checked after moving, which is set after the socket changed.
+			if n.moving.Load() && n.current() == s {
+				n.moving.Store(false)
 			}
 			n.lastSeen.Store(now)
 			size := answer.Size
@@ -524,12 +706,12 @@ func (n *nativeClient) run(deliver func([]byte)) {
 				default:
 				}
 			}
-			if n.echoAt != 0 && answer.Generation == 0 {
+			if at := n.echoAt.Load(); at != 0 && answer.Generation == 0 {
 				// The echo goes with generation 0, every other probe with a
 				// later one, and the answer has the generation of its probe
 				// (docs/veil-spec.md, 10.6): this answer is the echo's.
-				n.echoRTT.Store(now - n.echoAt)
-				n.echoAt = 0
+				n.echoRTT.Store(now - at)
+				n.echoAt.Store(0)
 			}
 			select {
 			case n.acked <- struct{}{}:
@@ -542,13 +724,14 @@ func (n *nativeClient) run(deliver func([]byte)) {
 				break
 			}
 			n.stats.received.Add(1)
-			deliver(p.Data)
+			n.deliver(p.Data)
 		}
 	}
 }
 
-// watch owns the probes: when they go out, and what their answers mean.
-func (n *nativeClient) watch(done <-chan struct{}) {
+// watch owns the probes: when they go out, and what their answers mean. It
+// also owns the search for a faster route and the move to one.
+func (n *nativeClient) watch() {
 	var (
 		unanswered int
 		firstSent  time.Time
@@ -573,6 +756,21 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		pendingLimit       int
 		announcements      int
 		probeErrorBaseline uint64
+		// The search for a faster route (docs/veil-spec.md, 10.6.1).
+		started       = time.Now()
+		recent        [nativeRouteSamples]time.Duration // the round trips srtt takes, the last ones
+		samples       int
+		lastCandidate time.Time
+		candidate     *nativeSocket // the one whose challenge is awaited
+		candidateAt   int64         // when its probe went, by n.clock
+		need          time.Duration // the round trip it must not exceed to win
+		before, after time.Duration // the round trips of the routes a move left and took
+		token         [16]byte
+		echoDue       time.Time     // when the winner echoes, zero when none waits to
+		retired       *nativeSocket // the socket a move replaced, still read
+		drainAt       time.Time     // when retired is closed, zero until the move is answered
+		awaiting      bool          // the move waits for the server's answer on the new socket
+		rerouted      bool          // the search of the limit follows a move, and may lower it
 	)
 	active := func(now time.Time) bool { return n.clock(now)-n.lastUsed.Load() < int64(nativeActiveFor) }
 	probe := func(now time.Time) {
@@ -664,8 +862,10 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		}
 		candidate := search.Limit()
 		if recovering {
-			recovering = false
-			if candidate > n.session.Limit() {
+			// After a move the route is another, and its limit may be lower.
+			lower := rerouted
+			recovering, rerouted = false, false
+			if candidate > n.session.Limit() || lower && candidate < n.session.Limit() {
 				announce, pendingLimit = candidate, candidate
 				announceGeneration, announcements = generation, 0
 				probe(now)
@@ -685,9 +885,95 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		}
 		probe(now)
 	}
+	// best is the shortest of the recent round trips of the current route.
+	best := func() time.Duration {
+		var b time.Duration
+		for _, s := range recent[:min(samples, nativeRouteSamples)] {
+			if b == 0 || s < b {
+				b = s
+			}
+		}
+		return b
+	}
+	// seeking reports whether a candidate may go once its time comes: the
+	// search is not over, the path and its limit are settled, the server
+	// proves routes, and a candidate could beat the route at all.
+	seeking := func(now time.Time) bool {
+		return candidate == nil && !awaiting && !n.stats.routeMoved.Load() && n.stats.routeCandidates.Load() < uint64(n.candidates) &&
+			n.proves.Load() && n.server.Load() == serverSizes && n.up.Load() && n.hears(n.clock(now)) && active(now) &&
+			unanswered == 0 && announce != 0 && roundAt.IsZero() && !roundWait && pendingLimit == 0 && !recovering &&
+			best() > nativeRouteGain
+	}
+	// routeAt is when the search or the move takes its next step, if it has
+	// one; the echo is wait's.
+	routeAt := func(now time.Time) (time.Time, bool) {
+		switch {
+		case !drainAt.IsZero():
+			return drainAt, true
+		case candidate != nil:
+			return n.epoch.Add(time.Duration(candidateAt-1) + need), true
+		case !seeking(now):
+			return time.Time{}, false
+		}
+		at := started.Add(nativeRouteAfter)
+		if next := lastCandidate.Add(nativeRouteEvery); !lastCandidate.IsZero() && next.After(at) {
+			at = next
+		}
+		if c := n.challengeAt.Load(); c != 0 {
+			if next := n.epoch.Add(time.Duration(c-1) + nativeChallengeEvery); next.After(at) {
+				at = next
+			}
+		}
+		return at, true
+	}
+	routeStep := func(now time.Time) {
+		switch {
+		case !echoDue.IsZero():
+			// The native datagrams sent by the old socket have reached the
+			// server by now. From here the new socket is the path's.
+			echoDue, lastProbe = time.Time{}, now
+			n.echoAt.Store(n.clock(now))
+			_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: token})
+		case !drainAt.IsZero():
+			n.retire(retired)
+			retired, drainAt = nil, time.Time{}
+		case candidate != nil:
+			slog.Debug("Native UDP candidate route is no faster", "conn", n.logID, "candidate", n.stats.routeCandidates.Load())
+			n.retire(candidate)
+			candidate = nil
+		case seeking(now):
+			lastCandidate = now
+			k := n.stats.routeCandidates.Add(1)
+			c, err := n.dial()
+			if err != nil {
+				slog.Debug("Native UDP candidate route not opened", "conn", n.logID, "candidate", k, "error", err)
+				return
+			}
+			s := &nativeSocket{datagramConn: c}
+			if !n.listen(s) {
+				return
+			}
+			before = best()
+			need = before - max(nativeRouteGain, before*nativeRouteShare/100)
+			candidateAt = n.clock(now)
+			// An ordinary probe from an address the server does not know: its
+			// challenge comes back a round trip of the new route later.
+			if err := n.session.SealWriteProbe(nativeudp.Probe{Limit: announce, Generation: announceGeneration, RouteProof: true},
+				func(w []byte) error { return writeOn(s, w) }); err != nil {
+				n.retire(s)
+				return
+			}
+			candidate = s
+		}
+	}
 	// The timer is set for a probe unless one of these says otherwise.
-	toTell, toSearch, toRecover := false, false, false
+	toTell, toSearch, toRecover, toRoute := false, false, false, false
 	wait := func(now time.Time) time.Duration {
+		toTell, toSearch, toRecover = false, false, false
+		// A winner's echo is the next probe of the path.
+		if toRoute = !echoDue.IsZero(); toRoute {
+			return echoDue.Sub(now)
+		}
 		next := nextProbe(now)
 		at, ok := deafening(now)
 		toTell = ok && at.After(now) && at.Before(next)
@@ -699,10 +985,13 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			next, toTell = roundEnd, false
 		}
 		toRecover = !recoveryAt.IsZero() && roundAt.IsZero() && !roundWait && pendingLimit == 0 &&
-			n.up.Load() && n.recoverySupported.Load() && n.session.Limit() < nativeudp.MaxWire-8 &&
+			candidate == nil && !awaiting && n.up.Load() && n.recoverySupported.Load() && n.session.Limit() < nativeudp.MaxWire-8 &&
 			recoveries < nativeRecoverySearches && recoveryAt.Before(next)
 		if toRecover {
 			next, toTell, toSearch = recoveryAt, false, false
+		}
+		if at, ok := routeAt(now); ok && at.Before(next) {
+			next, toRoute, toTell, toSearch, toRecover = at, true, false, false, false
 		}
 		return next.Sub(now)
 	}
@@ -722,6 +1011,12 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		n.flow.NativeLost(unanswered)
 		strayUntil = lastProbe.Add(nativeStrayFor)
 		unanswered, retry = 0, nativeRetryFirst
+		if awaiting && retired != nil {
+			// The new route went silent before the server answered there. The
+			// path stays on it, and the answers go by TCP once told.
+			n.retire(retired)
+			retired = nil
+		}
 		return true
 	}
 
@@ -730,7 +1025,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 	defer t.Stop()
 	for {
 		select {
-		case <-done:
+		case <-n.done:
 			return
 		case <-n.acked:
 			now := time.Now()
@@ -751,6 +1046,8 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 				} else {
 					srtt += (sample - srtt) / 8
 				}
+				recent[samples%nativeRouteSamples] = sample
+				samples++
 				n.flow.NativeProbe(sample)
 			case lone && sample > srtt:
 				srtt += (sample - srtt) / 8
@@ -767,7 +1064,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 					n.flow.NativeRestored()
 				} else {
 					slog.Info("Native UDP verified for association", "conn", n.logID)
-					n.flow.NativeVerified(n.conn.LocalAddr(), n.conn.RemoteAddr())
+					n.flow.NativeVerified(n.current().LocalAddr(), n.current().RemoteAddr())
 				}
 				verified = true
 			}
@@ -782,6 +1079,26 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 					search = nativeudp.NewSearch(n.draw)
 				}
 				sendRound(time.Now())
+			}
+			if awaiting && echoDue.IsZero() && !n.moving.Load() {
+				// The server answered on the new socket, so it moved there.
+				// The limit of the new route is searched with a generation of
+				// its own; the one before holds until the server confirms.
+				awaiting = false
+				n.stats.routeMoved.Store(true)
+				if retired != nil {
+					drainAt = now.Add(nativeRouteDrain)
+				}
+				k := n.stats.routeCandidates.Load()
+				slog.Info("Native UDP moved to a faster route", "conn", n.logID,
+					"rtt_before", before.Round(100*time.Microsecond).String(), "rtt_after", after.Round(100*time.Microsecond).String(), "candidate", k)
+				n.flow.NativeMoved(before, after, int(k))
+				if n.recoverySupported.Load() && roundAt.IsZero() && pendingLimit == 0 {
+					generation++
+					recovering, rerouted = true, true
+					search = nativeudp.NewSearch(n.draw)
+					sendRound(time.Now())
+				}
 			}
 		case answer := <-n.sized:
 			if recovering && answer.Generation != generation {
@@ -808,6 +1125,29 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 				pendingLimit = 0
 				recoveryAt = time.Now().Add(nativeRecoveryEvery)
 			}
+		case c := <-n.challenges:
+			if c.s != candidate {
+				break
+			}
+			rtt := time.Duration(c.at - candidateAt)
+			if rtt > need || !n.up.Load() {
+				n.retire(candidate)
+				candidate = nil
+				break
+			}
+			// The candidate won. The application's datagrams go by 0x83 until
+			// the server answers on it, and nothing more leaves the old
+			// socket: the echo waits a round trip of the old route, by which
+			// its native datagrams have reached the server.
+			n.carrying.Lock()
+			retired = n.conn.Swap(candidate)
+			n.moving.Store(true)
+			n.carrying.Unlock()
+			after, token, candidate, awaiting = rtt, c.token, nil, true
+			echoDue = time.Now().Add(srtt)
+			// The liveness of the new route starts afresh: the answers to the
+			// probes of the old one stay on its socket.
+			srtt, unanswered, strayUntil = 0, 0, time.Time{}
 		case <-n.poked:
 			if now := time.Now(); n.up.Load() && now.Sub(lastProbe) >= nativeActiveEvery {
 				lost(now)
@@ -815,6 +1155,10 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			}
 		case <-t.C:
 			now := time.Now()
+			if toRoute {
+				routeStep(now)
+				break
+			}
 			if toRecover {
 				recoveries++
 				generation++
@@ -840,7 +1184,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 				if !verified && !reported && missed(now) {
 					reported = true
 					slog.Info("Native UDP not answering; association using 0x83", "conn", n.logID,
-						"addr", n.conn.RemoteAddr().String(), "unanswered_probes", unanswered)
+						"addr", n.current().RemoteAddr().String(), "unanswered_probes", unanswered)
 				}
 			}
 			probe(now)

@@ -87,6 +87,15 @@ func (f Flow) NativeRestored() {
 	}
 }
 
+// NativeMoved records the move of the native path to a faster route, once the
+// server answered there: the round trips of the route it left and of the one
+// it took, and the candidate that won, counted from 1.
+func (f Flow) NativeMoved(before, after time.Duration, candidate int) {
+	if f.s != nil {
+		f.push(record{kind: kindNativePath, what: pathMoved, dur: int64(after), n: uint32(candidate), payload: before}, false)
+	}
+}
+
 // NativeProbe records the round trip of a probe of the native path to the
 // answer the client took for its own (docs/guides/operations.md, Limits).
 func (f Flow) NativeProbe(rtt time.Duration) {

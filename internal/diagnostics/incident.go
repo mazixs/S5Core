@@ -39,8 +39,9 @@ const (
 	// so a flow of schema 3 without them had no queue watched. 4: a stage
 	// may be the setup of a tunnel rather than a read or a write, an outer
 	// flow may have native_path and native_probe records, and the loss of a
-	// native path may start an incident.
-	manifestSchema  = 4
+	// native path may start an incident. 5: a native path may have moved to
+	// a faster route (state moved).
+	manifestSchema  = 5
 	eventsSuffix    = ".events.jsonl"
 	manifestSuffix  = ".manifest.json"
 	traceSuffix     = ".trace"

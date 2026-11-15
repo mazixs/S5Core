@@ -292,7 +292,8 @@ func TestTheClosingLineSaysWhichPathTheDatagramsTook(t *testing.T) {
 			"native_data_write_errors": uint64(0), "native_read_errors": uint64(0), "native_rejected_packets": uint64(0),
 			"native_received": uint64(1), "tcp_received": uint64(1), "tunnel_drops": uint64(0),
 			"native_limit": nativeudp.MaxWire, "size_probes": uint64(0),
-			"dropped_oversize_sent": uint64(1), "dropped_oversize_received": uint64(0)}
+			"dropped_oversize_sent": uint64(1), "dropped_oversize_received": uint64(0),
+			"native_route_candidates": uint64(0), "native_route_moved": false}
 		if !maps.Equal(got, want) {
 			t.Fatalf("closing line %v, want %v", got, want)
 		}

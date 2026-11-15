@@ -262,7 +262,7 @@ func TestWatchesTicksAndStopsFromManyGoroutines(t *testing.T) {
 }
 
 // An incident holds the queue records of its flow, named with their units,
-// and its manifest is of schema 4.
+// and its manifest is of schema 5.
 func TestAnIncidentHoldsTheQueueOfAFlow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, dir := dirRecorder(t, false)
@@ -277,7 +277,7 @@ func TestAnIncidentHoldsTheQueueOfAFlow(t *testing.T) {
 		writeMarker(t, dir, id)
 		stepFor(r, sampleInterval+postWindow)
 		m, events := readIncident(t, dir, id)
-		if m.Schema != 4 {
+		if m.Schema != 5 {
 			t.Fatalf("schema %d", m.Schema)
 		}
 		var got []string

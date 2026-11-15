@@ -21,6 +21,8 @@ func TestWireConfigRefusesMalformedAndUnsafeSettings(t *testing.T) {
 		{"URL credentials", clientParams{WSUrl: "wss://secret:private@example.invalid/ws"}},
 		{"long username", clientParams{ProxyUser: strings.Repeat("x", 256)}},
 		{"long password", clientParams{ProxyPass: strings.Repeat("x", 256)}},
+		{"negative route candidates", clientParams{UDPRouteCandidates: -1}},
+		{"too many route candidates", clientParams{UDPRouteCandidates: maxRouteCandidates + 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateClientWireConfig(tc.cfg)
@@ -32,7 +34,7 @@ func TestWireConfigRefusesMalformedAndUnsafeSettings(t *testing.T) {
 			}
 		})
 	}
-	if err := validateClientWireConfig(clientParams{MTU: obfs.MaxMTU, WSUrl: "wss://example.invalid/ws", WSPins: []string{strings.Repeat("01", 32)}, ProxyUser: strings.Repeat("u", 255), ProxyPass: strings.Repeat("p", 255)}); err != nil {
+	if err := validateClientWireConfig(clientParams{MTU: obfs.MaxMTU, WSUrl: "wss://example.invalid/ws", WSPins: []string{strings.Repeat("01", 32)}, ProxyUser: strings.Repeat("u", 255), ProxyPass: strings.Repeat("p", 255), UDPRouteCandidates: maxRouteCandidates}); err != nil {
 		t.Fatal(err)
 	}
 }

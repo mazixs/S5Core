@@ -107,6 +107,10 @@ type clientParams struct {
 	UDPTunnelTCPTuning     bool          `env:"UDP_TUNNEL_TCP_TUNING" envDefault:"true"`
 	UDPNative              bool          `env:"UDP_NATIVE" envDefault:"false"`
 	UDPDiagnosticsInterval time.Duration `env:"UDP_DIAGNOSTICS_INTERVAL" envDefault:"0"`
+	// UDPRouteCandidates is how many sockets with new source ports an active
+	// native association tries once for a faster route (docs/veil-spec.md,
+	// 10.6.1); 0 turns the search off.
+	UDPRouteCandidates int `env:"UDP_NATIVE_ROUTE_CANDIDATES" envDefault:"3"`
 	// TunnelDeadTimeout closes the tunnel of a CONNECT stream once what the
 	// client sent on it has gone unacknowledged this long. A path that lost
 	// its state (a NAT, a provider) swallows the segments, and the kernel
