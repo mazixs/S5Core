@@ -2,11 +2,13 @@ package logging
 
 import (
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -113,17 +115,13 @@ func TestTheFileRotatesBySizeAndKeepsABoundedArchive(t *testing.T) {
 		if err != nil || string(body) != line {
 			t.Errorf("%s holds %q (%v)", name, body, err)
 		}
-		if runtime.GOOS != "windows" {
-			info, _ := os.Stat(filepath.Join(dir, name))
-			if info.Mode().Perm() != 0o600 {
-				t.Errorf("%s is %v", name, info.Mode().Perm())
-			}
-		}
+		requirePrivate(t, filepath.Join(dir, name))
 	}
 	live, _ := os.ReadFile(path)
 	if string(live) != line {
 		t.Errorf("live file %q", live)
 	}
+	requirePrivate(t, path)
 }
 
 // Each run starts a file of its own: what the last run left goes to the
@@ -209,12 +207,9 @@ func TestOldArchivesAgeOut(t *testing.T) {
 	}
 }
 
-// A new file is private; a file that already existed keeps the mode its
-// owner gave it.
+// A new file is private; on POSIX a file that already existed keeps the mode
+// its owner gave it.
 func TestOnlyANewFileGetsTheMode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no POSIX modes")
-	}
 	dir := t.TempDir()
 	fresh := filepath.Join(dir, "fresh.jsonl")
 	r, err := OpenRotating(FileOptions{Path: fresh})
@@ -222,8 +217,9 @@ func TestOnlyANewFileGetsTheMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = r.Close()
-	if info, _ := os.Stat(fresh); info.Mode().Perm() != 0o600 {
-		t.Errorf("new file %v", info.Mode().Perm())
+	requirePrivate(t, fresh)
+	if runtime.GOOS == "windows" {
+		return // an existing file is made private too, see TestALogLeftWithInheritedAccessIsMadePrivate
 	}
 	existing := filepath.Join(dir, "sessions.jsonl")
 	if err := os.WriteFile(existing, []byte("x\n"), 0o640); err != nil {
@@ -276,9 +272,6 @@ func TestALinkOnThePathStopsTheStart(t *testing.T) {
 // A link put on the path after the start is not followed when the file is
 // opened again.
 func TestReopenDoesNotFollowALink(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no O_NOFOLLOW")
-	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.jsonl")
 	r, err := OpenRotating(FileOptions{Path: path})
@@ -292,7 +285,7 @@ func TestReopenDoesNotFollowALink(t *testing.T) {
 	}
 	_ = os.Remove(path)
 	if err := os.Symlink(target, path); err != nil {
-		t.Fatal(err)
+		t.Skipf("no symlinks here: %v", err)
 	}
 	if err := r.Reopen(); err == nil {
 		t.Error("Reopen followed a link")
@@ -343,5 +336,78 @@ func TestReopenFollowsAnOutsideRotation(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(path + ".1"); string(b) != "one\n" {
 		t.Errorf("rotated file %q", b)
+	}
+	requirePrivate(t, path)
+	requirePrivate(t, path+".1")
+}
+
+// A .gz.tmp a crash left behind is truncated, not appended to, and the
+// archive it becomes is private.
+func TestCompressionOverwritesALeftoverTemporaryFile(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "sessions-20261001T120000.000Z.jsonl")
+	if err := os.WriteFile(src, []byte("rotated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src+".gz.tmp", []byte("a torn gzip stream that is longer than the new one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipFile(src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(src + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, err := io.ReadAll(zr); err != nil || string(body) != "rotated\n" {
+		t.Errorf("archive holds %q (%v)", body, err)
+	}
+	requirePrivate(t, src+".gz")
+	if _, err := os.Lstat(src + ".gz.tmp"); !os.IsNotExist(err) {
+		t.Errorf("the temporary file stayed: %v", err)
+	}
+}
+
+// Several writers on one path append whole lines: none lands over another.
+func TestSeveralWritersAppendWholeLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.jsonl")
+	const writers, lines = 4, 2000
+	var wg sync.WaitGroup
+	for w := range writers {
+		r, err := OpenRotating(FileOptions{Path: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wg.Go(func() {
+			defer func() { _ = r.Close() }()
+			line := fmt.Appendf(nil, "%d %s\n", w, strings.Repeat("x", 60))
+			for range lines {
+				if _, err := r.Write(line); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := make(map[string]int)
+	for _, l := range strings.Split(strings.TrimSuffix(string(body), "\n"), "\n") {
+		counts[l]++
+	}
+	if len(counts) != writers {
+		t.Fatalf("%d distinct lines, want %d", len(counts), writers)
+	}
+	for l, n := range counts {
+		if n != lines {
+			t.Errorf("%.8q: %d times, want %d", l, n, lines)
+		}
 	}
 }

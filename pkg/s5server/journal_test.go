@@ -157,13 +157,7 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
-		t.Errorf("the journal is %v, want 0600", mode)
-	}
+	requirePrivate(t, path)
 
 	raw, _ := os.ReadFile(path)
 	for _, secret := range []string{testPSK, base64.StdEncoding.EncodeToString(key), hex.EncodeToString(key),

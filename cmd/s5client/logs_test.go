@@ -11,12 +11,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/pkg/obfs"
 )
 
@@ -96,19 +98,53 @@ func TestABadLogSettingStopsTheStart(t *testing.T) {
 	}
 }
 
-// On Windows a failed rename of the last run's file is a second copy of the
-// client holding it open, and the error says so.
+// On Windows a sharing violation on the last run's file, when the archive opens
+// or renames it, is a second copy of the client holding it open, and the error
+// says so.
 func TestAnOpenLogFileOnWindowsIsNamed(t *testing.T) {
-	rename := fmt.Errorf("logging: %w", &os.LinkError{Op: "rename", Old: "s5client.log", New: "archive/x.log", Err: errors.New("sharing violation")})
-	if got := explainLogFileError("windows", rename).Error(); !strings.Contains(got, "another running copy") || !strings.Contains(got, "sharing violation") {
-		t.Errorf("windows: %q", got)
+	for _, held := range []error{
+		fmt.Errorf("logging: %w", &os.PathError{Op: "open", Path: "s5client.log", Err: errSharingViolation}),
+		fmt.Errorf("logging: %w", &os.LinkError{Op: "rename", Old: "s5client.log", New: "archive/x.log", Err: errSharingViolation}),
+	} {
+		if got := explainLogFileError("windows", held).Error(); !strings.Contains(got, "another running copy") || !strings.Contains(got, held.Error()) {
+			t.Errorf("windows: %q", got)
+		}
+		if got := explainLogFileError("linux", held); got.Error() != held.Error() {
+			t.Errorf("linux: %q", got)
+		}
 	}
-	if got := explainLogFileError("linux", rename); got.Error() != rename.Error() {
-		t.Errorf("linux: %q", got)
-	}
-	other := errors.New("permission denied")
+	other := fmt.Errorf("logging: %w", &os.PathError{Op: "open", Path: "s5client.log", Err: errors.New("permission denied")})
 	if got := explainLogFileError("windows", other); got.Error() != other.Error() {
-		t.Errorf("not a rename: %q", got)
+		t.Errorf("not a sharing violation: %q", got)
+	}
+}
+
+// A second copy of the client on the same LOG_FILE stops at start, and the
+// first keeps writing its file.
+func TestASecondCopyOnTheSameLogFileStops(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("only Windows keeps a file another process writes from the archive")
+	}
+	original := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(original) })
+	cfg := clientParams{LogFile: filepath.Join(t.TempDir(), "s5client.log"), LogConsoleLevel: "warn"}
+	first, _, err := openLogFile(cfg, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	slog.Info("S5Client starting", "event", eventStart, "copy", 1)
+	second, _, err := openLogFile(cfg, io.Discard)
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("the second copy moved the file of the first")
+	}
+	if !strings.Contains(err.Error(), "another running copy") {
+		t.Errorf("the error does not name the cause: %v", err)
+	}
+	slog.Info("S5Client stopped", "event", eventStop, "copy", 1)
+	if got := logging.LastEvent(cfg.LogFile); got != eventStop {
+		t.Errorf("the first copy lost its file: last event %q", got)
 	}
 }
 
