@@ -3,11 +3,14 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"runtime"
 	rmetrics "runtime/metrics"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -151,4 +154,52 @@ func TestRuntimeCollectionProgressAndConcurrentScrapes(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// go_sync_mutex_wait_total_seconds_total feeds instance:go_mutex_wait_seconds:rate5m
+// in docs/operations/runtime.rules.yml. It must grow with mutex profiling off,
+// and reading it must not switch profiling on. A child process runs the
+// check: the profiling rate is process-wide, and a parent started with
+// -mutexprofile would have it on.
+func TestRuntimeMutexWaitWithoutProfiling(t *testing.T) {
+	if os.Getenv("S5_MUTEX_FIXTURE") != "1" {
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestRuntimeMutexWaitWithoutProfiling$")
+		cmd.Env = append(os.Environ(), "S5_MUTEX_FIXTURE=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("contention fixture: %v\n%s", err, out)
+		}
+		return
+	}
+	if runtime.SetMutexProfileFraction(-1) != 0 {
+		t.Fatal("mutex profiling must be off")
+	}
+	r := testMetricsRegistry(t)
+	read := func() float64 {
+		f := gatherRuntime(t, r)["go_sync_mutex_wait_total_seconds_total"]
+		if f == nil {
+			t.Fatal("go_sync_mutex_wait_total_seconds_total is not exported")
+		}
+		return f.Metric[0].Counter.GetValue()
+	}
+	before := read()
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	// The runtime samples about one wait in eight, so with 256 contended
+	// waits a run where none is sampled is practically impossible.
+	for range 16 {
+		wg.Go(func() {
+			for range 16 {
+				mu.Lock()
+				time.Sleep(50 * time.Microsecond)
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if read() <= before {
+		t.Fatal("completed contended waits did not advance the counter")
+	}
+	if runtime.SetMutexProfileFraction(-1) != 0 {
+		t.Fatal("metrics changed profiling settings")
+	}
 }

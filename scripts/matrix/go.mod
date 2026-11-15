@@ -4,7 +4,7 @@ go 1.27.0
 
 toolchain go1.27.4
 
-require github.com/quic-go/quic-go v0.63.0
+require github.com/quic-go/quic-go v0.65.0
 
 require (
 	github.com/quic-go/qpack v0.6.0 // indirect

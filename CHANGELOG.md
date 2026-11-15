@@ -13,6 +13,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WSS early data and opt-in TCP Fast Open for the obfs transport. See the
   [RC4 setup measurements](docs/benchmarks/connection-setup-2026-10-06.md) for
   local and same-path ARM/WAN results and their limitations.
+- Opt-in latency recorder for `s5core` and `s5client`, off unless
+  `S5_DIAGNOSTICS_DIR` is set. It keeps two minutes of measurements in memory
+  and saves them with the next 90 seconds as an incident when the round trip of
+  a socket spikes, its retransmit timer fires, a native UDP path is lost on the
+  client, or the operator writes a marker to `trigger.json`.
+  `S5_DIAGNOSTICS_RUN_ID` names the run, so that the incidents of a server and a
+  client can be matched, and `S5_DIAGNOSTICS_TRACE=1` adds the last 30 seconds
+  of the Go execution trace for up to 32 MiB of memory. The directory is
+  private (an existing one must be) and holds at most 256 MiB; the oldest
+  automatic incidents are removed first. Release binaries grow by about 2.5%
+  (`s5client`) and 1.5% (`s5core`). See
+  [latency diagnostics](docs/guides/operations.md#latency-diagnostics).
+- The recorder follows a CONNECT beyond its outer socket: the destination on
+  the server and the application on the client are recorded as flows of their
+  own, the queue in front of the socket of a native UDP association is sampled
+  beside it, and the client adds the setup time of each accepted CONNECT and
+  the verified, lost and restored states of the native UDP path with the round
+  trips of its probes.
+- Go runtime metrics on the server's `/metrics`: GC pause and scheduler latency
+  histograms, GC cycle and GC CPU counters, live heap size, the GC limiter and
+  mutex wait time, eleven `runtime/metrics` sources in all. Recording rules over
+  them are in
+  [`docs/operations/runtime.rules.yml`](docs/operations/runtime.rules.yml) and
+  are checked with `promtool` in CI. See
+  [Go runtime and process metrics](docs/guides/operations.md#go-runtime-and-process-metrics).
+
+### Changed
+
+- `s5core` serves `/metrics` from a Prometheus registry of its own instead of
+  the global default one. Every family that was there keeps its name and type;
+  a collector that a dependency registers on `prometheus.DefaultRegisterer` no
+  longer shows up on this port. The SDK still registers no Go or process
+  collectors, so an application that embeds it exports its own, see
+  [runtime telemetry ownership](docs/guides/sdk.md#runtime-telemetry-ownership).
+- Update `golang.org/x/crypto` to 0.59.0, `golang.org/x/net` to 0.62.0,
+  `golang.org/x/sys` to 0.50.0, `github.com/prometheus/client_golang` to 1.25.0,
+  `github.com/caarlos0/env/v11` to 11.4.2 and `go.opentelemetry.io/otel` to
+  1.47.0 with its Prometheus exporter 0.69.0 in the main module, and the digest
+  of the distroless base image and the pinned GitHub Actions.
+
+### Removed
+
+- `nativeudp.AnswerSize` from the public `pkg/nativeudp`. `ParseAnswer` returns
+  the same size in `Answer.Size` and the same extended flag.
 
 ### Fixed
 
@@ -20,7 +64,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   incarnation, and retain updated SDK restrictions across server restarts.
 - Synchronize run identifiers, harden replay and reload accounting boundaries,
   and recover negotiated native UDP limits after correlated probe loss.
-- Use Go 1.26.9 and patched networking dependencies for both Go modules.
+- Build with Go 1.27.4 (`go 1.27.0`, `toolchain go1.27.4`) in both Go modules,
+  the CI and release containers and the Docker image, and take
+  `github.com/andybalholm/brotli` 1.2.7 and `github.com/klauspost/compress`
+  1.20.2. This clears four reachable `govulncheck` findings: two in the standard
+  library (`crypto/x509`, `net/http`) and one in each of the two packages. The
+  SDK module now requires Go 1.27.0 or newer. With the new toolchain the release
+  binaries are 7–8% larger for `s5client` and 3–4% for `s5core`.
+- Classify Winsock errors on Windows by their codes. Resets, refusals and
+  unreachable destinations were counted as `other` in the failure kinds, dial
+  outcomes, UDP association ends and UDP drops. `WSAETIMEDOUT`, with which the
+  operating system itself ends a dial or a connection, was not recognized as a
+  timeout, so the client answered its application with "general failure"
+  instead of "TTL expired". A CONNECT to a network without a route is now
+  answered with `0x03`, not `0x04`, and the accept loops of the server and the
+  client survive `WSAEMFILE` and `WSAENOBUFS` instead of leaving the port down.
+- Make the files the process writes private on Windows, as `0600` and `0700`
+  already do elsewhere: the session journal (`SESSION_LOG_FILE`), the client's
+  `LOG_FILE`, their archives and the directories created for them, and
+  `users.json`, which took the access list of its directory at every rewrite.
+  They are open only to the process account, `SYSTEM` and `Administrators`. A
+  log file that the account cannot make private, because another account owns
+  it or it may not change its access, stops the start with an error that names
+  the cause. A link put on the log path after the start is no longer followed.
+  An existing directory, and a `users.json` that the server only reads, keep
+  their access. See [configuration](docs/guides/configuration.md).
+- Name the end of a relay after the half that ended first. Under load, the
+  session journal's `end` and the client's `closed_by` could name the side that
+  answered the first half-close or abort instead of the side that ended the
+  connection, and the level, `error` field and `closed_by` counts of the
+  client's line followed the wrong half. No value was added and the formats of
+  the lines are unchanged.
+- Read `TCP_INFO` on Linux without allocating, and treat a missing
+  `bytes_acked` as unknown. A kernel older than 4.1 reports no count, which the
+  client read as nothing acknowledged: a spare connection that failed after the
+  server had received the request could be repeated on a fresh transport.
+- Report a refused WebSocket early upgrade as a refusal when it lands as the
+  client sets its first handshake deadline. It surfaced as `use of closed
+  network connection`, so the client did not repeat the setup as it does for a
+  refused early upgrade.
+- Write the `UDP Tunnel closed` line of the client after both relays of the
+  association stopped, so that its counters include the last datagrams.
 
 ### Documentation
 
@@ -28,8 +112,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measurements, and exclude local-only configuration from the published tree.
 - Extended Discord voice acceptance remains open; setup benchmarks do not
   establish resolution of intermittent outgoing voice loss.
-
-## [Unreleased]
+- Add a section on
+  [runtime telemetry ownership](docs/guides/sdk.md#runtime-telemetry-ownership)
+  to the SDK guide: how an embedding application registers the Go and process
+  collectors and serves them with the S5Core metrics, and how servers sharing
+  one telemetry report their gauges.
+- Name `169.254.169.254` as the cloud metadata address in the configuration
+  guide and in the code comment on private destinations; the text gave an
+  address of the documentation range.
 
 ## [2.4.0-rc2] - 2026-10-04
 

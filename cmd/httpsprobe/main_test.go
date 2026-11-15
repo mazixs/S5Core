@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -44,8 +49,45 @@ func TestProbeSeparatesHTTPDelayAndTLS(t *testing.T) {
 				if i > 0 && (got.TLSMS != 0 || got.SetupMS != 0) {
 					t.Fatalf("reused request reports setup: %+v", got)
 				}
+				if got.ConnectionLocal != "" || got.ConnectionRemote != "" {
+					t.Fatalf("addresses reported without -flow-context: %+v", got)
+				}
 			}
 		})
+	}
+}
+
+func TestProbeFlowContextNamesReusedConnection(t *testing.T) {
+	peers := make(chan string, 2)
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peers <- r.RemoteAddr
+		_, _ = io.WriteString(w, "body")
+	}))
+	defer origin.Close()
+	ca := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: origin.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, stderr bytes.Buffer
+	if err := run([]string{"-url", origin.URL, "-ca", ca, "-count", "2", "-reuse", "-http2=false", "-flow-context"}, &out, &stderr); err != nil {
+		t.Fatal(err, stderr.String())
+	}
+	var got []measurement
+	for dec := json.NewDecoder(&out); dec.More(); {
+		var m measurement
+		if err := dec.Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, m)
+	}
+	if len(got) != 2 || !got[1].Reused {
+		t.Fatalf("two requests on one connection expected: %+v", got)
+	}
+	for _, m := range got {
+		// The origin sees the probe's end of the connection as its peer.
+		if peer := <-peers; m.ConnectionLocal != peer || m.ConnectionRemote != origin.Listener.Addr().String() {
+			t.Fatalf("connection %s -> %s, origin saw %s -> %s", m.ConnectionLocal, m.ConnectionRemote, peer, origin.Listener.Addr())
+		}
 	}
 }
 
