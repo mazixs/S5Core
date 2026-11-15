@@ -67,3 +67,39 @@ jobs:
         platforms: linux/amd64,linux/arm64
         cache-from: type=gha,scope=ci
         cache-to: type=gha,mode=max,scope=ci
+
+  windows-tests:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        persist-credentials: false
+
+    # The version comes from the toolchain line of go.mod, so it is not
+    # repeated here.
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      with:
+        go-version-file: go.mod
+
+    - name: Check the Go version and the line endings
+      run: |
+        want="go$(sed -n 's/^toolchain go//p' go.mod)"
+        got="$(go env GOVERSION)"
+        [ "$got" = "$want" ] || { echo "go.mod wants $want, the runner has $got"; exit 1; }
+        crlf="$(git ls-files --eol | grep -E 'w/(crlf|mixed)' || true)"
+        [ -z "$crlf" ] || { printf 'CRLF in the checkout:\n%s\n' "$crlf"; exit 1; }
+
+    - name: go vet
+      run: go vet ./...
+
+    # No -race: the runner has the C compiler it needs, but three allocation
+    # gates fail under it on Windows. The checks job runs -race on Linux.
+    - name: go test
+      run: go test -count=1 ./...
