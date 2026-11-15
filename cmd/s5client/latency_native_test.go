@@ -66,10 +66,10 @@ func nativeFeed(events []latencyEvent, flow uint32) []string {
 }
 
 // recordedLiveness is an association beside a recorded transport, in the
-// bubble: every answer comes 20 ms after its probe, the jitter is zero, and
-// lose says which probes are lost. Its records are timed from the start of
-// the association.
-func recordedLiveness(t *testing.T, transport net.Conn, lose func(int64) bool) (l *liveness, dir string, stop func()) {
+// bubble: every answer comes 20 ms after its probe, the jitter is zero, lose
+// says which probes are lost, and setup, if set, changes the path further.
+// Its records are timed from the start of the association.
+func recordedLiveness(t *testing.T, transport net.Conn, lose func(int64) bool, setup func(*memPath)) (l *liveness, dir string, stop func()) {
 	t.Helper()
 	dir = filepath.Join(t.TempDir(), "diag")
 	t.Setenv("S5_DIAGNOSTICS_DIR", dir)
@@ -80,7 +80,12 @@ func recordedLiveness(t *testing.T, transport net.Conn, lose func(int64) bool) (
 	if flow == (diagnostics.Flow{}) {
 		t.Fatal("the transport was not selected")
 	}
-	l = newLiveness(t, lose, 0, nil, nil, func(p *memPath) { p.delay = 20 * time.Millisecond })
+	l = newLiveness(t, lose, 0, nil, nil, func(p *memPath) {
+		p.delay = 20 * time.Millisecond
+		if setup != nil {
+			setup(p)
+		}
+	})
 	l.client.flow = flow
 	go l.client.run(func([]byte) {})
 	return l, dir, stop
@@ -100,7 +105,7 @@ func recordedLiveness(t *testing.T, transport net.Conn, lose func(int64) bool) (
 func TestALostPathLeavesNoRoundTripALateAnswerCouldFake(t *testing.T) {
 	transport, _ := tcpPair(t)
 	synctest.Test(t, func(t *testing.T) {
-		l, dir, stop := recordedLiveness(t, transport, func(i int64) bool { return i == 3 })
+		l, dir, stop := recordedLiveness(t, transport, func(i int64) bool { return i == 3 }, nil)
 		l.at(25 * time.Second)
 		l.path.dropDown.Store(true)
 		l.at(31500 * time.Millisecond)
@@ -129,7 +134,7 @@ func TestALostPathLeavesNoRoundTripALateAnswerCouldFake(t *testing.T) {
 func TestAnAnswerWhileTwoProbesAreOutLeavesNoRoundTripALateAnswerCouldFake(t *testing.T) {
 	transport, _ := tcpPair(t)
 	synctest.Test(t, func(t *testing.T) {
-		l, dir, stop := recordedLiveness(t, transport, func(i int64) bool { return i == 3 })
+		l, dir, stop := recordedLiveness(t, transport, func(i int64) bool { return i == 3 }, nil)
 		l.at(12 * time.Second)
 		l.client.used(l.client.clock(time.Now()))
 		l.at(25 * time.Second)
@@ -140,6 +145,24 @@ func TestAnAnswerWhileTwoProbesAreOutLeavesNoRoundTripALateAnswerCouldFake(t *te
 		want := []string{
 			"20ms probe 20ms", "20ms verified " + memClient.String() + " " + memServer.String(), "40ms probe 20ms",
 			"24.02s probe 20ms",
+		}
+		if got := nativeFeed(events, outerFlow(t, events)); !slices.Equal(got, want) {
+			t.Fatalf("the feed:\n%v\nwant\n%v", got, want)
+		}
+	})
+}
+
+// Where the server proves the route first, the probe at 0 s gets a challenge
+// at 20 ms, and the first answer comes at 40 ms, to the echo. Its round trip
+// is the echo's, not that of the probe the count has out.
+func TestTheRoundTripBehindARouteProofIsTheEchos(t *testing.T) {
+	transport, _ := tcpPair(t)
+	synctest.Test(t, func(t *testing.T) {
+		l, dir, stop := recordedLiveness(t, transport, nil, func(p *memPath) { p.proveRoute = true })
+		l.at(time.Second)
+		events := saveIncident(t, dir, stop)
+		want := []string{
+			"40ms probe 20ms", "40ms verified " + memClient.String() + " " + memServer.String(), "60ms probe 20ms",
 		}
 		if got := nativeFeed(events, outerFlow(t, events)); !slices.Equal(got, want) {
 			t.Fatalf("the feed:\n%v\nwant\n%v", got, want)

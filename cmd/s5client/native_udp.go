@@ -49,10 +49,10 @@ const (
 	// wait doubles up to 10 s.
 	nativeRetryFirst = time.Second
 	nativeRetryMax   = 10 * time.Second
-	// The latency recorder takes the round trip of a probe answered alone
-	// only this long after the last probe the count lost track of, at a loss
-	// or at an answer while several were out: until then a late answer to
-	// that one could pass for the answer to this one.
+	// A probe answered alone has a round trip, for srtt and the latency
+	// recorder alike, only this long after the last probe the count lost
+	// track of, at a loss or at an answer while several were out: until then
+	// a late answer to that one could pass for the answer to this one.
 	nativeStrayFor = 10 * time.Second
 )
 
@@ -216,6 +216,10 @@ type nativeClient struct {
 	limitACK          chan nativeudp.Answer
 	recoverySupported atomic.Bool
 	poked             chan struct{}
+	// echoAt is when run echoed a route challenge, 0 once an answer came;
+	// echoRTT is the round trip of that answer, 0 once watch took it.
+	echoAt  int64
+	echoRTT atomic.Int64
 	// server is how the server answers probes (serverUnknown until it does).
 	server atomic.Int32
 	// bounded is set while datagrams longer than native carries are dropped
@@ -490,6 +494,7 @@ func (n *nativeClient) run(deliver func([]byte)) {
 			if answer.RouteChallenge {
 				// A challenge is not confirmation of the application route.
 				// Echo once immediately; ordinary probing cadence is unchanged.
+				n.echoAt = now
 				_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: answer.RouteToken})
 				continue
 			}
@@ -519,6 +524,12 @@ func (n *nativeClient) run(deliver func([]byte)) {
 				default:
 				}
 			}
+			if n.echoAt != 0 {
+				// The server answers nothing by a new route before its echo
+				// (pkg/nativeudp, follow): this answer is the echo's.
+				n.echoRTT.Store(now - n.echoAt)
+				n.echoAt = 0
+			}
 			select {
 			case n.acked <- struct{}{}:
 			default:
@@ -545,7 +556,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		retry      = nativeRetryFirst
 		verified   bool
 		reported   bool          // a path never heard was logged
-		srtt       time.Duration // of probes answered while alone, 0 before the first
+		srtt       time.Duration // of the round trips taken, 0 before the first
 		strayUntil time.Time     // see nativeStrayFor
 		// The search for the limit of the path (docs/veil-spec.md, 10.7).
 		search             *nativeudp.Search
@@ -722,20 +733,23 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			return
 		case <-n.acked:
 			now := time.Now()
-			// Only the answer to a probe that went out alone says which probe
-			// it answers.
-			switch {
-			case unanswered == 1:
-				sample := now.Sub(lastProbe)
+			// A round trip is taken only where it is known whose answer this
+			// is, the echo's or a lone probe's, and no late answer to a probe
+			// the count dropped could pass for it. The first is taken anyway:
+			// the rounds of the search wait on it.
+			sample, known := now.Sub(lastProbe), unanswered == 1
+			if rtt := n.echoRTT.Swap(0); rtt != 0 {
+				sample, known = time.Duration(rtt), true
+			}
+			if known && (srtt == 0 || !now.Before(strayUntil)) {
 				if srtt == 0 {
 					srtt = sample
 				} else {
 					srtt += (sample - srtt) / 8
 				}
-				if !now.Before(strayUntil) {
-					n.flow.NativeProbe(sample)
-				}
-			case unanswered > 1:
+				n.flow.NativeProbe(sample)
+			}
+			if unanswered > 1 {
 				strayUntil = lastProbe.Add(nativeStrayFor)
 			}
 			unanswered = 0

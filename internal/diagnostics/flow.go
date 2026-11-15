@@ -87,8 +87,8 @@ func (f Flow) NativeRestored() {
 	}
 }
 
-// NativeProbe records the round trip of a probe of the native path that
-// went out alone: only its answer says which probe it answers.
+// NativeProbe records the round trip of a probe of the native path whose
+// answer is known to be its own.
 func (f Flow) NativeProbe(rtt time.Duration) {
 	if f.s != nil {
 		f.push(record{kind: kindNativeProbe, dur: int64(rtt)}, false)

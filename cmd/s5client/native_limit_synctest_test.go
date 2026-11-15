@@ -137,6 +137,38 @@ func TestARoundWithoutItsControlGoesAgain(t *testing.T) {
 	})
 }
 
+// Where the server proves the route first, the first answer is the echo's,
+// 1.4 s after the probe at 0 s on a path of 700 ms, and the retry at 1 s is
+// out by then. The echo's round trip times the rounds: without one, three
+// rounds of 250 ms went unanswered and ended the search at 1200.
+func TestTheRouteEchoTimesTheSearch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) {
+			p.sizes, p.proveRoute, p.delay = true, true, 700*time.Millisecond
+		})
+		l.at(5 * time.Second)
+		if limit := l.client.session.Limit(); limit < nativeudp.MaxWire-8 {
+			t.Fatalf("limit %d on a wide path of 700 ms", limit)
+		}
+	})
+}
+
+// The answer to the retry at 1 s comes while the probe at 0 s is still out,
+// and the round trips of the next 10 s could be late answers to that one
+// (nativeStrayFor). The first is taken all the same, since the rounds wait
+// on it: on a path of 300 ms rounds of 250 ms would end the search at 1200.
+func TestALostFirstAnswerStillTimesTheSearch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLivenessPath(t, func(i int64) bool { return i == 1 }, 0, nil, nil, func(p *memPath) {
+			p.sizes, p.delay = true, 300*time.Millisecond
+		})
+		l.at(5 * time.Second)
+		if limit := l.client.session.Limit(); limit < nativeudp.MaxWire-8 {
+			t.Fatalf("limit %d on a wide path of 300 ms", limit)
+		}
+	})
+}
+
 // Below the floor the smallest QUIC packet does not fit native, and the rule
 // stays the same: long datagrams are dropped both ways. Sending them by 0x83
 // from the start had the search of quic-go take the stream for the path again
