@@ -28,7 +28,7 @@ var specialDestinations = [...]netip.Prefix{
 
 // privateDestination says whether ip is an address of the server's own
 // machine or of the network behind it: loopback, link-local (the metadata
-// service of a cloud is 192.0.2.209), unspecified, multicast, private
+// service of a cloud is 169.254.169.254), unspecified, multicast, private
 // (RFC 1918 and the unique local addresses of IPv6) and carrier-grade NAT,
 // and the IPv4 address inside a NAT64 one. A client of a proxy has no
 // business there unless the operator says so (Config.DenyPrivateDest,
