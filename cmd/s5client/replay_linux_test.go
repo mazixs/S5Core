@@ -73,7 +73,7 @@ func TestAResetAfterTheServerAcknowledgedTheRequestIsNotRepeated(t *testing.T) {
 	client, server := socketPair(t)
 	spare := newTakenSpare(client)
 	if !spare.known {
-		t.Fatal("the kernel gave no TCP_INFO for a live socket")
+		t.Fatal("the kernel gave no acknowledged count for a live socket")
 	}
 	request := make([]byte, 100)
 	if _, err := client.Write(request); err != nil {

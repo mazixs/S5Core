@@ -25,8 +25,12 @@ type Info struct {
 	// State is the kernel's TCP state, in Linux numbering.
 	State uint8
 	// BytesAcked is how many bytes sent on the connection the peer has
-	// acknowledged so far.
+	// acknowledged so far. It counts only where BytesAckedKnown is set.
 	BytesAcked uint64
+	// BytesAckedKnown says the kernel reported BytesAcked. One older than
+	// the counter (Linux 4.1) returns a shorter TCP_INFO, and the zero left
+	// in its place would read as "nothing acknowledged".
+	BytesAckedKnown bool
 }
 
 // StateEstablished is the only state in which both directions are open: a
@@ -36,7 +40,8 @@ const StateEstablished uint8 = 1
 
 // InfoOf reads the TCP state of the socket under c. ok is false where the
 // kernel does not say: not Linux, no socket under the connection, or one that
-// is already closed.
+// is already closed. On Linux it allocates nothing for a *net.TCPConn, which
+// every tunnel has under its wrappers.
 func InfoOf(c net.Conn) (Info, bool) {
 	sc, err := Socket(c)
 	if err != nil {
