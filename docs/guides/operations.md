@@ -214,7 +214,7 @@ Per-account traffic accounting is separate from telemetry. Its batching threshol
 
 ## Latency diagnostics
 
-The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection and per tunnel.
+The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection and per tunnel. On, it also reads the clock twice on every read and write of a recorded socket.
 
 ### Turning it on
 
@@ -225,6 +225,8 @@ The latency recorder is a black box for latency that comes and goes. While it is
 | `S5_DIAGNOSTICS_TRACE` | `1` also keeps a flight recorder of the Go execution trace and saves its last 30 seconds with each incident. Up to 32 MiB more memory. |
 
 The recorder starts in the background after the logging is set up. It writes `Latency diagnostics are on` or, if the directory cannot be used, `Latency diagnostics are off` with the reason; forwarding goes on either way.
+
+One directory serves one process. The budget and the rotation count the whole directory and there is one `trigger.json`, so two processes in one directory would take the same marker and write over each other's files of one incident. To match the incidents of several processes, give each its own directory and write the same UUID into the marker of each.
 
 ### What it records
 
@@ -261,11 +263,11 @@ An incident is the records from up to two minutes before its trigger to 90 secon
 | `<id>.manifest.json` | what is the same for every record; an incident with a manifest is complete |
 | `<id>.trace` | with `S5_DIAGNOSTICS_TRACE=1`: the execution trace; `go tool trace` reads it |
 
-A file ending in `.partial` is an incident the process did not finish: it was killed, or it ran out of room.
+A file ending in `.partial` is an incident the process did not finish: it was killed, or it ran out of room. It stays until its room is needed.
 
 ### Disk budget
 
-The directory may hold up to 256 MiB, and the recorder leaves at least 256 MiB free on the volume. One events or trace file takes at most 64 MiB. When an incident needs room, the oldest automatic incident is removed with all its files. A manual incident is never removed, and neither is the automatic incident it took over. When no automatic incident is left to remove, the recorder stops with one line in the log, `Latency diagnostics stopped`, and forwarding goes on. An incident that reaches its share of the budget ends early and its manifest says `truncated`.
+The directory may hold up to 256 MiB, and the recorder leaves at least 256 MiB free on the volume. One events or trace file takes at most 64 MiB. When an incident needs room, the oldest incident that may go is removed with all its files: an automatic incident, by its trigger, or the files of one without a manifest, such as `.partial` files, by when they were last written. A manual incident is never removed, nor the automatic incident it took over, nor what the process is still writing, nor an incident whose manifest cannot be read. The budget counts the files directly in the directory: a subdirectory is neither counted nor touched. When nothing is left to remove, the recorder stops with one line in the log, `Latency diagnostics stopped`, and forwarding goes on. An incident that reaches its share of the budget ends early and its manifest says `truncated`.
 
 In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each) and runtime samples (about 3 KiB each) come on top.
 
@@ -319,7 +321,7 @@ Every line has these fields:
 | `recorder_start_utc` | the wall clock at `elapsed_ns` 0 |
 | `trigger` | `source` (`manual`, `automatic`), `utc`, `elapsed_ns`; for an automatic incident `reason` and `flow`; for a takeover `prior_automatic_incident` (its trace, if any, is `<prior>.trace`) |
 | `window` | `first_seq`, `last_seq`, `start_elapsed_ns`, `end_elapsed_ns`, `start_utc`, `end_utc` of the records saved; `lost_before_capture` (records the ring gave up before they were saved); `shutdown_before_post_end`; `truncated` |
-| `trace` | `disabled`, `captured`, `failed`, `skipped` (an earlier incident's trace was still being written) or `writing` |
+| `trace` | `disabled`, `captured`, `failed`, `skipped` (an earlier incident's trace was still being written) or `writing` (the manifest was written before the trace was done, as when the process stops; a `<id>.trace` there is complete) |
 | `flows` | each flow in the records: `flow`, `leg`, `transport`, `local`, `remote` |
 | `limits` | every constant that shaped the records, from `sample_interval_ns` to `trace_max_bytes` |
 | `health` | since the start of the process: `overwritten` (records a full ring pushed out before their two minutes), `rejected_marker` (polls of a marker that could not be read), `rejected_while_manual`, `rejected_while_automatic`, `failed_snapshots`, `rotated_incidents`, and `selection`: `admitted`, `omitted_rate`, `omitted_active`, `evicted_closed` |
@@ -331,6 +333,7 @@ Every line has these fields:
 - The first 32 sockets keep their slots for as long as they live, so on a busy server the recorded ones are not a sample of all of them.
 - A stage record times the call into the transport where the wrapper sits, TLS and WebSocket framing included. A write returns once the kernel took the bytes, not once the peer got them.
 - On Windows the counters are those of `SIO_TCP_INFO` version 0 (Windows 10 1703 and later); elsewhere but Linux and Windows a socket sample says `available: false`.
+- A socket's lowest round trip time only goes down, so a path that became longer for good goes on starting automatic incidents, at most one in two minutes per socket.
 - The recorder shares the process: an incident is written by the same process whose latency it records.
 
 ---

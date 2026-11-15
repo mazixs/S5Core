@@ -355,7 +355,7 @@ Both binaries read the same three variables; what the recorder writes and how mu
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `S5_DIAGNOSTICS_DIR` | String | *Empty* | Turns the latency recorder on and keeps its incidents in this directory, which must be private or not exist yet. Empty keeps it off. |
+| `S5_DIAGNOSTICS_DIR` | String | *Empty* | Turns the latency recorder on and keeps its incidents in this directory, which must be private or not exist yet. One directory per process; the same UUID in the markers of several directories matches their incidents. Empty keeps it off. |
 | `S5_DIAGNOSTICS_RUN_ID` | String | *A new UUID* | The run's name in every manifest, at most 256 bytes. |
 | `S5_DIAGNOSTICS_TRACE` | String | *Empty* | `1` saves the last 30 seconds of the Go execution trace with each incident. |
 
