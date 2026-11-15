@@ -14,12 +14,23 @@ func BenchmarkObserveConnDisabled(b *testing.B) {
 	}
 }
 
+// What every CONNECT relay pays with diagnostics off.
+func BenchmarkObserveRelatedDisabled(b *testing.B) {
+	var outer, related net.Conn = &fakeConn{}, &fakeConn{}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = ObserveRelated(outer, related, "target")
+	}
+}
+
 // One read and one write through the wrapper, outside their turn: direct,
-// through a stopped recorder's wrapper, and recorded.
+// through a stopped recorder's wrapper, recorded, and recorded as the related
+// side of a relay.
 func BenchmarkObservedTransport(b *testing.B) {
 	direct := &fakeConn{}
 	testRecorder(b)
 	recorded := ObserveConn(&fakeConn{}, "outer", "obfs")
+	related := ObserveRelated(recorded, &fakeConn{}, "target")
 	stopped := ObserveConn(&fakeConn{}, "outer", "obfs")
 	stoppedRecorder := newRecorder()
 	stoppedRecorder.stopped.Store(true)
@@ -28,7 +39,7 @@ func BenchmarkObservedTransport(b *testing.B) {
 	for _, bc := range []struct {
 		name string
 		conn net.Conn
-	}{{"direct", direct}, {"stopped", stopped}, {"recorded", recorded}} {
+	}{{"direct", direct}, {"stopped", stopped}, {"recorded", recorded}, {"related", related}} {
 		b.Run(bc.name+"/read", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {

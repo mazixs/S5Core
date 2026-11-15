@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/diagnostics"
 	"github.com/mazixs/S5Core/internal/relay"
 	"github.com/mazixs/S5Core/internal/session"
 )
@@ -341,6 +342,11 @@ func (s *Server) handleConnect(ctx context.Context, conn conn, req *Request) err
 			return errors.Join(failure, connFailure("request", "reply_write", replyErr))
 		}
 		return failure
+	}
+	// The destination side of the relay, recorded beside the client's socket
+	// when the latency recorder selected that one.
+	if nc, ok := conn.(net.Conn); ok {
+		target = diagnostics.ObserveRelated(nc, target, "target")
 	}
 	defer func() {
 		_ = target.Close()

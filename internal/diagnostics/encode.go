@@ -93,6 +93,10 @@ func appendRecord(dst []byte, rec *record) []byte {
 	case kindFlowOpen:
 		dst = appendString(append(dst, `"local":`...), rec.flow.local)
 		dst = appendString(append(dst, `,"remote":`...), rec.flow.remote)
+		if rec.flow.outer != 0 {
+			dst = append(dst, `,"outer_flow":`...)
+			dst = strconv.AppendUint(dst, uint64(rec.flow.outer), 10)
+		}
 	case kindFlowClose:
 		t := rec.payload.(*flowTotals)
 		dst = append(dst, `"read_calls":`...)

@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	// selectedSockets is the most sockets recorded at once: the first to
-	// come take the slots, a closed one gives its slot back.
+	// selectedSockets is the most sockets selected at once: the first to
+	// come take the slots, a closed one gives its slot back. The socket
+	// related to a selected one takes none (ObserveRelated).
 	selectedSockets = 32
 	// newSocketBurst and newSocketsPerSecond bound how fast sockets are
 	// selected, so a burst of short connections cannot churn the ring.
@@ -27,6 +28,9 @@ const (
 	// A read waits for the peer, so a long one says nothing on its own: the
 	// longest read between two samples goes into the socket sample instead.
 	slowWrite = 25 * time.Millisecond
+	// maxWrappers bounds the walk down the wrappers of a connection, as in
+	// tcptune.Socket.
+	maxWrappers = 10
 )
 
 // current is the running recorder, nil while diagnostics are off.
@@ -48,9 +52,12 @@ type recorder struct {
 	traces  sync.WaitGroup
 
 	// mu guards what follows. No I/O happens under it.
-	mu        sync.Mutex
-	ring      ring
+	mu   sync.Mutex
+	ring ring
+	// sockets are the sampled ones: the selected sockets and those related
+	// to them. taken counts the selected, which take the slots.
 	sockets   map[*socket]struct{}
+	taken     int
 	flows     uint32 // the last flow ID given
 	selection selection
 
@@ -73,15 +80,19 @@ func newRecorder() *recorder {
 	}
 }
 
-// socket is a selected socket.
+// socket is a sampled socket: a selected one, or one related to it.
 type socket struct {
 	flow          *flowInfo
-	conn          net.Conn // what ObserveConn was given
+	conn          net.Conn // what ObserveConn or ObserveRelated was given
 	reads, writes atomic.Uint64
 	// readWait is the longest read, in nanoseconds, since the last periodic
 	// sample took it.
 	readWait atomic.Int64
 	detector spikeDetector // the worker's
+	// outer is the selected socket a related one belongs to, nil for a
+	// selected one. related is the related socket of a selected one while it
+	// is sampled; mu guards it.
+	outer, related *socket
 }
 
 // selection decides which sockets are recorded: a slot must be free and a
@@ -131,7 +142,7 @@ func observe(c net.Conn, leg, transport string) net.Conn {
 		return c
 	}
 	r.mu.Lock()
-	if len(r.sockets) >= selectedSockets {
+	if r.taken >= selectedSockets {
 		r.selection.omittedActive++
 		r.mu.Unlock()
 		return c
@@ -142,6 +153,7 @@ func observe(c net.Conn, leg, transport string) net.Conn {
 		return c
 	}
 	r.selection.admitted++
+	r.taken++
 	r.flows++
 	s := &socket{conn: c, flow: &flowInfo{
 		id: r.flows, leg: leg, transport: transport,
@@ -151,6 +163,58 @@ func observe(c net.Conn, leg, transport string) net.Conn {
 	r.pushLocked(record{flow: s.flow, kind: kindFlowOpen})
 	r.mu.Unlock()
 	r.sampleSocket(s, sampleOpen)
+	return r.wrap(c, s)
+}
+
+// ObserveRelated returns related wrapped for the latency recorder when outer
+// is a socket it selected, and related itself otherwise. related is the
+// other side of outer's relay, leg says which; it is recorded as a flow of
+// its own that names outer's flow. It takes no slot and no token and starts
+// no incident, and a selected socket has one at a time. Off, it costs one
+// atomic load.
+func ObserveRelated(outer, related net.Conn, leg string) net.Conn {
+	if current.Load() == nil {
+		return related
+	}
+	return observeRelated(outer, related, leg)
+}
+
+// observeRelated is ObserveRelated past its check.
+func observeRelated(outer, related net.Conn, leg string) net.Conn {
+	r := current.Load()
+	if r == nil || r.stopped.Load() {
+		return related
+	}
+	o := socketUnder(outer)
+	if o == nil {
+		return related
+	}
+	if _, err := tcptune.Socket(related); err != nil {
+		return related
+	}
+	r.mu.Lock()
+	// A selected socket of this recorder, still sampled, without a related
+	// one yet.
+	if _, sampled := r.sockets[o]; !sampled || o.outer != nil || o.related != nil {
+		r.mu.Unlock()
+		return related
+	}
+	r.flows++
+	// The destination of a CONNECT and the application are plain TCP.
+	s := &socket{conn: related, outer: o, flow: &flowInfo{
+		id: r.flows, outer: o.flow.id, leg: leg, transport: "tcp",
+		local: related.LocalAddr().String(), remote: related.RemoteAddr().String(),
+	}}
+	o.related = s
+	r.sockets[s] = struct{}{}
+	r.pushLocked(record{flow: s.flow, kind: kindFlowOpen})
+	r.mu.Unlock()
+	r.sampleSocket(s, sampleOpen)
+	return r.wrap(related, s)
+}
+
+// wrap returns c wrapped for the sampled socket s.
+func (r *recorder) wrap(c net.Conn, s *socket) net.Conn {
 	o := &observedConn{Conn: c, r: r, s: s}
 	if cw, ok := c.(interface{ CloseWrite() error }); ok {
 		return &observedHalfConn{observedConn: o, closeWrite: cw.CloseWrite}
@@ -178,16 +242,31 @@ func (r *recorder) sampleSocket(s *socket, why uint8) {
 	r.push(record{flow: s.flow, kind: kindSocket, what: why, payload: &tcpSample{counters: c, available: err == nil}})
 }
 
-// release gives the slot of s back. Its last counters go first, while the
+// release ends the sampling of s. Its last counters go first, while the
 // socket is still open.
 func (r *recorder) release(s *socket) {
 	r.mu.Lock()
-	_, selected := r.sockets[s]
-	delete(r.sockets, s)
+	sampled := r.unsampleLocked(s)
 	r.mu.Unlock()
-	if !selected || r.stopped.Load() {
+	if !sampled || r.stopped.Load() {
 		return
 	}
 	r.sampleSocket(s, sampleClose)
 	r.push(record{flow: s.flow, kind: kindFlowClose, payload: &flowTotals{reads: s.reads.Load(), writes: s.writes.Load()}})
+}
+
+// unsampleLocked stops sampling s and says whether it was sampled: a
+// selected socket gives its slot back, a related one its place beside its
+// outer socket. mu is held.
+func (r *recorder) unsampleLocked(s *socket) bool {
+	if _, sampled := r.sockets[s]; !sampled {
+		return false
+	}
+	delete(r.sockets, s)
+	if s.outer != nil {
+		s.outer.related = nil
+	} else {
+		r.taken--
+	}
+	return true
 }

@@ -71,6 +71,26 @@ type observedHalfConn struct {
 
 func (c *observedHalfConn) CloseWrite() error { return c.closeWrite() }
 
+// socketUnder walks the wrappers of c, as tcptune.Socket does, down to the
+// recorder's own and returns its socket; nil without one.
+func socketUnder(c net.Conn) *socket {
+	for range maxWrappers {
+		switch v := c.(type) {
+		case *observedConn:
+			return v.s
+		case *observedHalfConn:
+			return v.s
+		case interface{ NetConn() net.Conn }:
+			c = v.NetConn()
+		case interface{ Unwrap() net.Conn }:
+			c = v.Unwrap()
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
 func (s *socket) noteReadWait(d time.Duration) {
 	for {
 		was := s.readWait.Load()

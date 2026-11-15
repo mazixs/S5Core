@@ -62,6 +62,8 @@ type savedEvent struct {
 	Seq       uint64         `json:"seq"`
 	ElapsedNS int64          `json:"elapsed_ns"`
 	Flow      uint32         `json:"flow"`
+	Leg       string         `json:"leg"`
+	Transport string         `json:"transport"`
 	Kind      string         `json:"kind"`
 	Data      map[string]any `json:"data"`
 }
