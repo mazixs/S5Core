@@ -382,6 +382,20 @@ func (e *EarlyConn) SetReadDeadline(t time.Time) error {
 }
 
 func (e *EarlyConn) SetWriteDeadline(t time.Time) error {
+	if err := e.setWriteDeadline(t); err != nil {
+		// gorilla closes the socket of a failed upgrade before finish
+		// records why it failed. The caller needs the why, as in Write: a
+		// refusal must not read as a closed socket.
+		<-e.ready
+		if e.err != nil {
+			return e.err
+		}
+		return err
+	}
+	return nil
+}
+
+func (e *EarlyConn) setWriteDeadline(t time.Time) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.err != nil {

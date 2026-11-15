@@ -107,10 +107,17 @@ func TestALongAssociationReportsWhatItCarried(t *testing.T) {
 }
 
 // udpAssociationUp is udpTunnelUp for a test that also needs the
-// application's connection and the end of the handler.
+// application's connection and the end of the handler. It returns an
+// established association: without OPTIMISTIC_CONNECT the client answers its
+// application only once setup is over. An optimistic answer comes at once and
+// the datagrams after it go behind the request, so a test that then closed
+// the application's connection could end the setup instead, and that writes
+// no closing line.
 func udpAssociationUp(t *testing.T) (control net.Conn, app *net.UDPConn, tunnel net.Conn, done chan struct{}) {
 	t.Helper()
-	control, tunnel, done = startUDPAssociate(t)
+	control, clientSide := tcpPair(t)
+	tunnel, obfsSide := tcpPair(t)
+	done = runUDPAssociate(t, clientSide, "example.com", clientParams{}, nil, dialled(obfsSide))
 	if _, err := tunnel.Write(udpTunnelReply); err != nil {
 		t.Fatalf("answering the 0x83 command: %v", err)
 	}
