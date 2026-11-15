@@ -97,7 +97,13 @@ func TestMkdirAllPassesThePrivateDACLOnToTheContent(t *testing.T) {
 		file: "D:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;FA;;;" + user + ")",
 		sub:  "D:(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;" + user + ")",
 	} {
-		if got := privatefstest.DACL(t, path); got != want {
+		// SDDL prints some SIDs as aliases (the built-in Administrator as
+		// LA), so the expectation goes through the same printing.
+		sd, err := windows.SecurityDescriptorFromString(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := privatefstest.DACL(t, path), sd.String(); got != want {
 			t.Errorf("%s: %s, want %s", filepath.Base(path), got, want)
 		}
 	}
