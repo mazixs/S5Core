@@ -13,7 +13,7 @@ import (
 var countersOf = tcptune.CountersOf
 
 // sampleInterval is how often the worker samples the runtime and every
-// selected socket.
+// sampled socket.
 const sampleInterval = 500 * time.Millisecond
 
 // sampler is what the worker reuses from tick to tick.
@@ -61,9 +61,9 @@ type spike struct {
 	reason uint8
 }
 
-// tick samples the runtime and every selected socket. It returns the first
+// tick samples the runtime and every sampled socket. It returns the first
 // spike the detector saw, and how many more it saw in the same tick. A
-// socket closed under its wrapper gives its slot back here.
+// socket closed under its wrapper is evicted here.
 func (r *recorder) tick(now time.Time) (first spike, more int) {
 	r.push(record{kind: kindRuntime, payload: r.sampler.readRuntime()})
 	r.mu.Lock()
@@ -80,7 +80,8 @@ func (r *recorder) tick(now time.Time) (first spike, more int) {
 		r.push(record{flow: s.flow, kind: kindSocket, what: sampleTick, payload: &tcpSample{
 			counters: c, available: err == nil, readWait: time.Duration(s.readWait.Swap(0)),
 		}})
-		if err != nil {
+		// A related socket starts no incident: its path is not the tunnel's.
+		if err != nil || s.outer != nil {
 			continue
 		}
 		switch reason := s.detector.observe(now, &c); {
@@ -96,13 +97,11 @@ func (r *recorder) tick(now time.Time) (first spike, more int) {
 	return first, more
 }
 
-// evict gives back the slot of a socket that was closed under its wrapper,
+// evict ends the sampling of a socket that was closed under its wrapper,
 // which itself was never closed.
 func (r *recorder) evict(s *socket) {
 	r.mu.Lock()
-	_, selected := r.sockets[s]
-	delete(r.sockets, s)
-	if selected {
+	if r.unsampleLocked(s) {
 		r.selection.evictedClosed++
 		r.pushLocked(record{flow: s.flow, kind: kindFlowClose, payload: &flowTotals{reads: s.reads.Load(), writes: s.writes.Load(), evicted: true}})
 	}

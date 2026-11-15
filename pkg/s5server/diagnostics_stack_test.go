@@ -17,11 +17,13 @@ import (
 )
 
 // startLatency turns the latency recorder on for the test and waits until
-// it selects a socket.
-func startLatency(t *testing.T) {
+// it selects a socket. It returns the recorder's directory and its stop.
+func startLatency(t *testing.T) (dir string, stop func()) {
 	t.Helper()
-	t.Setenv("S5_DIAGNOSTICS_DIR", t.TempDir()+"/diag")
-	t.Cleanup(diagnostics.StartLatency())
+	dir = t.TempDir() + "/diag"
+	t.Setenv("S5_DIAGNOSTICS_DIR", dir)
+	stop = diagnostics.StartLatency()
+	t.Cleanup(stop)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -44,10 +46,11 @@ func startLatency(t *testing.T) {
 		observed := diagnostics.ObserveConn(c, "probe", "tcp")
 		_ = observed.Close()
 		if observed != c {
-			return
+			return dir, stop
 		}
 	}
 	t.Fatal("the latency recorder did not start")
+	return "", nil
 }
 
 // layers walks c down as tcptune.Socket does and names every layer.

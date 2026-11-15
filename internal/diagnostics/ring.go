@@ -23,10 +23,10 @@ const (
 type kind uint8
 
 const (
-	kindStage     kind = iota + 1 // one read or write of a selected socket
-	kindSocket                    // the kernel's counters of a selected socket
-	kindFlowOpen                  // a socket was selected
-	kindFlowClose                 // a selected socket was closed
+	kindStage     kind = iota + 1 // one read or write of a sampled socket
+	kindSocket                    // the kernel's counters of a sampled socket
+	kindFlowOpen                  // a socket is sampled from now on
+	kindFlowClose                 // a sampled socket was closed
 	kindRuntime                   // the Go runtime's metrics
 	kindSpike                     // the detector started an incident
 )
@@ -75,9 +75,10 @@ type record struct {
 	flags   uint8
 }
 
-// flowInfo is what stays the same for a selected socket.
+// flowInfo is what stays the same for a sampled socket.
 type flowInfo struct {
 	id             uint32 // counted from 1 since the recorder started
+	outer          uint32 // the flow a related socket belongs to; 0 for a selected one
 	leg, transport string
 	local, remote  string
 }

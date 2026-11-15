@@ -670,6 +670,13 @@ type relayResult struct {
 // its reply, still to be read, says more than the reset of the write. A
 // successful await after such a write copies nothing and aborts.
 func relayAfter(clientConn, obfsConn net.Conn, await func() error) (r relayResult) {
+	// The application beside the tunnel, when the latency recorder selected
+	// the tunnel. Its wrapper is closed with the relay, so that its flow ends
+	// by its own close.
+	if app := diagnostics.ObserveRelated(obfsConn, clientConn, "application"); app != clientConn {
+		clientConn = app
+		defer app.Close()
+	}
 	ends := make(chan struct{}, 2)
 	var state atomic.Int32
 	if await == nil {
@@ -742,9 +749,13 @@ const (
 
 // resetConn closes a TCP connection with a reset rather than a FIN, so that
 // the application does not take a failure for the end of a complete answer.
+// The reset is set on the socket under the latency recorder's wrapper, and
+// the wrapper is closed.
 func resetConn(c net.Conn) {
-	if tcp, ok := c.(*net.TCPConn); ok {
-		_ = tcp.SetLinger(0)
+	if sc, err := tcptune.Socket(c); err == nil {
+		if tcp, ok := sc.(*net.TCPConn); ok {
+			_ = tcp.SetLinger(0)
+		}
 	}
 	_ = c.Close()
 }

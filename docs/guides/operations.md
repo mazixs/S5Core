@@ -214,7 +214,7 @@ Per-account traffic accounting is separate from telemetry. Its batching threshol
 
 ## Latency diagnostics
 
-The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection and per tunnel. On, it also reads the clock twice on every read and write of a recorded socket.
+The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets and of the other side of their CONNECT relays in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection, per tunnel and per CONNECT relay. On, it also reads the clock twice on every read and write of a recorded socket.
 
 ### Turning it on
 
@@ -232,7 +232,9 @@ One directory serves one process. The budget and the rotation count the whole di
 
 The server records each connection accepted on its listeners: plain SOCKS5, obfs and WebSocket. The client records the transport of each tunnel; an idle spare connection is not recorded until a tunnel takes it. On both ends the recorder's wrapper sits under the obfuscation, the deadlines and the server's limit. A recorded socket is a *flow*, numbered from 1 in each run of the process.
 
-At most 32 sockets are recorded at once: the first to arrive take the slots, and a closed socket gives its slot back. New sockets are admitted at a burst of 32, then eight a second. A socket closed under a wrapper nobody closed is noticed at the next sample and gives its slot back too.
+At most 32 outer sockets are recorded at once: the first to arrive take the slots, and a closed socket gives its slot back. New sockets are admitted at a burst of 32, then eight a second. A socket closed under a wrapper nobody closed is noticed at the next sample and gives its slot back too.
+
+When a recorded outer socket carries a CONNECT, the other side of the relay is recorded as a flow of its own, a *related* flow: on the server the connection to the destination (`leg` `target`), on the client the application's connection (`leg` `application`). Its `flow_open` names the outer flow in `outer_flow`. A related flow takes no slot and no admission token. An outer flow has one at a time, and at most 32 related flows are recorded at once, counting one that outlives its outer flow. Its samples never start an incident: on the server its path is the destination's network, not the tunnel's. An incident started by its outer flow or by hand holds it like any other flow.
 
 For each flow the recorder keeps:
 
@@ -241,6 +243,12 @@ For each flow the recorder keeps:
 - **flow records**: the addresses at the open, the number of reads and writes at the close.
 
 For the process it keeps the Go runtime metrics every 500 ms.
+
+To tell on which side of the relay a delay arose, read the samples of an outer flow and its related flow side by side, sample by sample:
+
+- `rtt_us`, `retransmits` and `bytes_retrans` that grow on one flow only point to the path of that socket: the tunnel's for the outer flow, the destination's or the application's for the related one;
+- `read_wait_max_ns` is how long the peer of that socket kept the relay waiting for data;
+- a `slow` write on a flow, or `not_sent_bytes` that pile up on it, means that socket's peer or path did not take the data as fast as the other side of the relay delivered it.
 
 ### Incidents
 
@@ -269,7 +277,7 @@ A file ending in `.partial` is an incident the process did not finish: it was ki
 
 The directory may hold up to 256 MiB, and the recorder leaves at least 256 MiB free on the volume. One events or trace file takes at most 64 MiB. When an incident needs room, the oldest incident that may go is removed with all its files: an automatic incident, by its trigger, or the files of one without a manifest, such as `.partial` files, by when they were last written. A manual incident is never removed, nor the automatic incident it took over, nor what the process is still writing, nor an incident whose manifest cannot be read. The budget counts the files directly in the directory: a subdirectory is neither counted nor touched. When nothing is left to remove, the recorder stops with one line in the log, `Latency diagnostics stopped`, and forwarding goes on. An incident that reaches its share of the budget ends early and its manifest says `truncated`.
 
-In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each) and runtime samples (about 3 KiB each) come on top.
+In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each) and runtime samples (about 3 KiB each) come on top. With all 32 slots taken and each outer flow beside its related flow, two minutes without traffic are about 15 700 records, under half the ring, with about 2.1 MiB of socket samples and 0.7 MiB of runtime samples.
 
 ### Event schema
 
@@ -281,15 +289,15 @@ Every line has these fields:
 | `elapsed_ns` | nanoseconds since the recorder started, by the monotonic clock |
 | `utc` | the wall clock at the same moment; it may jump, `elapsed_ns` does not |
 | `flow` | the flow, `0` for the process |
-| `leg` | `outer` for a flow, `process` for the process |
-| `transport` | the flow's transport; no transport for the process |
+| `leg` | `outer` for an outer flow, `target` (server) or `application` (client) for a related flow, `process` for the process |
+| `transport` | the flow's transport, `tcp` for a related flow; no transport for the process |
 | `kind` | what `data` holds, below |
 
 | `kind` | `data` |
 |---|---|
 | `stage` | `boundary` (`transport_read`, `transport_write`), `duration_ns`, `bytes`, `error`, `periodic` (one in 512), `slow` (a write of 25 ms or more) |
 | `socket` | `reason` (`open`, `periodic`, `close`), `available` (whether the kernel answered), `read_wait_max_ns` (periodic samples only: the longest read since the sample before), `tcp` |
-| `flow_open` | `local`, `remote` |
+| `flow_open` | `local`, `remote`; for a related flow `outer_flow`, the outer flow it belongs to |
 | `flow_close` | `read_calls`, `write_calls`, and `evicted: true` for a socket closed under its wrapper |
 | `runtime` | each [runtime metric](https://pkg.go.dev/runtime/metrics) by its name: a number, `null` where this Go version lacks it, or for a histogram its bucket counts |
 | `spike` | `reason` (`rtt_excess`, `retransmit_timeout`), `incident_id` |
@@ -315,22 +323,23 @@ Every line has these fields:
 
 | Field | Meaning |
 |---|---|
-| `schema` | `1` |
+| `schema` | `2`; an incident of schema `1` holds outer flows only |
 | `incident_id`, `run_id`, `boot_id` | the incident; the run (`S5_DIAGNOSTICS_RUN_ID`); this start of the process |
 | `process_id`, `go_version`, `build_version`, `goos`, `goarch` | the process and its build |
 | `recorder_start_utc` | the wall clock at `elapsed_ns` 0 |
 | `trigger` | `source` (`manual`, `automatic`), `utc`, `elapsed_ns`; for an automatic incident `reason` and `flow`; for a takeover `prior_automatic_incident` (its trace, if any, is `<prior>.trace`) |
 | `window` | `first_seq`, `last_seq`, `start_elapsed_ns`, `end_elapsed_ns`, `start_utc`, `end_utc` of the records saved; `lost_before_capture` (records the ring gave up before they were saved); `shutdown_before_post_end`; `truncated` |
 | `trace` | `disabled`, `captured`, `failed`, `skipped` (an earlier incident's trace was still being written) or `writing` (the manifest was written before the trace was done, as when the process stops; a `<id>.trace` there is complete) |
-| `flows` | each flow in the records: `flow`, `leg`, `transport`, `local`, `remote` |
+| `flows` | each flow in the records: `flow`, `leg`, `transport`, `local`, `remote`, and for a related flow `outer_flow` |
 | `limits` | every constant that shaped the records, from `sample_interval_ns` to `trace_max_bytes` |
-| `health` | since the start of the process: `overwritten` (records a full ring pushed out before their two minutes), `rejected_marker` (polls of a marker that could not be read), `rejected_while_manual`, `rejected_while_automatic`, `failed_snapshots`, `rotated_incidents`, and `selection`: `admitted`, `omitted_rate`, `omitted_active`, `evicted_closed` |
+| `health` | since the start of the process: `overwritten` (records a full ring pushed out before their two minutes), `rejected_marker` (polls of a marker that could not be read), `rejected_while_manual`, `rejected_while_automatic`, `failed_snapshots`, `rotated_incidents`, and `selection`: `admitted`, `omitted_rate`, `omitted_active` of the outer sockets, and `evicted_closed` (flows found closed under their wrapper, related ones included) |
 | `runtime_histogram_bounds` | the bucket bounds of each runtime histogram; `null` is an open end |
 
 ### Limits
 
-- Only the outer sockets are recorded: the destination side of the server, the application side of the client and native UDP are not.
-- The first 32 sockets keep their slots for as long as they live, so on a busy server the recorded ones are not a sample of all of them.
+- Besides the outer sockets only the other side of a CONNECT relay is recorded. UDP is not: neither a standard Associate, nor the TCP fallback (`0x83`), nor native UDP (`0x84`).
+- On the client, an optimistic CONNECT whose tunnel is set up again on a fresh transport keeps its application flow tied to the flow of the first transport.
+- The first 32 outer sockets keep their slots for as long as they live, so on a busy server the recorded ones are not a sample of all of them.
 - A stage record times the call into the transport where the wrapper sits, TLS and WebSocket framing included. A write returns once the kernel took the bytes, not once the peer got them.
 - On Windows the counters are those of `SIO_TCP_INFO` version 0 (Windows 10 1703 and later); elsewhere but Linux and Windows a socket sample says `available: false`.
 - A socket's lowest round trip time only goes down, so a path that became longer for good goes on starting automatic incidents, at most one in two minutes per socket.

@@ -72,26 +72,32 @@ func TestATickReportsTheFirstSpike(t *testing.T) {
 }
 
 // A socket found closed under a wrapper nobody closed gives its slot back
-// with a flow_close of its own; the wrapper's close later adds nothing.
+// with a flow_close of its own; the wrapper's close later adds nothing. A
+// related one gives its place beside its outer socket back the same way.
 func TestASocketClosedUnderItsWrapperIsEvicted(t *testing.T) {
 	r := testRecorder(t)
-	closed := &fakeConn{}
+	closed, closedRelated := &fakeConn{}, &fakeConn{}
 	kernel(t, func(c net.Conn) (tcptune.Counters, error) {
-		if c == closed {
+		if c == closed || c == closedRelated {
 			return tcptune.Counters{}, net.ErrClosed
 		}
 		return tcptune.Counters{}, nil
 	})
 	o := ObserveConn(closed, "outer", "obfs")
-	_ = ObserveConn(&fakeConn{}, "outer", "obfs")
+	live := ObserveConn(&fakeConn{}, "outer", "obfs")
+	related := ObserveRelated(live, closedRelated, "target")
 	r.tick(time.Now())
-	if len(r.sockets) != 1 || r.selection.evictedClosed != 1 {
-		t.Fatalf("%d selected, %d evicted", len(r.sockets), r.selection.evictedClosed)
+	if len(r.sockets) != 1 || r.taken != 1 || r.selection.evictedClosed != 2 {
+		t.Fatalf("%d sampled, %d taken, %d evicted", len(r.sockets), r.taken, r.selection.evictedClosed)
 	}
 	_ = o.Close()
+	_ = related.Close()
 	closes := ofKind(r.records(), kindFlowClose)
-	if len(closes) != 1 || !closes[0].payload.(*flowTotals).evicted {
+	if len(closes) != 2 || !closes[0].payload.(*flowTotals).evicted || !closes[1].payload.(*flowTotals).evicted {
 		t.Fatalf("flow_close records %+v", closes)
+	}
+	if _, ok := ObserveRelated(live, &fakeConn{}, "target").(*observedConn); !ok {
+		t.Fatal("an evicted related socket kept its place")
 	}
 }
 

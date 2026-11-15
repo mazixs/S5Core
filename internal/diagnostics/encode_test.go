@@ -105,6 +105,13 @@ func TestFlowRecords(t *testing.T) {
 	if d := open["data"].(map[string]any); d["local"] != "127.0.0.1:1080" || d["remote"] != "127.0.0.1:443" || open["kind"] != "flow_open" {
 		t.Errorf("flow_open: %v", open)
 	}
+	if _, ok := open["data"].(map[string]any)["outer_flow"]; ok {
+		t.Errorf("an outer flow names an outer flow: %v", open)
+	}
+	related := &flowInfo{id: 8, outer: 7, leg: "target", transport: "tcp"}
+	if d := decode(t, appendRecord(nil, &record{flow: related, kind: kindFlowOpen}))["data"].(map[string]any); d["outer_flow"] != 7.0 {
+		t.Errorf("a related flow_open: %v", d)
+	}
 	closed := decode(t, appendRecord(nil, &record{flow: testFlow, kind: kindFlowClose, payload: &flowTotals{reads: 3, writes: 4}}))
 	if d := closed["data"].(map[string]any); d["read_calls"] != 3.0 || d["write_calls"] != 4.0 {
 		t.Errorf("flow_close: %v", closed)

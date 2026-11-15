@@ -34,7 +34,9 @@ const (
 	traceMinAge   = 30 * time.Second
 	traceMaxBytes = 32 << 20
 
-	manifestSchema  = 1
+	// manifestSchema 2: a flow may be the related socket of another one,
+	// which its outer_flow names.
+	manifestSchema  = 2
 	eventsSuffix    = ".events.jsonl"
 	manifestSuffix  = ".manifest.json"
 	traceSuffix     = ".trace"
@@ -257,6 +259,7 @@ type manifestWindow struct {
 
 type manifestFlow struct {
 	Flow      uint32 `json:"flow"`
+	OuterFlow uint32 `json:"outer_flow,omitzero"`
 	Leg       string `json:"leg"`
 	Transport string `json:"transport"`
 	Local     string `json:"local"`
@@ -351,7 +354,7 @@ func (r *recorder) manifest(p *incident, shutdown bool) *manifest {
 		m.Window.StartUTC, m.Window.EndUTC = time.Unix(0, p.firstRec.wall).UTC(), time.Unix(0, p.lastRec.wall).UTC()
 	}
 	for f := range p.flows {
-		m.Flows = append(m.Flows, manifestFlow{Flow: f.id, Leg: f.leg, Transport: f.transport, Local: f.local, Remote: f.remote})
+		m.Flows = append(m.Flows, manifestFlow{Flow: f.id, OuterFlow: f.outer, Leg: f.leg, Transport: f.transport, Local: f.local, Remote: f.remote})
 	}
 	slices.SortFunc(m.Flows, func(a, b manifestFlow) int { return cmp.Compare(a.Flow, b.Flow) })
 	return m
