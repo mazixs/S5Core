@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -92,12 +93,34 @@ func TestProbeFlowContextNamesReusedConnection(t *testing.T) {
 }
 
 func TestProbeThroughSOCKSAndTruncatedBody(t *testing.T) {
-	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// A loopback phase takes a fraction of a millisecond and can read as 0 on
+	// Windows, whose monotonic clock moves in steps of 0.5 to 15.6 ms. Each
+	// phase gets a sleep; the lengths differ so that swapped fields differ too.
+	const (
+		setupDelay = 20 * time.Millisecond
+		tlsDelay   = 40 * time.Millisecond
+		// The probe reports float64 milliseconds, whose sums and differences
+		// round.
+		rounding = 1e-6
+	)
+	origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "100")
 		_, _ = io.WriteString(w, "partial")
 	}))
+	// Called once the origin has the ClientHello: inside the probe's handshake.
+	origin.TLS = &tls.Config{GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+		time.Sleep(tlsDelay)
+		return nil, nil
+	}}
+	origin.StartTLS()
 	defer origin.Close()
-	server, err := socks5.New(&socks5.Config{})
+	server, err := socks5.New(&socks5.Config{
+		// The CONNECT reply follows the dial, so the delay is part of setup.
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			time.Sleep(setupDelay)
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +140,18 @@ func TestProbeThroughSOCKSAndTruncatedBody(t *testing.T) {
 	}
 	defer tr.CloseIdleConnections()
 	got := measure(context.Background(), &http.Client{Transport: tr, Timeout: time.Second}, origin.URL)
-	if got.Error == "" || got.Bytes != 7 || got.SHA256 != "" || got.SetupMS <= 0 || got.TLSMS <= 0 || got.Status != 200 {
+	if got.Error == "" || got.Bytes != 7 || got.SHA256 != "" || got.Status != 200 {
 		t.Fatalf("%+v", got)
+	}
+	// A span that contains a sleep is not shorter than it on the clock the
+	// sleep runs on, however coarse that clock is.
+	if got.SetupMS < milliseconds(setupDelay) || got.TLSMS < milliseconds(tlsDelay) {
+		t.Fatalf("a delay is missing from its phase: %+v", got)
+	}
+	// Setup and TLS do not overlap, so what the first byte waited for beyond
+	// one of them still holds the delay of the other.
+	if got.FirstResponseMS-got.TLSMS < milliseconds(setupDelay)-rounding ||
+		got.FirstResponseMS-got.SetupMS < milliseconds(tlsDelay)-rounding {
+		t.Fatalf("a delay is counted in the other phase: %+v", got)
 	}
 }
