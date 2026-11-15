@@ -10,8 +10,12 @@ import (
 )
 
 // connectServer is a server for one tunnel: it answers the greeting and the
-// CONNECT, with code, delay after the request has come, then sends "hi" if
-// it accepted and hangs up.
+// CONNECT, with code, delay after the request has come. If it accepted, it
+// sends "hi" and ends the stream as the server does when its target hangs up:
+// a FIN frame, and the tunnel kept until the client ends its half. A tunnel
+// closed under the stream without the FIN frame is a truncated answer, which
+// the client passes on as a reset, and on Windows a reset discards what the
+// application has not read yet.
 func connectServer(t *testing.T, psk string, delay time.Duration, code byte) (addr string, done func()) {
 	t.Helper()
 	return startTestObfsServer(t, psk, func(t *testing.T, conn net.Conn) {
@@ -24,6 +28,8 @@ func connectServer(t *testing.T, psk string, delay time.Duration, code byte) (ad
 		_, _ = conn.Write([]byte{0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		if code == socks5Success {
 			_, _ = conn.Write([]byte("hi"))
+			_ = conn.(interface{ CloseWrite() error }).CloseWrite()
+			_, _ = io.Copy(io.Discard, conn)
 		}
 	})
 }
