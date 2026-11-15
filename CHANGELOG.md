@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [`docs/operations/runtime.rules.yml`](docs/operations/runtime.rules.yml) and
   are checked with `promtool` in CI. See
   [Go runtime and process metrics](docs/guides/operations.md#go-runtime-and-process-metrics).
+- Counts of lost and reordered datagrams on the native UDP path, taken by the
+  receiver's window of counters without a change on the wire. The client
+  writes `native_lost` and `native_late` for the server's datagrams into
+  `UDP Tunnel running` and `UDP Tunnel closed`; the server writes them for the
+  client's datagrams into `assoc_end` of the session journal and exports
+  `s5core_native_udp_lost_total` and `s5core_native_udp_late_total`. A datagram
+  is lost once the window has moved past it without it, and at the end of the
+  association also when it is still missing below the newest; it is late when
+  it comes after one with a higher counter. See
+  [temporary UDP diagnostics](docs/guides/configuration.md#temporary-udp-diagnostics).
 
 ### Changed
 

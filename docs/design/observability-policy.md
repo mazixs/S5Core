@@ -106,11 +106,14 @@ S5Core - антицензурный прокси. Подробный лог на
   правилами) и `native_down` (ответы, ушедшие по native); `dgram_up` и
   `dgram_down` считают доставленное, поэтому разность с ними - примерно то,
   что шло по TCP, но не равна ему при потерях в очереди DNS, `path_moves`
-  (сколько раз ответы уходили с native на TCP) и `tunnel_drops` (кадры,
-  которые писатель потока не записал: очередь или возраст). У `0x83` и plain
-  этих полей нет. Это те же числа, что в `s5core_native_udp_datagrams_total`
-  и `_stream_drops_total`, но по одной ассоциации: у суммы по серверу нет
-  ответа на вопрос, работал ли native путь у этого соединения.
+  (сколько раз ответы уходили с native на TCP), `tunnel_drops` (кадры,
+  которые писатель потока не записал: очередь или возраст), `native_lost` и
+  `native_late` (датаграммы клиента, которые native-путь потерял, и пришедшие
+  после датаграммы с большим счетчиком, итог окна приема на закрытии). У
+  `0x83` и plain этих полей нет. Это те же числа, что в
+  `s5core_native_udp_datagrams_total`, `_stream_drops_total`, `_lost_total` и
+  `_late_total`, но по одной ассоциации: у суммы по серверу нет ответа на
+  вопрос, работал ли native путь у этого соединения.
 - **Счет причин без имен.** `account_minute` и сводка `minute` служебного
   лога несут одни и те же `server_timeouts` и `resets`: по аккаунту и по всему
   серверу за минуту. `server_timeouts` считает только CONNECT (`end=server_timeout`),
@@ -294,6 +297,16 @@ Native UDP добавляет `s5core_native_udp_packets_total` с единст�
 Клиент пишет свою половину тех же чисел в строку `UDP Tunnel closed`
 (`native_sent`, `tcp_sent_oversize`, `tcp_sent_other`, `native_received`,
 `tcp_received`, `tunnel_drops`) - без адресов.
+
+`s5core_native_udp_lost_total` и `s5core_native_udp_late_total` без лейблов
+считают датаграммы клиентов, которые native-путь потерял, и пришедшие после
+датаграммы с большим счетчиком, по окну приема (раздел 10.6
+`docs/veil-spec.md`). Это сумма по ассоциациям узла; закрытая ассоциация входит
+в нее итогом, тем же, что в `native_lost` и `native_late` ее `assoc_end`. В
+счетчиках только числа, адресов и содержимого в них нет, и тот же тест
+проверяет, что у каждого одна точка без лейблов. Встречное направление клиент
+пишет в строки `UDP Tunnel running` и `UDP Tunnel closed` полями `native_lost` и
+`native_late`.
 
 `s5core_udp_receive_buffer_drops_total` без лейблов - счетчик ядра
 `RcvbufErrors` (`Udp` из `/proc/net/snmp` плюс `Udp6` из `/proc/net/snmp6`):
