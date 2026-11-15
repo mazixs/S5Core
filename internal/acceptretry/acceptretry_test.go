@@ -39,6 +39,27 @@ func TestEveryMomentaryKernelErrorIsRetried(t *testing.T) {
 	}
 }
 
+// A real listener closed while Accept waits, or before it is called, reports
+// what Recoverable refuses, and not a platform code that would be retried.
+func TestARealClosedListenerIsNotRetried(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := make(chan error, 1)
+	go func() {
+		_, err := ln.Accept()
+		waiting <- err
+	}()
+	_ = ln.Close()
+	if err := <-waiting; err == nil || Recoverable(err) {
+		t.Errorf("Accept on a listener closed under it returned %v, which is retried", err)
+	}
+	if _, err := ln.Accept(); err == nil || Recoverable(err) {
+		t.Errorf("Accept on a closed listener returned %v, which is retried", err)
+	}
+}
+
 func TestTheWaitDoublesFromFiveMillisecondsToOneSecond(t *testing.T) {
 	want := []time.Duration{5, 10, 20, 40, 80, 160, 320, 640, 1000, 1000}
 	d := time.Duration(0)

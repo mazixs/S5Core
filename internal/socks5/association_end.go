@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"syscall"
+
+	"github.com/mazixs/S5Core/internal/sockerr"
 )
 
 // The kinds of UDP association, and the ways one that opened can end, that
@@ -37,7 +38,6 @@ func AssociationEnds() []string {
 // returns. A client that closed its connection and one whose process died
 // both end in EOF, so "client" says only that the server did not end it.
 func associationEnd(err error) string {
-	var ne net.Error
 	switch {
 	case err == nil, errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return EndedByClient
@@ -45,9 +45,9 @@ func associationEnd(err error) string {
 		return EndedByAccount
 	case errors.Is(err, context.Canceled):
 		return EndedByShutdown
-	case socketErrno(err, syscall.ECONNRESET), socketErrno(err, syscall.EPIPE):
+	case sockerr.Is(err, syscall.ECONNRESET), sockerr.Is(err, syscall.EPIPE):
 		return EndedByReset
-	case errors.As(err, &ne) && ne.Timeout():
+	case sockerr.Timeout(err):
 		return EndedByTimeout
 	}
 	return EndedByError

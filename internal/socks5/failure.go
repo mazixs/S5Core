@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"syscall"
+
+	"github.com/mazixs/S5Core/internal/sockerr"
 )
 
 // FailureKind is a bounded, address-free classification. The original error
@@ -45,11 +47,11 @@ func classifyFailure(err error) FailureKind {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return FailureCanceled
-	case errors.As(err, &ne) && ne.Timeout():
+	case sockerr.Timeout(err):
 		return FailureTimeout
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF),
 		errors.Is(err, net.ErrClosed), errors.Is(err, io.ErrClosedPipe),
-		socketErrno(err, syscall.ECONNRESET), socketErrno(err, syscall.EPIPE):
+		sockerr.Is(err, syscall.ECONNRESET), sockerr.Is(err, syscall.EPIPE):
 		return FailureClosed
 	case errors.Is(err, ErrUserAuthFailed), errors.Is(err, ErrNoSupportedAuth):
 		return FailureAuth
