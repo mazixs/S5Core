@@ -135,3 +135,29 @@ func TestALegacyInitialRouteMustMatchTheAuthenticatedTCPPeer(t *testing.T) {
 		t.Fatal("legacy route migrated without proof")
 	}
 }
+
+// The client tells the answer to its echo from the others by the generation
+// (docs/veil-spec.md, 10.6): the echo goes with generation 0, every other
+// probe of the path with 1 or later, and the answer has the generation of its
+// probe, or the one accepted with the limit it announces.
+func TestOnlyTheAnswerToAnEchoHasNoGeneration(t *testing.T) {
+	client, server := pair(t)
+	for _, p := range []Probe{
+		{RouteProof: true, RouteEcho: true, RouteToken: [16]byte{1}},
+		{RouteProof: true, Generation: 1},
+		{RouteProof: true, Heard: true, Generation: 1},
+		{RouteProof: true, Generation: 1, Limit: 1392},
+		{RouteProof: true, Generation: 3},
+	} {
+		wire := sealed(t, func(w func([]byte) error) error { return client.SealWriteProbe(p, w) })
+		packet, n := open(t, server, wire)
+		probe, extended := ParseProbe(packet.Data)
+		server.ApplyProbeLimit(probe)
+		reply := sealed(t, func(w func([]byte) error) error { return server.SealWriteAnswer(probe, extended, n, w) })
+		packet, _ = open(t, client, reply)
+		a, _ := ParseAnswer(packet.Data)
+		if p.RouteEcho != (a.Generation == 0) {
+			t.Fatalf("probe %+v answered with generation %d", p, a.Generation)
+		}
+	}
+}

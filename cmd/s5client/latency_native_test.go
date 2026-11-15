@@ -158,14 +158,42 @@ func TestAnAnswerWhileTwoProbesAreOutLeavesNoRoundTripALateAnswerCouldFake(t *te
 func TestTheRoundTripBehindARouteProofIsTheEchos(t *testing.T) {
 	transport, _ := tcpPair(t)
 	synctest.Test(t, func(t *testing.T) {
-		l, dir, stop := recordedLiveness(t, transport, nil, func(p *memPath) { p.proveRoute = true })
+		l, dir, stop := recordedLiveness(t, transport, nil, func(p *memPath) { p.sizes, p.proveRoute = true, true })
 		l.at(time.Second)
 		events := saveIncident(t, dir, stop)
-		want := []string{
-			"40ms probe 20ms", "40ms verified " + memClient.String() + " " + memServer.String(), "60ms probe 20ms",
+		want := []string{"40ms probe 20ms", "40ms verified " + memClient.String() + " " + memServer.String()}
+		if got := nativeFeed(events, outerFlow(t, events)); len(got) < 2 || !slices.Equal(got[:2], want) {
+			t.Fatalf("the feed:\n%v\nwant first\n%v", got, want)
 		}
-		if got := nativeFeed(events, outerFlow(t, events)); !slices.Equal(got, want) {
-			t.Fatalf("the feed:\n%v\nwant\n%v", got, want)
+	})
+}
+
+// The answer to the echo at 20 ms is lost, and the next one is the retry's
+// at 1 s: its generation says it is not the echo's. The first round trip is
+// that of the probe out alone after it, 20 ms, not the second between the
+// echo and the retry, and the wait set when the probe at 2.4 s is the second
+// unanswered after the break at 2 s is 250 ms, not 2 s. The size probes go
+// unanswered: answers to them at 1.04 s could end the search first, and its
+// probe would be out beside the one at 1.02 s.
+func TestALostAnswerToTheEchoIsNotTakenForAnother(t *testing.T) {
+	transport, _ := tcpPair(t)
+	synctest.Test(t, func(t *testing.T) {
+		// The path does not count the challenged probe: its first is the echo.
+		l, dir, stop := recordedLiveness(t, transport, func(i int64) bool { return i == 1 }, func(p *memPath) {
+			p.sizes, p.proveRoute = true, true
+			p.loseSized = func(int) bool { return true }
+		})
+		l.at(2 * time.Second)
+		l.path.dropDown.Store(true)
+		l.client.used(l.client.clock(time.Now()))
+		l.at(3 * time.Second)
+		if wait := l.waitAfter(2 * time.Second); wait != nativeAnswerWait {
+			t.Fatalf("the second unanswered probe is overdue after %v, want %v", wait, nativeAnswerWait)
+		}
+		events := saveIncident(t, dir, stop)
+		want := []string{"1.02s verified " + memClient.String() + " " + memServer.String(), "1.04s probe 20ms"}
+		if got := nativeFeed(events, outerFlow(t, events)); len(got) < 2 || !slices.Equal(got[:2], want) {
+			t.Fatalf("the feed:\n%v\nwant first\n%v", got, want)
 		}
 	})
 }
