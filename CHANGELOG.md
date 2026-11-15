@@ -52,8 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github.com/caarlos0/env/v11` to 11.4.2 and `go.opentelemetry.io/otel` to
   1.47.0 with its Prometheus exporter 0.69.0 in the main module, and the digest
   of the distroless base image and the pinned GitHub Actions.
-- Run `go vet` and `go test` on a Windows runner in CI, so that the code and
-  tests that exist only for Windows run on every pull request.
 
 ### Removed
 
@@ -119,7 +117,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the SDK guide: how an embedding application registers the Go and process
   collectors and serves them with the S5Core metrics, and how servers sharing
   one telemetry report their gauges.
-- Add the missing `time` import to the SDK usage example.
 - Name `169.254.169.254` as the cloud metadata address in the configuration
   guide and in the code comment on private destinations; the text gave an
   address of the documentation range.
