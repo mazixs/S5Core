@@ -1,0 +1,169 @@
+package diagnostics
+
+import (
+	"runtime/metrics"
+	"time"
+
+	"github.com/mazixs/S5Core/internal/tcptune"
+)
+
+const (
+	// ringRecords is the capacity of the ring, allocated when the recorder
+	// starts.
+	ringRecords = 32768
+	// historyWindow is how far back the ring reaches: the part of an
+	// incident before its trigger.
+	historyWindow = 2 * time.Minute
+	// copyChunk is how many records the worker copies out of the ring under
+	// one lock.
+	copyChunk = 512
+)
+
+// kind is what a record says.
+type kind uint8
+
+const (
+	kindStage     kind = iota + 1 // one read or write of a selected socket
+	kindSocket                    // the kernel's counters of a selected socket
+	kindFlowOpen                  // a socket was selected
+	kindFlowClose                 // a selected socket was closed
+	kindRuntime                   // the Go runtime's metrics
+	kindSpike                     // the detector started an incident
+)
+
+// The what of a stage record.
+const (
+	stageRead uint8 = iota + 1
+	stageWrite
+)
+
+// The flags of a stage record.
+const (
+	flagPeriodic uint8 = 1 << iota // the call was one of every transportSampleEvery
+	flagSlow                       // a write that took slowWrite or longer
+	flagError                      // the call returned an error
+)
+
+// The what of a socket record.
+const (
+	sampleTick uint8 = iota + 1
+	sampleOpen
+	sampleClose
+)
+
+// The what of a spike record.
+const (
+	spikeRTT uint8 = iota + 1 // the round trip time stayed far above its floor
+	spikeRTO                  // the retransmit timer fired
+)
+
+// record is one entry of the ring: 64 bytes on 64-bit platforms. What is the
+// same for the process or the incident (schema, run, boot, incident) goes
+// into the manifest, what is the same for a flow is in its flowInfo.
+type record struct {
+	seq  uint64
+	mono int64 // nanoseconds since the recorder started, by the monotonic clock
+	wall int64 // Unix nanoseconds: the clock of a router without RTC jumps at NTP
+	dur  int64 // stage: how long the call took, in nanoseconds
+	// payload is *tcpSample, *runtimeSample, *flowTotals or, for a spike,
+	// the incident ID; nil for a stage and a flow_open.
+	payload any
+	flow    *flowInfo // nil for the process
+	n       uint32    // stage: bytes
+	kind    kind
+	what    uint8
+	flags   uint8
+}
+
+// flowInfo is what stays the same for a selected socket.
+type flowInfo struct {
+	id             uint32 // counted from 1 since the recorder started
+	leg, transport string
+	local, remote  string
+}
+
+type tcpSample struct {
+	counters  tcptune.Counters
+	available bool
+	// readWait is the longest read since the sample before: how long the
+	// peer kept the socket waiting. Periodic samples only.
+	readWait time.Duration
+}
+
+type flowTotals struct{ reads, writes uint64 }
+
+// The runtime metrics read every tick. A scalar is a uint64 or a float64 in
+// the Go version the binary is built with, a histogram keeps its counts; the
+// bucket bounds go into the manifest.
+var (
+	runtimeScalars = [...]string{
+		"/gc/cycles/total:gc-cycles", "/gc/cycles/forced:gc-cycles",
+		"/cpu/classes/gc/total:cpu-seconds", "/cpu/classes/gc/mark/assist:cpu-seconds",
+		"/cpu/classes/gc/mark/idle:cpu-seconds", "/cpu/classes/total:cpu-seconds",
+		"/gc/heap/live:bytes", "/gc/limiter/last-enabled:gc-cycle",
+		"/sync/mutex/wait/total:seconds", "/sched/gomaxprocs:threads",
+		"/sched/goroutines:goroutines", "/memory/classes/heap/stacks:bytes",
+		"/gc/heap/allocs:bytes", "/gc/heap/allocs:objects",
+	}
+	runtimeHistograms = [...]string{"/sched/pauses/total/gc:seconds", "/sched/latencies:seconds"}
+)
+
+type runtimeSample struct {
+	scalars [len(runtimeScalars)]metrics.Value
+	// counts holds the counts of every histogram, one after another; ends
+	// says where each one stops.
+	counts []uint64
+	ends   [len(runtimeHistograms)]int
+}
+
+// ring keeps the latest records, at most ringRecords of them and none older
+// than historyWindow. The recorder's mutex guards it.
+type ring struct {
+	recs        []record
+	head, count int
+	seq         uint64 // of the newest record
+	// overwritten counts the records pushed out by a full ring before their
+	// age: history an incident would have had.
+	overwritten uint64
+}
+
+func newRing(n int) ring { return ring{recs: make([]record, n)} }
+
+// push adds rec and drops what is older than historyWindow by rec's time.
+// A dropped entry is cleared, so its payload can go.
+func (g *ring) push(rec record) {
+	if g.count == len(g.recs) {
+		g.drop()
+		g.overwritten++
+	}
+	g.seq++
+	rec.seq = g.seq
+	g.recs[(g.head+g.count)%len(g.recs)] = rec
+	g.count++
+	for g.count > 1 && rec.mono-g.recs[g.head].mono > int64(historyWindow) {
+		g.drop()
+	}
+}
+
+func (g *ring) drop() {
+	g.recs[g.head] = record{}
+	g.head = (g.head + 1) % len(g.recs)
+	g.count--
+}
+
+// copyAfter appends to dst[:0], up to its capacity, the records after seq,
+// oldest first. lost is how many of those were already gone.
+func (g *ring) copyAfter(seq uint64, dst []record) (_ []record, lost uint64) {
+	dst = dst[:0]
+	if g.count == 0 {
+		return dst, g.seq - seq
+	}
+	if first := g.recs[g.head].seq; seq+1 < first {
+		lost, seq = first-seq-1, first-1
+	}
+	from := int(seq + 1 - g.recs[g.head].seq)
+	for i := from; i < g.count && len(dst) < cap(dst); i++ {
+		dst = append(dst, g.recs[(g.head+i)%len(g.recs)])
+	}
+	return dst, lost
+}
