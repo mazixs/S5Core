@@ -57,6 +57,7 @@ type recorder struct {
 	// The worker's.
 	sampler    sampler
 	pending    *incident
+	traceID    string // the incident of the trace written last or now
 	lastMarker string
 	ticks      int
 	chunk      []record

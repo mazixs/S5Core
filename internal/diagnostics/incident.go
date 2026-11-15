@@ -194,8 +194,10 @@ func (r *recorder) write(p *incident, rec *record) bool {
 // finish writes the rest of the incident and its manifest, the manifest
 // last: an incident with a manifest is complete.
 func (r *recorder) finish(p *incident, shutdown bool) {
-	r.pending = nil
+	// Pending through the drain: the room it asks for must not come from
+	// its own partial file.
 	r.drain(p)
+	r.pending = nil
 	err := r.commit(p.f, p.id+eventsSuffix, p.failed)
 	if err == nil {
 		var data []byte
@@ -414,6 +416,11 @@ func (r *recorder) pollMarker() (string, bool) {
 	return id, true
 }
 
+// openMarker opens the marker; a test removes it first.
+var openMarker = os.Open
+
+// readMarker reads the marker. One removed between the look and the read
+// gives fs.ErrNotExist too: no marker, not a bad one.
 func readMarker(path string) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -422,7 +429,7 @@ func readMarker(path string) ([]byte, error) {
 	if !info.Mode().IsRegular() || info.Size() > markerMaxBytes {
 		return nil, errors.New("the marker is not a regular file of at most 4096 bytes")
 	}
-	f, err := os.Open(path)
+	f, err := openMarker(path)
 	if err != nil {
 		return nil, err
 	}
@@ -446,13 +453,11 @@ func (r *recorder) captureTrace(id string) *atomic.Int32 {
 		state.Store(traceSkipped)
 		return state
 	}
+	r.traceID = id
 	room, err := r.makeRoom(incidentReserve)
-	f, ferr := privatefs.CreateTemp(r.dir, id+traceSuffix+".*.partial")
+	var f *os.File
 	if err == nil {
-		err = ferr
-	} else if ferr == nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
+		f, err = privatefs.CreateTemp(r.dir, id+traceSuffix+".*.partial")
 	}
 	if err != nil {
 		r.tracing.Store(false)

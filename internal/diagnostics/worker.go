@@ -173,7 +173,8 @@ func (r *recorder) step(now time.Time) bool {
 
 // giveUp stops the recorder for good when the directory has no room left:
 // one line in the log, and the wrappers pass every call through. An
-// incident being written stays as its partial file.
+// incident being written stays as its partial file until a later run needs
+// its room.
 func (r *recorder) giveUp(err error) {
 	if r.stopped.Swap(true) {
 		return

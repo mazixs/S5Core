@@ -1,12 +1,14 @@
 package diagnostics
 
 import (
+	"cmp"
 	"encoding/json/v2"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -31,34 +33,41 @@ const (
 // make room.
 var errNoRoom = errors.New("no room for diagnostics left in the directory or on the volume")
 
+// readDir lists the directory; a test stands in entries that are gone by
+// the time they are looked at.
+var readDir = os.ReadDir
+
 // room is what the recorder may still write: the budget less what the
 // directory holds, and no more than leaves freeDiskReserve on the volume.
 // The events file being written counts by what was written to it: Windows
-// tells the size of an open file late.
+// tells the size of an open file late. A file removed since the directory
+// was read counts for nothing. A subdirectory is not the recorder's: it is
+// neither entered nor counted.
 func (r *recorder) room() (int64, error) {
+	entries, err := readDir(r.dir)
+	if err != nil {
+		return 0, err
+	}
 	var used int64
 	writing := ""
 	if p := r.pending; p != nil {
-		writing, used = p.f.Name(), p.written
+		writing, used = filepath.Base(p.f.Name()), p.written
 	}
-	err := filepath.WalkDir(r.dir, func(path string, d fs.DirEntry, err error) error {
+	for _, e := range entries {
+		if e.Type()&fs.ModeSymlink != 0 {
+			return 0, errors.New("a symbolic link in the diagnostics directory")
+		}
+		if e.IsDir() || e.Name() == writing {
+			continue
+		}
+		info, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
-			return err
+			return 0, err
 		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			return errors.New("a symbolic link in the diagnostics directory")
-		}
-		if !d.IsDir() && path != writing {
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			used += info.Size()
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
+		used += info.Size()
 	}
 	free, err := freeDisk(r.dir)
 	if err != nil {
@@ -68,18 +77,20 @@ func (r *recorder) room() (int64, error) {
 }
 
 // makeRoom returns the room once it is at least need, removing the oldest
-// automatic incident as long as it is not. A manual incident is never
-// removed, nor the one being written.
+// group of files rotation may take as long as it is not.
 func (r *recorder) makeRoom(need int64) (int64, error) {
 	for {
 		room, err := r.room()
 		if err != nil || room >= need {
 			return room, err
 		}
-		if !r.removeOldestAutomatic() {
+		freed, removed := r.removeOldest()
+		if !freed {
 			return room, errNoRoom
 		}
-		r.health.rotated++
+		if removed {
+			r.health.rotated++
+		}
 	}
 }
 
@@ -92,51 +103,96 @@ type savedIncident struct {
 	} `json:"trigger"`
 }
 
-func (r *recorder) removeOldestAutomatic() bool {
-	entries, err := os.ReadDir(r.dir)
+// removeOldest removes the files of the oldest incident rotation may take:
+// an automatic one, by its trigger, or one left without a manifest - a
+// partial file after a kill, a trace whose incident has no manifest - by the
+// last time one of its files was written. It leaves the incident being
+// written, the trace being written, the manual incidents and the automatic
+// ones they took over, and an incident whose manifest cannot be read.
+//
+// freed says the directory holds less than it did, removed that this call
+// removed something: a file someone else removed first frees its room all
+// the same, and one that cannot be removed sends rotation to the next.
+func (r *recorder) removeOldest() (freed, removed bool) {
+	entries, err := readDir(r.dir)
 	if err != nil {
-		return false
+		return false, false
+	}
+	type group struct {
+		files    []string
+		written  time.Time // the latest of its files
+		manifest *savedIncident
+		unread   bool // a manifest there that could not be read
+	}
+	groups := map[string]*group{}
+	for _, e := range entries {
+		id := incidentOf(e.Name())
+		if id == "" || e.IsDir() {
+			continue
+		}
+		g := groups[id]
+		if g == nil {
+			g = &group{}
+			groups[id] = g
+		}
+		g.files = append(g.files, e.Name())
+		if info, err := e.Info(); err == nil && info.ModTime().After(g.written) {
+			g.written = info.ModTime()
+		}
+		if e.Name() != id+manifestSuffix {
+			continue
+		}
+		var m savedIncident
+		switch err := readManifest(filepath.Join(r.dir, e.Name()), &m); {
+		case err == nil:
+			g.manifest = &m
+		case !errors.Is(err, fs.ErrNotExist):
+			g.unread = true
+		}
 	}
 	kept := map[string]bool{}
 	if p := r.pending; p != nil {
 		kept[p.id], kept[p.prior] = true, true
 	}
+	if r.tracing.Load() {
+		kept[r.traceID] = true
+	}
+	for id, g := range groups {
+		if g.manifest != nil && g.manifest.Trigger.Source != sourceAutomatic {
+			kept[id], kept[g.manifest.Trigger.PriorAutomaticIncident] = true, true
+		}
+	}
 	type candidate struct {
 		id string
 		at time.Time
 	}
-	var automatic []candidate
-	for _, e := range entries {
-		id, ok := strings.CutSuffix(e.Name(), manifestSuffix)
-		if !ok {
-			continue
-		}
-		var m savedIncident
-		if err := readManifest(filepath.Join(r.dir, e.Name()), &m); err != nil {
-			continue
-		}
-		if m.Trigger.Source == sourceAutomatic {
-			automatic = append(automatic, candidate{id, m.Trigger.UTC})
-		} else {
-			kept[id], kept[m.Trigger.PriorAutomaticIncident] = true, true
+	var candidates []candidate
+	for id, g := range groups {
+		switch {
+		case kept[id] || g.unread:
+		case g.manifest != nil:
+			candidates = append(candidates, candidate{id, g.manifest.Trigger.UTC})
+		default:
+			candidates = append(candidates, candidate{id, g.written})
 		}
 	}
-	oldest := candidate{}
-	for _, c := range automatic {
-		if !kept[c.id] && (oldest.id == "" || c.at.Before(oldest.at)) {
-			oldest = c
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		return cmp.Or(a.at.Compare(b.at), strings.Compare(a.id, b.id))
+	})
+	for _, c := range candidates {
+		for _, name := range groups[c.id].files {
+			switch err := os.Remove(filepath.Join(r.dir, name)); {
+			case err == nil:
+				freed, removed = true, true
+			case errors.Is(err, fs.ErrNotExist):
+				freed = true
+			}
+		}
+		if freed {
+			return freed, removed
 		}
 	}
-	if oldest.id == "" {
-		return false
-	}
-	removed := false
-	for _, e := range entries {
-		if incidentOf(e.Name()) == oldest.id && os.Remove(filepath.Join(r.dir, e.Name())) == nil {
-			removed = true
-		}
-	}
-	return removed
+	return false, false
 }
 
 // incidentOf is the incident a file of the directory belongs to: the UUID
@@ -170,7 +226,7 @@ func (r *recorder) writeFile(name string, data []byte) error {
 }
 
 // commit syncs and closes f and renames it to name, unless err already says
-// it failed: then the partial file stays for whoever looks.
+// it failed: then the partial file stays until rotation needs its room.
 func (r *recorder) commit(f *os.File, name string, err error) error {
 	if err == nil {
 		err = f.Sync()
