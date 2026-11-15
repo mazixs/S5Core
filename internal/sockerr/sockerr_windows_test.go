@@ -22,6 +22,7 @@ func TestEachPOSIXErrnoMatchesExactlyItsWinsockCodes(t *testing.T) {
 		syscall.ECONNREFUSED: {windows.WSAECONNREFUSED},
 		syscall.ENETUNREACH:  {windows.WSAENETUNREACH},
 		syscall.EHOSTUNREACH: {windows.WSAEHOSTUNREACH},
+		syscall.EHOSTDOWN:    {windows.WSAEHOSTDOWN},
 		syscall.EAFNOSUPPORT: {windows.WSAEAFNOSUPPORT},
 		syscall.EMSGSIZE:     {windows.WSAEMSGSIZE},
 		syscall.ENOBUFS:      {windows.WSAENOBUFS},
