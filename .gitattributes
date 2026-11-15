@@ -1,0 +1,5 @@
+# Keep text files LF in the repository and in working trees on every platform.
+* text=auto eol=lf
+
+# Binary fixtures
+*.bin binary
