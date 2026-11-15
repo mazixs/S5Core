@@ -34,14 +34,17 @@ type FileOptions struct {
 	// archive before the first write, so that every run starts a file of its
 	// own.
 	RotateOnOpen bool
-	// Mode is the permission of new files; zero is 0600.
+	// Mode is the permission of a file the rotation creates, zero is 0600; an
+	// existing file keeps the mode its owner gave it. On Windows 0600 is a DACL
+	// of its own for the process user, SYSTEM and local Administrators, given
+	// to an existing file as well, and any other mode leaves the file the
+	// access it inherits from its directory.
 	Mode os.FileMode
 }
 
 // RotatingFile is an append-only file that moves itself aside by size, keeps a
 // bounded archive of what it moved and needs nothing from outside to do it:
-// the same code runs in a container, on a router and on Windows, where a file
-// a process holds open cannot be renamed by anyone else.
+// the same code runs in a container, on a router and on Windows.
 type RotatingFile struct {
 	opts FileOptions
 
@@ -84,9 +87,7 @@ func OpenRotating(opts FileOptions) (*RotatingFile, error) {
 }
 
 func (r *RotatingFile) open() error {
-	// The mode applies to a file this call creates; an existing file keeps the
-	// mode its owner gave it.
-	f, err := os.OpenFile(r.opts.Path, os.O_WRONLY|os.O_CREATE|os.O_APPEND|noFollow, r.opts.Mode)
+	f, err := openLogFile(r.opts.Path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, r.opts.Mode)
 	if err != nil {
 		return fmt.Errorf("logging: %w", err)
 	}
@@ -276,6 +277,9 @@ func (r *RotatingFile) archive(t time.Time) error {
 		return fmt.Errorf("logging: %w", err)
 	}
 	name := r.archiveName(t)
+	if err := protectLogFile(r.opts.Path, r.opts.Mode); err != nil {
+		return fmt.Errorf("logging: %w", err)
+	}
 	if err := os.Rename(r.opts.Path, name); err != nil {
 		return fmt.Errorf("logging: %w", err)
 	}
@@ -301,7 +305,7 @@ func gzipFile(src string, mode os.FileMode) (err error) {
 	}
 	defer func() { _ = in.Close() }()
 	tmp := src + ".gz.tmp"
-	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	out, err := openLogFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}

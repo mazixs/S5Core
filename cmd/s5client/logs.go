@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/logging"
@@ -18,8 +19,8 @@ import (
 // openLogFile moves the default logger to LOG_FILE: JSON at LOG_LEVEL in the
 // file, short text at LOG_CONSOLE_LEVEL on the console. The last run's file
 // goes to archive/ next to it, which keeps LOG_KEEP runs; the rotation is the
-// client's own, because on Windows a file the process holds open cannot be
-// renamed from outside. Without LOG_FILE the output is what it always was.
+// client's own and needs no logrotate, which Windows does not have. Without
+// LOG_FILE the output is what it always was.
 func openLogFile(cfg clientParams, console io.Writer) (file *logging.RotatingFile, prevUnclean bool, err error) {
 	if cfg.LogFile == "" {
 		return nil, false, nil
@@ -49,17 +50,20 @@ func openLogFile(cfg clientParams, console io.Writer) (file *logging.RotatingFil
 }
 
 // explainLogFileError names the usual cause of a failed start on Windows: the
-// last run's file goes to archive/ by a rename, and Windows does not rename a
-// file another process holds open, which is what a second copy of the client
-// with the same LOG_FILE does.
+// last run's file goes to archive/, and Windows refuses that with a sharing
+// violation while another process holds the file open, which is what a second
+// copy of the client with the same LOG_FILE does.
 func explainLogFileError(goos string, err error) error {
-	var link *os.LinkError
-	if goos == "windows" && errors.As(err, &link) && link.Op == "rename" {
-		return fmt.Errorf("%w: the file is open in another running copy of the client, "+
-			"and Windows cannot rename an open file; stop that copy or give this one its own LOG_FILE", err)
+	if goos == "windows" && errors.Is(err, errSharingViolation) {
+		return fmt.Errorf("%w: the file is open in another running copy of the client; "+
+			"stop that copy or give this one its own LOG_FILE", err)
 	}
 	return err
 }
+
+// errSharingViolation is ERROR_SHARING_VIOLATION of Windows, as a number the
+// tests on every system can build.
+const errSharingViolation = syscall.Errno(32)
 
 const (
 	eventStart  = "process_start"
