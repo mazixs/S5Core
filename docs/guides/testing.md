@@ -138,7 +138,10 @@ socket's timers know nothing about it.
 runs `gofmt -s -l` and `go vet` on their packages, per module (`scripts/matrix`
 has its own). It is offline (modules must be cached) and changes nothing. Both
 tools read the working tree, so a file staged with `git add -p` is checked as it
-is on disk. The full gate that CI runs is `./scripts/pre-commit.sh`.
+is on disk. The full gate that CI runs is `./scripts/pre-commit.sh`. The
+`windows-tests` job also runs `go vet ./...` and `go test ./...` on a Windows
+runner, without `-race`, so the `*_windows` code and tests run on every pull
+request.
 
 ### Helper Scripts
 
