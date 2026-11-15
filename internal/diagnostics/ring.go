@@ -29,6 +29,7 @@ const (
 	kindFlowClose                 // a sampled socket was closed
 	kindRuntime                   // the Go runtime's metrics
 	kindSpike                     // the detector started an incident
+	kindQueue                     // the queue in front of a selected socket
 )
 
 // The what of a stage record.
@@ -65,8 +66,8 @@ type record struct {
 	mono int64 // nanoseconds since the recorder started, by the monotonic clock
 	wall int64 // Unix nanoseconds: the clock of a router without RTC jumps at NTP
 	dur  int64 // stage: how long the call took, in nanoseconds
-	// payload is *tcpSample, *runtimeSample, *flowTotals or, for a spike,
-	// the incident ID; nil for a stage and a flow_open.
+	// payload is *tcpSample, *runtimeSample, *flowTotals, *QueueState or,
+	// for a spike, the incident ID; nil for a stage and a flow_open.
 	payload any
 	flow    *flowInfo // nil for the process
 	n       uint32    // stage: bytes

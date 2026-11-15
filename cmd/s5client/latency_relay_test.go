@@ -43,9 +43,13 @@ type latencyEvent struct {
 	Transport string `json:"transport"`
 	Kind      string `json:"kind"`
 	Data      struct {
-		Remote    string `json:"remote"`
-		OuterFlow uint32 `json:"outer_flow"`
-		Evicted   bool   `json:"evicted"`
+		Local          string `json:"local"`
+		Remote         string `json:"remote"`
+		OuterFlow      uint32 `json:"outer_flow"`
+		Evicted        bool   `json:"evicted"`
+		QueuedFrames   int    `json:"queued_frames"`
+		Writing        bool   `json:"writing"`
+		WriteElapsedNS int64  `json:"write_elapsed_ns"`
 	} `json:"data"`
 }
 

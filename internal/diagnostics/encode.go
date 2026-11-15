@@ -12,7 +12,7 @@ import (
 
 // The names records go by in events.jsonl.
 var (
-	kindNames   = [...]string{kindStage: "stage", kindSocket: "socket", kindFlowOpen: "flow_open", kindFlowClose: "flow_close", kindRuntime: "runtime", kindSpike: "spike"}
+	kindNames   = [...]string{kindStage: "stage", kindSocket: "socket", kindFlowOpen: "flow_open", kindFlowClose: "flow_close", kindRuntime: "runtime", kindSpike: "spike", kindQueue: "queue"}
 	stageNames  = [...]string{stageRead: "transport_read", stageWrite: "transport_write"}
 	sampleNames = [...]string{sampleTick: "periodic", sampleOpen: "open", sampleClose: "close"}
 	spikeNames  = [...]string{spikeRTT: "rtt_excess", spikeRTO: "retransmit_timeout"}
@@ -111,6 +111,8 @@ func appendRecord(dst []byte, rec *record) []byte {
 	case kindSpike:
 		dst = appendString(append(dst, `"reason":`...), spikeNames[rec.what])
 		dst = appendString(append(dst, `,"incident_id":`...), rec.payload.(string))
+	case kindQueue:
+		dst = appendQueue(dst, rec.payload.(*QueueState))
 	}
 	return append(dst, "}}\n"...)
 }
@@ -130,6 +132,27 @@ func appendCounters(dst []byte, c *tcptune.Counters) []byte {
 		dst = strconv.AppendUint(append(dst, ':'), f.get(c), 10)
 	}
 	return append(dst, '}')
+}
+
+// appendQueue writes the elapsed time of a write only while one is in
+// progress.
+func appendQueue(dst []byte, q *QueueState) []byte {
+	dst = append(dst, `"queued_frames":`...)
+	dst = strconv.AppendInt(dst, int64(q.Frames), 10)
+	dst = append(dst, `,"queued_buffer_bytes":`...)
+	dst = strconv.AppendInt(dst, q.Bytes, 10)
+	dst = append(dst, `,"dropped_full_frames":`...)
+	dst = strconv.AppendUint(dst, q.DroppedFull, 10)
+	dst = append(dst, `,"dropped_age_frames":`...)
+	dst = strconv.AppendUint(dst, q.DroppedAge, 10)
+	dst = append(dst, `,"frame_wait_max_ns":`...)
+	dst = strconv.AppendInt(dst, int64(q.WaitMax), 10)
+	dst = appendBool(append(dst, `,"writing":`...), q.Writing)
+	if q.Writing {
+		dst = append(dst, `,"write_elapsed_ns":`...)
+		dst = strconv.AppendInt(dst, int64(q.WriteElapsed), 10)
+	}
+	return dst
 }
 
 func appendRuntime(dst []byte, s *runtimeSample) []byte {

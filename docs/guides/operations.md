@@ -214,7 +214,7 @@ Per-account traffic accounting is separate from telemetry. Its batching threshol
 
 ## Latency diagnostics
 
-The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets and of the other side of their CONNECT relays in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection, per tunnel and per CONNECT relay. On, it also reads the clock twice on every read and write of a recorded socket.
+The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets, of the other side of their CONNECT relays and of the queue in front of the socket of a native UDP association in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection, per tunnel, per CONNECT relay and per native UDP association. On, it also reads the clock twice on every read and write of a recorded socket, and the writer of a recorded queue updates three atomics per frame without reading the clock again.
 
 ### Turning it on
 
@@ -236,10 +236,13 @@ At most 32 outer sockets are recorded at once: the first to arrive take the slot
 
 When a recorded outer socket carries a CONNECT, the other side of the relay is recorded as a flow of its own, a *related* flow: on the server the connection to the destination (`leg` `target`), on the client the application's connection (`leg` `application`). Its `flow_open` names the outer flow in `outer_flow`. A related flow takes no slot and no admission token. An outer flow has one at a time, and at most 32 related flows are recorded at once, counting one that outlives its outer flow. Its samples never start an incident: on the server its path is the destination's network, not the tunnel's. An incident started by its outer flow or by hand holds it like any other flow.
 
+When a recorded outer socket carries a native UDP association (`0x84`), the queue in front of it is recorded too. The datagrams that do not go natively travel in `0x83` frames on that socket, and its writer holds them in a queue of up to 1024 frames and 2 MiB until the socket takes them: a frame past the queue is dropped, and so is a frame that waited 250 ms when its turn comes. The queue is part of the outer flow: it takes no slot and no token, a socket has at most one, and it never starts an incident. A `0x83` association, and a `0x84` one that a node without native UDP carries as `0x83`, has no such queue: its frames are written to the socket as they come, and a slow write shows in the socket's stage records.
+
 For each flow the recorder keeps:
 
 - **stage records**: one read and one write in 512, and every write that took 25 ms or more. A read waits for the peer, so a long read is not recorded on its own; the longest read between two samples goes into the next socket sample instead;
 - **socket samples**: the kernel's counters at the open, every 500 ms, and at the close;
+- **queue records**, for an outer flow with a native UDP association: its queue every 500 ms, right after the socket sample;
 - **flow records**: the addresses at the open, the number of reads and writes at the close.
 
 For the process it keeps the Go runtime metrics every 500 ms.
@@ -249,6 +252,16 @@ To tell on which side of the relay a delay arose, read the samples of an outer f
 - `rtt_us`, `retransmits` and `bytes_retrans` that grow on one flow only point to the path of that socket: the tunnel's for the outer flow, the destination's or the application's for the related one;
 - `read_wait_max_ns` is how long the peer of that socket kept the relay waiting for data;
 - a `slow` write on a flow, or `not_sent_bytes` that pile up on it, means that socket's peer or path did not take the data as fast as the other side of the relay delivered it.
+
+A datagram that goes by the stream of a native UDP association waits twice: in the writer's queue, which the queue records show, and in the socket's send buffer, which `not_sent_bytes` of the socket sample before them shows. Read the two records of a sample together:
+
+- `frame_wait_max_ns` is the longest a frame written since the sample before waited in the queue. It is at most 250 ms: a frame that waited longer was dropped and counted in `dropped_age_frames`;
+- `writing` with `write_elapsed_ns` is a write that has not returned yet, and `queued_frames` are the frames waiting behind it. Held over several samples while `not_sent_bytes` is high, it is a stream that does not send: the socket's `cwnd_segments`, `send_window_bytes` and `retransmits` say why;
+- `frame_wait_max_ns` that grows while `not_sent_bytes` stays near zero and no write is held: the socket takes each frame at once, so the wait arose in front of it. The frames came faster than the writer wrote them (`queued_frames`), or the writer waited for a CPU (the runtime's `/sched/latencies:seconds`);
+- `not_sent_bytes` that grows while `frame_wait_max_ns` stays low: a write returns once the kernel holds the bytes, so the frames leave the queue at once and wait in the send buffer instead, where the queue does not see them;
+- both growing, with `writing` set: the send buffer is full, frames pile up behind the held write, and `dropped_age_frames` or `dropped_full_frames` grow once they wait 250 ms or fill the queue.
+
+The write is timed from the writer down, through the obfuscation; the socket's stage records time the part below the recorder's wrapper. A write held for long with no `slow` write on the socket when it ends spent its time above the socket. On Windows a socket sample has no `not_sent_bytes`; there a held write and `slow` writes are what shows a stream that does not take the data.
 
 ### Incidents
 
@@ -277,7 +290,7 @@ A file ending in `.partial` is an incident the process did not finish: it was ki
 
 The directory may hold up to 256 MiB, and the recorder leaves at least 256 MiB free on the volume. One events or trace file takes at most 64 MiB. When an incident needs room, the oldest incident that may go is removed with all its files: an automatic incident, by its trigger, or the files of one without a manifest, such as `.partial` files, by when they were last written. A manual incident is never removed, nor the automatic incident it took over, nor what the process is still writing, nor an incident whose manifest cannot be read. The budget counts the files directly in the directory: a subdirectory is neither counted nor touched. When nothing is left to remove, the recorder stops with one line in the log, `Latency diagnostics stopped`, and forwarding goes on. An incident that reaches its share of the budget ends early and its manifest says `truncated`.
 
-In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each) and runtime samples (about 3 KiB each) come on top. With all 32 slots taken and each outer flow beside its related flow, two minutes without traffic are about 15 700 records, under half the ring, with about 2.1 MiB of socket samples and 0.7 MiB of runtime samples.
+In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each), queue records (64 bytes each) and runtime samples (about 3 KiB each) come on top. With the most there can be, 32 outer flows each with its queue and 32 related flows, two minutes without traffic are about 23 400 records, under three quarters of the ring, with about 2.1 MiB of socket samples, 0.5 MiB of queue records and 0.7 MiB of runtime samples.
 
 ### Event schema
 
@@ -301,6 +314,7 @@ Every line has these fields:
 | `flow_close` | `read_calls`, `write_calls`, and `evicted: true` for a socket closed under its wrapper |
 | `runtime` | each [runtime metric](https://pkg.go.dev/runtime/metrics) by its name: a number, `null` where this Go version lacks it, or for a histogram its bucket counts |
 | `spike` | `reason` (`rtt_excess`, `retransmit_timeout`), `incident_id` |
+| `queue` | `queued_frames` and `queued_buffer_bytes` (the frames waiting in the queue at the sample and the buffers they take, by which the queue is bounded: 2 KiB for a frame of up to 2 KiB, 64 KiB for a longer one), `dropped_full_frames` and `dropped_age_frames` (frames dropped since the writer started: past the queue, or after waiting 250 ms), `frame_wait_max_ns` (the longest a frame written since the sample before waited in the queue), `writing` (a write to the socket has not returned yet), `write_elapsed_ns` (with `writing` only: how long that write has taken so far) |
 
 `tcp` holds only the counters the kernel gave; a counter that an older kernel or another system does not have is left out rather than written as zero. Each name includes its unit:
 
@@ -323,7 +337,7 @@ Every line has these fields:
 
 | Field | Meaning |
 |---|---|
-| `schema` | `2`; an incident of schema `1` holds outer flows only |
+| `schema` | `3`; an incident of schema `2` has no queue records, one of schema `1` holds outer flows only |
 | `incident_id`, `run_id`, `boot_id` | the incident; the run (`S5_DIAGNOSTICS_RUN_ID`); this start of the process |
 | `process_id`, `go_version`, `build_version`, `goos`, `goarch` | the process and its build |
 | `recorder_start_utc` | the wall clock at `elapsed_ns` 0 |
@@ -337,11 +351,13 @@ Every line has these fields:
 
 ### Limits
 
-- Besides the outer sockets only the other side of a CONNECT relay is recorded. UDP is not: neither a standard Associate, nor the TCP fallback (`0x83`), nor native UDP (`0x84`).
+- Besides the outer sockets only the other side of a CONNECT relay and the queue in front of the socket of a native UDP association are recorded. The datagrams themselves are not: neither the UDP sockets of a standard Associate or of a `0x83` or `0x84` association, nor native UDP packets, nor the datagrams the client holds until the server answers an association.
+- A queue record shows the queue at the moment of its sample: a burst that comes and goes between two samples shows only in `frame_wait_max_ns` and in the drops.
 - On the client, an optimistic CONNECT whose tunnel is set up again on a fresh transport keeps its application flow tied to the flow of the first transport.
 - The first 32 outer sockets keep their slots for as long as they live, so on a busy server the recorded ones are not a sample of all of them.
 - A stage record times the call into the transport where the wrapper sits, TLS and WebSocket framing included. A write returns once the kernel took the bytes, not once the peer got them.
 - On Windows the counters are those of `SIO_TCP_INFO` version 0 (Windows 10 1703 and later); elsewhere but Linux and Windows a socket sample says `available: false`.
+- On Windows the clock the durations are measured by advances in steps, about 0.5 ms on the machine this was checked on: a wait or a write shorter than a step reads as 0, so a `frame_wait_max_ns` of 0 there means a wait under a step, not none.
 - A socket's lowest round trip time only goes down, so a path that became longer for good goes on starting automatic incidents, at most one in two minutes per socket.
 - The recorder shares the process: an incident is written by the same process whose latency it records.
 
