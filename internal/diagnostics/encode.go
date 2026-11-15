@@ -99,6 +99,9 @@ func appendRecord(dst []byte, rec *record) []byte {
 		dst = strconv.AppendUint(dst, t.reads, 10)
 		dst = append(dst, `,"write_calls":`...)
 		dst = strconv.AppendUint(dst, t.writes, 10)
+		if t.evicted {
+			dst = append(dst, `,"evicted":true`...)
+		}
 	case kindRuntime:
 		dst = appendRuntime(dst, rec.payload.(*runtimeSample))
 	case kindSpike:

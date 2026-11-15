@@ -42,10 +42,12 @@ type recorder struct {
 	sockets   map[*socket]struct{}
 	flows     uint32 // the last flow ID given
 	selection selection
+
+	sampler sampler // the worker's
 }
 
 func newRecorder() *recorder {
-	return &recorder{start: time.Now(), ring: newRing(ringRecords), sockets: make(map[*socket]struct{})}
+	return &recorder{start: time.Now(), ring: newRing(ringRecords), sockets: make(map[*socket]struct{}), sampler: newSampler()}
 }
 
 // socket is a selected socket.
@@ -56,15 +58,16 @@ type socket struct {
 	// readWait is the longest read, in nanoseconds, since the last periodic
 	// sample took it.
 	readWait atomic.Int64
+	detector spikeDetector // the worker's
 }
 
 // selection decides which sockets are recorded: a slot must be free and a
 // token left. A token is newSocketInterval of credit, so the refill does not
 // drift.
 type selection struct {
-	last                                 time.Time
-	credit                               time.Duration
-	admitted, omittedRate, omittedActive uint64
+	last                                                time.Time
+	credit                                              time.Duration
+	admitted, omittedRate, omittedActive, evictedClosed uint64
 }
 
 func (s *selection) allow(now time.Time) bool {
@@ -148,7 +151,7 @@ func (r *recorder) pushLocked(rec record) {
 
 // sampleSocket records the kernel's counters of s.
 func (r *recorder) sampleSocket(s *socket, why uint8) {
-	c, err := tcptune.CountersOf(s.conn)
+	c, err := countersOf(s.conn)
 	r.push(record{flow: s.flow, kind: kindSocket, what: why, payload: &tcpSample{counters: c, available: err == nil}})
 }
 

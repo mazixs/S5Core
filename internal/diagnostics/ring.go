@@ -90,7 +90,12 @@ type tcpSample struct {
 	readWait time.Duration
 }
 
-type flowTotals struct{ reads, writes uint64 }
+// flowTotals ends a flow. evicted says the socket was found closed under a
+// wrapper nobody closed.
+type flowTotals struct {
+	reads, writes uint64
+	evicted       bool
+}
 
 // The runtime metrics read every tick. A scalar is a uint64 or a float64 in
 // the Go version the binary is built with, a histogram keeps its counts; the
