@@ -43,23 +43,20 @@ func dialObfs(t *testing.T, addr string) (net.Conn, error) {
 func TestTheConnectionLimitCoversTheObfuscatedPort(t *testing.T) {
 	echoAddr := startEchoServer(t)
 
-	plainPort := reservePort(t)
-	obfsPort := reservePort(t)
-	obfsAddr := "127.0.0.1:" + obfsPort
-
-	startServer(t, Config{
-		Port:           plainPort,
+	srv := startServer(t, Config{
+		Port:           anyPort,
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    false,
 		MaxConnections: 2,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		ObfsEnabled:    true,
-		ObfsPort:       obfsPort,
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 256,
 		ObfsMTU:        1400,
 	})
+	obfsAddr := "127.0.0.1:" + obfsPortOf(t, srv)
 
 	// Two connections fill the server.
 	held := make([]net.Conn, 0, 2)
@@ -125,19 +122,14 @@ func TestUpdateWhitelistReachesEveryListener(t *testing.T) {
 		t.Fatalf("generate cert: %v", err)
 	}
 
-	plainPort := reservePort(t)
-	obfsPort := reservePort(t)
-	plainAddr := "127.0.0.1:" + plainPort
-	obfsAddr := "127.0.0.1:" + obfsPort
-
 	srv := startServer(t, Config{
-		Port:           plainPort,
+		Port:           anyPort,
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    false,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		ObfsEnabled:    true,
-		ObfsPort:       obfsPort,
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 256,
 		ObfsMTU:        1400,
@@ -147,6 +139,8 @@ func TestUpdateWhitelistReachesEveryListener(t *testing.T) {
 		WSKeyFile:      keyFile,
 		WSPath:         "/ws",
 	})
+	plainAddr := "127.0.0.1:" + plainPortOf(t, srv)
+	obfsAddr := "127.0.0.1:" + obfsPortOf(t, srv)
 
 	wsAddr := waitForWSAddr(t, srv)
 

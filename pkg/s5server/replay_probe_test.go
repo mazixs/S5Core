@@ -150,9 +150,6 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
-	plainPort := reservePort(t)
-	obfsPort := reservePort(t)
-
 	// The handshake budget is short here because it is also what closes a
 	// refused connection (plan task Ф5-6): the server holds it, says
 	// nothing and lets the budget end it, so this is the number the probe
@@ -160,7 +157,7 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 	const handshakeBudget = 500 * time.Millisecond
 
 	srv := startServer(t, Config{
-		Port:             plainPort,
+		Port:             anyPort,
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      true,
 		UsersFile:        usersPath,
@@ -168,12 +165,13 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 		Fail2BanTime:     time.Minute,
 		HandshakeTimeout: DefaultHandshakeTimeout,
 		ObfsEnabled:      true,
-		ObfsPort:         obfsPort,
+		ObfsPort:         anyPort,
 		ObfsPSK:          testPSK,
 		ObfsMaxPadding:   256,
 		ObfsMTU:          1400,
 		ObfsReplayWindow: 4,
 	})
+	obfsPort := obfsPortOf(t, srv)
 
 	// Recording authenticates a legacy password and may run Argon2id and
 	// persist its hash. That cost is unrelated to replay refusal timing and
@@ -272,11 +270,11 @@ func TestAReplayedFirstFlightIsAnsweredLikeGarbage(t *testing.T) {
 // right shape, and this pins it.
 func TestTheSaltHistoryIsSharedByEveryObfuscatedListener(t *testing.T) {
 	srv, err := NewServer(Config{
-		Port:             reservePort(t),
+		Port:             anyPort,
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      false,
 		ObfsEnabled:      true,
-		ObfsPort:         reservePort(t),
+		ObfsPort:         anyPort,
 		ObfsPSK:          testPSK,
 		ObfsMTU:          1400,
 		ObfsReplayWindow: 128,
@@ -294,11 +292,11 @@ func TestTheSaltHistoryIsSharedByEveryObfuscatedListener(t *testing.T) {
 
 func TestZeroDisablesTheSaltHistory(t *testing.T) {
 	srv, err := NewServer(Config{
-		Port:             reservePort(t),
+		Port:             anyPort,
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      false,
 		ObfsEnabled:      true,
-		ObfsPort:         reservePort(t),
+		ObfsPort:         anyPort,
 		ObfsPSK:          testPSK,
 		ObfsMTU:          1400,
 		ObfsReplayWindow: 0,

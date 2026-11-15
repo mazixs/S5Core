@@ -173,9 +173,8 @@ func TestSessionsByStateShowTheBugReport(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	port := reservePort(t)
-	startServer(t, Config{
-		Port:        port,
+	srv := startServer(t, Config{
+		Port:        anyPort,
 		ListenIP:    "127.0.0.1",
 		RequireAuth: false,
 		// Long enough that nothing expires while the gauge is read: the
@@ -188,7 +187,7 @@ func TestSessionsByStateShowTheBugReport(t *testing.T) {
 		Dial:             dial,
 		Telemetry:        telemetry,
 	})
-	proxyAddr := net.JoinHostPort("127.0.0.1", port)
+	proxyAddr := plainAddr(srv)
 
 	for i := range working {
 		conn, err := net.DialTimeout("tcp", proxyAddr, 5*time.Second)
@@ -247,9 +246,8 @@ func TestSessionTransitionsAreCountedWithClosedLabels(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	port := reservePort(t)
-	startServer(t, Config{
-		Port:             port,
+	srv := startServer(t, Config{
+		Port:             anyPort,
 		ListenIP:         "127.0.0.1",
 		RequireAuth:      false,
 		ReadTimeout:      5 * time.Second,
@@ -258,7 +256,7 @@ func TestSessionTransitionsAreCountedWithClosedLabels(t *testing.T) {
 		Telemetry:        telemetry,
 	})
 
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), 5*time.Second)
+	conn, err := net.DialTimeout("tcp", plainAddr(srv), 5*time.Second)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

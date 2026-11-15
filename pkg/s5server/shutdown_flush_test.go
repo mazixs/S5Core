@@ -13,22 +13,6 @@ import (
 	"github.com/mazixs/S5Core/internal/userstore"
 )
 
-// reservedPort picks a port nothing is listening on. freePort lives behind
-// the loadtest build tag, and duplicating four lines is cheaper than moving it.
-func reservedPort(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve port: %v", err)
-	}
-	_, port, err := net.SplitHostPort(l.Addr().String())
-	if err != nil {
-		t.Fatalf("split port: %v", err)
-	}
-	_ = l.Close()
-	return port
-}
-
 // trafficInFile reads the byte count the users file holds for one account.
 func trafficInFile(t *testing.T, path, username string) int64 {
 	t.Helper()
@@ -64,14 +48,14 @@ func TestStopPersistsWhatALiveSessionMoved(t *testing.T) {
 	usersPath := testUsersFile(t)
 
 	srv := startServer(t, Config{
-		Port:                 reservedPort(t),
+		Port:                 anyPort,
 		ListenIP:             "127.0.0.1",
 		RequireAuth:          true,
 		UsersFile:            usersPath,
 		TrafficFlushInterval: time.Hour,
 	})
 
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+srv.cfg.Port, time.Second)
+	conn, err := net.DialTimeout("tcp", plainAddr(srv), time.Second)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

@@ -28,14 +28,14 @@ func TestNativeUDPAndTCPFallbackShareAnAssociation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plainPort, obfsPort := reservePort(t), reservePort(t)
 	srv := startServer(t, Config{
 		Telemetry: tel,
-		Port:      plainPort, ListenIP: "127.0.0.1", RequireAuth: false,
+		Port:      anyPort, ListenIP: "127.0.0.1", RequireAuth: false,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
-		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK,
+		ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK,
 		ObfsMaxPadding: 32, ObfsMTU: 1400, UDPPort: reserveUDPPort(t),
 	})
+	obfsPort := obfsPortOf(t, srv)
 	echo, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatal(err)
@@ -252,13 +252,13 @@ type nativeFixture struct {
 
 func newNativeFixture(t *testing.T) *nativeFixture {
 	t.Helper()
-	plainPort, obfsPort := reservePort(t), reservePort(t)
 	srv := startServer(t, Config{
-		Port: plainPort, ListenIP: "127.0.0.1", RequireAuth: false,
+		Port: anyPort, ListenIP: "127.0.0.1", RequireAuth: false,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
-		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK,
+		ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK,
 		ObfsMaxPadding: 32, ObfsMTU: 1400, UDPPort: reserveUDPPort(t),
 	})
+	obfsPort := obfsPortOf(t, srv)
 	f := &nativeFixture{}
 	var err error
 	if f.target, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")}); err != nil {

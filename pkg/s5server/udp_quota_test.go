@@ -59,7 +59,7 @@ func newUDPQuotaStand(t *testing.T, limit int64) *udpQuotaStand {
 
 	cfg := DefaultConfig()
 	cfg.ListenIP = "127.0.0.1"
-	cfg.Port = reservePort(t)
+	cfg.Port = anyPort
 	cfg.RequireAuth = true
 	cfg.UsersFile = path
 	// No Telemetry: the accounting must not depend on it.
@@ -67,7 +67,7 @@ func newUDPQuotaStand(t *testing.T, limit int64) *udpQuotaStand {
 
 	return &udpQuotaStand{
 		srv:   srv,
-		addr:  net.JoinHostPort(cfg.ListenIP, cfg.Port),
+		addr:  plainAddr(srv),
 		echo:  echo,
 		limit: limit,
 	}

@@ -23,14 +23,13 @@ func TestAKeepaliveKeepsTheServerFromTimingOut(t *testing.T) {
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
-	obfsPort := reservePort(t)
-	startServer(t, Config{
-		Port:           reservePort(t),
+	srv := startServer(t, Config{
+		Port:           anyPort,
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    true,
 		UsersFile:      usersPath,
 		ObfsEnabled:    true,
-		ObfsPort:       obfsPort,
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 256,
 		ObfsMTU:        1400,
@@ -38,6 +37,7 @@ func TestAKeepaliveKeepsTheServerFromTimingOut(t *testing.T) {
 		ReadTimeout:  400 * time.Millisecond,
 		WriteTimeout: 400 * time.Millisecond,
 	})
+	obfsPort := obfsPortOf(t, srv)
 
 	open := func(t *testing.T, keepMin, keepMax time.Duration) net.Conn {
 		t.Helper()

@@ -45,7 +45,7 @@ func TestUDPPortZeroIsAConfigurationError(t *testing.T) {
 // and starts no hub.
 func TestAnEmptyUDPPortDisablesNativeUDP(t *testing.T) {
 	cfg := Config{
-		Port: reservePort(t), ListenIP: "127.0.0.1", RequireAuth: false,
+		Port: anyPort, ListenIP: "127.0.0.1", RequireAuth: false,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 	}
 	if err := ValidateConfig(cfg); err != nil {
@@ -56,7 +56,7 @@ func TestAnEmptyUDPPortDisablesNativeUDP(t *testing.T) {
 	}
 }
 
-// reserveUDPPort is reservePort for UDP: 0 is refused, so native tests take a
+// reserveUDPPort picks a free UDP port: 0 is refused, so native tests take a
 // free port and read the bound one back from the hub.
 func reserveUDPPort(t *testing.T) string {
 	t.Helper()

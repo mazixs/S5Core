@@ -167,9 +167,9 @@ func TestTheLargestAdviceStillFitsTheSmallestFrame(t *testing.T) {
 	echo := startEchoServer(t)
 	cfg := Config{
 		ListenIP:        "127.0.0.1",
-		Port:            reservePort(t),
+		Port:            anyPort,
 		ObfsEnabled:     true,
-		ObfsPort:        reservePort(t),
+		ObfsPort:        anyPort,
 		ObfsPSK:         testPSK,
 		ObfsMaxPadding:  64,
 		ObfsMTU:         obfs.MinMTU,
@@ -179,9 +179,9 @@ func TestTheLargestAdviceStillFitsTheSmallestFrame(t *testing.T) {
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatalf("the smallest MTU with the largest advice was refused by the configuration: %v", err)
 	}
-	startServer(t, cfg)
+	srv := startServer(t, cfg)
 
-	raw, err := net.DialTimeout("tcp", "127.0.0.1:"+cfg.ObfsPort, 2*time.Second)
+	raw, err := net.DialTimeout("tcp", "127.0.0.1:"+obfsPortOf(t, srv), 2*time.Second)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -240,9 +240,9 @@ func adviceStand(t *testing.T, advice string, telemetry *Telemetry) (*Server, st
 	echo := startEchoServer(t)
 	cfg := Config{
 		ListenIP:        "127.0.0.1",
-		Port:            reservePort(t),
+		Port:            anyPort,
 		ObfsEnabled:     true,
-		ObfsPort:        reservePort(t),
+		ObfsPort:        anyPort,
 		ObfsPSK:         testPSK,
 		ObfsMaxPadding:  64,
 		ObfsMTU:         1400,
@@ -251,7 +251,7 @@ func adviceStand(t *testing.T, advice string, telemetry *Telemetry) (*Server, st
 		Telemetry:       telemetry,
 	}
 	srv := startServer(t, cfg)
-	return srv, cfg.ObfsPort, echo
+	return srv, obfsPortOf(t, srv), echo
 }
 
 // dialAdvised opens a tunnel to the obfuscated port with the given control

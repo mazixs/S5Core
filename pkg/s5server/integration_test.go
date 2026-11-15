@@ -159,13 +159,63 @@ func startServer(t *testing.T, cfg Config) *Server {
 		}
 	}()
 
-	// Wait for listeners to be ready
-	waitForPort(t, cfg.Port)
+	// Wait for listeners to be ready. The ports come from the server, not
+	// from cfg, which may have asked the kernel for them.
+	waitForPort(t, plainPortOf(t, srv))
 	if cfg.ObfsEnabled && cfg.ObfsPort != "" {
-		waitForPort(t, cfg.ObfsPort)
+		waitForPort(t, obfsPortOf(t, srv))
 	}
 
 	return srv
+}
+
+// anyPort asks the kernel for a free port at the moment the server binds it.
+// A port picked beforehand and released again can be taken by another process
+// before the server gets there; a port the server bound itself cannot. Read
+// the result back with plainPortOf and obfsPortOf.
+const anyPort = "0"
+
+// boundAddr is where srv's listener of one transport sits, or "" until Start
+// has bound it.
+func boundAddr(srv *Server, transport string) string {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	for _, p := range srv.pipelines {
+		if p.transport == transport {
+			return p.Addr().String()
+		}
+	}
+	return ""
+}
+
+// portOf waits for Start to bind the listener of a transport and returns its
+// port.
+func portOf(t *testing.T, srv *Server, transport string) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if addr := boundAddr(srv, transport); addr != "" {
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return port
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the %s listener is not bound after 2s", transport)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func plainPortOf(t *testing.T, srv *Server) string {
+	t.Helper()
+	return portOf(t, srv, TransportPlain)
+}
+
+func obfsPortOf(t *testing.T, srv *Server) string {
+	t.Helper()
+	return portOf(t, srv, TransportObfs)
 }
 
 func waitForPort(t *testing.T, port string) {
@@ -285,22 +335,20 @@ func TestIntegration_FullSuite(t *testing.T) {
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
-	plainPort := reservePort(t)
-	obfsPort := reservePort(t)
-
-	startServer(t, Config{
-		Port:            plainPort,
+	srv := startServer(t, Config{
+		Port:            anyPort,
 		ListenIP:        "127.0.0.1",
 		RequireAuth:     true,
 		UsersFile:       usersPath,
 		Fail2BanRetries: 10,
 		Fail2BanTime:    1 * time.Minute,
 		ObfsEnabled:     true,
-		ObfsPort:        obfsPort,
+		ObfsPort:        anyPort,
 		ObfsPSK:         testPSK,
 		ObfsMaxPadding:  256,
 		ObfsMTU:         1400,
 	})
+	plainPort, obfsPort := plainPortOf(t, srv), obfsPortOf(t, srv)
 
 	// ─── Test 1: Valid auth via plain SOCKS5 ──────────────────────────
 	t.Run("Plain_ValidAuth_Alice", func(t *testing.T) {
@@ -765,9 +813,8 @@ func TestIntegration_FullSuite(t *testing.T) {
 func TestIntegration_NoUsersFile_LegacyMode(t *testing.T) {
 	echoAddr := startEchoServer(t)
 
-	port := reservePort(t)
 	cfg := Config{
-		Port:            port,
+		Port:            anyPort,
 		ListenIP:        "127.0.0.1",
 		RequireAuth:     true,
 		Fail2BanRetries: 5,
@@ -790,6 +837,7 @@ func TestIntegration_NoUsersFile_LegacyMode(t *testing.T) {
 		srv.Stop()
 	})
 	go srv.Start(ctx)
+	port := plainPortOf(t, srv)
 	waitForPort(t, port)
 
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, time.Second)

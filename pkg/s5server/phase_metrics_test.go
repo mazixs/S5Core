@@ -112,9 +112,8 @@ func TestPhaseMetricsExplainTimeToFirstByte(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	plainPort := reservePort(t)
-	startServer(t, Config{
-		Port:            plainPort,
+	srv := startServer(t, Config{
+		Port:            anyPort,
 		ListenIP:        "127.0.0.1",
 		RequireAuth:     true,
 		UsersFile:       usersPath,
@@ -122,6 +121,7 @@ func TestPhaseMetricsExplainTimeToFirstByte(t *testing.T) {
 		Fail2BanTime:    time.Minute,
 		Telemetry:       telemetry,
 	})
+	plainPort := plainPortOf(t, srv)
 
 	// Первое соединение переводит пароль из plaintext в Argon2id, поэтому оно
 	// не показательно: измеряем второе, когда хранилище уже в рабочем виде.
