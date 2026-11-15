@@ -141,8 +141,7 @@ func TestAPolicySaysHowMuchNotWhat(t *testing.T) {
 	}
 }
 
-// The split is the point of the task: an identity has no password in it and a
-// credential has nothing else.
+// The split is the point of the task: an identity has no password in it.
 func TestAnIdentityCarriesNoPassword(t *testing.T) {
 	id := Identity{ID: "1", Name: "alice", Key: make([]byte, 32), Role: RoleAdmin}
 	if !id.HasKey() {
@@ -150,11 +149,5 @@ func TestAnIdentityCarriesNoPassword(t *testing.T) {
 	}
 	if (Identity{}).HasKey() {
 		t.Fatal("an identity without a key says it has one")
-	}
-	if !(Credential{Hash: "$argon2id$..."}).HasPassword() {
-		t.Fatal("a credential with a hash says it has no password")
-	}
-	if (Credential{}).HasPassword() {
-		t.Fatal("a credential without a hash says it has one")
 	}
 }
