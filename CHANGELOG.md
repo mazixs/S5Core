@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The WSS listener of `s5core` writes the messages of its HTTP server to the
+  server's logger instead of the standard log, which logged them at INFO. A
+  failed TLS handshake (`http: TLS handshake error from <address>: ...`) is now
+  a DEBUG line, so a public node no longer fills the INFO log with the
+  addresses of every client that rejects its certificate; any other message of
+  the HTTP server is a WARN line.
 - `s5core` serves `/metrics` from a Prometheus registry of its own instead of
   the global default one. Every family that was there keeps its name and type;
   a collector that a dependency registers on `prometheus.DefaultRegisterer` no

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -200,6 +201,7 @@ func NewListener(cfg Config) (*Listener, error) {
 	l.cancelHTTP = cancelHTTP
 	l.server = &http.Server{
 		Handler:     l.trackHandlers(mux),
+		ErrorLog:    newServerErrorLog(cfg.Logger),
 		BaseContext: func(net.Listener) context.Context { return httpCtx },
 		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
 			return context.WithValue(ctx, listenerConnKey{}, conn)
@@ -215,6 +217,37 @@ func NewListener(cfg Config) (*Listener, error) {
 	}()
 
 	return l, nil
+}
+
+// tlsHandshakeErrorPrefix starts the line net/http writes when a TLS handshake
+// fails before any request is read.
+const tlsHandshakeErrorPrefix = "http: TLS handshake error"
+
+// newServerErrorLog routes net/http's own messages to logger. Without it they
+// go through the standard log package, which slog.SetDefault binds to INFO, and
+// on a public port every client that rejects the certificate would put its
+// address into the INFO log.
+func newServerErrorLog(logger *slog.Logger) *log.Logger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return log.New(serverErrorWriter{logger}, "", 0)
+}
+
+// serverErrorWriter turns each line of the standard logger into one slog
+// record. Handshake failures are routine on a public port and go to DEBUG;
+// whatever else the server reports (a handler panic, a failing Accept) is a
+// fault of this process and goes to WARN.
+type serverErrorWriter struct{ logger *slog.Logger }
+
+func (w serverErrorWriter) Write(p []byte) (int, error) {
+	msg := strings.TrimRight(string(p), "\n")
+	level := slog.LevelWarn
+	if strings.HasPrefix(msg, tlsHandshakeErrorPrefix) {
+		level = slog.LevelDebug
+	}
+	w.logger.Log(context.Background(), level, msg)
+	return len(p), nil
 }
 
 // Accept returns a net.Conn for an accepted WebSocket connection. After Close
