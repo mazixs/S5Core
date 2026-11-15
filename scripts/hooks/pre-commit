@@ -1,0 +1,112 @@
+#!/bin/sh
+#
+# Fast pre-commit hook: gofmt and go vet for the Go files in the commit.
+# Enable once per clone: git config core.hooksPath scripts/hooks
+# Full gate (what CI runs): ./scripts/pre-commit.sh
+#
+# gofmt and go vet read the working tree, not the index: a file staged with
+# git add -p is checked as it is on disk. The hook changes nothing.
+
+set -u
+
+# No network and no toolchain download from a hook.
+export GOPROXY=off GOTOOLCHAIN=local
+
+die() { printf 'pre-commit: %s\n' "$*" >&2; exit 1; }
+
+nl='
+'
+tab=$(printf '\t')
+
+cd "$(git rev-parse --show-toplevel)" || die "cannot find the repository root"
+
+# -z keeps names unquoted; a newline inside a file name is not supported.
+list=$(git diff --cached --name-only --diff-filter=ACMR -z -- '*.go' | tr '\0' '\n')
+[ -n "$list" ] || exit 0
+
+set -f
+IFS=$nl
+set -- $list
+unset IFS
+
+# Drop files that are staged but gone from the working tree.
+n=$#
+while [ "$n" -gt 0 ]; do
+	f=$1
+	shift
+	n=$((n - 1))
+	[ -f "$f" ] && set -- "$@" "$f"
+done
+[ $# -gt 0 ] || exit 0
+
+for tool in gofmt go; do
+	command -v "$tool" >/dev/null 2>&1 || die "$tool not found in PATH"
+done
+
+# -s matches the gate (gofmt -s -l .).
+unformatted=$(gofmt -s -l -- "$@") || die "gofmt failed"
+if [ -n "$unformatted" ]; then
+	printf 'pre-commit: not formatted:\n' >&2
+	printf '%s\n' "$unformatted" | sed 's/^/  /' >&2
+	IFS=$nl
+	set -- $unformatted
+	unset IFS
+	printf 'pre-commit: fix with: gofmt -s -w --' >&2
+	for f; do printf " '%s'" "$f" >&2; done
+	printf '\n' >&2
+	exit 1
+fi
+
+# module_dir <dir>: sets mod to the nearest directory at or above <dir> that
+# holds a go.mod (the root module or scripts/matrix); fails if there is none.
+module_dir() {
+	mod=$1
+	while [ ! -f "$mod/go.mod" ]; do
+		case $mod in
+			*/*) mod=${mod%/*} ;;
+			.) return 1 ;;
+			*) mod=. ;;
+		esac
+	done
+}
+
+# One "module<TAB>package" record per file, package relative to its module.
+records=
+for f; do
+	case $f in */*) dir=${f%/*} ;; *) dir=. ;; esac
+	module_dir "$dir" || continue
+	if [ "$mod" = . ]; then
+		pkg=./$dir
+	elif [ "$dir" = "$mod" ]; then
+		pkg=.
+	else
+		pkg=./${dir#"$mod"/}
+	fi
+	records=$records$mod$tab$pkg$nl
+done
+records=$(printf '%s' "$records" | sort -u)
+
+failed=0
+vet_module() {
+	(cd "$1" && shift && go vet "$@") && return
+	printf 'pre-commit: go vet failed (module dir: %s)\n' "$1" >&2
+	failed=1
+}
+
+# One go vet run per module, over all of its packages.
+prev=
+set --
+while IFS=$tab read -r mod pkg; do
+	[ -n "$mod" ] || continue
+	if [ "$mod" != "$prev" ]; then
+		[ -n "$prev" ] && vet_module "$prev" "$@"
+		prev=$mod
+		set --
+	fi
+	set -- "$@" "$pkg"
+done <<EOF
+$records
+EOF
+[ -n "$prev" ] && vet_module "$prev" "$@"
+
+exit "$failed"

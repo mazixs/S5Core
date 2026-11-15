@@ -131,6 +131,15 @@ The rule for new timing tests: `net.Pipe`, never a real socket. Pipe deadlines
 are built on `time.AfterFunc` and follow the bubble clock, while a kernel
 socket's timers know nothing about it.
 
+### Checks before a commit
+
+`scripts/hooks/pre-commit` is a fast hook: enable it once per clone with
+`git config core.hooksPath scripts/hooks`. For the Go files in the commit it
+runs `gofmt -s -l` and `go vet` on their packages, per module (`scripts/matrix`
+has its own). It is offline (modules must be cached) and changes nothing. Both
+tools read the working tree, so a file staged with `git add -p` is checked as it
+is on disk. The full gate that CI runs is `./scripts/pre-commit.sh`.
+
 ### Helper Scripts
 
 We provide practical helper scripts in the `scripts/` directory to help you test and manage the proxy:
