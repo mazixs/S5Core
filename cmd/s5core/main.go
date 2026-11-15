@@ -18,6 +18,7 @@ import (
 
 	"log/slog"
 
+	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -157,8 +158,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize OpenTelemetry Prometheus Exporter
-	telemetry, err := setupTelemetry()
+	// One registry for the Go/process collectors and the OTel exporter.
+	registry, err := newMetricsRegistry()
+	if err != nil {
+		slog.Error("Failed to initialize process metrics", "error", err)
+		os.Exit(1)
+	}
+	telemetry, err := setupTelemetry(registry)
 	if err != nil {
 		slog.Error("Failed to initialize telemetry", "error", err)
 		os.Exit(1)
@@ -183,7 +189,7 @@ func main() {
 	setupLogLevelToggle(ctx)
 
 	if cfg.MetricsPort != "" {
-		go startMetricsServer(ctx, cfg.MetricsBindAddr, cfg.MetricsPort)
+		go startMetricsServer(ctx, cfg.MetricsBindAddr, cfg.MetricsPort, registry)
 	}
 
 	startErr := srv.Start(ctx)
@@ -223,8 +229,8 @@ func applyEnvAliases(cfg *params) {
 	slog.Warn("PROXY_PASS is the client's name for this setting; the server's name is PROXY_PASSWORD. Using PROXY_PASS for now - rename it.")
 }
 
-func setupTelemetry() (*s5server.Telemetry, error) {
-	exporter, err := prometheus.New()
+func setupTelemetry(registry *promclient.Registry) (*s5server.Telemetry, error) {
+	exporter, err := prometheus.New(prometheus.WithRegisterer(registry))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize prometheus exporter: %w", err)
 	}
@@ -397,10 +403,12 @@ const metricsHeaderTimeout = 5 * time.Second
 // a global any package can add to: importing net/http/pprof anywhere in the
 // binary, directly or through a dependency, would have published the heap and
 // goroutine profiles on this port without a line of code saying so. A mux
-// declared here serves exactly the two paths declared here.
-func newMetricsServer(addr string) *http.Server {
+// declared here serves exactly the two paths declared here. For the same
+// reason /metrics serves the binary's own registry, not the global
+// prometheus.DefaultRegisterer.
+func newMetricsServer(addr string, registry *promclient.Registry) *http.Server {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", promhttp.InstrumentMetricHandler(registry, promhttp.HandlerFor(registry, promhttp.HandlerOpts{})))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
@@ -420,14 +428,14 @@ func newMetricsServer(addr string) *http.Server {
 	}
 }
 
-func startMetricsServer(ctx context.Context, listenIP, metricsPort string) {
+func startMetricsServer(ctx context.Context, listenIP, metricsPort string, registry *promclient.Registry) {
 	metricsAddr := net.JoinHostPort(listenIP, metricsPort)
 	if listenIP == "" {
 		metricsAddr = ":" + metricsPort
 	}
 	slog.Info("Start listening metrics/health service", "address", metricsAddr)
 
-	metricsServer := newMetricsServer(metricsAddr)
+	metricsServer := newMetricsServer(metricsAddr, registry)
 
 	go func() {
 		<-ctx.Done()
