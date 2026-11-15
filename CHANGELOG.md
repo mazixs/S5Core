@@ -105,6 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused early upgrade.
 - Write the `UDP Tunnel closed` line of the client after both relays of the
   association stopped, so that its counters include the last datagrams.
+- Write the start line of the client's latency diagnostics to `LOG_FILE`. It
+  could go to the console instead, because the recorder started before the
+  log moved to the file.
 - Time the native UDP probes of the client by the answer to its route echo. On
   a server that proves the route first, the search for the limit of a path of
   0.5 s or more could end at 1200 bytes, and the datagrams longer than that

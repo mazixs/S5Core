@@ -284,7 +284,6 @@ func main() {
 	if !prepare(&cfg) {
 		os.Exit(1)
 	}
-	defer diagnostics.StartLatency()()
 
 	ctx, stop := signal.NotifyContext(context.Background(), signals.Terminate...)
 	defer stop()
@@ -406,6 +405,10 @@ func run(ctx context.Context, cfg clientParams) error {
 	if logFile != nil {
 		defer func() { _ = logFile.Close() }()
 	}
+	// Started once the logger is final, so that its first line reaches LOG_FILE,
+	// and deferred after the file's Close, so that it stops first: stopping can
+	// log. The first server connection comes only after the listener below.
+	defer diagnostics.StartLatency()()
 	boot := logging.NewBoot()
 	started := time.Now()
 	account := cfg.MemberID

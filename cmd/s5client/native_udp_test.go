@@ -59,8 +59,13 @@ func (c *meteredConn) Read(b []byte) (int, error) {
 }
 
 func (c *meteredConn) Write(b []byte) (int, error) {
+	// Counted before the write: the peer can answer before this goroutine is
+	// scheduled again, and a late count would hide a datagram that crossed.
+	c.written.Add(int64(len(b)))
 	n, err := c.Conn.Write(b)
-	c.written.Add(int64(n))
+	if n < len(b) {
+		c.written.Add(int64(n - len(b)))
+	}
 	return n, err
 }
 
