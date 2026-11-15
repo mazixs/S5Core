@@ -207,12 +207,9 @@ func TestOldArchivesAgeOut(t *testing.T) {
 	}
 }
 
-// A new file is private; a file that already existed keeps the mode its
-// owner gave it.
+// A new file is private; on POSIX a file that already existed keeps the mode
+// its owner gave it.
 func TestOnlyANewFileGetsTheMode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no POSIX modes")
-	}
 	dir := t.TempDir()
 	fresh := filepath.Join(dir, "fresh.jsonl")
 	r, err := OpenRotating(FileOptions{Path: fresh})
@@ -220,8 +217,9 @@ func TestOnlyANewFileGetsTheMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = r.Close()
-	if info, _ := os.Stat(fresh); info.Mode().Perm() != 0o600 {
-		t.Errorf("new file %v", info.Mode().Perm())
+	requirePrivate(t, fresh)
+	if runtime.GOOS == "windows" {
+		return // an existing file is made private too, see TestALogLeftWithInheritedAccessIsMadePrivate
 	}
 	existing := filepath.Join(dir, "sessions.jsonl")
 	if err := os.WriteFile(existing, []byte("x\n"), 0o640); err != nil {
