@@ -216,9 +216,14 @@ func newTakenSpare(c net.Conn) *takenSpare {
 	return s
 }
 
+// tcpInfoOf is tcptune.InfoOf; a test stands in a kernel without the count.
+var tcpInfoOf = tcptune.InfoOf
+
+// bytesAcked is the count the kernel gives, and false where it gives none: a
+// kernel too old to count reports a zero, which proves nothing about the peer.
 func bytesAcked(c net.Conn) (uint64, bool) {
-	info, ok := tcptune.InfoOf(c)
-	return info.BytesAcked, ok
+	info, ok := tcpInfoOf(c)
+	return info.BytesAcked, ok && info.BytesAckedKnown
 }
 
 func (s *takenSpare) NetConn() net.Conn { return s.Conn }
@@ -235,7 +240,7 @@ func (s *takenSpare) Close() error {
 }
 
 // sentNothing says the peer acknowledged nothing since the spare was taken.
-// Where the kernel does not say (not Linux, no socket), it is false.
+// Where the kernel does not say (not Linux, no socket, no count), it is false.
 func (s *takenSpare) sentNothing() bool {
 	if s == nil {
 		return false
