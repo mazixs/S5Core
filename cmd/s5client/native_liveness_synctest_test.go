@@ -80,8 +80,18 @@ type memPath struct {
 	ptb     bool
 	tooBig  atomic.Bool
 	refused atomic.Int64
-	// delay holds back what reaches the client, every packet by as long.
+	// delay holds back what reaches the client, every packet by as long, and
+	// lag by as much again while it is set.
 	delay time.Duration
+	lag   atomic.Int64
+	// proveRoute has the server prove the route first, as pkg/nativeudp does:
+	// the first ordinary probe gets a challenge, and nothing is answered
+	// until its echo comes. That server has the search: with sizes.
+	proveRoute bool
+	challenged bool
+	proven     bool
+	// seen gets every probe the server opens, before it answers.
+	seen func(nativeudp.Probe)
 }
 
 func (p *memPath) Write(b []byte) (int, error) {
@@ -105,6 +115,12 @@ func (p *memPath) Write(b []byte) (int, error) {
 		switch pk.Kind {
 		case nativeudp.KindProbe:
 			probe, extended := nativeudp.ParseProbe(pk.Data)
+			if p.seen != nil {
+				p.seen(probe)
+			}
+			if p.proveRoute && !p.routeProven(probe, n) {
+				break
+			}
 			if probe.Size != 0 {
 				if p.sizes && (p.loseSized == nil || !p.loseSized(probe.Size)) {
 					p.reflect(probe, extended, n)
@@ -254,12 +270,33 @@ func (p *memPath) reflect(probe nativeudp.Probe, extended bool, n int) {
 	}
 }
 
+// routeProven reports whether the route of the probes is proven, and
+// challenges the first ordinary probe that comes by it.
+func (p *memPath) routeProven(probe nativeudp.Probe, n int) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case p.proven:
+	case probe.RouteEcho && p.challenged:
+		p.proven = true
+	case probe.Size == 0 && !p.challenged:
+		p.challenged = true
+		if err := p.server.SealWriteChallenge([16]byte{}, n, func(w []byte) error { p.down(bytes.Clone(w)); return nil }); err != nil {
+			panic(err)
+		}
+		return false
+	default:
+		return false
+	}
+	return true
+}
+
 func (p *memPath) down(wire []byte) {
 	if p.limit != 0 && len(wire) > p.limit {
 		return
 	}
-	if p.delay > 0 {
-		time.AfterFunc(p.delay, func() { p.toClient <- wire })
+	if d := p.delay + time.Duration(p.lag.Load()); d > 0 {
+		time.AfterFunc(d, func() { p.toClient <- wire })
 		return
 	}
 	p.toClient <- wire
@@ -633,6 +670,116 @@ func TestLostProbesAreNotALostPath(t *testing.T) {
 		}
 		if n := l.path.probes.Load(); n != 146 {
 			t.Fatalf("%d probes in a minute of traffic, want 146", n)
+		}
+	})
+}
+
+// srtt takes no round trip the latency recorder would not. On a path of
+// 300 ms, traffic at 10 s probes at once, and that probe is answered 1 s
+// late: the answer to the probe at 10.4 s comes while both are out, and the
+// late one comes at 11.3 s, while the probe at 11.2 s is out alone. Taken for
+// that one's, 100 ms would have cut 2 x srtt from 600 ms to 550 ms, the wait
+// set when the probe at 12 s is the second unanswered.
+func TestALateAnswerDoesNotShortenTheWaitForTheNext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) { p.delay = 300 * time.Millisecond })
+		l.at(10 * time.Second)
+		l.path.lag.Store(int64(time.Second))
+		l.client.used(l.client.clock(time.Now()))
+		l.at(10*time.Second + time.Millisecond)
+		l.path.lag.Store(0)
+		l.at(11550 * time.Millisecond)
+		l.path.dropDown.Store(true)
+		l.at(12*time.Second + time.Millisecond)
+		if got, want := l.client.deafAt.Load(), l.client.clock(l.start.Add(12600*time.Millisecond)); got != want {
+			t.Fatalf("overdue at %v, want 12.6s", time.Duration(got-1))
+		}
+	})
+}
+
+// srtt still follows a round trip that grows while the window stays open:
+// a lone answer that lengthens it is taken. Every tenth probe is lost, so an
+// answer comes while two are out every 4 s; the path goes from 100 to 300 ms
+// at 20 s, and at 40 s the wait set when the second probe is unanswered is
+// no shorter than the round trip. With the window closed to srtt it stayed
+// at 100 ms, and the wait at 250.
+func TestSrttFollowsALongerRoundTripWhileTheWindowIsOpen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLivenessPath(t, func(i int64) bool { return i%10 == 0 }, 0, nil, nil, func(p *memPath) {
+			p.delay = 100 * time.Millisecond
+		})
+		stop := make(chan struct{})
+		defer close(stop)
+		l.input(stop)
+		l.at(20 * time.Second)
+		l.path.lag.Store(int64(200 * time.Millisecond))
+		l.at(40 * time.Second)
+		l.path.dropDown.Store(true)
+		l.at(41100 * time.Millisecond)
+		if wait := l.waitAfter(40 * time.Second); wait < 300*time.Millisecond {
+			t.Fatalf("the second unanswered probe is overdue after %v on a path of 300 ms", wait)
+		}
+	})
+}
+
+// waitAfter is how long after it went out the second probe after from is
+// overdue: from is when the path stopped answering.
+func (l *liveness) waitAfter(from time.Duration) time.Duration {
+	l.t.Helper()
+	l.path.mu.Lock()
+	var after []time.Duration
+	for _, at := range slices.Concat(l.path.heard, l.path.bare) {
+		if at > from {
+			after = append(after, at)
+		}
+	}
+	l.path.mu.Unlock()
+	slices.Sort(after)
+	if len(after) < 2 {
+		l.t.Fatalf("probes after %v: %v", from, after)
+	}
+	return time.Duration(l.client.deafAt.Load() - l.client.clock(l.start.Add(after[1])))
+}
+
+// The client tells the answer to its echo by generation 0, so every other
+// probe of the path has a later one, from the first, which goes before any
+// answer says whether the server reads generations.
+func TestEveryProbeButTheEchoHasAGeneration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var probes []nativeudp.Probe
+		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) {
+			p.sizes, p.proveRoute, p.delay = true, true, 20*time.Millisecond
+			p.seen = func(probe nativeudp.Probe) {
+				mu.Lock()
+				defer mu.Unlock()
+				probes = append(probes, probe)
+			}
+		})
+		stop := make(chan struct{})
+		defer close(stop)
+		l.input(stop)
+		l.at(5 * time.Second)
+		mu.Lock()
+		defer mu.Unlock()
+		if len(probes) == 0 || probes[0].RouteEcho || probes[0].Size != 0 || probes[0].Generation == 0 {
+			t.Fatalf("the first probe was %+v", probes)
+		}
+		echoes := 0
+		for i, probe := range probes {
+			switch {
+			case probe.Size != 0:
+			case probe.RouteEcho:
+				echoes++
+				if probe.Generation != 0 {
+					t.Fatalf("the echo has generation %d", probe.Generation)
+				}
+			case probe.Generation == 0:
+				t.Fatalf("probe %d of the path has no generation: %+v", i, probe)
+			}
+		}
+		if echoes != 1 {
+			t.Fatalf("%d echoes", echoes)
 		}
 	})
 }

@@ -49,10 +49,10 @@ const (
 	// wait doubles up to 10 s.
 	nativeRetryFirst = time.Second
 	nativeRetryMax   = 10 * time.Second
-	// The latency recorder takes the round trip of a probe answered alone
-	// only this long after the last probe the count lost track of, at a loss
-	// or at an answer while several were out: until then a late answer to
-	// that one could pass for the answer to this one.
+	// A probe answered alone is recorded, and may shorten srtt, only this long
+	// after the last probe the count lost track of, at a loss or at an answer
+	// while several were out: until then a late answer to that one could pass
+	// for the answer to this one.
 	nativeStrayFor = 10 * time.Second
 )
 
@@ -216,6 +216,10 @@ type nativeClient struct {
 	limitACK          chan nativeudp.Answer
 	recoverySupported atomic.Bool
 	poked             chan struct{}
+	// echoAt is when run echoed a route challenge, 0 once the echo's answer
+	// came; echoRTT is the round trip of that answer, 0 once watch took it.
+	echoAt  int64
+	echoRTT atomic.Int64
 	// server is how the server answers probes (serverUnknown until it does).
 	server atomic.Int32
 	// bounded is set while datagrams longer than native carries are dropped
@@ -490,6 +494,7 @@ func (n *nativeClient) run(deliver func([]byte)) {
 			if answer.RouteChallenge {
 				// A challenge is not confirmation of the application route.
 				// Echo once immediately; ordinary probing cadence is unchanged.
+				n.echoAt = now
 				_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: answer.RouteToken})
 				continue
 			}
@@ -519,6 +524,13 @@ func (n *nativeClient) run(deliver func([]byte)) {
 				default:
 				}
 			}
+			if n.echoAt != 0 && answer.Generation == 0 {
+				// The echo goes with generation 0, every other probe with a
+				// later one, and the answer has the generation of its probe
+				// (docs/veil-spec.md, 10.6): this answer is the echo's.
+				n.echoRTT.Store(now - n.echoAt)
+				n.echoAt = 0
+			}
 			select {
 			case n.acked <- struct{}{}:
 			default:
@@ -545,7 +557,7 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 		retry      = nativeRetryFirst
 		verified   bool
 		reported   bool          // a path never heard was logged
-		srtt       time.Duration // of probes answered while alone, 0 before the first
+		srtt       time.Duration // see acked, 0 before the first round trip
 		strayUntil time.Time     // see nativeStrayFor
 		// The search for the limit of the path (docs/veil-spec.md, 10.7).
 		search             *nativeudp.Search
@@ -722,20 +734,28 @@ func (n *nativeClient) watch(done <-chan struct{}) {
 			return
 		case <-n.acked:
 			now := time.Now()
-			// Only the answer to a probe that went out alone says which probe
-			// it answers.
+			// The echo's answer is a round trip, and so is a lone probe's once
+			// no late answer to a probe the count dropped could pass for it,
+			// or when it is the first: the rounds of the search wait on it.
+			// Until then a lone answer may only lengthen srtt, since a late
+			// answer passes for a shorter round trip, never a longer one.
+			sample, lone := now.Sub(lastProbe), unanswered == 1
+			echo := false
+			if rtt := n.echoRTT.Swap(0); rtt != 0 {
+				sample, echo = time.Duration(rtt), true
+			}
 			switch {
-			case unanswered == 1:
-				sample := now.Sub(lastProbe)
+			case echo || (lone && (srtt == 0 || !now.Before(strayUntil))):
 				if srtt == 0 {
 					srtt = sample
 				} else {
 					srtt += (sample - srtt) / 8
 				}
-				if !now.Before(strayUntil) {
-					n.flow.NativeProbe(sample)
-				}
-			case unanswered > 1:
+				n.flow.NativeProbe(sample)
+			case lone && sample > srtt:
+				srtt += (sample - srtt) / 8
+			}
+			if unanswered > 1 {
 				strayUntil = lastProbe.Add(nativeStrayFor)
 			}
 			unanswered = 0
