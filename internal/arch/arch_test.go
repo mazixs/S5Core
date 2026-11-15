@@ -117,6 +117,18 @@ var rules = []rule{
 			module + "/internal/",
 			module + "/pkg/",
 		},
+		// internal/sockerr is the errno comparison Recoverable makes, done
+		// once for every platform, and depends on nothing of ours itself.
+		allowed: []string{module + "/internal/sockerr"},
+	},
+	{
+		pkg: module + "/internal/sockerr",
+		why: "the codec, the accept retry and the client compare socket " +
+			"errors through it, so it may depend on nothing of ours",
+		forbidden: []string{
+			module + "/internal/",
+			module + "/pkg/",
+		},
 	},
 	{
 		pkg: module + "/internal/udpbuf",

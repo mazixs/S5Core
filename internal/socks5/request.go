@@ -597,13 +597,13 @@ func (s *Server) timedByHistory(candidates []dialCandidate) []dialCandidate {
 }
 
 // dialFailureReply picks the reply code of a dial no address answered with a
-// connection.
+// connection. The errno decides where there is one: the Winsock message for
+// an unreachable network does not say "network is unreachable".
 func dialFailureReply(err error) uint8 {
-	msg := err.Error()
 	switch {
-	case strings.Contains(msg, "refused"):
+	case refused(err), strings.Contains(err.Error(), "refused"):
 		return connectionRefused
-	case strings.Contains(msg, "network is unreachable"):
+	case noRoute(err):
 		return networkUnreachable
 	}
 	return hostUnreachable

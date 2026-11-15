@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mazixs/S5Core/internal/relay"
+	"github.com/mazixs/S5Core/internal/sockerr"
 )
 
 // The outcome of a connection, a closed set: a journal and a metric label
@@ -399,7 +400,6 @@ func connResult(err error) (result, stage string) {
 
 // dialOutcome classifies the error of a failed dial attempt.
 func dialOutcome(err error) string {
-	var ne net.Error
 	switch {
 	case errors.Is(err, context.Canceled):
 		return DialCanceled
@@ -407,10 +407,10 @@ func dialOutcome(err error) string {
 		return DialRefused
 	case noRoute(err):
 		return DialNoRoute
-	case socketErrno(err, syscall.EHOSTUNREACH), socketErrno(err, syscall.EHOSTDOWN):
+	case sockerr.Is(err, syscall.EHOSTUNREACH), sockerr.Is(err, syscall.EHOSTDOWN):
 		return DialUnreachable
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded),
-		errors.As(err, &ne) && ne.Timeout():
+		sockerr.Timeout(err):
 		return DialTimeout
 	}
 	return DialUnreachable
@@ -418,7 +418,6 @@ func dialOutcome(err error) string {
 
 // relayClosedBy names who ended a relay from the first half to end.
 func relayClosedBy(r relay.Result, grace, canceled bool) string {
-	var ne net.Error
 	switch {
 	case grace, errors.Is(r.Err, ErrSessionNotAllowed):
 		return ClosedByAccount
@@ -428,7 +427,7 @@ func relayClosedBy(r relay.Result, grace, canceled bool) string {
 		return ClosedByClient
 	case r.Err == nil:
 		return ClosedByTarget
-	case errors.As(r.Err, &ne) && ne.Timeout():
+	case sockerr.Timeout(r.Err):
 		return ClosedByServerTimeout
 	}
 	return ClosedByReset

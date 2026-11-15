@@ -8,6 +8,8 @@ import (
 	"net"
 	"syscall"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/sockerr"
 )
 
 // The retry schedule. A descriptor shortage clears once the load drops, so
@@ -37,7 +39,9 @@ func Next(current time.Duration) time.Duration {
 // is (ENFILE), the kernel has no buffer space (ENOBUFS, ENOMEM), the client
 // disappeared between SYN and accept (ECONNABORTED), or the call was
 // interrupted (EINTR, EAGAIN). Returning from Accept on any of them takes the
-// whole port down and keeps it down long after the cause has passed.
+// whole port down and keeps it down long after the cause has passed. Windows
+// reports the shortages as WSAEMFILE and WSAENOBUFS; a client gone before
+// AcceptEx completes is retried by the runtime itself.
 //
 // A closed listener is the opposite and must not be retried: it never comes
 // back, and a retry loop over it spins.
@@ -46,7 +50,7 @@ func Recoverable(err error) bool {
 		return false
 	}
 	for _, e := range errnos {
-		if errors.Is(err, e) {
+		if sockerr.Is(err, e) {
 			return true
 		}
 	}
@@ -56,7 +60,7 @@ func Recoverable(err error) bool {
 	return errors.As(err, &ne) && ne.Timeout()
 }
 
-var errnos = []error{
+var errnos = []syscall.Errno{
 	syscall.EMFILE,
 	syscall.ENFILE,
 	syscall.ENOBUFS,

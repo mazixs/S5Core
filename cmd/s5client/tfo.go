@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/sockerr"
 	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/pkg/obfs"
 )
@@ -198,7 +199,7 @@ func (c *fastOpenConn) settle(reached bool) {
 }
 
 func neverConnected(err error) bool {
-	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.ENETUNREACH)
+	return sockerr.Is(err, syscall.ECONNREFUSED) || sockerr.Is(err, syscall.EHOSTUNREACH) || sockerr.Is(err, syscall.ENETUNREACH)
 }
 
 // unreachedError is a failure of a Fast Open connection before the server's
