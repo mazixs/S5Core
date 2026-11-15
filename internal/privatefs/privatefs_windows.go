@@ -2,6 +2,7 @@ package privatefs
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"math/rand/v2"
 	"os"
@@ -44,6 +45,72 @@ func TrustedOwner(sd *windows.SECURITY_DESCRIPTOR, owner *windows.SID) bool {
 		return true
 	}
 	return owner.IsWellKnown(windows.WinLocalSystemSid) || owner.IsWellKnown(windows.WinBuiltinAdministratorsSid)
+}
+
+// CheckDir returns an error unless path is a directory only the identities
+// FileDescriptor grants may reach: one of them owns it, and its DACL is
+// protected from inheritance and allows access to nobody else. A symbolic
+// link or a junction is refused, whatever it points to.
+func CheckDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	// Lstat reports a symbolic link and a junction as no directory.
+	if !info.IsDir() {
+		return &os.PathError{Op: "checkdir", Path: path, Err: syscall.ENOTDIR}
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err == nil {
+		var ours *windows.SECURITY_DESCRIPTOR
+		if ours, err = FileDescriptor(); err == nil {
+			err = onlyTrusted(sd, ours)
+		}
+	}
+	if err != nil {
+		return &os.PathError{Op: "checkdir", Path: path, Err: err}
+	}
+	return nil
+}
+
+// onlyTrusted checks sd against ours, the descriptor FileDescriptor gives:
+// an owner it trusts, a protected DACL, and allow entries for its identities
+// only. A deny entry takes access away and passes.
+func onlyTrusted(sd, ours *windows.SECURITY_DESCRIPTOR) error {
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+	if !TrustedOwner(ours, owner) {
+		return fmt.Errorf("owned by %s", owner)
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		return err
+	}
+	if control&windows.SE_DACL_PROTECTED == 0 {
+		return errors.New("the DACL inherits from the parent directory")
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil {
+		return errors.New("no DACL: everyone has access")
+	}
+	for i := range uint32(dacl.AceCount) {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			return err
+		}
+		switch ace.Header.AceType {
+		case windows.ACCESS_DENIED_ACE_TYPE:
+		case windows.ACCESS_ALLOWED_ACE_TYPE:
+			if sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); !TrustedOwner(ours, sid) {
+				return fmt.Errorf("grants access to %s", sid)
+			}
+		default:
+			return fmt.Errorf("an access entry of type %d", ace.Header.AceType)
+		}
+	}
+	return nil
 }
 
 func attributes(sd *windows.SECURITY_DESCRIPTOR) *windows.SecurityAttributes {
