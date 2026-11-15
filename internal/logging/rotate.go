@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/privatefs"
 )
 
 // FileOptions configure a RotatingFile.
@@ -38,7 +40,9 @@ type FileOptions struct {
 	// existing file keeps the mode its owner gave it. On Windows 0600 is a DACL
 	// of its own for the process user, SYSTEM and local Administrators, given
 	// to an existing file as well, and any other mode leaves the file the
-	// access it inherits from its directory.
+	// access it inherits from its directory. A directory the rotation creates
+	// is private whatever Mode is (privatefs.MkdirAll); an existing one is
+	// left as it is.
 	Mode os.FileMode
 }
 
@@ -65,7 +69,7 @@ func OpenRotating(opts FileOptions) (*RotatingFile, error) {
 		opts.Mode = 0o600
 	}
 	r := &RotatingFile{opts: opts}
-	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o700); err != nil {
+	if err := privatefs.MkdirAll(filepath.Dir(opts.Path)); err != nil {
 		return nil, fmt.Errorf("logging: %w", err)
 	}
 	info, err := os.Lstat(opts.Path)
@@ -273,7 +277,7 @@ func exists(path string) bool {
 // archive moves the live file aside and prunes the archive. Compression, when
 // asked for, runs in the background and prunes after itself.
 func (r *RotatingFile) archive(t time.Time) error {
-	if err := os.MkdirAll(r.archiveDir(), 0o700); err != nil {
+	if err := privatefs.MkdirAll(r.archiveDir()); err != nil {
 		return fmt.Errorf("logging: %w", err)
 	}
 	name := r.archiveName(t)

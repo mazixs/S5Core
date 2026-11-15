@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/mazixs/S5Core/internal/logging"
+	"github.com/mazixs/S5Core/internal/privatefs/privatefstest"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/pkg/obfs"
@@ -157,7 +158,7 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	requirePrivate(t, path)
+	privatefstest.RequirePrivate(t, path)
 
 	raw, _ := os.ReadFile(path)
 	for _, secret := range []string{testPSK, base64.StdEncoding.EncodeToString(key), hex.EncodeToString(key),

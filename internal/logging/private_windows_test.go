@@ -7,94 +7,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unsafe"
 
+	"github.com/mazixs/S5Core/internal/privatefs/privatefstest"
 	"golang.org/x/sys/windows"
 )
-
-// requirePrivate fails the test unless the DACL of path inherits nothing and
-// grants access to the process user, SYSTEM and local Administrators only.
-func requirePrivate(t *testing.T, path string) {
-	t.Helper()
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := filepath.Base(path)
-	control, _, err := sd.Control()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if control&windows.SE_DACL_PROTECTED == 0 {
-		t.Errorf("%s inherits access from its directory", name)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil || dacl == nil {
-		t.Fatalf("%s has no DACL: %v", name, err)
-	}
-	userGranted := false
-	for i := range uint32(dacl.AceCount) {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			t.Fatal(err)
-		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			t.Errorf("%s has an ACE of type %d", name, ace.Header.AceType)
-			continue
-		}
-		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		switch {
-		case sid.Equals(user.User.Sid):
-			userGranted = true
-		case sid.IsWellKnown(windows.WinLocalSystemSid), sid.IsWellKnown(windows.WinBuiltinAdministratorsSid):
-		default:
-			t.Errorf("%s grants access to %s", name, sid)
-		}
-	}
-	if !userGranted {
-		t.Errorf("%s grants nothing to the process user", name)
-	}
-}
-
-// setDACL replaces the DACL of path with sddl, %s standing for the process user.
-func setDACL(t *testing.T, path, sddl string) {
-	t.Helper()
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sd, err := windows.SecurityDescriptorFromString(strings.ReplaceAll(sddl, "%s", user.User.Sid.String()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func daclOf(t *testing.T, path string) string {
-	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sd.String()
-}
 
 // broadDir is a directory whose files inherit read access for every local
 // user, as a file an older version wrote there did.
 func broadDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	setDACL(t, dir, "D:P(A;OICI;FA;;;%s)(A;OICI;FR;;;BU)")
+	privatefstest.SetDACL(t, dir, "D:P(A;OICI;FA;;;%s)(A;OICI;FR;;;BU)")
 	return dir
 }
 
@@ -110,7 +33,7 @@ func TestALogLeftWithInheritedAccessIsMadePrivate(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := broadDir(t)
-			before := daclOf(t, dir)
+			before := privatefstest.DACL(t, dir)
 			opts.Path = filepath.Join(dir, "sessions.jsonl")
 			if err := os.WriteFile(opts.Path, []byte("old\n"), 0o600); err != nil {
 				t.Fatal(err)
@@ -127,7 +50,7 @@ func TestALogLeftWithInheritedAccessIsMadePrivate(t *testing.T) {
 			if _, err := r.Write([]byte("new\n")); err != nil {
 				t.Fatal(err)
 			}
-			requirePrivate(t, opts.Path)
+			privatefstest.RequirePrivate(t, opts.Path)
 			if err := r.Rotate(); err != nil {
 				t.Fatal(err)
 			}
@@ -141,7 +64,7 @@ func TestALogLeftWithInheritedAccessIsMadePrivate(t *testing.T) {
 			var held []string
 			for _, e := range entries {
 				path := filepath.Join(dir, e.Name())
-				requirePrivate(t, path)
+				privatefstest.RequirePrivate(t, path)
 				if !opts.Compress {
 					b, _ := os.ReadFile(path)
 					held = append(held, string(b))
@@ -157,7 +80,7 @@ func TestALogLeftWithInheritedAccessIsMadePrivate(t *testing.T) {
 			if all := strings.Join(held, ""); !opts.Compress && (!strings.Contains(all, "old\n") || !strings.Contains(all, "new\n")) {
 				t.Errorf("lines were lost: %q", held)
 			}
-			if after := daclOf(t, dir); after != before {
+			if after := privatefstest.DACL(t, dir); after != before {
 				t.Errorf("the directory changed: %s, was %s", after, before)
 			}
 		})
@@ -173,8 +96,8 @@ func TestALogThisAccountCannotMakePrivateIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	// OWNER RIGHTS takes the implicit WRITE_DAC of the owner away.
-	setDACL(t, path, "D:P(A;;FRFW;;;%s)(A;;FRFW;;;OW)")
-	before := daclOf(t, path)
+	privatefstest.SetDACL(t, path, "D:P(A;;FRFW;;;%s)(A;;FRFW;;;OW)")
+	before := privatefstest.DACL(t, path)
 	for _, opts := range []FileOptions{{Path: path}, {Path: path, RotateOnOpen: true}} {
 		r, err := OpenRotating(opts)
 		if err == nil {
@@ -188,38 +111,11 @@ func TestALogThisAccountCannotMakePrivateIsRefused(t *testing.T) {
 	if b, _ := os.ReadFile(path); string(b) != "theirs\n" {
 		t.Errorf("the file changed: %q", b)
 	}
-	if after := daclOf(t, path); after != before {
+	if after := privatefstest.DACL(t, path); after != before {
 		t.Errorf("the DACL changed: %s", after)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("the file was moved: %v", entries)
-	}
-}
-
-func TestOnlyTheGrantedIdentitiesMayOwnAPrivateLog(t *testing.T) {
-	sd, err := privateDescriptor()
-	if err != nil {
-		t.Fatal(err)
-	}
-	user, _, err := sd.Owner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for sid, want := range map[string]bool{
-		user.String():  true,
-		"S-1-5-18":     true,
-		"S-1-5-32-544": true,
-		"S-1-5-32-545": false,
-		"S-1-5-11":     false,
-		"S-1-1-0":      false,
-	} {
-		owner, err := windows.StringToSid(sid)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := privateOwner(sd, owner); got != want {
-			t.Errorf("owner %s: %v, want %v", sid, got, want)
-		}
 	}
 }
 
@@ -283,7 +179,7 @@ func TestAnotherModeKeepsTheInheritedAccess(t *testing.T) {
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := daclOf(t, path), daclOf(t, reference); got != want {
+	if got, want := privatefstest.DACL(t, path), privatefstest.DACL(t, reference); got != want {
 		t.Errorf("DACL %s, want the inherited %s", got, want)
 	}
 }

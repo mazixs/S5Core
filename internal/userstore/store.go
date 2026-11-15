@@ -18,6 +18,7 @@ import (
 	"github.com/mazixs/S5Core/internal/configfile"
 	"github.com/mazixs/S5Core/internal/identity"
 	"github.com/mazixs/S5Core/internal/passwordhash"
+	"github.com/mazixs/S5Core/internal/privatefs"
 )
 
 const maxUsersFileSize = 10 << 20 // 10 MiB
@@ -215,7 +216,8 @@ func (s *Store) Reload(path string) error {
 }
 
 // SaveToFile atomically writes the current state to a JSON file.
-// Uses write-to-temp + rename for crash safety.
+// Uses write-to-temp + rename for crash safety. The file it leaves is private
+// (privatefs.CreateTemp); a file the store only reads keeps its access.
 func (s *Store) SaveToFile(path string) error {
 	s.ioMu.Lock()
 	defer s.ioMu.Unlock()
@@ -277,7 +279,8 @@ func (s *Store) writeAccounts(path string, accounts []UserAccount) error {
 	}
 
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".users-*.json.tmp")
+	// The rename leaves the file the access of the temporary one.
+	tmp, err := privatefs.CreateTemp(dir, ".users-*.json.tmp")
 	if err != nil {
 		return fmt.Errorf("userstore: create temp: %w", err)
 	}

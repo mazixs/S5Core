@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/privatefs/privatefstest"
 )
 
 func TestArchiveFailureKeepsAcceptingLogRecords(t *testing.T) {
@@ -115,13 +117,13 @@ func TestTheFileRotatesBySizeAndKeepsABoundedArchive(t *testing.T) {
 		if err != nil || string(body) != line {
 			t.Errorf("%s holds %q (%v)", name, body, err)
 		}
-		requirePrivate(t, filepath.Join(dir, name))
+		privatefstest.RequirePrivate(t, filepath.Join(dir, name))
 	}
 	live, _ := os.ReadFile(path)
 	if string(live) != line {
 		t.Errorf("live file %q", live)
 	}
-	requirePrivate(t, path)
+	privatefstest.RequirePrivate(t, path)
 }
 
 // Each run starts a file of its own: what the last run left goes to the
@@ -217,7 +219,7 @@ func TestOnlyANewFileGetsTheMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = r.Close()
-	requirePrivate(t, fresh)
+	privatefstest.RequirePrivate(t, fresh)
 	if runtime.GOOS == "windows" {
 		return // an existing file is made private too, see TestALogLeftWithInheritedAccessIsMadePrivate
 	}
@@ -235,6 +237,35 @@ func TestOnlyANewFileGetsTheMode(t *testing.T) {
 	_ = r.Close()
 	if info, _ := os.Stat(existing); info.Mode().Perm() != 0o640 {
 		t.Errorf("existing file %v", info.Mode().Perm())
+	}
+}
+
+// The directories the rotation creates, for the file and for the archive, are
+// private whatever Mode is.
+func TestTheDirectoriesTheRotationCreatesArePrivate(t *testing.T) {
+	for _, mode := range []os.FileMode{0, 0o644} {
+		base := t.TempDir()
+		logs := filepath.Join(base, "logs")
+		r, err := OpenRotating(FileOptions{
+			Path:       filepath.Join(logs, "client", "s5client.log"),
+			ArchiveDir: filepath.Join(logs, "archive"),
+			Mode:       mode,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Write([]byte("one\n")); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Rotate(); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for _, dir := range []string{logs, filepath.Join(logs, "client"), filepath.Join(logs, "archive")} {
+			privatefstest.RequirePrivate(t, dir)
+		}
 	}
 }
 
@@ -337,8 +368,8 @@ func TestReopenFollowsAnOutsideRotation(t *testing.T) {
 	if b, _ := os.ReadFile(path + ".1"); string(b) != "one\n" {
 		t.Errorf("rotated file %q", b)
 	}
-	requirePrivate(t, path)
-	requirePrivate(t, path+".1")
+	privatefstest.RequirePrivate(t, path)
+	privatefstest.RequirePrivate(t, path+".1")
 }
 
 // A .gz.tmp a crash left behind is truncated, not appended to, and the
@@ -366,7 +397,7 @@ func TestCompressionOverwritesALeftoverTemporaryFile(t *testing.T) {
 	if body, err := io.ReadAll(zr); err != nil || string(body) != "rotated\n" {
 		t.Errorf("archive holds %q (%v)", body, err)
 	}
-	requirePrivate(t, src+".gz")
+	privatefstest.RequirePrivate(t, src+".gz")
 	if _, err := os.Lstat(src + ".gz.tmp"); !os.IsNotExist(err) {
 		t.Errorf("the temporary file stayed: %v", err)
 	}

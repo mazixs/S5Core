@@ -131,6 +131,15 @@ var rules = []rule{
 		},
 	},
 	{
+		pkg: module + "/internal/privatefs",
+		why: "the logs and the account file are made private through it, " +
+			"so it may depend on nothing of ours",
+		forbidden: []string{
+			module + "/internal/",
+			module + "/pkg/",
+		},
+	},
+	{
 		pkg: module + "/internal/udpbuf",
 		why: "the codec, the native path and the client open UDP sockets " +
 			"through it, so it may depend on nothing of ours",
