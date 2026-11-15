@@ -125,6 +125,9 @@ type Answer struct {
 	RouteToken     [16]byte
 }
 
+// ParseAnswer reads the data of an answer to a probe: Size is the size it
+// answers, 0 for a probe of the path. extended is false for the empty answer
+// of a server that predates the search.
 func ParseAnswer(data []byte) (a Answer, extended bool) {
 	if len(data) < answerHead {
 		return a, false
@@ -153,16 +156,6 @@ func (s *Session) SealWriteChallenge(token [16]byte, wire int, write func([]byte
 	head[16] = 1
 	copy(head[17:], token[:])
 	return s.sealWrite(KindProbeAck, head[:], 0, min(32, wire-s.overhead()-len(head)), write)
-}
-
-// AnswerSize reads the data of an answer to a probe: the size it answers, 0
-// for a probe of the path. extended is false for the empty answer of a
-// server that predates the search.
-func AnswerSize(data []byte) (size int, extended bool) {
-	if len(data) < answerHead {
-		return 0, false
-	}
-	return int(binary.BigEndian.Uint16(data)), true
 }
 
 func (s *Session) sealWrite(kind byte, data []byte, fill, space int, write func([]byte) error) error {

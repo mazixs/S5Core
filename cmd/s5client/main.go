@@ -23,6 +23,7 @@ import (
 	"github.com/mazixs/S5Core/internal/diagnostics"
 	"github.com/mazixs/S5Core/internal/logging"
 	"github.com/mazixs/S5Core/internal/signals"
+	"github.com/mazixs/S5Core/internal/sockerr"
 	"github.com/mazixs/S5Core/internal/socks5"
 	"github.com/mazixs/S5Core/internal/tcptune"
 	"github.com/mazixs/S5Core/internal/udpbuf"
@@ -897,8 +898,7 @@ func isTimeout(err error) bool {
 	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
+	return sockerr.Timeout(err)
 }
 
 // tunnelPhaseOf returns the phase an error was raised in, or an empty phase.

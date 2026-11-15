@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/sockerr"
 )
 
 // Each association emits at most one malformed-header warning. Every
@@ -109,11 +111,11 @@ func udpWriteFailure(err error) string {
 		return UDPDropTargetClosed
 	case errors.As(err, &ne) && ne.Timeout():
 		return UDPDropTargetTimeout
-	case socketErrno(err, syscall.EMSGSIZE):
+	case sockerr.Is(err, syscall.EMSGSIZE):
 		return UDPDropTargetTooLarge
-	case socketErrno(err, syscall.ENOBUFS):
+	case sockerr.Is(err, syscall.ENOBUFS):
 		return UDPDropTargetNoBuffer
-	case socketErrno(err, syscall.ENETUNREACH), socketErrno(err, syscall.EHOSTUNREACH), socketErrno(err, syscall.ECONNREFUSED):
+	case sockerr.Is(err, syscall.ENETUNREACH), sockerr.Is(err, syscall.EHOSTUNREACH), sockerr.Is(err, syscall.ECONNREFUSED):
 		return UDPDropTargetUnreachable
 	default:
 		return UDPDropTargetOther
