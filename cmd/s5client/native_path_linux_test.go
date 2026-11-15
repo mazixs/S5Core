@@ -298,11 +298,23 @@ func (r *nativeRig) streamByControl(within time.Duration) bool {
 // control connection, or the time runs out.
 func (r *nativeRig) streamNative(within time.Duration) bool {
 	r.t.Helper()
+	const window = 500 * time.Millisecond
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
 		rd := r.control.read.Load()
-		first := r.await("state", 500*time.Millisecond)
-		if first && r.await("state", 500*time.Millisecond) && r.control.read.Load() == rd {
+		observedAt := time.Now()
+		received := 0
+		steady := true
+		// Datagrams already buffered from the TCP path return at once and prove
+		// nothing: the stream must keep arriving through a whole window.
+		for time.Since(observedAt) < window {
+			if !r.await("state", min(window, time.Until(deadline))) || r.control.read.Load() != rd {
+				steady = false
+				break
+			}
+			received++
+		}
+		if steady && received >= 2 {
 			return true
 		}
 	}

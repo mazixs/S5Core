@@ -109,11 +109,11 @@ func udpWriteFailure(err error) string {
 		return UDPDropTargetClosed
 	case errors.As(err, &ne) && ne.Timeout():
 		return UDPDropTargetTimeout
-	case errors.Is(err, syscall.EMSGSIZE):
+	case socketErrno(err, syscall.EMSGSIZE):
 		return UDPDropTargetTooLarge
-	case errors.Is(err, syscall.ENOBUFS):
+	case socketErrno(err, syscall.ENOBUFS):
 		return UDPDropTargetNoBuffer
-	case errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH), errors.Is(err, syscall.ECONNREFUSED):
+	case socketErrno(err, syscall.ENETUNREACH), socketErrno(err, syscall.EHOSTUNREACH), socketErrno(err, syscall.ECONNREFUSED):
 		return UDPDropTargetUnreachable
 	default:
 		return UDPDropTargetOther

@@ -61,9 +61,11 @@ func streamPaths(t *testing.T, idle time.Duration) map[string]string {
 	done := make(chan error, 1)
 	go func() { done <- srv.Start(ctx) }()
 	t.Cleanup(func() { cancel(); srv.Stop(); <-done })
-	for _, port := range []string{cfg.Port, cfg.ObfsPort} {
+	// Every transport used below must be listening before a client starts.
+	// The server opens WSS after obfs, so obfs readiness is not WSS readiness.
+	for _, address := range []string{"127.0.0.1:" + cfg.Port, "127.0.0.1:" + cfg.ObfsPort, cfg.WSAddr} {
 		for i := 0; i < 200; i++ {
-			c, e := net.DialTimeout("tcp", "127.0.0.1:"+port, 20*time.Millisecond)
+			c, e := net.DialTimeout("tcp", address, 20*time.Millisecond)
 			if e == nil {
 				c.Close()
 				break

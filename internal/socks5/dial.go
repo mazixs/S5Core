@@ -437,21 +437,21 @@ func checkedDial(ctx context.Context, dial func(context.Context, string, string)
 // refused reports a connection refused: an RST, or an ICMP port unreachable,
 // in answer to the SYN. Like noRoute, it reads the text as well.
 func refused(err error) bool {
-	return errors.Is(err, syscall.ECONNREFUSED) || strings.Contains(err.Error(), "connection refused")
+	return socketErrno(err, syscall.ECONNREFUSED) || strings.Contains(err.Error(), "connection refused")
 }
 
 // noRoute reports a local "no route for this family" failure, the one IPv6
 // gives on a host without IPv6. The text match covers Dial hooks that return
 // their own errors; handleConnect maps replies by the same text.
 func noRoute(err error) bool {
-	return errors.Is(err, syscall.ENETUNREACH) || strings.Contains(err.Error(), "network is unreachable")
+	return socketErrno(err, syscall.ENETUNREACH) || strings.Contains(err.Error(), "network is unreachable")
 }
 
 // stayedLocal reports a failure that sent nothing into the network: no route
 // for the family, or no such family on this host. Another address's network
 // failure takes precedence over it when naming the final result.
 func stayedLocal(err error) bool {
-	return noRoute(err) || errors.Is(err, syscall.EAFNOSUPPORT)
+	return noRoute(err) || socketErrno(err, syscall.EAFNOSUPPORT)
 }
 
 // dialBackupFloor is the earliest a history-timed first backup may open. It is
