@@ -158,10 +158,14 @@ func TestAppendRecordDoesNotAllocate(t *testing.T) {
 		{flow: testFlow, kind: kindStage, what: stageRead, flags: flagPeriodic},
 		{flow: testFlow, kind: kindSocket, what: sampleTick, payload: &tcpSample{available: true, counters: tcptune.Counters{Has: 1<<21 - 1}}},
 		{flow: testFlow, kind: kindQueue, payload: &QueueState{Frames: 1024, Writing: true, WriteElapsed: time.Second}},
+		{flow: testFlow, kind: kindStage, what: stageSetup, flags: flagSpare | flagDeferred},
+		{flow: testFlow, kind: kindNativePath, what: pathVerified, payload: &pathAddrs{local: "127.0.0.1:50000", remote: "127.0.0.2:4000"}},
+		{flow: testFlow, kind: kindNativePath, what: pathLost, n: 3},
+		{flow: testFlow, kind: kindNativeProbe, dur: int64(time.Millisecond)},
 	}
 	for i := range recs {
 		if n := testing.AllocsPerRun(100, func() { buf = appendRecord(buf[:0], &recs[i]) }); n != 0 {
-			t.Errorf("%s: %v allocations", kindNames[recs[i].kind], n)
+			t.Errorf("%s %d: %v allocations", kindNames[recs[i].kind], recs[i].what, n)
 		}
 	}
 }

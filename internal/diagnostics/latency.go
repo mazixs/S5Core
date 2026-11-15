@@ -61,6 +61,9 @@ type recorder struct {
 	taken     int
 	flows     uint32 // the last flow ID given
 	selection selection
+	// claims are the sockets whose native path was lost since the last tick
+	// (Flow.NativeLost), each an incident to start.
+	claims []*socket
 
 	// The worker's.
 	sampler    sampler

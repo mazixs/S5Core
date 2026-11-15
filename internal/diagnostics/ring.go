@@ -23,26 +23,38 @@ const (
 type kind uint8
 
 const (
-	kindStage     kind = iota + 1 // one read or write of a sampled socket
-	kindSocket                    // the kernel's counters of a sampled socket
-	kindFlowOpen                  // a socket is sampled from now on
-	kindFlowClose                 // a sampled socket was closed
-	kindRuntime                   // the Go runtime's metrics
-	kindSpike                     // the detector started an incident
-	kindQueue                     // the queue in front of a selected socket
+	kindStage       kind = iota + 1 // one read or write of a sampled socket, or the setup of its tunnel
+	kindSocket                      // the kernel's counters of a sampled socket
+	kindFlowOpen                    // a socket is sampled from now on
+	kindFlowClose                   // a sampled socket was closed
+	kindRuntime                     // the Go runtime's metrics
+	kindSpike                       // the detector or a lost native path started an incident
+	kindQueue                       // the queue in front of a selected socket
+	kindNativePath                  // the native UDP path beside a selected socket changed
+	kindNativeProbe                 // a probe of that path answered
 )
 
 // The what of a stage record.
 const (
 	stageRead uint8 = iota + 1
 	stageWrite
+	stageSetup // the setup of the tunnel on the socket (Flow.TunnelSetup)
 )
 
 // The flags of a stage record.
 const (
 	flagPeriodic uint8 = 1 << iota // the call was one of every transportSampleEvery
 	flagSlow                       // a write that took slowWrite or longer
-	flagError                      // the call returned an error
+	flagError                      // the call, or the setup, failed
+	flagSpare                      // a setup on a spare transport
+	flagDeferred                   // a setup that left the greeting's answer to its caller
+)
+
+// The what of a native path record.
+const (
+	pathVerified uint8 = iota + 1
+	pathLost
+	pathRestored
 )
 
 // The what of a socket record.
@@ -54,8 +66,9 @@ const (
 
 // The what of a spike record.
 const (
-	spikeRTT uint8 = iota + 1 // the round trip time stayed far above its floor
-	spikeRTO                  // the retransmit timer fired
+	spikeRTT        uint8 = iota + 1 // the round trip time stayed far above its floor
+	spikeRTO                         // the retransmit timer fired
+	spikeNativeLost                  // the native UDP path beside the socket was lost
 )
 
 // record is one entry of the ring: 64 bytes on 64-bit platforms. What is the
@@ -65,16 +78,22 @@ type record struct {
 	seq  uint64
 	mono int64 // nanoseconds since the recorder started, by the monotonic clock
 	wall int64 // Unix nanoseconds: the clock of a router without RTC jumps at NTP
-	dur  int64 // stage: how long the call took, in nanoseconds
-	// payload is *tcpSample, *runtimeSample, *flowTotals, *QueueState or,
-	// for a spike, the incident ID; nil for a stage and a flow_open.
+	// dur, in nanoseconds: how long a stage's call or setup took, a native
+	// probe's round trip.
+	dur int64
+	// payload is *tcpSample, *runtimeSample, *flowTotals, *QueueState,
+	// *pathAddrs for a verified native path or, for a spike, the incident ID;
+	// nil otherwise.
 	payload any
 	flow    *flowInfo // nil for the process
-	n       uint32    // stage: bytes
+	n       uint32    // stage: bytes; a lost native path: the probes unanswered
 	kind    kind
 	what    uint8
 	flags   uint8
 }
+
+// pathAddrs are the addresses of the client's UDP socket of a native path.
+type pathAddrs struct{ local, remote string }
 
 // flowInfo is what stays the same for a sampled socket.
 type flowInfo struct {

@@ -21,6 +21,9 @@ type sampler struct {
 	metrics []metrics.Sample // runtimeScalars, then runtimeHistograms
 	sockets []*socket
 	queues  []*watchedQueue // of each of sockets, nil where none is watched
+	// claims are the recorder's, taken at the tick; the two slices take
+	// turns.
+	claims []*socket
 }
 
 func newSampler() sampler {
@@ -63,9 +66,10 @@ type spike struct {
 }
 
 // tick samples the runtime and every sampled socket, and the queue in front
-// of a socket right after it. It returns the first spike the detector saw,
-// and how many more it saw in the same tick. A socket closed under its
-// wrapper is evicted here.
+// of a socket right after it. It returns the first spike of the tick, and
+// how many more there were: the losses of native paths claimed since the
+// tick before come first, then what the detector saw. A socket closed under
+// its wrapper is evicted here.
 func (r *recorder) tick(now time.Time) (first spike, more int) {
 	r.push(record{kind: kindRuntime, payload: r.sampler.readRuntime()})
 	r.mu.Lock()
@@ -73,7 +77,23 @@ func (r *recorder) tick(now time.Time) (first spike, more int) {
 		r.sampler.sockets = append(r.sampler.sockets, s)
 		r.sampler.queues = append(r.sampler.queues, s.queue)
 	}
+	r.claims, r.sampler.claims = r.sampler.claims, r.claims
 	r.mu.Unlock()
+	note := func(s *socket, reason uint8) {
+		if first.reason == 0 {
+			first = spike{flow: s.flow, reason: reason}
+		} else {
+			more++
+		}
+	}
+	// A claim stands whether or not its socket is still sampled.
+	for _, s := range r.sampler.claims {
+		if s.detector.claim(now) {
+			note(s, spikeNativeLost)
+		}
+	}
+	clear(r.sampler.claims)
+	r.sampler.claims = r.sampler.claims[:0]
 	for i, s := range r.sampler.sockets {
 		c, err := countersOf(s.conn)
 		if errors.Is(err, net.ErrClosed) {
@@ -90,12 +110,8 @@ func (r *recorder) tick(now time.Time) (first spike, more int) {
 		if err != nil || s.outer != nil {
 			continue
 		}
-		switch reason := s.detector.observe(now, &c); {
-		case reason == 0:
-		case first.reason == 0:
-			first = spike{flow: s.flow, reason: reason}
-		default:
-			more++
+		if reason := s.detector.observe(now, &c); reason != 0 {
+			note(s, reason)
 		}
 	}
 	clear(r.sampler.sockets)

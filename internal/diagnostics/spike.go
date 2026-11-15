@@ -45,7 +45,7 @@ func (d *spikeDetector) observe(now time.Time, c *tcptune.Counters) uint8 {
 	rto := c.Known(tcptune.CounterRetransmits) && c.Retransmits > 0 ||
 		c.Known(tcptune.CounterTimeoutEpisodes) && d.seen && c.TimeoutEpisodes > d.timeouts
 	d.seen, d.activity, d.timeouts = true, activity, c.TimeoutEpisodes
-	cooling := !d.last.IsZero() && now.Sub(d.last) < spikeCooldown
+	cooling := d.cooling(now)
 	if rto && !cooling {
 		d.last, d.streak = now, 0
 		return spikeRTO
@@ -69,4 +69,18 @@ func (d *spikeDetector) observe(now time.Time, c *tcptune.Counters) uint8 {
 		return spikeRTT
 	}
 	return 0
+}
+
+func (d *spikeDetector) cooling(now time.Time) bool {
+	return !d.last.IsZero() && now.Sub(d.last) < spikeCooldown
+}
+
+// claim takes a spike the socket's owner reported, unless the socket is
+// cooling down from one.
+func (d *spikeDetector) claim(now time.Time) bool {
+	if d.cooling(now) {
+		return false
+	}
+	d.last, d.streak = now, 0
+	return true
 }

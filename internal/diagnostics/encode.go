@@ -12,10 +12,12 @@ import (
 
 // The names records go by in events.jsonl.
 var (
-	kindNames   = [...]string{kindStage: "stage", kindSocket: "socket", kindFlowOpen: "flow_open", kindFlowClose: "flow_close", kindRuntime: "runtime", kindSpike: "spike", kindQueue: "queue"}
-	stageNames  = [...]string{stageRead: "transport_read", stageWrite: "transport_write"}
+	kindNames = [...]string{kindStage: "stage", kindSocket: "socket", kindFlowOpen: "flow_open", kindFlowClose: "flow_close", kindRuntime: "runtime",
+		kindSpike: "spike", kindQueue: "queue", kindNativePath: "native_path", kindNativeProbe: "native_probe"}
+	stageNames  = [...]string{stageRead: "transport_read", stageWrite: "transport_write", stageSetup: "tunnel_setup"}
 	sampleNames = [...]string{sampleTick: "periodic", sampleOpen: "open", sampleClose: "close"}
-	spikeNames  = [...]string{spikeRTT: "rtt_excess", spikeRTO: "retransmit_timeout"}
+	spikeNames  = [...]string{spikeRTT: "rtt_excess", spikeRTO: "retransmit_timeout", spikeNativeLost: "native_path_lost"}
+	pathNames   = [...]string{pathVerified: "verified", pathLost: "lost", pathRestored: "restored"}
 )
 
 // tcpFields is the order and the name, unit included, of every counter an
@@ -74,6 +76,12 @@ func appendRecord(dst []byte, rec *record) []byte {
 		dst = appendString(append(dst, `"boundary":`...), stageNames[rec.what])
 		dst = append(dst, `,"duration_ns":`...)
 		dst = strconv.AppendInt(dst, rec.dur, 10)
+		if rec.what == stageSetup {
+			dst = appendBool(append(dst, `,"error":`...), rec.flags&flagError != 0)
+			dst = appendBool(append(dst, `,"spare":`...), rec.flags&flagSpare != 0)
+			dst = appendBool(append(dst, `,"deferred":`...), rec.flags&flagDeferred != 0)
+			break
+		}
 		dst = append(dst, `,"bytes":`...)
 		dst = strconv.AppendUint(dst, uint64(rec.n), 10)
 		dst = appendBool(append(dst, `,"error":`...), rec.flags&flagError != 0)
@@ -113,6 +121,20 @@ func appendRecord(dst []byte, rec *record) []byte {
 		dst = appendString(append(dst, `,"incident_id":`...), rec.payload.(string))
 	case kindQueue:
 		dst = appendQueue(dst, rec.payload.(*QueueState))
+	case kindNativePath:
+		dst = appendString(append(dst, `"state":`...), pathNames[rec.what])
+		switch rec.what {
+		case pathVerified:
+			a := rec.payload.(*pathAddrs)
+			dst = appendString(append(dst, `,"local":`...), a.local)
+			dst = appendString(append(dst, `,"remote":`...), a.remote)
+		case pathLost:
+			dst = append(dst, `,"unanswered_probes":`...)
+			dst = strconv.AppendUint(dst, uint64(rec.n), 10)
+		}
+	case kindNativeProbe:
+		dst = append(dst, `"rtt_ns":`...)
+		dst = strconv.AppendInt(dst, rec.dur, 10)
 	}
 	return append(dst, "}}\n"...)
 }

@@ -80,6 +80,8 @@ type memPath struct {
 	ptb     bool
 	tooBig  atomic.Bool
 	refused atomic.Int64
+	// delay holds back what reaches the client, every packet by as long.
+	delay time.Duration
 }
 
 func (p *memPath) Write(b []byte) (int, error) {
@@ -220,6 +222,7 @@ type failingProbeSocket struct{}
 
 func (*failingProbeSocket) Write([]byte) (int, error) { return 0, syscall.EMSGSIZE }
 func (*failingProbeSocket) Read([]byte) (int, error)  { return 0, net.ErrClosed }
+func (*failingProbeSocket) LocalAddr() net.Addr       { return memClient }
 func (*failingProbeSocket) RemoteAddr() net.Addr      { return memServer }
 
 func (p *memPath) answer(kind byte, d []byte) {
@@ -255,6 +258,10 @@ func (p *memPath) down(wire []byte) {
 	if p.limit != 0 && len(wire) > p.limit {
 		return
 	}
+	if p.delay > 0 {
+		time.AfterFunc(p.delay, func() { p.toClient <- wire })
+		return
+	}
 	p.toClient <- wire
 }
 
@@ -269,9 +276,14 @@ func (p *memPath) Read(b []byte) (int, error) {
 	}
 }
 
-// memServer is where the probes of a memPath go.
-var memServer = &net.UDPAddr{IP: net.IPv4(192, 0, 2, 1), Port: 4000}
+// memServer is where the probes of a memPath go, memClient where they come
+// from.
+var (
+	memServer = &net.UDPAddr{IP: net.IPv4(192, 0, 2, 1), Port: 4000}
+	memClient = &net.UDPAddr{IP: net.IPv4(192, 0, 2, 2), Port: 5000}
+)
 
+func (p *memPath) LocalAddr() net.Addr  { return memClient }
 func (p *memPath) RemoteAddr() net.Addr { return memServer }
 
 // logged counts the lines of logs that contain every one of parts.
@@ -326,6 +338,14 @@ func startLivenessOn(t *testing.T, lose func(int64) bool, jitter float64, signal
 // startLivenessPath lets setup change the path before the first probe.
 func startLivenessPath(t *testing.T, lose func(int64) bool, jitter float64, signal func(), onHeard func(uint64), setup func(*memPath)) *liveness {
 	t.Helper()
+	l := newLiveness(t, lose, jitter, signal, onHeard, setup)
+	go l.client.run(func([]byte) {})
+	return l
+}
+
+// newLiveness is startLivenessPath without the start of the client.
+func newLiveness(t *testing.T, lose func(int64) bool, jitter float64, signal func(), onHeard func(uint64), setup func(*memPath)) *liveness {
+	t.Helper()
 	psk, secret := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{9}, 40)
 	ck, err := veil.DeriveDatagram(psk, secret, veil.Context{}, veil.RoleClient)
 	if err != nil {
@@ -346,7 +366,6 @@ func startLivenessPath(t *testing.T, lose func(int64) bool, jitter float64, sign
 	l.client = newNativeClient(p, nativeudp.NewSession(ck), signal)
 	l.client.jitter = func() float64 { return jitter }
 	t.Cleanup(func() { close(p.closed); synctest.Wait() })
-	go l.client.run(func([]byte) {})
 	return l
 }
 
