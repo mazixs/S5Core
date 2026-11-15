@@ -29,9 +29,9 @@ func earlyStand(t *testing.T, earlyData string) (obfsPort, wsURL, echo string) {
 	echo = startEchoServer(t)
 	cfg := Config{
 		ListenIP:       "127.0.0.1",
-		Port:           reservePort(t),
+		Port:           anyPort,
 		ObfsEnabled:    true,
-		ObfsPort:       reservePort(t),
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 64,
 		ObfsMTU:        1400,
@@ -50,7 +50,7 @@ func earlyStand(t *testing.T, earlyData string) (obfsPort, wsURL, echo string) {
 	if srv.WSAddr() == "" {
 		t.Fatal("the WS listener did not start")
 	}
-	return cfg.ObfsPort, "wss://" + srv.WSAddr() + "/ws", echo
+	return obfsPortOf(t, srv), "wss://" + srv.WSAddr() + "/ws", echo
 }
 
 // adviceThrough runs CONNECT through transport and returns the advice the

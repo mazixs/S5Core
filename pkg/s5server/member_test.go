@@ -53,25 +53,6 @@ func memberUsersFile(t *testing.T, key []byte) string {
 	return path
 }
 
-// reservePort hands back a port nothing is listening on. The listener is
-// closed before the server binds it, which is the usual small race, and the
-// usual answer: the window is microseconds and the port is not reused.
-func reservePort(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, port, err := net.SplitHostPort(l.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := l.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return port
-}
-
 func randomMemberKey(t *testing.T) []byte {
 	t.Helper()
 	key := make([]byte, veil.MemberKeySize)
@@ -138,9 +119,9 @@ func memberStand(t *testing.T, requireKey bool) (*Server, string, []byte, string
 	echo := startEchoServer(t)
 	cfg := Config{
 		ListenIP:             "127.0.0.1",
-		Port:                 reservePort(t),
+		Port:                 anyPort,
 		ObfsEnabled:          true,
-		ObfsPort:             reservePort(t),
+		ObfsPort:             anyPort,
 		ObfsPSK:              testPSK,
 		ObfsMaxPadding:       256,
 		ObfsMTU:              1400,
@@ -149,7 +130,7 @@ func memberStand(t *testing.T, requireKey bool) (*Server, string, []byte, string
 		ObfsRequireMemberKey: requireKey,
 	}
 	srv := startServer(t, cfg)
-	return srv, cfg.ObfsPort, key, echo
+	return srv, obfsPortOf(t, srv), key, echo
 }
 
 func dialMember(t *testing.T, port string, scheme veil.Scheme) net.Conn {

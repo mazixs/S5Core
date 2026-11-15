@@ -60,14 +60,14 @@ func TestASilentConnectionCarriesTheStateOfItsSocketInTheJournal(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.jsonl")
 	cfg := Config{
 		ListenIP:       "127.0.0.1",
-		Port:           reservePort(t),
+		Port:           anyPort,
 		ReadTimeout:    300 * time.Millisecond,
 		SessionLog:     SessionLogAll,
 		SessionLogFile: path,
 	}
 	srv := startServer(t, cfg)
 
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+cfg.Port, time.Second)
+	conn, err := net.DialTimeout("tcp", plainAddr(srv), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

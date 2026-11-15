@@ -43,9 +43,9 @@ func TestCONNECTCountsPayloadOnceAndBillsBothDirections(t *testing.T) {
 		defer c.Close()
 		_, _ = io.Copy(c, c)
 	}()
-	cfg := Config{ListenIP: "127.0.0.1", Port: reservePort(t), Telemetry: tel, RequireAuth: true, UsersFile: path}
+	cfg := Config{ListenIP: "127.0.0.1", Port: anyPort, Telemetry: tel, RequireAuth: true, UsersFile: path}
 	s := startServer(t, cfg)
-	c, err := net.Dial("tcp", "127.0.0.1:"+cfg.Port)
+	c, err := net.Dial("tcp", plainAddr(s))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,9 +113,9 @@ func TestUDPFallbackCountsPayloadOnceAndSeparatesTCPFraming(t *testing.T) {
 			_, _ = echo.WriteToUDP(b[:n], peer)
 		}
 	}()
-	cfg := Config{ListenIP: "127.0.0.1", Port: reservePort(t), Telemetry: tel}
+	cfg := Config{ListenIP: "127.0.0.1", Port: anyPort, Telemetry: tel}
 	srv := startServer(t, cfg)
-	c, err := net.Dial("tcp", "127.0.0.1:"+cfg.Port)
+	c, err := net.Dial("tcp", plainAddr(srv))
 	if err != nil {
 		t.Fatal(err)
 	}

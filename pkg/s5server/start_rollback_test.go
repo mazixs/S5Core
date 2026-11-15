@@ -29,9 +29,8 @@ func TestAFailedStartLeavesNothingListening(t *testing.T) {
 		t.Fatalf("split: %v", err)
 	}
 
-	plainPort := reservePort(t)
 	srv, err := NewServer(Config{
-		Port:           plainPort,
+		Port:           anyPort,
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    false,
 		ObfsEnabled:    true,
@@ -52,6 +51,7 @@ func TestAFailedStartLeavesNothingListening(t *testing.T) {
 	if !strings.Contains(startErr.Error(), "obfs") {
 		t.Fatalf("Start failed with %v, want the obfuscated listener named", startErr)
 	}
+	plainPort := plainPortOf(t, srv)
 
 	// The plain port is not accepting: the rollback ran before Start
 	// returned, so there is no window where a caller that has already seen
@@ -77,14 +77,12 @@ func TestAFailedStartLeavesNothingListening(t *testing.T) {
 // one dead listener is a reason to stop the server, not a reason to keep two
 // of the three running with nobody expecting them to.
 func TestStartStopsEveryListenerWhenOneFails(t *testing.T) {
-	plainPort, obfsPort := reservePort(t), reservePort(t)
-
 	srv, err := NewServer(Config{
-		Port:           plainPort,
+		Port:           anyPort,
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    false,
 		ObfsEnabled:    true,
-		ObfsPort:       obfsPort,
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 32,
 		ObfsMTU:        1400,
@@ -100,6 +98,7 @@ func TestStartStopsEveryListenerWhenOneFails(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.Start(ctx) }()
 
+	plainPort, obfsPort := plainPortOf(t, srv), obfsPortOf(t, srv)
 	waitForPort(t, plainPort)
 	waitForPort(t, obfsPort)
 

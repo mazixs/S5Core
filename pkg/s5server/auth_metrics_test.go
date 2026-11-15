@@ -115,9 +115,8 @@ func TestArgon2idRunsOncePerPasswordNotPerConnection(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	port := reservePort(t)
-	startServer(t, Config{
-		Port:            port,
+	srv := startServer(t, Config{
+		Port:            anyPort,
 		ListenIP:        "127.0.0.1",
 		RequireAuth:     true,
 		UsersFile:       usersPath,
@@ -127,6 +126,7 @@ func TestArgon2idRunsOncePerPasswordNotPerConnection(t *testing.T) {
 		Fail2BanTime:    time.Minute,
 		Telemetry:       telemetry,
 	})
+	port := plainPortOf(t, srv)
 
 	login := func(pass string) error {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), 5*time.Second)

@@ -57,13 +57,12 @@ func TestAPrivateDestinationIsRefusedOnlyWhenTheServerSaysSo(t *testing.T) {
 		{"allowed", false, 0x00},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			port := reservedPort(t)
-			startServer(t, Config{
-				Port:            port,
+			srv := startServer(t, Config{
+				Port:            anyPort,
 				ListenIP:        "127.0.0.1",
 				DenyPrivateDest: tc.deny,
 			})
-			if got := connectNoAuth(t, "127.0.0.1:"+port, echo); got != tc.want {
+			if got := connectNoAuth(t, plainAddr(srv), echo); got != tc.want {
 				t.Fatalf("CONNECT to the loopback answered 0x%02x, want 0x%02x", got, tc.want)
 			}
 		})

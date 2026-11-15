@@ -78,15 +78,15 @@ func TestTheServerTunesTheSocketOfEveryUDPTunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 	echoAddr := startEchoServer(t)
-	obfsPort := reservePort(t)
 	srv := startServer(t, Config{
-		Port: reservePort(t), ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
-		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
+		Port: anyPort, ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
 		WSEnabled: true, WSAddr: "127.0.0.1:0", WSCertFile: certFile, WSKeyFile: keyFile, WSPath: "/ws",
 		// cmd/s5core always has a limit, and its wrapper sits between the
 		// tunnel and the socket.
 		MaxConnections: 16,
 	})
+	obfsPort := obfsPortOf(t, srv)
 	var wsAddr string
 	for range 300 {
 		if wsAddr = srv.WSAddr(); wsAddr != "" {
@@ -160,12 +160,12 @@ func TestTheServerTunesTheSocketOfEveryUDPTunnel(t *testing.T) {
 func TestTheSwitchLeavesTheKernelTimer(t *testing.T) {
 	var tuned tunedConns
 	tuned.hook(t)
-	obfsPort := reservePort(t)
-	startServer(t, Config{
-		Port: reservePort(t), ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
-		ObfsEnabled: true, ObfsPort: obfsPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
+	srv := startServer(t, Config{
+		Port: anyPort, ListenIP: "127.0.0.1", ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK, ObfsMaxPadding: 32, ObfsMTU: 1400,
 		UDPTunnelTCPTuningOff: true,
 	})
+	obfsPort := obfsPortOf(t, srv)
 	u, err := dialObfs(t, "127.0.0.1:"+obfsPort)
 	if err != nil {
 		t.Fatal(err)

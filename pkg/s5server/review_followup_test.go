@@ -36,7 +36,7 @@ func TestReplacingAnAccountRevokesItsExistingCONNECT(t *testing.T) {
 				}
 			} else {
 				var err error
-				c, err = net.Dial("tcp", "127.0.0.1:"+s.cfg.Port)
+				c, err = net.Dial("tcp", plainAddr(s))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -221,9 +221,9 @@ func TestReplacingAnAccountRevokesItsExistingUDP(t *testing.T) {
 	for _, command := range []byte{socks5.AssociateCommand, socks5.UDPTunnelCommand, socks5.UDPNativeCommand} {
 		t.Run(fmt.Sprintf("command_%02x", command), func(t *testing.T) {
 			key := randomMemberKey(t)
-			cfg := Config{Port: reservePort(t), ListenIP: "127.0.0.1", RequireAuth: true, UsersFile: memberUsersFile(t, key), ObfsEnabled: true, ObfsPort: reservePort(t), ObfsPSK: testPSK, ObfsMaxPadding: 256, ObfsMTU: 1400, UDPPort: reserveUDPPort(t), ObfsRequireMemberKey: true}
+			cfg := Config{Port: anyPort, ListenIP: "127.0.0.1", RequireAuth: true, UsersFile: memberUsersFile(t, key), ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK, ObfsMaxPadding: 256, ObfsMTU: 1400, UDPPort: reserveUDPPort(t), ObfsRequireMemberKey: true}
 			s := startServer(t, cfg)
-			c := dialMember(t, cfg.ObfsPort, &veil.Roster{Member: veil.Member{ID: "alice", Key: key}})
+			c := dialMember(t, obfsPortOf(t, s), &veil.Roster{Member: veil.Member{ID: "alice", Key: key}})
 			defer c.Close()
 			_, err := c.Write([]byte{5, 1, 0, 5, command, 0, 1, 0, 0, 0, 0, 0, 0})
 			if err != nil {

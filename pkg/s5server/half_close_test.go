@@ -69,13 +69,12 @@ func TestHalfCloseWorksTheSameOnBothTransports(t *testing.T) {
 		t.Fatalf("InitTelemetry: %v", err)
 	}
 
-	obfsPort := reservePort(t)
 	srv := startServer(t, Config{
-		Port:           reservePort(t),
+		Port:           anyPort,
 		ListenIP:       "127.0.0.1",
 		RequireAuth:    false,
 		ObfsEnabled:    true,
-		ObfsPort:       obfsPort,
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 32,
 		ObfsMTU:        1400,
@@ -85,6 +84,7 @@ func TestHalfCloseWorksTheSameOnBothTransports(t *testing.T) {
 		WSKeyFile:      keyFile,
 		Telemetry:      telemetry,
 	})
+	obfsPort := obfsPortOf(t, srv)
 
 	wsAddr := ""
 	deadline := time.Now().Add(3 * time.Second)

@@ -83,7 +83,7 @@ func serverWithWhitelist(t *testing.T, ips []string) *Server {
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.ListenIP = "127.0.0.1"
-	cfg.Port = reservePort(t)
+	cfg.Port = anyPort
 	cfg.RequireAuth = false
 	cfg.AllowedIPs = ips
 	srv := startServer(t, cfg)
@@ -93,7 +93,7 @@ func serverWithWhitelist(t *testing.T, ips []string) *Server {
 
 // plainAddr is where the plain SOCKS5 listener of a test server sits.
 func plainAddr(srv *Server) string {
-	return net.JoinHostPort(srv.cfg.ListenIP, srv.cfg.Port)
+	return boundAddr(srv, TransportPlain)
 }
 
 // The list that does parse is enforced, so the test above is refusing

@@ -48,9 +48,9 @@ func TestTheEndOfAUDPAssociationIsCounted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := reservePort(t)
-	startServer(t, Config{Port: port, ListenIP: "127.0.0.1", RequireAuth: false,
+	srv := startServer(t, Config{Port: anyPort, ListenIP: "127.0.0.1", RequireAuth: false,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, Telemetry: telemetry})
+	port := plainPortOf(t, srv)
 
 	ends := associationEnds(t, reader)
 	if want := len(socks5.AssociationKinds()) * len(socks5.AssociationEnds()); len(ends) != want {

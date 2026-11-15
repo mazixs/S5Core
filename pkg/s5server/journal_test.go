@@ -96,9 +96,9 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "logs", "sessions.jsonl")
 	cfg := Config{
 		ListenIP:       "127.0.0.1",
-		Port:           reservePort(t),
+		Port:           anyPort,
 		ObfsEnabled:    true,
-		ObfsPort:       reservePort(t),
+		ObfsPort:       anyPort,
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 256,
 		ObfsMTU:        1400,
@@ -108,6 +108,7 @@ func TestTheJournalWritesOneLinePerConnectionAndNoSecrets(t *testing.T) {
 		SessionLogFile: path,
 	}
 	srv := startServer(t, cfg)
+	cfg.Port, cfg.ObfsPort = plainPortOf(t, srv), obfsPortOf(t, srv)
 
 	var ids []string
 	member := dialMember(t, cfg.ObfsPort, &veil.Roster{Member: veil.Member{ID: "alice", Key: key}})
@@ -275,7 +276,7 @@ func TestAJournalThatCannotBeOpenedStopsTheStart(t *testing.T) {
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	srv, err := NewServer(Config{Port: reservePort(t), ListenIP: "127.0.0.1",
+	srv, err := NewServer(Config{Port: anyPort, ListenIP: "127.0.0.1",
 		SessionLog: SessionLogAll, SessionLogFile: filepath.Join(blocker, "sessions.jsonl"),
 		Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
@@ -342,8 +343,8 @@ func TestTheEndOfAConnectionIsCountedWithClosedLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	echo := startEchoServer(t)
-	port := reservePort(t)
-	srv := startServer(t, Config{Port: port, ListenIP: "127.0.0.1", Telemetry: telemetry})
+	srv := startServer(t, Config{Port: anyPort, ListenIP: "127.0.0.1", Telemetry: telemetry})
+	port := plainPortOf(t, srv)
 
 	ended := endedSeries(t, reader, "s5core_connections_ended_total")
 	if want := 3 * len(socks5.Kinds()) * len(socks5.Results()); len(ended) != want {
