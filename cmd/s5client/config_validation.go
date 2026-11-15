@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -19,6 +20,9 @@ func validateClientWireConfig(cfg clientParams) error {
 	}
 	if len(cfg.ProxyUser) > 255 || len(cfg.ProxyPass) > 255 {
 		return errors.New("PROXY_USER and PROXY_PASS must not exceed 255 bytes")
+	}
+	if cfg.UDPRouteCandidates < 0 || cfg.UDPRouteCandidates > maxRouteCandidates {
+		return fmt.Errorf("UDP_NATIVE_ROUTE_CANDIDATES must be between 0 and %d", maxRouteCandidates)
 	}
 	if cfg.WSUrl != "" {
 		u, err := url.Parse(cfg.WSUrl)

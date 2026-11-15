@@ -608,11 +608,11 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 		if port := binary.BigEndian.Uint16(serverReply[len(serverReply)-2:]); port == 0 {
 			// The server knows 0x84 and has no native path to offer.
 			rememberNoNative(cfg, "no native port")
-		} else if n, c, err := dialNative(obfsConn, port); err != nil {
+		} else if n, err := dialNative(obfsConn, port, cfg.UDPRouteCandidates); err != nil {
 			slog.Warn("Native UDP unavailable; association using 0x83", "error", err)
 		} else {
 			native = n
-			defer func() { _ = c.Close() }()
+			defer native.close()
 		}
 	}
 	// From here the reader of the application sends by itself, and on a

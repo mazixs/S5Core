@@ -1185,6 +1185,103 @@ native-ассоциации больше нет: сессия закрыта и�
 источник выбирает ядро, и на узле с несколькими адресами `UDP_PORT` слушают
 на конкретном адресе (`PROXY_LISTEN_IP`).
 
+### 10.6.1 Поиск быстрого маршрута
+
+Провайдер может раскладывать потоки к одному серверу по маршрутам по хешу
+адресов и портов (ECMP), а порт источника native-сокета выбирает клиент. На
+рабочем пути наблюдались два маршрута около 57 и 86 мс, и какой из них
+достанется ассоциации, решал ее порт. Клиент один раз за ассоциацию пробует
+несколько новых портов и переходит на тот, чей маршрут заметно быстрее.
+Провод и сервер не меняются: поиск держится на проверке обратного пути из
+раздела 10.6.
+
+**Когда идет поиск.** Кандидат уходит, только если выполнено все сразу:
+
+- путь подтвержден, клиент слышит сервер, неотвеченных проб нет;
+- сервер проверяет обратный путь (присылал challenge) и ищет предел
+  (раздел 10.7), поиск предела закончен, раунда и неподтвержденного
+  объявления нет;
+- ассоциации не меньше 3 секунд, и она активна: датаграмма в любую сторону
+  за последние 2 секунды.
+
+Кандидат один за раз, не чаще раза в 1,2 с и не раньше чем через секунду
+после последнего challenge, который получил текущий сокет: сервер шлет
+один challenge в секунду на ассоциацию. Кандидатов не больше
+`UDP_NATIVE_ROUTE_CANDIDATES` (по умолчанию 3, `0` выключает поиск). Поиск
+кончается на первом переходе или когда кандидаты израсходованы; второго
+поиска в ассоциации нет. Короткие и молчащие ассоциации не ищут намеренно:
+большинство кончается раньше 3 секунд, а без трафика выигрывать нечего.
+
+**Замер.** Кандидат — новый подключенный сокет к той же точке с новым портом
+источника и теми же опциями, что у первого (буферы, DF). Он шлет одну
+обычную пробу пути с текущим пределом и поколением. Адреса кандидата сервер
+не знает и отвечает на нее challenge; время от пробы до challenge — RTT
+маршрута кандидата. Хватает одного замера: шум только удлиняет RTT, поэтому
+быстрым маршрут кандидата из-за шума не окажется.
+
+**Критерий.** Кандидат выигрывает, если его RTT короче наименьшего из
+последних 8 замеров RTT текущего маршрута хотя бы на 10 мс и хотя бы на 15 %
+этого замера. Замеры кандидата в RTT текущего маршрута не входят. Кандидат, чей
+challenge не пришел к сроку выигрыша, закрывается: echo он не шлет, и
+маршрут ответов не меняется.
+
+**Переход.** С выигрыша датаграммы приложения идут по `0x83`, а старый сокет
+больше ничего не шлет, ни данных, ни проб, и только читается. Сервер
+отбрасывает данные с адреса, который еще не подтвержден (раздел 10.6), и
+данные со старого адреса после подтверждения нового, поэтому на время
+перехода данные не идут по native ни с того, ни с другого сокета. Через один
+сглаженный RTT старого маршрута, когда его последние native-датаграммы уже
+дошли до сервера, клиент шлет с кандидата echo. С этого момента кандидат —
+сокет пути: на нем идут пробы и вся логика живости, сглаженный RTT и счет
+неотвеченных проб начинаются заново, а ответы на пробы старого маршрута,
+пришедшие на старый сокет, путь не подтверждают. Сервер на echo переводит
+ответы на новый адрес. Первый обычный ответ на новом сокете (на echo или на
+следующую пробу) показывает, что сервер переехал: датаграммы снова идут по
+native, уже с нового сокета, а старый сокет читается еще секунду, для
+датаграмм сервера в пути, и закрывается. Все время перехода датаграммы
+сервера принимаются с обоих сокетов, и приложение ничего не теряет и не
+получает дважды.
+
+**Потери.** Потерянный echo оставляет сервер на старом маршруте, а клиента —
+на новом сокете. Его следующую обычную пробу сервер в течение секунды после
+challenge не замечает, после — присылает новый challenge, и клиент сразу
+отвечает echo, как при переезде NAT (раздел 10.6). Потерянный ответ на echo
+заменяет ответ на следующую пробу. Назад на старый маршрут клиент не
+возвращается. Если новый маршрут не отвечает вовсе, путь теряется на новом
+сокете по обычному правилу (три пробы подряд), старый сокет закрывается
+тогда же, и ответы уходят на TCP по сигналу потери.
+
+**Предел после перехода.** У нового маршрута свой предел. С сервером,
+поддерживающим поколения (раздел 10.7.1), клиент сразу после перехода ищет
+предел заново с новым поколением и объявляет найденный, будь он ниже
+текущего или выше. До подтверждения сервером действует прежний предел. С
+сервером без поколений предел остается прежним.
+
+**Наблюдаемость.** Переход дает одну строку лога уровня Info
+`Native UDP moved to a faster route` с RTT маршрута до и после и номером
+кандидата, без адресов. В записи задержек (`S5_DIAGNOSTICS_DIR`) это запись
+`native_path` с состоянием `moved`. Строка закрытия ассоциации несет
+`native_route_candidates` (сколько кандидатов проверено) и
+`native_route_moved` (был ли переход).
+
+Ограничения:
+
+- поиск один на ассоциацию: маршрут, который стал медленнее позже, не
+  меняется, а ассоциация короче 3 секунд или без трафика не ищет вовсе;
+- если новый маршрут уже прежнего предела, датаграммы длиной между двумя
+  пределами теряются, пока идет поиск предела после перехода, 1–3 с;
+- отклоненный кандидат оставляет на сервере ожидающий token на 5 секунд и на
+  секунду блокирует другие challenge этой ассоциации: переезд NAT текущего
+  сокета в эту секунду подтверждается секундой позже;
+- кандидат на маршруте медленнее текущего может не получить challenge
+  вовсе: его проба приходит на сервер не самой новой и отбрасывается, но
+  такой кандидат и так не выиграл бы;
+- старый сокет после echo не отвечает на challenge и не шлет проб;
+- переход стоит датаграмм по `0x83` в течение RTT старого маршрута и RTT
+  нового, а при потерянном echo — до повторной проверки, до 2 с;
+- с сервером без проверки обратного пути или без поиска предела (2.3.0-rc1)
+  поиска нет.
+
 ### 10.7 Предел размера native
 
 Датаграмма native на проводе не длиннее 1400 байт (`MaxWire`), но путь бывает
@@ -1322,7 +1419,9 @@ PTB, который дошел, подключенный сокет клиент
 Ограничения:
 
 - поиска внутри ассоциации нет: сужение пути по ходу ассоциации не
-  обнаруживается, и датаграммы длиннее нового пути теряются до ее конца;
+  обнаруживается, и датаграммы длиннее нового пути теряются до ее конца.
+  Исключение — переход клиента на другой маршрут (раздел 10.6.1), после
+  которого предел ищется заново;
 - на пути 1500 предел случаен в 1392-1400 байт, то есть полезная нагрузка
   1366-1374 байта, а пакет QUIC к IPv4-адресу - 1356-1364;
 - ответ той же длины, что проба, - известная форма (отражение длины); проб
@@ -1395,6 +1494,7 @@ PTB, который дошел, подключенный сокет клиент
 | `OBFS_FORMAT` | клиента | нет, сервер принимает только текущий формат | `auto` и `v1` - текущий формат, `legacy` с 2.2 - ошибка старта ([field/migration.md](field/migration.md)) |
 | `UDP_PORT` | сервера | нет, порт клиент берет из `BND.PORT` ответа на `0x84` (10.6) | пусто: native-точки нет, `0x84` получает успех с портом 0; задан без obfs- или ws-слушателя - ошибка старта |
 | `UDP_NATIVE` | клиента | нет, узел без `UDP_PORT` ведет ассоциацию по `0x83` (10.6) | `false`: клиент сразу просит `0x83` |
+| `UDP_NATIVE_ROUTE_CANDIDATES` | клиента | нет, сервер поиска не замечает (10.6.1) | 3, `0` выключает поиск, не больше 8 |
 
 ## 13. Проверки, которыми держится формат
 
@@ -1418,6 +1518,7 @@ PTB, который дошел, подключенный сокет клиент
 | 9.1 | `pkg/obfs/demo_test.go` (`TestTheStealthChecklist`), `cmd/stealthcheck` |
 | 10 | `internal/socks5/udp_test.go`, `internal/socks5/deadline_test.go`, `cmd/udpprobe`, `scripts/udp_loss_matrix.sh` |
 | 10.6 | `pkg/nativeudp/nativeudp_test.go` (`TestFixedTagMatchesHMAC`, `TestLostOutOfOrderReplayAndForgery`, `TestTheWindowStaysTheSizeOfTheWindow`, `TestRecoversAfterHighRateOutage`, `TestAResyncRecoversFromMoreLostThanTheWindow`, `TestAResyncThroughTheHubKeepsItsIndexInStep`, `TestOnlyAHeardProbeReachesTheAssociation`, `TestAStalledAnswerDoesNotStopTheOtherSessions`, `TestTheAnswersFollowANewAddressOnlyWhenItLeads`, `TestGameDatagramsHaveNoFixedPrefixOrLength`), `pkg/nativeudp/source_linux_test.go` (`TestAWildcardHubAnswersFromTheAddressItWasAsked`, `TestTheSourceOfTheAnswersMovesOnlyWhenTheNewAddressLeads`), `pkg/obfs/wrappers_test.go` (`TestDatagramKeysAreFoundThroughEveryWrapper`), `internal/socks5/udp_native_reply_test.go` (`TestAConnectionWithoutANativePathIsCarriedBy0x83`, `TestAServerWithoutNativeUDPRefusesTheCommand`, `TestOneFailedNativeAnswerGoesByTCPAndTheNextGoesNative`, `TestAGoneNativePathKeepsTheAnswersOnTCP`, `TestTheEmptyFrameCarriesTheCountersBothWays`), `pkg/s5server/native_udp_test.go` (`TestNativeUDPAndTCPFallbackShareAnAssociation`, `TestAnEmptyFrameMovesTheAnswersToTCP`, `TestOnlyAProbeThatHearsTheServerBringsTheAnswersBack`, `TestTheCountersResyncAfterMoreLostThanTheWindow`, `TestANativeSendSaysWhenThePathIsGone`), `cmd/s5client/native_udp_test.go` (`TestAServerThatPredatesNativeIsAskedOnce`, `TestARefusalOfUDPIsNotTakenForAnOldServer`, `TestAnAnswerOverWebSocketIsNotTakenForTheObfsNode`), `cmd/s5client/native_liveness_synctest_test.go` (`TestThePathIsDownExactlyThreeProbesAfterItBreaks`, `TestLostProbesAreNotALostPath`, `TestAnErrorOnTheSocketIsNotTheEndOfIt`, `TestEveryRetryOfALostPathTellsTheServer`, `TestAPathThatNeverAnswersIsReportedOnce`, `TestAVerifiedPathIsNotReportedAsNeverAnswering`, `TestAProbeSaysWhenTheClientHearsTheServer`, `TestADatagramTooBigForNativeTellsTheServerNothing`, `TestAStuckSignalDoesNotStopTheProbes`), `cmd/s5client/native_timing_synctest_test.go` (`TestAnErrorOnAVerifiedPathKeepsItNative`, `TestASparseFlowKeepsTheServersAnswersNative`), `cmd/s5client/native_path_linux_test.go` (`TestAListeningApplicationGetsItsStreamBackByTCP`, `TestAListeningApplicationGetsItsStreamBackNative`, `TestAClientThatIsNotHeardMovesToTCP`, `TestTheCountersResyncWhenThePathHeals`, `TestAnICMPErrorDoesNotEndNativeUDP`), [benchmarks/data-2026-09-25/nativeudp-compat-2026-09-25.json](benchmarks/data-2026-09-25/nativeudp-compat-2026-09-25.json) (смешанные пары с настоящим 2.2.0, вне `go test`) |
+| 10.6.1 | `cmd/s5client/native_route_synctest_test.go` (`TestAFasterRouteTakesTheAssociation`, `TestTheReplacedSocketDoesNotAnswerAChallenge`, `TestACandidateMustBeFasterByAMargin`, `TestALostChallengeCostsTheCandidateOnly`, `TestALostEchoIsProvedAgainOnTheNewSocket`, `TestALostAnswerToTheEchoIsTheNextProbes`, `TestANewRouteThatGoesSilentIsLostThere`, `TestTheLimitOfTheNewRouteIsAgreed`, `TestNoCandidateGoesWhereTheSearchHasNoPlace`, `TestTheSearchWaitsForTheAssociationToLast`), `cmd/s5client/native_route_linux_test.go` (`TestTheHubFollowsTheAssociationToAFasterRoute`) |
 | 10.7 | `pkg/nativeudp/limit_test.go` (`TestTheSpecificationStatesTheLimitOfNative`, `TestPaddingNeverTakesADatagramPastTheLimit`, `TestTheLimitStaysWithinTheRangeOfTheSearch`, `TestAProbeOfASizeIsAnsweredAtItsSize`, `TestAnAnswerIsNeverLongerThanItsProbe`, `TestAProbeOfAnOlderClientGetsAnEmptyAnswer`, `TestTheLimitOfTheClientBoundsTheAnswersOfTheHub`, `TestTheSearchFindsTheLimitOfThePath`, `TestALostProbeNeverTakesTheLimitPastThePath`, `TestARoundWithoutItsControlDecidesNothing`, `TestProbesAndAnswersHaveNoConstantShape`), `pkg/nativeudp/pmtu_linux_test.go` (`TestNativeSocketsDoNotFragment`), `cmd/s5client/native_limit_synctest_test.go` (`TestTheClientFindsTheLimitOfANarrowPath`, `TestAPTBDoesNotCostTheSearchItsControl`, `TestOneRoundFindsTheLimitOfAWidePath`, `TestARoundWithoutItsControlGoesAgain`, `TestBelowTheFloorTheRuleIsTheSame`, `TestAServerWithoutTheSearchIsNotSearched`, `TestTheEighthDroppedDatagramMovesTheLongOnesTo0x83`), `cmd/s5client/native_path_linux_test.go` (`TestADatagramPastTheLimitIsDroppedUntilTheEighth`), `scripts/matrix/mtu_stand.py` и [benchmarks/mtu-native-2026-09-26.md](benchmarks/mtu-native-2026-09-26.md) (узкое звено, вне `go test`) |
 | 11 | `pkg/obfs/failure.go` и тесты причин отказа, `pkg/s5server/replay_probe_test.go`, `pkg/s5server/decoy_probe_test.go`, [design/decoy.md](design/decoy.md) |
 

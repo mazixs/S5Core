@@ -17,6 +17,7 @@ func everyEvent(f Flow, addr net.Addr) {
 	f.NativeProbe(time.Millisecond)
 	f.NativeLost(3)
 	f.NativeRestored()
+	f.NativeMoved(86*time.Millisecond, 57*time.Millisecond, 2)
 }
 
 // With diagnostics off FlowOf walks nothing, and the zero Flow it returns
@@ -85,12 +86,13 @@ func TestEveryEventGoesIntoItsFlow(t *testing.T) {
 		stepFor(r, 5*sampleInterval)
 		a.NativeRestored()
 		a.NativeProbe(15 * time.Millisecond)
+		a.NativeMoved(86*time.Millisecond, 57*time.Millisecond, 2)
 		stepFor(r, postWindow)
 		if r.health.rejectedWhileManual != 1 {
 			t.Fatalf("%d rejected while manual, want the one loss", r.health.rejectedWhileManual)
 		}
 		m, events := readIncident(t, dir, id)
-		if m.Schema != 4 || m.Trigger.Source != sourceManual {
+		if m.Schema != 5 || m.Trigger.Source != sourceManual {
 			t.Fatalf("schema %d, trigger %+v", m.Schema, m.Trigger)
 		}
 		got := map[uint32][]string{}
@@ -110,6 +112,7 @@ func TestEveryEventGoesIntoItsFlow(t *testing.T) {
 				`native_path {"state":"lost","unanswered_probes":3}`,
 				`native_path {"state":"restored"}`,
 				`native_probe {"rtt_ns":15000000}`,
+				`native_path {"candidate":2,"rtt_after_ns":57000000,"rtt_before_ns":86000000,"state":"moved"}`,
 			},
 			2: {`stage {"boundary":"tunnel_setup","duration_ns":45000000,"spare":false}`},
 		}

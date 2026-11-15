@@ -54,6 +54,7 @@ const (
 	pathVerified uint8 = iota + 1
 	pathLost
 	pathRestored
+	pathMoved // to a faster route (Flow.NativeMoved)
 )
 
 // The what of a socket record.
@@ -78,14 +79,15 @@ type record struct {
 	mono int64 // nanoseconds since the recorder started, by the monotonic clock
 	wall int64 // Unix nanoseconds: the clock of a router without RTC jumps at NTP
 	// dur, in nanoseconds: how long a stage's call or setup took, a native
-	// probe's round trip.
+	// probe's round trip, the round trip of the route a native path moved to.
 	dur int64
 	// payload is *tcpSample, *runtimeSample, *flowTotals, *QueueState,
-	// *pathAddrs for a verified native path or, for a spike, the incident ID;
-	// nil otherwise.
+	// *pathAddrs for a verified native path, the time.Duration round trip
+	// of the route a native path left or, for a spike, the incident ID; nil
+	// otherwise.
 	payload any
 	flow    *flowInfo // nil for the process
-	n       uint32    // stage: bytes; a lost native path: the probes unanswered
+	n       uint32    // stage: bytes; a lost native path: the probes unanswered; a moved one: its candidate
 	kind    kind
 	what    uint8
 	flags   uint8

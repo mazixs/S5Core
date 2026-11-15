@@ -55,6 +55,7 @@ type memPath struct {
 	toClient     chan []byte
 	errs         chan error
 	closed       chan struct{}
+	closeOnce    sync.Once
 	dropUp       atomic.Bool
 	dropDown     atomic.Bool
 	writeFailure atomic.Bool
@@ -240,6 +241,7 @@ func (*failingProbeSocket) Write([]byte) (int, error) { return 0, syscall.EMSGSI
 func (*failingProbeSocket) Read([]byte) (int, error)  { return 0, net.ErrClosed }
 func (*failingProbeSocket) LocalAddr() net.Addr       { return memClient }
 func (*failingProbeSocket) RemoteAddr() net.Addr      { return memServer }
+func (*failingProbeSocket) Close() error              { return nil }
 
 func (p *memPath) answer(kind byte, d []byte) {
 	// A path that drops everything spends no counter of the server: the
@@ -323,6 +325,12 @@ var (
 func (p *memPath) LocalAddr() net.Addr  { return memClient }
 func (p *memPath) RemoteAddr() net.Addr { return memServer }
 
+// Close is the end of the association, by the client or by the test.
+func (p *memPath) Close() error {
+	p.closeOnce.Do(func() { close(p.closed) })
+	return nil
+}
+
 // logged counts the lines of logs that contain every one of parts.
 func logged(logs *syncBuffer, parts ...string) int {
 	n := 0
@@ -402,7 +410,7 @@ func newLiveness(t *testing.T, lose func(int64) bool, jitter float64, signal fun
 	}
 	l.client = newNativeClient(p, nativeudp.NewSession(ck), signal)
 	l.client.jitter = func() float64 { return jitter }
-	t.Cleanup(func() { close(p.closed); synctest.Wait() })
+	t.Cleanup(func() { _ = p.Close(); synctest.Wait() })
 	return l
 }
 

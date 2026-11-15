@@ -146,7 +146,7 @@ func TestAnIncidentTiesTheRelatedFlowToItsOuterFlow(t *testing.T) {
 			{Flow: 1, Leg: "outer", Transport: "obfs", Local: "127.0.0.1:1080", Remote: "127.0.0.1:443"},
 			{Flow: 2, OuterFlow: 1, Leg: "target", Transport: "tcp", Local: "127.0.0.1:1080", Remote: "127.0.0.1:443"},
 		}
-		if m.Schema != 4 || !slices.Equal(m.Flows, want) {
+		if m.Schema != 5 || !slices.Equal(m.Flows, want) {
 			t.Fatalf("schema %d, flows %+v", m.Schema, m.Flows)
 		}
 		var raw struct {

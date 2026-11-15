@@ -17,7 +17,7 @@ var (
 	stageNames  = [...]string{stageRead: "transport_read", stageWrite: "transport_write", stageSetup: "tunnel_setup"}
 	sampleNames = [...]string{sampleTick: "periodic", sampleOpen: "open", sampleClose: "close"}
 	spikeNames  = [...]string{spikeRTT: "rtt_excess", spikeRTO: "retransmit_timeout", spikeNativeLost: "native_path_lost"}
-	pathNames   = [...]string{pathVerified: "verified", pathLost: "lost", pathRestored: "restored"}
+	pathNames   = [...]string{pathVerified: "verified", pathLost: "lost", pathRestored: "restored", pathMoved: "moved"}
 )
 
 // tcpFields is the order and the name, unit included, of every counter an
@@ -128,6 +128,13 @@ func appendRecord(dst []byte, rec *record) []byte {
 			dst = appendString(append(dst, `,"remote":`...), a.remote)
 		case pathLost:
 			dst = append(dst, `,"unanswered_probes":`...)
+			dst = strconv.AppendUint(dst, uint64(rec.n), 10)
+		case pathMoved:
+			dst = append(dst, `,"rtt_before_ns":`...)
+			dst = strconv.AppendInt(dst, int64(rec.payload.(time.Duration)), 10)
+			dst = append(dst, `,"rtt_after_ns":`...)
+			dst = strconv.AppendInt(dst, rec.dur, 10)
+			dst = append(dst, `,"candidate":`...)
 			dst = strconv.AppendUint(dst, uint64(rec.n), 10)
 		}
 	case kindNativeProbe:

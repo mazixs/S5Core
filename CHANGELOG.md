@@ -31,6 +31,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beside it, and the client adds the setup time of each accepted CONNECT and
   the verified, lost and restored states of the native UDP path with the round
   trips of its probes.
+- The client looks once per native UDP association for a faster route to the
+  server. A provider can spread the flows to one server over routes by a hash
+  of their ports: on a production path two routes of about 57 and 86 ms were
+  seen, and the source port decided which one an association got. Once an
+  association is 3 s old and active, the client tries up to
+  `UDP_NATIVE_ROUTE_CANDIDATES` (default 3, `0` turns it off) sockets with new
+  source ports, measures each route by the server's route challenge, and moves
+  to one that is faster by 10 ms or 15 %, whichever is more. The datagrams go
+  by `0x83` while the server follows, so none is lost or doubled, and the limit
+  of the new route is searched again. Neither the wire nor the server changes;
+  an older server that does not prove routes is not searched. A move writes
+  one Info line without addresses and a `moved` record of the latency recorder
+  (manifest schema 5), and the closing line of the association adds
+  `native_route_candidates` and `native_route_moved`. See
+  [the specification, 10.6.1](docs/veil-spec.md#1061-поиск-быстрого-маршрута).
 - Go runtime metrics on the server's `/metrics`: GC pause and scheduler latency
   histograms, GC cycle and GC CPU counters, live heap size, the GC limiter and
   mutex wait time, eleven `runtime/metrics` sources in all. Recording rules over
