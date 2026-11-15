@@ -19,8 +19,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/mazixs/S5Core/internal/testcert"
 )
 
@@ -276,6 +278,31 @@ func TestARefusedEarlyUpgradeIsAnUpgradeError(t *testing.T) {
 	if derr := c.SetDeadline(time.Now().Add(time.Second)); !errors.As(derr, &ue) {
 		t.Fatalf("a deadline after the refusal: %v, want the same UpgradeError", derr)
 	}
+}
+
+// gorilla closes the socket of a refused upgrade before finish records the
+// refusal. A deadline set in between is the refusal and not the closed
+// socket: the client sets one first thing after the dial, and a refusal it
+// took for a closed socket was not dialled again.
+func TestADeadlineSetBeforeTheRefusalIsRecordedIsTheRefusal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		socket, peer := net.Pipe()
+		defer func() { _ = peer.Close() }()
+		sent := make(chan struct{})
+		close(sent)
+		c := &EarlyConn{ready: make(chan struct{}), closed: make(chan struct{}), wake: make(chan struct{}),
+			raw: &upgradeConn{Conn: socket, sent: sent}}
+		_ = socket.Close()
+
+		done := make(chan error, 1)
+		go func() { done <- c.SetWriteDeadline(time.Now().Add(time.Minute)) }()
+		synctest.Wait()
+		c.finish(nil, &http.Response{StatusCode: http.StatusForbidden}, websocket.ErrBadHandshake, 0, sent)
+		var ue *UpgradeError
+		if err := <-done; !errors.As(err, &ue) || ue.Status != http.StatusForbidden {
+			t.Fatalf("a deadline set before the refusal was recorded: %v, want the UpgradeError", err)
+		}
+	})
 }
 
 // silentServer accepts connections and hands their bytes to the test without

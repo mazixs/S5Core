@@ -7,7 +7,7 @@
 # это баг скрипта или workflow, а не "особенность окружения".
 #
 # Воспроизводимый прогон в том же окружении, что и CI:
-#   docker run --rm -v "$PWD":/src -w /src golang:1.26.9 ./scripts/pre-commit.sh
+#   docker run --rm -v "$PWD":/src -w /src golang:1.27.4 ./scripts/pre-commit.sh
 #
 # Переменные окружения:
 #   SKIP_LINT=1   пропустить golangci-lint (нужна сеть для установки)
@@ -19,7 +19,7 @@
 
 set -uo pipefail
 
-GO_VERSION_EXPECTED="1.26.9"
+GO_VERSION_EXPECTED="1.27.4"
 GOLANGCI_LINT_VERSION="v2.14.0"
 # Закреплено, как и golangci-lint выше: @latest означает, что один и тот же
 # коммит проверяется разными сканерами у разработчика и в CI, и "у меня было

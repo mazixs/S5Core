@@ -53,7 +53,7 @@ CONNECT retains all addresses supplied by the built-in resolver, removes duplica
 `s5core_build_info` is always 1; its labels carry `version`, `go_version` and `transports` (e.g. `plain,obfs,ws`). Together with the startup line
 
 ```
-INFO Active transports summary="plain:1080, obfs:27015, ws:off" version=v1.2.3 go_version=go1.26.6
+INFO Active transports summary="plain:1080, obfs:27015, ws:off" version=v1.2.3 go_version=go1.27.4
 ```
 
 it answers the two questions that cannot be checked from outside the host: which build is running, and which transports it actually listens on. A server whose operator believes it is stealthy while it only listens on the plain port is a configuration failure that used to be invisible until someone read the logs line by line.
