@@ -47,7 +47,7 @@ def conn_end(t, conn, account="alice", end="client", **f):
 def assoc_end(t, conn, account="alice", end="client", **f):
     base = dict(conn=conn, account=account, auth="key", transport="obfs", client="2.3.0-rc6", cmd="native",
                 result="ok", end=end, dur_ms=60000, up=20000, down=30000, dgram_up=100, dgram_down=100,
-                native_up=100, native_down=100, path_moves=0, tunnel_drops=0)
+                native_up=100, native_down=100, path_moves=0, tunnel_drops=0, native_lost=0, native_late=0)
     base.update(f)
     return line("assoc_end", t, **base)
 
@@ -684,10 +684,10 @@ class Udp(Files):
     def lines(self):
         return [
             assoc_end(at(1), "a1"),
-            assoc_end(at(2), "a2", path_moves=2, native_up=30, native_down=40),
-            assoc_end(at(3), "a3", native_up=10, native_down=10),
+            assoc_end(at(2), "a2", path_moves=2, native_up=30, native_down=40, native_lost=4, native_late=1),
+            assoc_end(at(3), "a3", native_up=10, native_down=10, native_late=3),
             assoc_end(at(4), "a4", dgram_up=5, dgram_down=5, native_up=0, native_down=0),
-            assoc_end(at(5), "a5", tunnel_drops=3, account="bob"),
+            assoc_end(at(5), "a5", tunnel_drops=3, account="bob", native_lost=2),
             assoc_end(at(6), "a6", cmd="tunnel", rotations=3, answered=True, end="timeout"),
             assoc_end(at(7), "a7", cmd="tunnel", rotations=6, answered=False),
         ]
@@ -711,6 +711,31 @@ class Udp(Files):
         self.assertRegex(section, r"\| tunnel \| 2 \| client=1 timeout=1 \| .* \| 2 \(ответ был: 1\) \|")
         self.assertLess(section.index("path_moves, low_native"), section.index("| 3 | tunnel_drops |"))
         self.assertNotIn("a1", section)
+
+    def test_what_the_native_path_lost_and_reordered_is_summed_and_shown_in_the_rows(self):
+        j = analyze(self.lines())
+        self.assertEqual([j.native[k] for k in ("lost", "lossy", "late", "reordered", "counted")], [6, 2, 4, 2, 5])
+        _, out = self.run_main(self.write("s.jsonl", self.lines()))
+        section = section_of(out, "### Путь native", "## 7.")
+        self.assertIn("`native_lost` всего 6 (ассоциаций, где путь native потерял датаграммы клиента: 2); "
+                      "`native_late` всего 4 (ассоциаций, где они пришли не по порядку: 2).\n", section)
+        self.assertNotIn("Без этих полей", section)
+        self.assertIn("| native up/down | native lost/late | доля native |", section)
+        for row in ("| 30/40 | 4/1 | 35% | 2 | 0 |", "| 10/10 | 0/3 | 10% | 0 | 0 |", "| 100/100 | 2/0 | 100% | 0 | 3 |"):
+            self.assertIn(row, section)
+
+    def test_a_line_without_the_loss_counts_is_not_read_as_nothing_lost(self):
+        older = json.loads(assoc_end(at(1), "a1"))
+        del older["native_lost"], older["native_late"]
+        lines = [json.dumps(older), assoc_end(at(2), "a2", native_lost=3, native_late="1")]
+        j = analyze(lines)
+        self.assertEqual([j.native[k] for k in ("lost", "late", "counted")], [3, 0, 1])
+        self.assertEqual(dict(j.bad), {"native_late": 1})
+        self.assertEqual(dict(j.unknown), {})
+        _, out = self.run_main(self.write("s.jsonl", lines))
+        self.assertIn("`native_lost` всего 3 (ассоциаций, где путь native потерял датаграммы клиента: 1); "
+                      "`native_late` всего 0 (ассоциаций, где они пришли не по порядку: 0). Без этих полей 1 из 2: "
+                      "сервер, который их записал, потери еще не считал.", out)
 
     def test_no_associations_and_no_native_are_said_plainly(self):
         _, out = self.run_main(self.write("s.jsonl", [conn_end(at(1), "c1")]))

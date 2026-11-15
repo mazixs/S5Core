@@ -46,7 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `s5core_native_udp_lost_total` and `s5core_native_udp_late_total`. A datagram
   is lost once the window has moved past it without it, and at the end of the
   association also when it is still missing below the newest; it is late when
-  it comes after one with a higher counter. See
+  it comes after one with a higher counter. `scripts/journal_report.py` sums
+  both in its native section and shows them in the rows of the associations it
+  lists; the benchmark stand keeps them with the client's counts and the
+  server's metrics of each cell. See
   [temporary UDP diagnostics](docs/guides/configuration.md#temporary-udp-diagnostics).
 
 ### Changed
