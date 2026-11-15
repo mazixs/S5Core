@@ -6,6 +6,7 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/mazixs/S5Core/internal/privatefs"
 	"golang.org/x/sys/windows"
 )
 
@@ -63,7 +64,7 @@ func protectLogFile(path string, mode os.FileMode) error {
 // anything else that is not a regular file. So is a file this account cannot
 // make private: its DACL is not ours to change, or its owner can change it back.
 func openPrivate(path string, access, share, creation uint32) (*os.File, error) {
-	sd, err := privateDescriptor()
+	sd, err := privatefs.FileDescriptor()
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +109,7 @@ func openPrivate(path string, access, share, creation uint32) (*os.File, error) 
 	if err != nil {
 		return fail(&os.PathError{Op: "protect", Path: path, Err: err})
 	}
-	if !privateOwner(sd, owner) {
+	if !privatefs.TrustedOwner(sd, owner) {
 		return fail(fmt.Errorf("%s cannot be made private: it belongs to %s, which may change its permissions at any time; remove the file or take ownership of it", path, owner))
 	}
 	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
