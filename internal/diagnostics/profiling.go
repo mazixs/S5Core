@@ -51,13 +51,18 @@ func Start() func() {
 		_ = f.Close()
 		runtime.SetMutexProfileFraction(oldMutex)
 		runtime.SetBlockProfileRate(0)
-		for _, name := range []string{"allocs", "heap", "mutex", "block", "goroutine"} {
+		// A profile this runtime does not have is skipped.
+		for _, name := range []string{"allocs", "heap", "mutex", "block", "goroutine", "goroutineleak"} {
+			profile := pprof.Lookup(name)
+			if profile == nil {
+				continue
+			}
 			out, err := os.OpenFile(filepath.Join(dir, name+".pprof"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 			if err != nil {
 				slog.Error("Profile create failed", "error", err)
 				continue
 			}
-			if err := pprof.Lookup(name).WriteTo(out, 0); err != nil {
+			if err := profile.WriteTo(out, 0); err != nil {
 				slog.Error("Profile write failed", "error", err)
 			}
 			_ = out.Close()

@@ -1,7 +1,8 @@
 // Package tcptune sets TCP options on the socket of a UDP-over-TCP tunnel
 // (0x83 and 0x84) so that a lost segment is retransmitted sooner, bounds how
 // long the socket of a CONNECT tunnel may keep data unacknowledged
-// (ForStream), and reads the kernel's state of a tunnel's socket (InfoOf).
+// (ForStream), and reads the kernel's state of a tunnel's socket (InfoOf,
+// and CountersOf for the latency diagnostics).
 // Why and what it buys: docs/benchmarks/game-tuning.md, docs/plan/draft.md (Ч-29).
 package tcptune
 

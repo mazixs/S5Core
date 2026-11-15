@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mazixs/S5Core/internal/diagnostics"
 	"github.com/mazixs/S5Core/internal/session"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/transport/ws"
@@ -227,6 +228,9 @@ func (l *listenerPipeline) Accept() (net.Conn, error) {
 		if l.shape != nil {
 			conn = l.shape(conn)
 		}
+		// The transport as it reaches the socket; the deadlines and the
+		// limit above it are the server's own.
+		conn = diagnostics.ObserveConn(conn, "outer", l.transport)
 		if l.limiter != nil {
 			conn = &limitedConn{Conn: conn, limiter: l.limiter}
 		}

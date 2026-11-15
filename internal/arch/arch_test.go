@@ -140,6 +140,24 @@ var rules = []rule{
 		},
 	},
 	{
+		pkg: module + "/internal/diagnostics",
+		why: "the server and the client hand their sockets to the latency " +
+			"recorder, so it may know nothing of what they carry",
+		forbidden: []string{
+			module + "/internal/",
+			module + "/pkg/",
+		},
+		// It reads the kernel's counters through internal/tcptune, makes its
+		// directory private through internal/privatefs and names the build in
+		// its manifests by internal/buildinfo; none of the three depends on
+		// anything of ours.
+		allowed: []string{
+			module + "/internal/tcptune",
+			module + "/internal/privatefs",
+			module + "/internal/buildinfo",
+		},
+	},
+	{
 		pkg: module + "/internal/udpbuf",
 		why: "the codec, the native path and the client open UDP sockets " +
 			"through it, so it may depend on nothing of ours",

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -17,6 +18,14 @@ func (w netConnWrapper) NetConn() net.Conn { return w.Conn }
 type unwrapWrapper struct{ net.Conn }
 
 func (w unwrapWrapper) Unwrap() net.Conn { return w.Conn }
+
+// syscallOnly is a socket the walk finds only as a syscall.Conn.
+type syscallOnly struct {
+	net.Conn
+	sc syscall.Conn
+}
+
+func (s syscallOnly) SyscallConn() (syscall.RawConn, error) { return s.sc.SyscallConn() }
 
 func tcpPair(t testing.TB) (*net.TCPConn, *net.TCPConn) {
 	t.Helper()

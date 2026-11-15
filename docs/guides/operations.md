@@ -212,6 +212,132 @@ Per-account traffic accounting is separate from telemetry. Its batching threshol
 
 ---
 
+## Latency diagnostics
+
+The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements of the outer sockets in memory. When a spike starts or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per accepted connection and per tunnel. On, it also reads the clock twice on every read and write of a recorded socket.
+
+### Turning it on
+
+| Variable | Meaning |
+|---|---|
+| `S5_DIAGNOSTICS_DIR` | The directory for incidents. The recorder creates it if it is missing; on POSIX it gets `0700`, on Windows an access list for the process user, `SYSTEM` and `Administrators` that passes on to the files inside. A directory that exists must be as private already: on POSIX no group or other bits and owned by the effective user; on Windows owned by one of those three, with a protected access list that grants nobody else. A symbolic link or a junction is refused. |
+| `S5_DIAGNOSTICS_RUN_ID` | Names the run in every manifest, so the incidents of the server and the client of one test can be matched. At most 256 bytes; a new UUID by default. |
+| `S5_DIAGNOSTICS_TRACE` | `1` also keeps a flight recorder of the Go execution trace and saves its last 30 seconds with each incident. Up to 32 MiB more memory. |
+
+The recorder starts in the background after the logging is set up. It writes `Latency diagnostics are on` or, if the directory cannot be used, `Latency diagnostics are off` with the reason; forwarding goes on either way.
+
+One directory serves one process. The budget and the rotation count the whole directory and there is one `trigger.json`, so two processes in one directory would take the same marker and write over each other's files of one incident. To match the incidents of several processes, give each its own directory and write the same UUID into the marker of each.
+
+### What it records
+
+The server records each connection accepted on its listeners: plain SOCKS5, obfs and WebSocket. The client records the transport of each tunnel; an idle spare connection is not recorded until a tunnel takes it. On both ends the recorder's wrapper sits under the obfuscation, the deadlines and the server's limit. A recorded socket is a *flow*, numbered from 1 in each run of the process.
+
+At most 32 sockets are recorded at once: the first to arrive take the slots, and a closed socket gives its slot back. New sockets are admitted at a burst of 32, then eight a second. A socket closed under a wrapper nobody closed is noticed at the next sample and gives its slot back too.
+
+For each flow the recorder keeps:
+
+- **stage records**: one read and one write in 512, and every write that took 25 ms or more. A read waits for the peer, so a long read is not recorded on its own; the longest read between two samples goes into the next socket sample instead;
+- **socket samples**: the kernel's counters at the open, every 500 ms, and at the close;
+- **flow records**: the addresses at the open, the number of reads and writes at the close.
+
+For the process it keeps the Go runtime metrics every 500 ms.
+
+### Incidents
+
+An incident starts in one of two ways:
+
+- **by hand**: write `{"incident_id":"<UUID>"}` to `trigger.json` in the directory. The recorder looks at it every 500 ms and takes each marker once. A marker whose incident a previous process saved starts nothing;
+- **automatically**, per socket and against that socket's own floor:
+  - the round trip time is at least 20 ms above the lowest round trip time of the socket and at least one and a half times it, for three samples in a row in which the socket moved data;
+  - or the retransmit timer fired: on Linux a sample taken while it keeps firing, on Windows one more timeout episode than at the sample before.
+
+  One socket starts at most one incident in two minutes.
+
+Only one incident is written at a time. A marker during an automatic incident takes it over: the incident gets the marker's ID, keeps the history already saved, and its 90 seconds start again at the marker. Any other trigger while an incident is written is counted in the manifest and dropped.
+
+An incident is the records from up to two minutes before its trigger to 90 seconds after it. The recorder streams them into a partial file while they come, then renames it and writes the manifest last. Each incident has these files:
+
+| File | Contents |
+|---|---|
+| `<id>.events.jsonl` | one JSON object per record, in order |
+| `<id>.manifest.json` | what is the same for every record; an incident with a manifest is complete |
+| `<id>.trace` | with `S5_DIAGNOSTICS_TRACE=1`: the execution trace; `go tool trace` reads it |
+
+A file ending in `.partial` is an incident the process did not finish: it was killed, or it ran out of room. It stays until its room is needed.
+
+### Disk budget
+
+The directory may hold up to 256 MiB, and the recorder leaves at least 256 MiB free on the volume. One events or trace file takes at most 64 MiB. When an incident needs room, the oldest incident that may go is removed with all its files: an automatic incident, by its trigger, or the files of one without a manifest, such as `.partial` files, by when they were last written. A manual incident is never removed, nor the automatic incident it took over, nor what the process is still writing, nor an incident whose manifest cannot be read. The budget counts the files directly in the directory: a subdirectory is neither counted nor touched. When nothing is left to remove, the recorder stops with one line in the log, `Latency diagnostics stopped`, and forwarding goes on. An incident that reaches its share of the budget ends early and its manifest says `truncated`.
+
+In memory the recorder keeps a ring of 32 768 records of 64 bytes, 2 MiB. Socket samples (about 150 bytes each) and runtime samples (about 3 KiB each) come on top.
+
+### Event schema
+
+Every line has these fields:
+
+| Field | Meaning |
+|---|---|
+| `seq` | the record's number in the run, without gaps |
+| `elapsed_ns` | nanoseconds since the recorder started, by the monotonic clock |
+| `utc` | the wall clock at the same moment; it may jump, `elapsed_ns` does not |
+| `flow` | the flow, `0` for the process |
+| `leg` | `outer` for a flow, `process` for the process |
+| `transport` | the flow's transport; no transport for the process |
+| `kind` | what `data` holds, below |
+
+| `kind` | `data` |
+|---|---|
+| `stage` | `boundary` (`transport_read`, `transport_write`), `duration_ns`, `bytes`, `error`, `periodic` (one in 512), `slow` (a write of 25 ms or more) |
+| `socket` | `reason` (`open`, `periodic`, `close`), `available` (whether the kernel answered), `read_wait_max_ns` (periodic samples only: the longest read since the sample before), `tcp` |
+| `flow_open` | `local`, `remote` |
+| `flow_close` | `read_calls`, `write_calls`, and `evicted: true` for a socket closed under its wrapper |
+| `runtime` | each [runtime metric](https://pkg.go.dev/runtime/metrics) by its name: a number, `null` where this Go version lacks it, or for a histogram its bucket counts |
+| `spike` | `reason` (`rtt_excess`, `retransmit_timeout`), `incident_id` |
+
+`tcp` holds only the counters the kernel gave; a counter that an older kernel or another system does not have is left out rather than written as zero. Each name includes its unit:
+
+| Name | Linux | Windows |
+|---|---|---|
+| `rtt_us`, `min_rtt_us` | smoothed and lowest round trip time | the same |
+| `rttvar_us`, `rto_us` | round trip variance, retransmit timeout | - |
+| `since_data_ms`, `since_ack_ms` | time since the peer's last data and last acknowledgement | - |
+| `state` | TCP state, Linux numbering | - |
+| `retransmits` | retransmit timeouts in a row | - |
+| `unacked_segments`, `total_retrans_segments`, `cwnd_segments` | in segments | - |
+| `cwnd_bytes`, `in_flight_bytes` | - | congestion window and bytes in flight |
+| `not_sent_bytes` | written, not yet sent | - |
+| `send_window_bytes`, `receive_window_bytes` | the peer's and our window | the same |
+| `bytes_acked` | over the life of the connection | - |
+| `bytes_received`, `bytes_sent`, `bytes_retrans` | over the life of the connection | the same; `bytes_retrans` is 32 bits wide |
+| `timeout_episodes` | - | retransmit timeouts of the connection |
+
+### Manifest schema
+
+| Field | Meaning |
+|---|---|
+| `schema` | `1` |
+| `incident_id`, `run_id`, `boot_id` | the incident; the run (`S5_DIAGNOSTICS_RUN_ID`); this start of the process |
+| `process_id`, `go_version`, `build_version`, `goos`, `goarch` | the process and its build |
+| `recorder_start_utc` | the wall clock at `elapsed_ns` 0 |
+| `trigger` | `source` (`manual`, `automatic`), `utc`, `elapsed_ns`; for an automatic incident `reason` and `flow`; for a takeover `prior_automatic_incident` (its trace, if any, is `<prior>.trace`) |
+| `window` | `first_seq`, `last_seq`, `start_elapsed_ns`, `end_elapsed_ns`, `start_utc`, `end_utc` of the records saved; `lost_before_capture` (records the ring gave up before they were saved); `shutdown_before_post_end`; `truncated` |
+| `trace` | `disabled`, `captured`, `failed`, `skipped` (an earlier incident's trace was still being written) or `writing` (the manifest was written before the trace was done, as when the process stops; a `<id>.trace` there is complete) |
+| `flows` | each flow in the records: `flow`, `leg`, `transport`, `local`, `remote` |
+| `limits` | every constant that shaped the records, from `sample_interval_ns` to `trace_max_bytes` |
+| `health` | since the start of the process: `overwritten` (records a full ring pushed out before their two minutes), `rejected_marker` (polls of a marker that could not be read), `rejected_while_manual`, `rejected_while_automatic`, `failed_snapshots`, `rotated_incidents`, and `selection`: `admitted`, `omitted_rate`, `omitted_active`, `evicted_closed` |
+| `runtime_histogram_bounds` | the bucket bounds of each runtime histogram; `null` is an open end |
+
+### Limits
+
+- Only the outer sockets are recorded: the destination side of the server, the application side of the client and native UDP are not.
+- The first 32 sockets keep their slots for as long as they live, so on a busy server the recorded ones are not a sample of all of them.
+- A stage record times the call into the transport where the wrapper sits, TLS and WebSocket framing included. A write returns once the kernel took the bytes, not once the peer got them.
+- On Windows the counters are those of `SIO_TCP_INFO` version 0 (Windows 10 1703 and later); elsewhere but Linux and Windows a socket sample says `available: false`.
+- A socket's lowest round trip time only goes down, so a path that became longer for good goes on starting automatic incidents, at most one in two minutes per socket.
+- The recorder shares the process: an incident is written by the same process whose latency it records.
+
+---
+
 ## Hot Reloading
 
 `SIGHUP` makes the process re-read what it can re-read while running, without breaking existing connections.

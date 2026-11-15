@@ -151,6 +151,7 @@ func main() {
 	if levelErr != nil {
 		slog.Warn("Invalid LOG_LEVEL, falling back to info", "error", levelErr)
 	}
+	defer diagnostics.StartLatency()()
 
 	cfg, err := loadConfig()
 	if err != nil {

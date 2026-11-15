@@ -15,6 +15,7 @@ coverage internal/relay 93.0
 coverage internal/identity 80.0
 coverage internal/passwordhash 96.0
 coverage internal/tcptune 83.0
+coverage internal/diagnostics 92.5
 coverage internal/udpbuf 80.5
 coverage pkg/obfs 88.5
 coverage pkg/veil 85.5

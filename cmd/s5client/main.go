@@ -284,6 +284,7 @@ func main() {
 	if !prepare(&cfg) {
 		os.Exit(1)
 	}
+	defer diagnostics.StartLatency()()
 
 	ctx, stop := signal.NotifyContext(context.Background(), signals.Terminate...)
 	defer stop()
@@ -1146,6 +1147,9 @@ func handshakeTunnel(cfg clientParams, connectReq []byte, open func(clientParams
 	if err != nil {
 		return nil, onSpare, &tunnelError{phase: phaseDial, err: err}
 	}
+	// Here, after the spare and the early upgrade are told apart by their
+	// type, and before anything is sent.
+	serverConn = diagnostics.ObserveConn(serverConn, "outer", string(cfg.effectiveTransport()))
 
 	// Every read below is covered by one deadline. It is cleared by the caller
 	// once the CONNECT reply has arrived, so it bounds setup and nothing else.
