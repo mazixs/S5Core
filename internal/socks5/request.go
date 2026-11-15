@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mazixs/S5Core/internal/relay"
@@ -423,6 +424,16 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 	defer cancel()
 
 	toDestination, toClient := s.connectHalves(conn, req, target, targetSrc, closeTargetWrite)
+	// A half passes its end on before it reports it, and the end it passes on
+	// can end the other half, whose report then arrives first. Each half marks
+	// itself as it ends, before the pass-on: closedBy is named after the half
+	// that marked first, not after the first report.
+	var endedFirst atomic.Pointer[relay.Half]
+	for _, h := range []*relay.Half{toDestination, toClient} {
+		closeDst, abortDst := h.CloseDst, h.AbortDst
+		h.CloseDst = func() { endedFirst.CompareAndSwap(nil, h); closeDst() }
+		h.AbortDst = func() { endedFirst.CompareAndSwap(nil, h); abortDst() }
+	}
 	// A silent or slow stream must observe account revocation without waiting
 	// for the 64 KiB billing boundary. The same exhaustion hook starts grace.
 	var accountTick <-chan time.Time
@@ -468,7 +479,7 @@ func (s *Server) relayConnect(ctx context.Context, conn conn, req *Request, targ
 			}
 		case r := <-results:
 			pending--
-			if closedBy == "" {
+			if closedBy == "" && (endedFirst.Load() == toDestination) == r.ToDestination {
 				closedBy = relayClosedBy(r, sess.InGrace(), false)
 			}
 			switch {
