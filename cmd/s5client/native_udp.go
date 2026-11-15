@@ -331,10 +331,16 @@ type nativeStats struct {
 	routeMoved                                   atomic.Bool
 }
 
-func (n *nativeClient) logStats() []any {
+// logStats is the native half of the association's line. The closing line is
+// final: what the server sent and has not come by then is lost.
+func (n *nativeClient) logStats(final bool) []any {
 	var dropped uint64
 	if n.writer != nil {
 		dropped = n.writer.Dropped()
+	}
+	loss := n.session.Loss()
+	if final {
+		loss = n.session.FinalLoss()
 	}
 	return []any{"native_sent", n.stats.sent.Load(), "tcp_sent_oversize", n.stats.sentOversize.Load(),
 		"native_probes_sent", n.stats.probesSent.Load(), "native_probe_write_errors", n.stats.probeWriteErrors.Load(),
@@ -346,6 +352,7 @@ func (n *nativeClient) logStats() []any {
 		"tcp_received", n.stats.receivedTCP.Load(), "tunnel_drops", dropped,
 		"native_limit", n.session.Limit(), "size_probes", n.stats.sizeProbes.Load(),
 		"dropped_oversize_sent", n.stats.droppedSent.Load(), "dropped_oversize_received", n.stats.droppedRecv.Load(),
+		"native_lost", loss.Lost, "native_late", loss.Late,
 		"native_route_candidates", n.stats.routeCandidates.Load(), "native_route_moved", n.stats.routeMoved.Load()}
 }
 

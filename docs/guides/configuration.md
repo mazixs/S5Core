@@ -204,7 +204,7 @@ behaviour: `Config.DenyPrivateDest` is false unless the application sets it.
 | `WS_HOST` | String | *Empty* | Overrides the `Host` header (domain fronting). It also decides the SNI unless `SERVER_NAME` is set. |
 | `WS_ORIGIN` | String | *Empty* | `Origin` header sent with the upgrade request. |
 | `WS_USER_AGENT` | String | *Empty* | `User-Agent` header sent with the upgrade request. |
-| `TLS_FINGERPRINT` | String | *Empty* | Browser TLS fingerprint to imitate (`chrome`, `firefox`, ...). Empty uses Go's own Client Hello, which is itself a fingerprint. |
+| `TLS_FINGERPRINT` | String | *Empty* | Browser TLS fingerprint to imitate (`chrome`, `firefox`, ...). `ios` is still iOS 14 (2020) in uTLS and does not pass for a current device; for Apple devices use `safari`. Empty uses Go's own Client Hello, which is itself a fingerprint. |
 | `WS_TLS_SESSION_CACHE` | Bool | `true` | Bounded TLS session caches scoped to this client configuration, separately for Go TLS and uTLS. Certificate and pin checks remain active. Browser presets without a resumption extension keep full handshakes. Set `false` for an A/B baseline. |
 | `SERVER_NAME` | String | *Empty* | SNI to present, and the name the certificate is verified against, when it must differ from the host in `WS_URL`. Falls back to `WS_HOST` and then to the host in `WS_URL`; setting it is how you move the SNI without moving the `Host` header. |
 | `WS_CA_FILE` | String | *Empty* | PEM file with the certificate authority (or the server certificate itself) to trust. It **replaces** the system roots, which is what a self-signed deployment wants. |
@@ -313,6 +313,15 @@ cumulative. Additional cumulative fields are:
   size-probe `EMSGSIZE`. The `probe_write_errors` field in a path-loss Warn
   is the increase since the first unanswered probe of that episode. Neither
   counter alone establishes the cause of a path loss or remote delivery.
+- `native_lost`, `native_late`: the server's native datagrams, probe answers
+  included, that the path lost, and those that came after one with a higher
+  counter. The client counts them by the counters of its receive window: a
+  datagram is lost once the window has moved past it, so a running line leaves
+  out those that may still come, and `UDP Tunnel closed` adds the ones still
+  missing below the newest. Answers to size probes that the path could not
+  carry and datagrams the server's socket refused count as lost too: the
+  receiver cannot tell them from a loss on the way. Rejected packets
+  (`native_rejected_packets`) are not counted here.
 
 During a prolonged initial native UDP block, the existing retry probes also
 request counter synchronization over the live tunnel. The retry cadence
@@ -328,6 +337,18 @@ There are no account names, addresses or packet contents in these reports.
 The optional session journal retains those counts in `assoc_end` as
 `udp_client_in`, `udp_target_out`, `udp_target_in`, `udp_client_out`, `udp_drops`
 and `target_write_errors`.
+
+The `assoc_end` line of a native association also carries `native_lost` and
+`native_late`: the client's native datagrams, probes included, counted as the
+client counts the server's, final at the end. Size probes larger than the path
+carries and datagrams the client's socket refused (`native_data_write_errors`,
+`native_probe_write_errors`, `size_probe_too_big`) count as lost; a datagram
+that came and was then dropped on the full queue of the association is in
+`s5core_native_udp_queue_drops_total` instead. The server-wide sums are
+`s5core_native_udp_lost_total` and `s5core_native_udp_late_total`, without
+labels; an association adds what was still missing as it ends. The client's
+`native_lost` is thus the loss from server to client, and the server's the
+loss from client to server.
 
 `s5core_udp_relay_datagrams_total{stage}` exposes the four stages for all UDP
 commands, including plain SOCKS5. For plain SOCKS5, `client_in` counts packets

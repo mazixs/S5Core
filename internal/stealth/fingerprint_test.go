@@ -10,12 +10,16 @@ import (
 	"github.com/mazixs/S5Core/internal/stealth"
 )
 
-// The fingerprints below were taken from the uTLS presets this repository
-// ships (v1.8.2) and then checked against an independent implementation on
-// 20.09.2026: the same ClientHello was relayed to a third-party service that
-// computes JA3 and JA4 itself, and all five profiles matched character for
-// character, GREASE handling included. That is what makes these numbers a
-// test rather than a restatement of our own code.
+// The fingerprints below were recorded from the uTLS presets this repository
+// ships (v1.8.3-0.20261108164504-a13c59ffe98b). The formula was checked
+// against an independent implementation on 20.09.2026: the ClientHellos of the
+// v1.8.2 presets were relayed to a third-party service that computes JA3 and
+// JA4 itself, and all five profiles matched character for character, GREASE
+// handling included. That is what makes these numbers a test rather than a
+// restatement of our own code. The hellos recorded after the upgrade were not
+// relayed; the chrome JA4 equals the one this parser computes from the capture
+// of Chrome 155.0.8059.40 kept in the uTLS repository
+// (testdata/chrome155_clienthello.hex). The ios preset did not move.
 //
 // A failure here means one of three things, in decreasing order of
 // likelihood: uTLS was upgraded and its presets moved (expected - re-record
@@ -32,11 +36,11 @@ var recorded = []struct {
 	// connection while its JA4 does not move.
 	shuffles bool
 }{
-	{"chrome", "6c1e3961c85d6e126cc8ec7032102b88", "t13d1516h2_8daaf6152771_d8a2da3f94cd", true, []string{"h2", "http/1.1"}, true},
-	{"firefox", "b5001237acdf006056b409cc433726b0", "t13d1715h2_5b57614c22b0_5c2c66f702b0", false, []string{"h2", "http/1.1"}, false},
-	{"safari", "773906b0efdefa24a7f2b8eb6985bf37", "t13d2014h2_a09f3c656075_14788d8d241b", true, []string{"h2", "http/1.1"}, false},
+	{"chrome", "9c06ba62818336005005a747d1812ffa", "t13d1517h2_8daaf6152771_cb7bf5808d99", true, []string{"h2", "http/1.1"}, true},
+	{"firefox", "7704a11cf87dfcf33080b90ce11d5527", "t13d1715h2_5b57614c22b0_a54fffd0eb61", false, []string{"h2", "http/1.1"}, false},
+	{"safari", "ecdf4f49dd59effc439639da29186671", "t13d2013h2_a09f3c656075_7f0f34a4126d", true, []string{"h2", "http/1.1"}, false},
 	{"ios", "656b9a2f4de6ed4909e157482860ab3d", "t13d2613h2_2802a3db6c62_845d286b0d67", true, []string{"h2", "http/1.1"}, false},
-	{"go", "f3d2a49b79882b036e6c2fa15716a652", "t13d031000_55b375c5d22e_e7c285222651", false, nil, false},
+	{"go", "bf8552b4338989802acb9315f00dbbe7", "t13d031100_55b375c5d22e_b36ed9cfacdc", false, nil, false},
 }
 
 func loadHello(t *testing.T, profile string) *stealth.ClientHello {

@@ -26,9 +26,9 @@ func TestTheCollectorReportsWhatTheClientSent(t *testing.T) {
 		ja4         string
 		grease      bool
 	}{
-		{utls.FPChrome, "t13d1516h2_8daaf6152771_d8a2da3f94cd", true},
-		{utls.FPFirefox, "t13d1715h2_5b57614c22b0_5c2c66f702b0", false},
-		{utls.FPDefaultGo, "t13d031000_55b375c5d22e_e7c285222651", false},
+		{utls.FPChrome, "t13d1517h2_8daaf6152771_cb7bf5808d99", true},
+		{utls.FPFirefox, "t13d1715h2_5b57614c22b0_a54fffd0eb61", false},
+		{utls.FPDefaultGo, "t13d031100_55b375c5d22e_b36ed9cfacdc", false},
 	} {
 		t.Run(tc.fingerprint, func(t *testing.T) {
 			rep := collectOnce(t, tc.fingerprint)

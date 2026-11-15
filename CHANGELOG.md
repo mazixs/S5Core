@@ -53,9 +53,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [`docs/operations/runtime.rules.yml`](docs/operations/runtime.rules.yml) and
   are checked with `promtool` in CI. See
   [Go runtime and process metrics](docs/guides/operations.md#go-runtime-and-process-metrics).
+- Counts of lost and reordered datagrams on the native UDP path, taken by the
+  receiver's window of counters without a change on the wire. The client
+  writes `native_lost` and `native_late` for the server's datagrams into
+  `UDP Tunnel running` and `UDP Tunnel closed`; the server writes them for the
+  client's datagrams into `assoc_end` of the session journal and exports
+  `s5core_native_udp_lost_total` and `s5core_native_udp_late_total`. A datagram
+  is lost once the window has moved past it without it, and at the end of the
+  association also when it is still missing below the newest; it is late when
+  it comes after one with a higher counter. `scripts/journal_report.py` sums
+  both in its native section and shows them in the rows of the associations it
+  lists; the benchmark stand keeps them with the client's counts and the
+  server's metrics of each cell. See
+  [temporary UDP diagnostics](docs/guides/configuration.md#temporary-udp-diagnostics).
 
 ### Changed
 
+- The WSS listener of `s5core` writes the messages of its HTTP server to the
+  server's logger instead of the standard log, which logged them at INFO. A
+  failed TLS handshake (`http: TLS handshake error from <address>: ...`) is now
+  a DEBUG record `TLS handshake failed` with the cause in `reason` and no
+  address, so a public node no longer fills the INFO log with the addresses of
+  every client that rejects its certificate. `http: panic serving` loses the
+  address of its client as well and is logged at WARN, like any other message
+  of the HTTP server.
 - `s5core` serves `/metrics` from a Prometheus registry of its own instead of
   the global default one. Every family that was there keeps its name and type;
   a collector that a dependency registers on `prometheus.DefaultRegisterer` no
@@ -67,6 +88,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github.com/caarlos0/env/v11` to 11.4.2 and `go.opentelemetry.io/otel` to
   1.47.0 with its Prometheus exporter 0.69.0 in the main module, and the digest
   of the distroless base image and the pinned GitHub Actions.
+- Update `github.com/refraction-networking/utls` from 1.8.2 to a commit of its
+  master branch (`v1.8.3-0.20261108164504-a13c59ffe98b`), which carries current
+  browser profiles. `TLS_FINGERPRINT=chrome` now imitates Chrome 155 (was 133),
+  `firefox` Firefox 148 (was 120) and `safari` Safari 26.3 (was 16.0); `ios` is
+  still iOS 14 in uTLS and does not change. The JA3 and JA4 of `chrome`,
+  `firefox`, `safari` and `go` change, and the `firefox` and `safari` hellos
+  grow by about 1 KB because they now offer `X25519MLKEM768`. Browser presets
+  still do not resume TLS sessions. uTLS now pulls
+  `github.com/molecule-man/go-brrr` (MIT) in place of
+  `github.com/andybalholm/brotli`.
 
 ### Removed
 

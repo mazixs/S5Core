@@ -405,7 +405,7 @@ func (rt *routed) delivered() {
 }
 
 func (rt *routed) stat(name string) any {
-	stats := rt.client.logStats()
+	stats := rt.client.logStats(true)
 	for i := 0; i < len(stats); i += 2 {
 		if stats[i] == name {
 			return stats[i+1]
@@ -597,7 +597,7 @@ func TestACandidateMustBeFasterByAMargin(t *testing.T) {
 				opened := len(rt.net.socks)
 				rt.net.mu.Unlock()
 				if opened != 4 || rt.stat("native_route_candidates") != uint64(3) || rt.stat("native_route_moved") != false {
-					t.Fatalf("%d sockets, the closing line %v", opened, rt.client.logStats())
+					t.Fatalf("%d sockets, the closing line %v", opened, rt.client.logStats(true))
 				}
 				rt.noTunnelAfter(time.Second)
 			})

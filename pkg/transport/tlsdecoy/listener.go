@@ -200,6 +200,7 @@ func NewListener(cfg Config) (*Listener, error) {
 	l.cancelHTTP = cancelHTTP
 	l.server = &http.Server{
 		Handler:     l.trackHandlers(mux),
+		ErrorLog:    newServerErrorLog(cfg.Logger),
 		BaseContext: func(net.Listener) context.Context { return httpCtx },
 		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
 			return context.WithValue(ctx, listenerConnKey{}, conn)

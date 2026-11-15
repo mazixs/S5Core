@@ -154,10 +154,13 @@ type ConnEnd struct {
 	// What a native association carried by the native path, each way; the
 	// rest of its datagrams went by the stream. PathMoves is how often the
 	// answers left the native path for the stream, TunnelDrops the frames
-	// the stream's writer did not write.
-	NativeUp, NativeDown int64
-	PathMoves            int64
-	TunnelDrops          int64
+	// the stream's writer did not write. NativeLost and NativeLate are what
+	// the path lost of the client's datagrams and how many came after a
+	// later one (NativeAssociation.Loss).
+	NativeUp, NativeDown   int64
+	PathMoves              int64
+	TunnelDrops            int64
+	NativeLost, NativeLate int64
 	// UDPRelay describes relay stages, not reception at the remote application.
 	UDPRelay UDPRelaySnapshot
 
@@ -195,6 +198,14 @@ func (e *ConnEnd) pathEnded(moves int64, drops uint64) {
 	}
 	e.PathMoves = moves
 	e.TunnelDrops = int64(drops)
+}
+
+// nativeLoss records the final Loss of the association's native path.
+func (e *ConnEnd) nativeLoss(lost, late uint64) {
+	if e == nil {
+		return
+	}
+	e.NativeLost, e.NativeLate = int64(lost), int64(late)
 }
 
 // assocTotals is filled by the meters of an association as they flush, so a

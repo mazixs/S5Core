@@ -521,6 +521,8 @@ func (j *sessionJournal) connEnd(id, transport, client string, e *socks5.ConnEnd
 				l.Int("native_down", e.NativeDown)
 				l.Int("path_moves", e.PathMoves)
 				l.Int("tunnel_drops", e.TunnelDrops)
+				l.Int("native_lost", e.NativeLost)
+				l.Int("native_late", e.NativeLate)
 			}
 		}
 		if tcp != nil && silentEnd(e.End()) {

@@ -280,11 +280,7 @@ func TestTheClosingLineSaysWhichPathTheDatagramsTook(t *testing.T) {
 		if l.client.carry([]byte("input")) == byNative {
 			t.Fatal("a datagram of a lost path went native")
 		}
-		stats := l.client.logStats()
-		got := map[string]any{}
-		for i := 0; i < len(stats); i += 2 {
-			got[stats[i].(string)] = stats[i+1]
-		}
+		got := statsOf(l.client.logStats(true))
 		want := map[string]any{"native_sent": uint64(1), "tcp_sent_oversize": uint64(0), "tcp_sent_other": uint64(1),
 			"native_probes_sent": uint64(8), "native_probe_write_errors": uint64(0),
 			"size_probes_sent": uint64(0), "size_probe_too_big": uint64(0),
@@ -293,9 +289,52 @@ func TestTheClosingLineSaysWhichPathTheDatagramsTook(t *testing.T) {
 			"native_received": uint64(1), "tcp_received": uint64(1), "tunnel_drops": uint64(0),
 			"native_limit": nativeudp.MaxWire, "size_probes": uint64(0),
 			"dropped_oversize_sent": uint64(1), "dropped_oversize_received": uint64(0),
+			"native_lost": uint64(0), "native_late": uint64(0),
 			"native_route_candidates": uint64(0), "native_route_moved": false}
 		if !maps.Equal(got, want) {
 			t.Fatalf("closing line %v, want %v", got, want)
+		}
+	})
+}
+
+func statsOf(attrs []any) map[string]any {
+	got := map[string]any{}
+	for i := 0; i < len(attrs); i += 2 {
+		got[attrs[i].(string)] = attrs[i+1]
+	}
+	return got
+}
+
+// The lines say what the path did to the server's datagrams: one sealed and
+// never delivered, and one delivered behind the next. A running line does not
+// count the gap as lost, since the datagram may yet come; the closing line
+// does.
+func TestTheLinesSayWhatThePathLostAndReordered(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := startLiveness(t, nil)
+		l.at(100 * time.Millisecond)
+		seal := func() []byte {
+			t.Helper()
+			wire, err := l.path.server.Seal(nil, nativeudp.KindData, []byte("state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return wire
+		}
+		seal()
+		first, second := seal(), seal()
+		l.path.down(second)
+		l.path.down(first)
+		synctest.Wait()
+		for _, line := range []struct {
+			final      bool
+			lost, late uint64
+		}{{false, 0, 1}, {true, 1, 1}} {
+			got := statsOf(l.client.logStats(line.final))
+			if got["native_lost"] != line.lost || got["native_late"] != line.late {
+				t.Fatalf("final %v: native_lost %v, native_late %v; want %d, %d",
+					line.final, got["native_lost"], got["native_late"], line.lost, line.late)
+			}
 		}
 	})
 }
