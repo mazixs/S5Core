@@ -30,11 +30,11 @@ var wireFingerprints = []struct {
 	fingerprint string
 	ja4         string
 }{
-	{utls.FPChrome, "t13d1516h2_8daaf6152771_d8a2da3f94cd"},
-	{utls.FPFirefox, "t13d1715h2_5b57614c22b0_5c2c66f702b0"},
-	{utls.FPSafari, "t13d2014h2_a09f3c656075_14788d8d241b"},
+	{utls.FPChrome, "t13d1517h2_8daaf6152771_cb7bf5808d99"},
+	{utls.FPFirefox, "t13d1715h2_5b57614c22b0_a54fffd0eb61"},
+	{utls.FPSafari, "t13d2013h2_a09f3c656075_7f0f34a4126d"},
 	{utls.FPIOS, "t13d2613h2_2802a3db6c62_845d286b0d67"},
-	{utls.FPDefaultGo, "t13d031000_55b375c5d22e_e7c285222651"},
+	{utls.FPDefaultGo, "t13d031100_55b375c5d22e_b36ed9cfacdc"},
 }
 
 func TestTheWSSClientPutsTheNamedFingerprintOnTheWire(t *testing.T) {

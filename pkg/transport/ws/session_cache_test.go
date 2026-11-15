@@ -150,28 +150,32 @@ func roundTrip(t *testing.T, c *Conn) {
 // connection is a full handshake with the same JA4 as the first, after the
 // first had a ticket to offer.
 func TestABrowserFingerprintNeverResumes(t *testing.T) {
-	url, pool, _, certAsks := wssEcho(t)
-	tap := tapHellos(t, strings.TrimSuffix(strings.TrimPrefix(url, "wss://"), "/ws"))
-	d := NewDialer(DialOpts{URL: "wss://" + tap.addr + "/ws", RootCAs: pool, TLSFingerprint: utls.FPChrome})
+	for _, fp := range []string{utls.FPChrome, utls.FPFirefox, utls.FPSafari, utls.FPIOS} {
+		t.Run(fp, func(t *testing.T) {
+			url, pool, _, certAsks := wssEcho(t)
+			tap := tapHellos(t, strings.TrimSuffix(strings.TrimPrefix(url, "wss://"), "/ws"))
+			d := NewDialer(DialOpts{URL: "wss://" + tap.addr + "/ws", RootCAs: pool, TLSFingerprint: fp})
 
-	for i := 0; i < 2; i++ {
-		c, err := d.DialContext(t.Context())
-		if err != nil {
-			t.Fatalf("dial %d: %v", i, err)
-		}
-		roundTrip(t, c)
-		_ = c.Close()
-	}
-	first, h1 := tap.hello(t, 0)
-	second, h2 := tap.hello(t, 1)
-	if h1.JA4() != h2.JA4() {
-		t.Errorf("JA4 moved on the second connection: %s, then %s", h1.JA4(), h2.JA4())
-	}
-	if pskIdentity(t, first) != nil || pskIdentity(t, second) != nil {
-		t.Error("a chrome hello offered a session ticket")
-	}
-	if got := certAsks.Load(); got != 2 {
-		t.Errorf("the server was asked for a certificate %d times, want 2 full handshakes", got)
+			for i := 0; i < 2; i++ {
+				c, err := d.DialContext(t.Context())
+				if err != nil {
+					t.Fatalf("dial %d: %v", i, err)
+				}
+				roundTrip(t, c)
+				_ = c.Close()
+			}
+			first, h1 := tap.hello(t, 0)
+			second, h2 := tap.hello(t, 1)
+			if h1.JA4() != h2.JA4() {
+				t.Errorf("JA4 moved on the second connection: %s, then %s", h1.JA4(), h2.JA4())
+			}
+			if pskIdentity(t, first) != nil || pskIdentity(t, second) != nil {
+				t.Errorf("a %s hello offered a session ticket", fp)
+			}
+			if got := certAsks.Load(); got != 2 {
+				t.Errorf("the server was asked for a certificate %d times, want 2 full handshakes", got)
+			}
+		})
 	}
 }
 
