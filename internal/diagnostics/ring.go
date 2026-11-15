@@ -45,9 +45,8 @@ const (
 const (
 	flagPeriodic uint8 = 1 << iota // the call was one of every transportSampleEvery
 	flagSlow                       // a write that took slowWrite or longer
-	flagError                      // the call, or the setup, failed
+	flagError                      // the call returned an error
 	flagSpare                      // a setup on a spare transport
-	flagDeferred                   // a setup that left the greeting's answer to its caller
 )
 
 // The what of a native path record.

@@ -633,8 +633,17 @@ func handleClient(clientConn net.Conn, cfg clientParams, routes *domainMatcher) 
 
 	// Step 6: Bidirectional relay
 	relayStart := time.Now()
+	tunnelReady(obfsConn, relayStart.Sub(setupStart))
 	r := relayAfter(clientConn, obfsConn, nil)
 	logRelayEnd(obfs.LogIDOf(obfsConn), dest, cfg, relayStart.Sub(setupStart), relayStart, r)
+}
+
+// tunnelReady records a CONNECT the server accepted on the latency
+// recorder's flow of its transport; setup is the setup_ms of its line.
+func tunnelReady(tunnel net.Conn, setup time.Duration) {
+	if f := diagnostics.FlowOf(tunnel); f != (diagnostics.Flow{}) {
+		f.TunnelSetup(setup, takenFromSpare(tunnel))
+	}
 }
 
 // logRelayEnd counts and logs a relay that ran, by the direction that ended
@@ -1160,31 +1169,21 @@ func handshakeTunnel(cfg clientParams, connectReq []byte, open func(clientParams
 	}
 	// Here, after the spare and the early upgrade are told apart by their
 	// type, and before anything is sent.
-	_, spare := serverConn.(*takenSpare)
 	serverConn = diagnostics.ObserveConn(serverConn, "outer", string(cfg.effectiveTransport()))
-	// done ends the setup. Its record goes before the close of a failed one,
-	// which ends the sampling of the flow.
-	flow := diagnostics.FlowOf(serverConn)
-	done := func(c net.Conn, err error) (net.Conn, bool, error) {
-		flow.TunnelSetup(setupStart, diagnostics.Setup{Spare: spare, Deferred: cfg.greetingDeferred(), Failed: err != nil})
-		if err != nil {
-			c.Close()
-			return nil, onSpare, err
-		}
-		return c, onSpare, nil
-	}
 
 	// Every read below is covered by one deadline. It is cleared by the caller
 	// once the CONNECT reply has arrived, so it bounds setup and nothing else.
 	if cfg.HandshakeTimeout > 0 {
 		if err := serverConn.SetDeadline(setupStart.Add(cfg.HandshakeTimeout)); err != nil {
-			return done(serverConn, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to set handshake deadline: %w", err)})
+			serverConn.Close()
+			return nil, onSpare, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to set handshake deadline: %w", err)}
 		}
 	}
 
 	obfsConn, err := wrapTunnel(serverConn, cfg)
 	if err != nil {
-		return done(serverConn, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to create obfs conn: %w", err)})
+		serverConn.Close()
+		return nil, onSpare, &tunnelError{phase: phaseDial, err: fmt.Errorf("failed to create obfs conn: %w", err)}
 	}
 
 	// Send SOCKS5 greeting with supported auth methods.
@@ -1194,65 +1193,73 @@ func handshakeTunnel(cfg clientParams, connectReq []byte, open func(clientParams
 		// Offer both no-auth and user/pass to preserve compatibility with
 		// existing server configs.
 		if _, err := obfsConn.Write([]byte{socks5Ver, socks5UserPassAuth, 0x00, 0x02}); err != nil {
-			return done(obfsConn, tunnelFail(phaseGreeting, "failed to send greeting: %w", err))
+			obfsConn.Close()
+			return nil, onSpare, tunnelFail(phaseGreeting, "failed to send greeting: %w", err)
 		}
 	} else {
 		pipelined := make([]byte, 0, 3+len(connectReq))
 		pipelined = append(pipelined, socks5Ver, 0x01, socks5NoAuth)
 		pipelined = append(pipelined, connectReq...)
 		if _, err := obfsConn.Write(pipelined); err != nil {
-			return done(obfsConn, tunnelFail(phaseGreeting, "failed to send greeting: %w", err))
+			obfsConn.Close()
+			return nil, onSpare, tunnelFail(phaseGreeting, "failed to send greeting: %w", err)
 		}
 		cfg.sentRequest(obfsConn)
 		if cfg.greetingDeferred() {
-			return done(obfsConn, nil)
+			return obfsConn, onSpare, nil
 		}
 	}
 
 	method, err := readServerGreeting(obfsConn)
 	if err != nil {
-		return done(obfsConn, err)
+		obfsConn.Close()
+		return nil, onSpare, err
 	}
 
 	// Handle auth method selected by server
 	switch method {
 	case 0x00:
 		if cfg.ProxyUser == "" {
-			return done(obfsConn, nil)
+			return obfsConn, onSpare, nil
 		}
 		// No auth required - proceed
 	case 0x02:
 		// User/pass auth (RFC 1929)
 		if cfg.ProxyUser == "" {
-			return done(obfsConn, methodRefused(method))
+			obfsConn.Close()
+			return nil, onSpare, methodRefused(method)
 		}
 		authReq := buildUserPassAuthPacket(cfg.ProxyUser, cfg.ProxyPass)
 		pipelined := make([]byte, 0, len(authReq)+len(connectReq))
 		pipelined = append(pipelined, authReq...)
 		pipelined = append(pipelined, connectReq...)
 		if _, err := obfsConn.Write(pipelined); err != nil {
-			return done(obfsConn, tunnelFail(phaseAuth, "failed to send auth: %w", err))
+			obfsConn.Close()
+			return nil, onSpare, tunnelFail(phaseAuth, "failed to send auth: %w", err)
 		}
 		cfg.sentRequest(obfsConn)
 		if err := readUserPassAuthResponse(obfsConn); err != nil {
+			obfsConn.Close()
 			phase := phaseAuth
 			if errors.Is(err, errAuthRejected) {
 				phase = phaseAuthRejected
 			}
-			return done(obfsConn, &tunnelError{phase: phase, err: err})
+			return nil, onSpare, &tunnelError{phase: phase, err: err}
 		}
-		return done(obfsConn, nil)
+		return obfsConn, onSpare, nil
 	default:
-		return done(obfsConn, methodRefused(method))
+		obfsConn.Close()
+		return nil, onSpare, methodRefused(method)
 	}
 
 	// Forward CONNECT request
 	if _, err := obfsConn.Write(connectReq); err != nil {
-		return done(obfsConn, tunnelFail(phaseConnect, "failed to send CONNECT: %w", err))
+		obfsConn.Close()
+		return nil, onSpare, tunnelFail(phaseConnect, "failed to send CONNECT: %w", err)
 	}
 	cfg.sentRequest(obfsConn)
 
-	return done(obfsConn, nil)
+	return obfsConn, onSpare, nil
 }
 
 func (cfg clientParams) sentRequest(c net.Conn) {

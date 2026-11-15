@@ -214,7 +214,7 @@ Per-account traffic accounting is separate from telemetry. Its batching threshol
 
 ## Latency diagnostics
 
-The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements in memory: of the outer sockets, of the other side of their CONNECT relays, of the queue in front of the socket of a native UDP association and, on the client, of the setup of each tunnel and of the native UDP path beside it. When a spike starts, a native UDP path is lost or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, it costs one atomic load per CONNECT relay, one per accepted connection and per native UDP association of the server, two per tunnel and per native UDP association of the client, and one check of a pointer per answered probe of a native path. On, it also reads the clock twice on every read and write of a recorded socket, and the writer of a recorded queue updates three atomics per frame without reading the clock again.
+The latency recorder is a black box for latency that comes and goes. While it is on, it keeps the last two minutes of measurements in memory: of the outer sockets, of the other side of their CONNECT relays, of the queue in front of the socket of a native UDP association and, on the client, of the setup of each CONNECT and of the native UDP path beside an association. When a spike starts, a native UDP path is lost or the operator asks, it saves those two minutes and the 90 seconds after to disk as an incident. It is off unless `S5_DIAGNOSTICS_DIR` is set, and it works the same in `s5core` and `s5client`. Off, each place that could record costs one atomic load: an accepted connection of the server, a tunnel of the client, a CONNECT relay and a native UDP association on both ends, and on the client also an accepted CONNECT and the native path of an association; an answered probe of a native path costs one check of a pointer. On, it also reads the clock twice on every read and write of a recorded socket, and the writer of a recorded queue updates three atomics per frame without reading the clock again.
 
 ### Turning it on
 
@@ -240,7 +240,7 @@ When a recorded outer socket carries a native UDP association (`0x84`), the queu
 
 On the client an outer flow also holds what the client itself knows of its socket:
 
-- the setup of the tunnel on it: from the dial of the transport, or the take of a spare, until the request is written to the server and the server has answered the greeting and, with `PROXY_USER`, the authentication. With `OPTIMISTIC_CONNECT` (the default) and no `PROXY_USER` a CONNECT does not wait for the answer to the greeting: its setup ends once the request is written, and the record says `deferred`. A setup that fails once its socket is recorded is recorded too, with `error`, before the socket is closed;
+- the setup of a CONNECT the server accepted: from the moment the client took up the request, before it dialed the transport or took a spare, until the server's reply came. It is the same time as `setup_ms` of the connection's `TCP Tunnel closed` line, recorded when the reply comes. A setup that failed and a CONNECT the server refused have no such record: their flow closes without it, and their log line says why;
 - the native UDP path of an association on it (`0x84`): when the path is first verified, when it is lost and the datagrams move to `0x83` frames on the socket, and when it is restored;
 - the round trip of each probe of that path that the client sent while no other probe was unanswered. The answer to a probe sent while another was still out does not say which of them it answers, and it is not recorded. Nor is the round trip of a probe answered less than 10 s after the sending of a probe the client stopped waiting for: one of those unanswered when the path was lost, or one of several out when an answer came. Until then a late answer to that probe could pass for the answer to the later one.
 
@@ -248,7 +248,7 @@ The client's UDP socket of a native path is not a flow of its own: the verified 
 
 For each flow the recorder keeps:
 
-- **stage records**: one read and one write in 512, and every write that took 25 ms or more. A read waits for the peer, so a long read is not recorded on its own; the longest read between two samples goes into the next socket sample instead. On the client an outer flow also has the stage record of the setup of its tunnel;
+- **stage records**: one read and one write in 512, and every write that took 25 ms or more. A read waits for the peer, so a long read is not recorded on its own; the longest read between two samples goes into the next socket sample instead. On the client an outer flow that carried an accepted CONNECT also has the stage record of its setup;
 - **socket samples**: the kernel's counters at the open, every 500 ms, and at the close;
 - **queue records**, for an outer flow with a native UDP association: its queue every 500 ms, right after the socket sample;
 - **native path records**, on the client, for an outer flow with a native UDP association: the changes of the path and the round trips of its probes;
@@ -272,7 +272,7 @@ A datagram that goes by the stream of a native UDP association waits twice: in t
 
 The write is timed from the writer down, through the obfuscation; the socket's stage records time the part below the recorder's wrapper. A write held for long with no `slow` write on the socket when it ends spent its time above the socket. On Windows a socket sample has no `not_sent_bytes`; there a held write and `slow` writes are what shows a stream that does not take the data.
 
-The setup of a tunnel is recorded when it ends, so it began `duration_ns` before its `elapsed_ns`. The `flow_open` of its flow falls in between: before it the client dialed the transport or took a spare, after it the obfuscation and the SOCKS5 greeting ran on the socket. On a spare (`spare`) the dial came earlier, outside the setup.
+The setup of a CONNECT is recorded when the server's reply comes, so it began `duration_ns` before its `elapsed_ns`. The `flow_open` of its flow falls in between: before it the client dialed the transport or took a spare, after it went the obfuscation, the SOCKS5 exchange and the server's connection to the destination. On a spare (`spare`) the dial came earlier, outside the setup. A setup tried again on a fresh transport, after its spare or its early upgrade failed, is recorded on the flow of the fresh transport, and its `duration_ns` holds the failed attempt too.
 
 The native path of an association and the samples of its tunnel are read side by side:
 
@@ -326,7 +326,7 @@ Every line has these fields:
 
 | `kind` | `data` |
 |---|---|
-| `stage` | `boundary` (`transport_read`, `transport_write`, `tunnel_setup`), `duration_ns`, `error`; for a read or a write also `bytes`, `periodic` (one in 512), `slow` (a write of 25 ms or more); for `tunnel_setup` also `spare` (set up on a spare transport) and `deferred` (the setup did not wait for the server's answer to the greeting) |
+| `stage` | `boundary` (`transport_read`, `transport_write`, `tunnel_setup`), `duration_ns`; for a read or a write also `bytes`, `error`, `periodic` (one in 512), `slow` (a write of 25 ms or more); for `tunnel_setup` also `spare` (set up on a spare transport) |
 | `socket` | `reason` (`open`, `periodic`, `close`), `available` (whether the kernel answered), `read_wait_max_ns` (periodic samples only: the longest read since the sample before), `tcp` |
 | `flow_open` | `local`, `remote`; for a related flow `outer_flow`, the outer flow it belongs to |
 | `flow_close` | `read_calls`, `write_calls`, and `evicted: true` for a socket closed under its wrapper |
@@ -371,8 +371,8 @@ Every line has these fields:
 
 ### Limits
 
-- Besides the outer sockets only the other side of a CONNECT relay, the queue in front of the socket of a native UDP association and, on the client, the setup of a tunnel and the native path beside it are recorded. The datagrams themselves are not: neither the UDP sockets of a standard Associate or of a `0x83` or `0x84` association, nor native UDP packets, nor the datagrams the client holds until the server answers an association. The client's UDP socket of a native path shows only by its addresses in the `verified` record.
-- A `tunnel_setup` ends where the client's setup ends. One that says `deferred` holds no answer of the server at all, and no setup holds the server's answer to the request: `setup_ms` of the client's `TCP Tunnel closed` line runs on to that answer, so the two do not match.
+- Besides the outer sockets only the other side of a CONNECT relay, the queue in front of the socket of a native UDP association and, on the client, the setup of an accepted CONNECT and the native path beside an association are recorded. The datagrams themselves are not: neither the UDP sockets of a standard Associate or of a `0x83` or `0x84` association, nor native UDP packets, nor the datagrams the client holds until the server answers an association. The client's UDP socket of a native path shows only by its addresses in the `verified` record.
+- Only a CONNECT the server accepted has a `tunnel_setup`: a setup that failed, a refused CONNECT and a UDP association have none.
 - The round trip of a probe includes the server's handling of it and the time the client took to read the answer.
 - Only a probe answered alone is recorded, and none for 10 s after a probe the client stopped waiting for. A busy association that loses one probe in a hundred loses the round trips of about a fifth of its probes; a path whose round trip is longer than the 400–600 ms between probes has none recorded, and the slowest answers are the ones left out. An answer that comes more than 10 s after its probe can still pass for the answer to a later one.
 - The server records neither the setup of a tunnel nor the native path: its native UDP associations start no incident.

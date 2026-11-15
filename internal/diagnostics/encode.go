@@ -77,9 +77,7 @@ func appendRecord(dst []byte, rec *record) []byte {
 		dst = append(dst, `,"duration_ns":`...)
 		dst = strconv.AppendInt(dst, rec.dur, 10)
 		if rec.what == stageSetup {
-			dst = appendBool(append(dst, `,"error":`...), rec.flags&flagError != 0)
 			dst = appendBool(append(dst, `,"spare":`...), rec.flags&flagSpare != 0)
-			dst = appendBool(append(dst, `,"deferred":`...), rec.flags&flagDeferred != 0)
 			break
 		}
 		dst = append(dst, `,"bytes":`...)

@@ -44,36 +44,16 @@ func flowOf(c net.Conn) Flow {
 	return Flow{r: r, s: s}
 }
 
-// Setup is how the setup of a tunnel went.
-type Setup struct {
-	// Spare: the tunnel was set up on a spare transport, dialed before it.
-	Spare bool
-	// Deferred: the answer to the greeting was left to the caller, so the
-	// setup ended once the request was written.
-	Deferred bool
-	Failed   bool
-}
-
-// TunnelSetup records the setup of the tunnel on the socket, from start to
-// now.
-func (f Flow) TunnelSetup(start time.Time, how Setup) {
+// TunnelSetup records a tunnel on the socket that is ready: its request was
+// accepted after setup, on a spare transport, dialed before it, if spare.
+func (f Flow) TunnelSetup(setup time.Duration, spare bool) {
 	if f.s != nil {
-		f.tunnelSetup(start, how)
+		var flags uint8
+		if spare {
+			flags = flagSpare
+		}
+		f.push(record{kind: kindStage, what: stageSetup, flags: flags, dur: int64(setup)}, false)
 	}
-}
-
-func (f Flow) tunnelSetup(start time.Time, how Setup) {
-	var flags uint8
-	if how.Failed {
-		flags |= flagError
-	}
-	if how.Spare {
-		flags |= flagSpare
-	}
-	if how.Deferred {
-		flags |= flagDeferred
-	}
-	f.push(record{kind: kindStage, what: stageSetup, flags: flags, dur: int64(time.Since(start))}, false)
 }
 
 // NativeVerified records the first answer of the native UDP path beside the

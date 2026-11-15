@@ -12,7 +12,7 @@ import (
 
 // everyEvent reports one of each event on f.
 func everyEvent(f Flow, addr net.Addr) {
-	f.TunnelSetup(time.Now(), Setup{Spare: true})
+	f.TunnelSetup(time.Millisecond, true)
 	f.NativeVerified(addr, addr)
 	f.NativeProbe(time.Millisecond)
 	f.NativeLost(3)
@@ -74,10 +74,8 @@ func TestEveryEventGoesIntoItsFlow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, dir := dirRecorder(t, false)
 		a, b := FlowOf(ObserveConn(&fakeConn{}, "outer", "obfs")), FlowOf(ObserveConn(&fakeConn{}, "outer", "ws"))
-		start := time.Now()
-		time.Sleep(30 * time.Millisecond)
-		a.TunnelSetup(start, Setup{Spare: true})
-		b.TunnelSetup(start, Setup{Deferred: true, Failed: true})
+		a.TunnelSetup(30*time.Millisecond, true)
+		b.TunnelSetup(45*time.Millisecond, false)
 		a.NativeVerified(&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 50000}, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 2), Port: 4000})
 		a.NativeProbe(12 * time.Millisecond)
 		id := uuid.New().String()
@@ -106,14 +104,14 @@ func TestEveryEventGoesIntoItsFlow(t *testing.T) {
 		}
 		want := map[uint32][]string{
 			1: {
-				`stage {"boundary":"tunnel_setup","deferred":false,"duration_ns":30000000,"error":false,"spare":true}`,
+				`stage {"boundary":"tunnel_setup","duration_ns":30000000,"spare":true}`,
 				`native_path {"local":"127.0.0.1:50000","remote":"127.0.0.2:4000","state":"verified"}`,
 				`native_probe {"rtt_ns":12000000}`,
 				`native_path {"state":"lost","unanswered_probes":3}`,
 				`native_path {"state":"restored"}`,
 				`native_probe {"rtt_ns":15000000}`,
 			},
-			2: {`stage {"boundary":"tunnel_setup","deferred":true,"duration_ns":30000000,"error":true,"spare":false}`},
+			2: {`stage {"boundary":"tunnel_setup","duration_ns":45000000,"spare":false}`},
 		}
 		if mustJSON(t, got) != mustJSON(t, want) {
 			t.Fatalf("events\n%v\nwant\n%v", got, want)

@@ -228,6 +228,24 @@ func bytesAcked(c net.Conn) (uint64, bool) {
 
 func (s *takenSpare) NetConn() net.Conn { return s.Conn }
 
+// takenFromSpare says whether a spare is under c's wrappers, walked as
+// tcptune.Socket walks them.
+func takenFromSpare(c net.Conn) bool {
+	for range 10 {
+		switch v := c.(type) {
+		case *takenSpare:
+			return true
+		case interface{ NetConn() net.Conn }:
+			c = v.NetConn()
+		case interface{ Unwrap() net.Conn }:
+			c = v.Unwrap()
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // Close keeps the count a closed socket no longer gives.
 func (s *takenSpare) Close() error {
 	s.mu.Lock()

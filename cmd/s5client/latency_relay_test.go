@@ -53,9 +53,7 @@ type latencyEvent struct {
 		WriteElapsedNS   int64  `json:"write_elapsed_ns"`
 		Boundary         string `json:"boundary"`
 		DurationNS       int64  `json:"duration_ns"`
-		Error            bool   `json:"error"`
 		Spare            bool   `json:"spare"`
-		Deferred         bool   `json:"deferred"`
 		State            string `json:"state"`
 		UnansweredProbes int    `json:"unanswered_probes"`
 		RTTNS            int64  `json:"rtt_ns"`

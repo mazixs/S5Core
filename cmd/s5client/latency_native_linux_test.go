@@ -9,8 +9,8 @@ import (
 
 // An association through a real server whose native path is cut and heals:
 // the loss starts the incident of the client's tunnel, whose flow holds the
-// setup of the tunnel and the path verified with the addresses of the
-// client's UDP socket, lost and restored, in that order.
+// path verified with the addresses of the client's UDP socket, lost and
+// restored, in that order.
 func TestALostNativePathStartsTheIncidentOfItsTunnel(t *testing.T) {
 	dir, stop := startLatency(t)
 	r := newNativeRig(t)
@@ -30,7 +30,7 @@ func TestALostNativePathStartsTheIncidentOfItsTunnel(t *testing.T) {
 	tunnel, events := automaticIncident(t, dir)
 	var changes []string
 	var local, remote string
-	setups, lost, probes := 0, 0, 0
+	lost, probes := 0, 0
 	for _, e := range events {
 		if e.Flow != tunnel {
 			if e.Kind == "native_path" || e.Kind == "native_probe" {
@@ -42,10 +42,6 @@ func TestALostNativePathStartsTheIncidentOfItsTunnel(t *testing.T) {
 		case "flow_open":
 			if e.Data.Remote != r.control.RemoteAddr().String() {
 				t.Fatalf("the incident is of the flow to %s, not of the client's tunnel", e.Data.Remote)
-			}
-		case "stage":
-			if e.Data.Boundary == "tunnel_setup" && !e.Data.Error && !e.Data.Spare {
-				setups++
 			}
 		case "native_path":
 			changes = append(changes, e.Data.State)
@@ -61,9 +57,6 @@ func TestALostNativePathStartsTheIncidentOfItsTunnel(t *testing.T) {
 				t.Fatalf("a round trip of %d ns", e.Data.RTTNS)
 			}
 		}
-	}
-	if setups != 1 {
-		t.Fatalf("%d setups of the tunnel recorded, want 1", setups)
 	}
 	if !slices.Equal(changes, []string{"verified", "lost", "restored"}) || lost < nativeMisses {
 		t.Fatalf("the path's changes %v, lost after %d unanswered", changes, lost)
