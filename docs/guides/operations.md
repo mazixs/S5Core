@@ -22,6 +22,28 @@ Available metrics:
 - `s5core_half_close_failures_total` (Counter, labels `side`, `transport`): Connections whose write side could not be shut down.
 - `s5core_auth_verifications_total` (Counter, label `path`): Password checks, by what answered them - `kdf` (Argon2id ran), `cache` (remembered verifier), `coalesced` (waited for a KDF run already in flight) or `overloaded` (the KDF memory budget was full, so the check was refused without running - see `KDF_MEMORY_BUDGET_MB`).
 
+### Go runtime and process metrics
+
+`/metrics` serves one registry owned by the `s5core` binary: the OTel exporter with the `s5core_*` families, a Go collector, a process collector and the handler's own `promhttp_metric_handler_*` counters. Collectors registered on the global `prometheus.DefaultRegisterer`, for example by a dependency, do not appear on this port. The SDK (`pkg/s5server`) registers no Go or process collectors: an embedding application exports its own.
+
+The Go collector keeps its default families (`go_gc_duration_seconds`, `go_memstats_*`, `go_goroutines`, `go_threads`, `go_info`, `go_gc_gogc_percent`, `go_gc_gomemlimit_bytes`, `go_sched_gomaxprocs_threads`), the process collector keeps `process_*`. On top of them the server exports eleven [runtime/metrics](https://pkg.go.dev/runtime/metrics) sources. They are process-wide and carry no labels:
+
+| Runtime source | Family | Type |
+| --- | --- | --- |
+| `/sched/pauses/total/gc:seconds` | `go_sched_pauses_total_gc_seconds` | Histogram |
+| `/sched/latencies:seconds` | `go_sched_latencies_seconds` | Histogram |
+| `/gc/cycles/total:gc-cycles` | `go_gc_cycles_total_gc_cycles_total` | Counter |
+| `/gc/cycles/forced:gc-cycles` | `go_gc_cycles_forced_gc_cycles_total` | Counter |
+| `/cpu/classes/gc/total:cpu-seconds` | `go_cpu_classes_gc_total_cpu_seconds_total` | Counter |
+| `/cpu/classes/gc/mark/assist:cpu-seconds` | `go_cpu_classes_gc_mark_assist_cpu_seconds_total` | Counter |
+| `/cpu/classes/gc/mark/idle:cpu-seconds` | `go_cpu_classes_gc_mark_idle_cpu_seconds_total` | Counter |
+| `/cpu/classes/total:cpu-seconds` | `go_cpu_classes_total_cpu_seconds_total` | Counter |
+| `/gc/heap/live:bytes` | `go_gc_heap_live_bytes` | Gauge |
+| `/gc/limiter/last-enabled:gc-cycle` | `go_gc_limiter_last_enabled_gc_cycle` | Gauge |
+| `/sync/mutex/wait/total:seconds` | `go_sync_mutex_wait_total_seconds_total` | Counter |
+
+Both histograms have seven finite buckets, from 64 ns to about 117 ms, so their quantiles are interpolated: everything between 0.92 ms and 10.5 ms falls into one bucket.
+
 ### Where the time goes
 
 `s5core_connection_phase_seconds` records six phases, modelled on HAProxy's timing fields:
