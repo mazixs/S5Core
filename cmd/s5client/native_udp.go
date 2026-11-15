@@ -860,13 +860,13 @@ func (n *nativeClient) watch() {
 			}
 			return
 		}
-		candidate := search.Limit()
+		found := search.Limit()
 		if recovering {
 			// After a move the route is another, and its limit may be lower.
 			lower := rerouted
 			recovering, rerouted = false, false
-			if candidate > n.session.Limit() || lower && candidate < n.session.Limit() {
-				announce, pendingLimit = candidate, candidate
+			if found > n.session.Limit() || lower && found < n.session.Limit() {
+				announce, pendingLimit = found, found
 				announceGeneration, announcements = generation, 0
 				probe(now)
 			} else {
@@ -874,7 +874,7 @@ func (n *nativeClient) watch() {
 			}
 			return
 		}
-		announce = candidate
+		announce = found
 		n.session.SetLimit(announce)
 		recoveryAt = now.Add(nativeRecoveryEvery)
 		if announce < nativeudp.FloorWire {
@@ -1120,7 +1120,7 @@ func (n *nativeClient) watch() {
 		case answer := <-n.limitACK:
 			if pendingLimit != 0 && answer.Generation == announceGeneration && answer.Limit == pendingLimit {
 				if n.session.ApplyProbeLimit(nativeudp.Probe{Generation: answer.Generation, Limit: answer.Limit}) {
-					slog.Info("Native UDP limit recovered", "conn", n.logID, "limit", answer.Limit, "generation", answer.Generation)
+					slog.Info("Native UDP limit agreed", "conn", n.logID, "limit", answer.Limit, "generation", answer.Generation)
 				}
 				pendingLimit = 0
 				recoveryAt = time.Now().Add(nativeRecoveryEvery)
