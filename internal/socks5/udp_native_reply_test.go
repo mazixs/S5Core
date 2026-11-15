@@ -20,6 +20,13 @@ import (
 // returned once the connection closes.
 func nativeRequest(t *testing.T, conf *Config) ([]byte, net.Conn, <-chan error) {
 	t.Helper()
+	return nativeRequestThrough(t, conf, nil)
+}
+
+// nativeRequestThrough is nativeRequest with the server's end of the
+// connection wrapped by wrap when it is set, as a listener wraps it.
+func nativeRequestThrough(t *testing.T, conf *Config, wrap func(net.Conn) net.Conn) ([]byte, net.Conn, <-chan error) {
+	t.Helper()
 	conf.BindIP = net.ParseIP("127.0.0.1")
 	if conf.Logger == nil {
 		conf.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -39,6 +46,9 @@ func nativeRequest(t *testing.T, conf *Config) ([]byte, net.Conn, <-chan error) 
 		if err != nil {
 			served <- err
 			return
+		}
+		if wrap != nil {
+			c = wrap(c)
 		}
 		served <- server.ServeConnContext(context.Background(), c)
 	}()
@@ -219,13 +229,18 @@ func nativeAnswersCounted(t *testing.T, native *scriptedNative, counters *Native
 
 func nativeAnswersWith(t *testing.T, native *scriptedNative, conf *Config) (*net.UDPConn, netip.AddrPort, net.Conn) {
 	t.Helper()
+	return nativeAnswersThrough(t, native, conf, nil)
+}
+
+func nativeAnswersThrough(t *testing.T, native *scriptedNative, conf *Config, wrap func(net.Conn) net.Conn) (*net.UDPConn, netip.AddrPort, net.Conn) {
+	t.Helper()
 	target, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = target.Close() })
 	conf.NativeUDP = func(net.Conn) (NativeAssociation, error) { return native, nil }
-	reply, conn, _ := nativeRequest(t, conf)
+	reply, conn, _ := nativeRequestThrough(t, conf, wrap)
 	if reply[1] != successReply {
 		t.Fatalf("reply %x, want success", reply)
 	}

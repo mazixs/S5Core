@@ -3,9 +3,12 @@ package socks5
 import (
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mazixs/S5Core/internal/diagnostics"
 )
 
 // A native association's control stream carries the datagrams that do not go
@@ -69,6 +72,14 @@ type TunnelWriter struct {
 	stopped sync.Once
 	drops   TunnelDrops
 	shared  *TunnelDrops
+
+	// What the latency recorder samples of a writer it watches (QueueState).
+	// waitMax is the longest wait of a frame written since the last sample,
+	// in nanoseconds; writing is when the write in progress began, since
+	// epoch and plus one, zero while none is.
+	epoch   time.Time
+	waitMax atomic.Int64
+	writing atomic.Int64
 }
 
 // NewTunnelWriter writes to w once Run is called. control builds the control
@@ -140,12 +151,36 @@ func (t *TunnelWriter) Dropped() uint64 { return t.drops.Queue.Load() + t.drops.
 // Stop ends Run, which returns nil. Frames still queued are not written.
 func (t *TunnelWriter) Stop() { t.stopped.Do(func() { close(t.stop) }) }
 
-// Run writes until Stop, a failed write or an error of written.
+// Run writes until Stop, a failed write or an error of written. While it
+// runs, the latency recorder samples the queue of a socket it selected.
 func (t *TunnelWriter) Run() error {
+	watched := false
+	if c, ok := t.w.(net.Conn); ok {
+		if stop := diagnostics.ObserveQueue(c, t); stop != nil {
+			defer stop()
+			watched = true
+		}
+	}
+	return t.run(watched)
+}
+
+// run is Run; watched says the recorder samples the queue.
+func (t *TunnelWriter) run(watched bool) error {
 	defer t.drain()
+	if watched {
+		// QueueState reads it only once writing, stored after it, says a
+		// write began.
+		t.epoch = time.Now()
+	}
 	for {
 		if t.pending.Swap(false) {
-			if _, err := t.w.Write(t.control()); err != nil {
+			var err error
+			if watched {
+				err = t.writeWatched(t.control(), time.Since(t.epoch))
+			} else {
+				_, err = t.w.Write(t.control())
+			}
+			if err != nil {
 				return fmt.Errorf("tunnel write: %w", err)
 			}
 			continue
@@ -156,12 +191,19 @@ func (t *TunnelWriter) Run() error {
 		case <-t.wake:
 		case f := <-t.frames:
 			t.queued.Add(-int64(cap(f.buf)))
-			if time.Since(f.at) > tunnelFrameAge {
+			waited := time.Since(f.at)
+			if waited > tunnelFrameAge {
 				t.drop(&t.drops.Age)
 				releaseTunnelFrame(f)
 				continue
 			}
-			_, err := t.w.Write(f.buf)
+			var err error
+			if watched {
+				t.noteWait(waited)
+				err = t.writeWatched(f.buf, f.at.Sub(t.epoch)+waited)
+			} else {
+				_, err = t.w.Write(f.buf)
+			}
 			payload := f.payload
 			releaseTunnelFrame(f)
 			if err != nil {
@@ -174,6 +216,40 @@ func (t *TunnelWriter) Run() error {
 			}
 		}
 	}
+}
+
+// writeWatched writes p with the write marked in progress from start, after
+// epoch, so that a sample sees a write the socket holds before it returns.
+func (t *TunnelWriter) writeWatched(p []byte, start time.Duration) error {
+	t.writing.Store(int64(start) + 1)
+	_, err := t.w.Write(p)
+	t.writing.Store(0)
+	return err
+}
+
+func (t *TunnelWriter) noteWait(d time.Duration) {
+	for {
+		was := t.waitMax.Load()
+		if int64(d) <= was || t.waitMax.CompareAndSwap(was, int64(d)) {
+			return
+		}
+	}
+}
+
+// QueueState is the queue as the latency recorder samples it. It never
+// waits: it reads atomics and the length of the queue. It takes the longest
+// wait since the call before.
+func (t *TunnelWriter) QueueState() diagnostics.QueueState {
+	st := diagnostics.QueueState{
+		Frames: len(t.frames), Bytes: t.queued.Load(),
+		DroppedFull: t.drops.Queue.Load(), DroppedAge: t.drops.Age.Load(),
+		WaitMax: time.Duration(t.waitMax.Swap(0)),
+	}
+	if began := t.writing.Load(); began != 0 {
+		st.Writing = true
+		st.WriteElapsed = time.Since(t.epoch) - time.Duration(began-1)
+	}
+	return st
 }
 
 func (t *TunnelWriter) drain() {

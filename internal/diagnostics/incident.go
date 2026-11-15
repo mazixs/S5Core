@@ -35,8 +35,9 @@ const (
 	traceMaxBytes = 32 << 20
 
 	// manifestSchema 2: a flow may be the related socket of another one,
-	// which its outer_flow names.
-	manifestSchema  = 2
+	// which its outer_flow names. 3: an outer flow may have queue records,
+	// so a flow of schema 3 without them had no queue watched.
+	manifestSchema  = 3
 	eventsSuffix    = ".events.jsonl"
 	manifestSuffix  = ".manifest.json"
 	traceSuffix     = ".trace"

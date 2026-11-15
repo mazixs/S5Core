@@ -23,6 +23,16 @@ func BenchmarkObserveRelatedDisabled(b *testing.B) {
 	}
 }
 
+// What every native UDP association's writer pays with diagnostics off.
+func BenchmarkObserveQueueDisabled(b *testing.B) {
+	var c net.Conn = &fakeConn{}
+	q := &fakeQueue{}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = ObserveQueue(c, q)
+	}
+}
+
 // One read and one write through the wrapper, outside their turn: direct,
 // through a stopped recorder's wrapper, recorded, and recorded as the related
 // side of a relay.

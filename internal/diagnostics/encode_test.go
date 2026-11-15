@@ -157,6 +157,7 @@ func TestAppendRecordDoesNotAllocate(t *testing.T) {
 	recs := []record{
 		{flow: testFlow, kind: kindStage, what: stageRead, flags: flagPeriodic},
 		{flow: testFlow, kind: kindSocket, what: sampleTick, payload: &tcpSample{available: true, counters: tcptune.Counters{Has: 1<<21 - 1}}},
+		{flow: testFlow, kind: kindQueue, payload: &QueueState{Frames: 1024, Writing: true, WriteElapsed: time.Second}},
 	}
 	for i := range recs {
 		if n := testing.AllocsPerRun(100, func() { buf = appendRecord(buf[:0], &recs[i]) }); n != 0 {

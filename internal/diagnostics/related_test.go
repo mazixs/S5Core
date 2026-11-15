@@ -146,7 +146,7 @@ func TestAnIncidentTiesTheRelatedFlowToItsOuterFlow(t *testing.T) {
 			{Flow: 1, Leg: "outer", Transport: "obfs", Local: "127.0.0.1:1080", Remote: "127.0.0.1:443"},
 			{Flow: 2, OuterFlow: 1, Leg: "target", Transport: "tcp", Local: "127.0.0.1:1080", Remote: "127.0.0.1:443"},
 		}
-		if m.Schema != 2 || !slices.Equal(m.Flows, want) {
+		if m.Schema != 3 || !slices.Equal(m.Flows, want) {
 			t.Fatalf("schema %d, flows %+v", m.Schema, m.Flows)
 		}
 		var raw struct {
@@ -221,13 +221,18 @@ func TestOnlyASelectedSocketStartsAnIncident(t *testing.T) {
 	})
 }
 
-// With every slot taken and each selected socket beside its related one, two
-// minutes of samples fit the ring without pushing any out.
+// With every slot taken and each selected socket beside its related one and
+// its queue, two minutes of samples fit the ring without pushing any out, in
+// less than three quarters of it.
 func TestTheWindowOfEverySocketFitsTheRing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := testRecorder(t)
 		for range selectedSockets {
-			_ = ObserveRelated(ObserveConn(&fakeConn{}, "outer", "obfs"), &fakeConn{}, "target")
+			outer := ObserveConn(&fakeConn{}, "outer", "obfs")
+			_ = ObserveRelated(outer, &fakeConn{}, "target")
+			if ObserveQueue(outer, &fakeQueue{}) == nil {
+				t.Fatal("a queue was not watched")
+			}
 		}
 		if len(r.sockets) != 2*selectedSockets {
 			t.Fatalf("%d sampled", len(r.sockets))
@@ -236,7 +241,8 @@ func TestTheWindowOfEverySocketFitsTheRing(t *testing.T) {
 			time.Sleep(sampleInterval)
 			r.tick(time.Now())
 		}
-		if r.ring.overwritten != 0 || r.ring.count >= ringRecords/2 {
+		t.Logf("%d records held", r.ring.count)
+		if r.ring.overwritten != 0 || r.ring.count >= ringRecords*3/4 {
 			t.Fatalf("%d records held, %d overwritten", r.ring.count, r.ring.overwritten)
 		}
 	})

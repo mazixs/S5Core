@@ -20,6 +20,7 @@ const sampleInterval = 500 * time.Millisecond
 type sampler struct {
 	metrics []metrics.Sample // runtimeScalars, then runtimeHistograms
 	sockets []*socket
+	queues  []*watchedQueue // of each of sockets, nil where none is watched
 }
 
 func newSampler() sampler {
@@ -61,17 +62,19 @@ type spike struct {
 	reason uint8
 }
 
-// tick samples the runtime and every sampled socket. It returns the first
-// spike the detector saw, and how many more it saw in the same tick. A
-// socket closed under its wrapper is evicted here.
+// tick samples the runtime and every sampled socket, and the queue in front
+// of a socket right after it. It returns the first spike the detector saw,
+// and how many more it saw in the same tick. A socket closed under its
+// wrapper is evicted here.
 func (r *recorder) tick(now time.Time) (first spike, more int) {
 	r.push(record{kind: kindRuntime, payload: r.sampler.readRuntime()})
 	r.mu.Lock()
 	for s := range r.sockets {
 		r.sampler.sockets = append(r.sampler.sockets, s)
+		r.sampler.queues = append(r.sampler.queues, s.queue)
 	}
 	r.mu.Unlock()
-	for _, s := range r.sampler.sockets {
+	for i, s := range r.sampler.sockets {
 		c, err := countersOf(s.conn)
 		if errors.Is(err, net.ErrClosed) {
 			r.evict(s)
@@ -80,6 +83,9 @@ func (r *recorder) tick(now time.Time) (first spike, more int) {
 		r.push(record{flow: s.flow, kind: kindSocket, what: sampleTick, payload: &tcpSample{
 			counters: c, available: err == nil, readWait: time.Duration(s.readWait.Swap(0)),
 		}})
+		if w := r.sampler.queues[i]; w != nil {
+			r.sampleQueue(s, w)
+		}
 		// A related socket starts no incident: its path is not the tunnel's.
 		if err != nil || s.outer != nil {
 			continue
@@ -93,7 +99,8 @@ func (r *recorder) tick(now time.Time) (first spike, more int) {
 		}
 	}
 	clear(r.sampler.sockets)
-	r.sampler.sockets = r.sampler.sockets[:0]
+	clear(r.sampler.queues)
+	r.sampler.sockets, r.sampler.queues = r.sampler.sockets[:0], r.sampler.queues[:0]
 	return first, more
 }
 

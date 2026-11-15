@@ -112,17 +112,21 @@ func TestATickWithoutSocketsAllocatesTheRuntimeSample(t *testing.T) {
 }
 
 // A tick with every slot taken by a live loopback socket, as the worker
-// makes it every sampleInterval.
+// makes it every sampleInterval, and with a queue in front of each.
 func BenchmarkSampleTick(b *testing.B) {
-	for _, n := range []int{0, selectedSockets} {
-		b.Run("sockets="+map[int]string{0: "0", selectedSockets: "32"}[n], func(b *testing.B) {
+	for _, bc := range []struct {
+		name   string
+		n      int
+		queues bool
+	}{{"sockets=0", 0, false}, {"sockets=32", selectedSockets, false}, {"sockets=32/queues", selectedSockets, true}} {
+		b.Run(bc.name, func(b *testing.B) {
 			r := testRecorder(b)
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
 				b.Fatal(err)
 			}
 			defer ln.Close()
-			for range n {
+			for range bc.n {
 				c, err := net.Dial("tcp", ln.Addr().String())
 				if err != nil {
 					b.Fatal(err)
@@ -133,9 +137,12 @@ func BenchmarkSampleTick(b *testing.B) {
 				}
 				defer c.Close()
 				defer s.Close()
-				_ = ObserveConn(c, "outer", "obfs")
+				o := ObserveConn(c, "outer", "obfs")
+				if bc.queues && ObserveQueue(o, &fakeQueue{}) == nil {
+					b.Fatal("a queue was not watched")
+				}
 			}
-			if len(r.sockets) != n {
+			if len(r.sockets) != bc.n {
 				b.Fatalf("%d selected", len(r.sockets))
 			}
 			now := time.Now()

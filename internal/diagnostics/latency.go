@@ -92,8 +92,10 @@ type socket struct {
 	detector spikeDetector // the worker's
 	// outer is the selected socket a related one belongs to, nil for a
 	// selected one. related is the related socket of a selected one while it
-	// is sampled; mu guards it.
+	// is sampled, queue the queue in front of a selected one while it is
+	// watched (ObserveQueue); mu guards both.
 	outer, related *socket
+	queue          *watchedQueue
 }
 
 // selection decides which sockets are recorded: a slot must be free and a
@@ -259,13 +261,14 @@ func (r *recorder) release(s *socket) {
 }
 
 // unsampleLocked stops sampling s and says whether it was sampled: a
-// selected socket gives its slot back, a related one its place beside its
-// outer socket. mu is held.
+// selected socket gives its slot back and its queue's watch ends, a related
+// one gives its place beside its outer socket back. mu is held.
 func (r *recorder) unsampleLocked(s *socket) bool {
 	if _, sampled := r.sockets[s]; !sampled {
 		return false
 	}
 	delete(r.sockets, s)
+	s.queue = nil
 	if s.outer != nil {
 		s.outer.related = nil
 	} else {

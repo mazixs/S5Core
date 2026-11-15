@@ -33,23 +33,27 @@ func loopbackPair(tb testing.TB) (dialed, accepted net.Conn) {
 }
 
 // startLatency turns the latency recorder on, its log line off, and waits
-// until it selects a socket.
-func startLatency(tb testing.TB) {
+// until it selects a socket. It returns the recorder's directory and its
+// stop.
+func startLatency(tb testing.TB) (dir string, stop func()) {
 	tb.Helper()
 	logger := slog.Default()
 	slog.SetDefault(slog.New(slog.DiscardHandler))
 	tb.Cleanup(func() { slog.SetDefault(logger) })
-	tb.Setenv("S5_DIAGNOSTICS_DIR", filepath.Join(tb.TempDir(), "diag"))
-	tb.Cleanup(diagnostics.StartLatency())
+	dir = filepath.Join(tb.TempDir(), "diag")
+	tb.Setenv("S5_DIAGNOSTICS_DIR", dir)
+	stop = diagnostics.StartLatency()
+	tb.Cleanup(stop)
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		c, _ := loopbackPair(tb)
 		observed := diagnostics.ObserveConn(c, "probe", "tcp")
 		_ = observed.Close()
 		if observed != c {
-			return
+			return dir, stop
 		}
 	}
 	tb.Fatal("the latency recorder did not start")
+	return "", nil
 }
 
 // What the latency recorder's wrappers cost the relay of a CONNECT, 64 KiB
