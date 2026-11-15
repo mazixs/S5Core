@@ -669,11 +669,17 @@ type relayResult struct {
 // its reply, still to be read, says more than the reset of the write. A
 // successful await after such a write copies nothing and aborts.
 func relayAfter(clientConn, obfsConn net.Conn, await func() error) (r relayResult) {
-	ends := make(chan bool, 2)
+	ends := make(chan struct{}, 2)
 	var state atomic.Int32
 	if await == nil {
 		state.Store(relayCopying)
 	}
+	// A half passes its end on before it reports it, and the end it passes on
+	// can end the other half, whose report then arrives first. Each half marks
+	// itself as it ends, before the pass-on: firstUp says which half marked
+	// first, not which reported first.
+	var endOnce sync.Once
+	ended := func(byUp bool) { endOnce.Do(func() { r.firstUp = byUp }) }
 	var abortOnce sync.Once
 	abort := func(byUp bool) {
 		abortOnce.Do(func() {
@@ -683,6 +689,7 @@ func relayAfter(clientConn, obfsConn net.Conn, await func() error) (r relayResul
 		})
 	}
 	finish := func(dst net.Conn, result copyResult, byUp bool) {
+		ended(byUp)
 		if result.err == nil {
 			endWrite(dst)
 			return
@@ -697,32 +704,31 @@ func relayAfter(clientConn, obfsConn net.Conn, await func() error) (r relayResul
 	go func() {
 		r.up = relayCopy(obfsConn, clientConn)
 		finish(obfsConn, r.up, true)
-		ends <- true
+		ends <- struct{}{}
 	}()
 	go func() {
 		if await != nil {
 			if err := await(); err != nil {
 				r.awaitErr = err
+				ended(false)
 				abort(false)
-				ends <- false
+				ends <- struct{}{}
 				return
 			}
+			// The upstream's write failed first and has marked itself.
 			if !state.CompareAndSwap(relayAwaiting, relayCopying) {
 				abort(false)
-				ends <- false
+				ends <- struct{}{}
 				return
 			}
 		}
 		r.down = relayCopy(clientConn, obfsConn)
 		finish(clientConn, r.down, false)
-		ends <- false
+		ends <- struct{}{}
 	}()
 
-	r.firstUp = <-ends
 	<-ends
-	if state.Load() == relayWriteFailed {
-		r.firstUp = true
-	}
+	<-ends
 	return r
 }
 
