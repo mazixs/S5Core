@@ -419,6 +419,7 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 	var steady atomic.Bool
 	var obfsConn net.Conn
 	var native *nativeClient
+	var relays sync.WaitGroup
 
 	// The application may send datagrams from the address it opened the SOCKS5
 	// connection from, and from nothing else: the port this client announced
@@ -515,7 +516,7 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 		if !answer() {
 			return
 		}
-		go readApp()
+		relays.Go(readApp)
 	}
 
 	// Go routine C: the application leaving ends the association, and in
@@ -629,7 +630,7 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 		if !answer() {
 			return
 		}
-		go readApp()
+		relays.Go(readApp)
 	}
 
 	id := obfs.LogIDOf(obfsConn)
@@ -665,7 +666,7 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 	}
 
 	// Go routine B: Read from obfsConn (TCP) -> write to application (UDP)
-	go func() {
+	relays.Go(func() {
 		lenBuf := make([]byte, 2)
 		var next [8]byte
 		for {
@@ -729,7 +730,7 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 			}
 			stats.addReceived(int(packetLen))
 		}
-	}()
+	})
 
 	extra := func() []any {
 		attrs := []any{"conn", id}
@@ -742,6 +743,14 @@ func associateUDP(clientConn net.Conn, dest string, cfg clientParams, wireReq []
 	report := startAssocReport(&stats, opened, extra, cfg.UDPDiagnosticsInterval)
 	end := <-errCh
 	report.stop()
+	// The relays count a datagram after writing it, so the closing line waits
+	// for them: a datagram the other side already has could be missing from
+	// it otherwise. They are stopped by closing the tunnel and by a read
+	// deadline on the application's socket, which stays open: an answer still
+	// being written to it would fail on a closed one and count as an error.
+	_ = obfsConn.Close()
+	_ = udpConn.SetReadDeadline(time.Now())
+	relays.Wait()
 	minutes.udp.Add(1)
 	logAssocClosed(end, opened, stats.totals(), extra())
 }
