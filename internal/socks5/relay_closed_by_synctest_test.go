@@ -47,7 +47,7 @@ func TestTheSideThatEndsFirstEndsTheRelay(t *testing.T) {
 				defer targetSide.Close()
 
 				var client conn = serverSide
-				var target net.Conn = targetSide
+				target := targetSide
 				var fromClient io.Reader
 				if tc.clientFirst {
 					fromClient = bytes.NewReader(nil)
