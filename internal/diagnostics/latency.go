@@ -1,7 +1,9 @@
 package diagnostics
 
 import (
+	"context"
 	"net"
+	"runtime/trace"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,9 +34,18 @@ var current atomic.Pointer[recorder]
 
 type recorder struct {
 	start time.Time // the origin of every record's elapsed time
+	dir   string
+	// runID names the run, bootID this start of the process.
+	runID, bootID string
+	budget        int64                 // diskBudget, less in a test
+	flight        *trace.FlightRecorder // nil without S5_DIAGNOSTICS_TRACE=1
+	cancel        context.CancelFunc
+	done          chan struct{} // closed when the worker is gone
 	// stopped is set when the recorder stops; the wrappers it left on
 	// sockets pass every call through from then on.
 	stopped atomic.Bool
+	tracing atomic.Bool // a trace is being written
+	traces  sync.WaitGroup
 
 	// mu guards what follows. No I/O happens under it.
 	mu        sync.Mutex
@@ -43,11 +54,22 @@ type recorder struct {
 	flows     uint32 // the last flow ID given
 	selection selection
 
-	sampler sampler // the worker's
+	// The worker's.
+	sampler    sampler
+	pending    *incident
+	lastMarker string
+	ticks      int
+	chunk      []record
+	line       []byte
+	health     workerHealth
 }
 
 func newRecorder() *recorder {
-	return &recorder{start: time.Now(), ring: newRing(ringRecords), sockets: make(map[*socket]struct{}), sampler: newSampler()}
+	return &recorder{
+		start: time.Now(), budget: diskBudget, cancel: func() {}, done: make(chan struct{}),
+		ring: newRing(ringRecords), sockets: make(map[*socket]struct{}), sampler: newSampler(),
+		chunk: make([]record, 0, copyChunk),
+	}
 }
 
 // socket is a selected socket.

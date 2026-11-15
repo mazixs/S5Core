@@ -25,9 +25,14 @@ func (c *observedConn) Read(p []byte) (int, error) {
 		return c.Conn.Read(p)
 	}
 	periodic := c.s.reads.Add(1)%transportSampleEvery == 1
+	var op operation
+	if periodic {
+		op = c.r.beginOperation(c.s.flow, "s5core.transport_read")
+	}
 	start := time.Now()
 	n, err := c.Conn.Read(p)
 	d := time.Since(start)
+	op.end()
 	c.s.noteReadWait(d)
 	if periodic {
 		c.r.stage(c.s, stageRead, d, n, err, true)
@@ -40,9 +45,14 @@ func (c *observedConn) Write(p []byte) (int, error) {
 		return c.Conn.Write(p)
 	}
 	periodic := c.s.writes.Add(1)%transportSampleEvery == 1
+	var op operation
+	if periodic {
+		op = c.r.beginOperation(c.s.flow, "s5core.transport_write")
+	}
 	start := time.Now()
 	n, err := c.Conn.Write(p)
 	d := time.Since(start)
+	op.end()
 	if periodic || d >= slowWrite {
 		c.r.stage(c.s, stageWrite, d, n, err, periodic)
 	}
