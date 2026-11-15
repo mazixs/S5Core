@@ -100,6 +100,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/mazixs/S5Core/pkg/s5server"
 )
@@ -145,6 +146,116 @@ dereferenced later. Leaving it nil is fine and disables metrics.
 
 `Start` returns when the context is canceled; call `Stop` afterwards to flush
 the traffic counters and wait for the live sessions (see [Shutdown](operations.md#shutdown)).
+
+### Runtime telemetry ownership
+
+`InitTelemetry` creates the S5Core instruments on the OTel meter provider it is
+given, or on the global one when it gets nil. Neither it nor the server
+registers Prometheus Go or process collectors, and an OTel meter provider alone
+exports no runtime metrics. The embedding application owns its registry,
+exporter, meter provider, HTTP service and their shutdown.
+
+Register one Go collector and one process collector per metrics endpoint, even
+when the application embeds several S5Core servers: runtime measurements always
+describe the whole process.
+
+Servers may share one `Telemetry`. They then write to the same instruments, and
+no label names the server. Counters and up-down counters such as
+`s5core_connections_active` add up across them. A gauge that each server
+reports at scrape time, such as `s5core_sessions`, shows the values of one of
+the servers, not their sum.
+
+The setup below gives the endpoint the collectors of the standalone `s5core`:
+the Go collector with its default families and the eleven `runtime/metrics`
+sources listed in [Go runtime and process metrics](operations.md#go-runtime-and-process-metrics),
+the process collector, and the handler's own `promhttp_metric_handler_*`
+counters. It uses a registry of its own and leaves the global default registry
+alone. Call it once at process startup, then pass the returned telemetry to each
+`Config.Telemetry`.
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"regexp"
+	"strings"
+
+	"github.com/mazixs/S5Core/pkg/s5server"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+)
+
+// runtimeMetricNames are the runtime/metrics sources exported on top of the
+// Go collector's defaults, the same eleven as in the standalone s5core.
+var runtimeMetricNames = []string{
+	"/sched/pauses/total/gc:seconds",
+	"/sched/latencies:seconds",
+	"/gc/cycles/total:gc-cycles",
+	"/gc/cycles/forced:gc-cycles",
+	"/cpu/classes/gc/total:cpu-seconds",
+	"/cpu/classes/gc/mark/assist:cpu-seconds",
+	"/cpu/classes/gc/mark/idle:cpu-seconds",
+	"/cpu/classes/total:cpu-seconds",
+	"/gc/heap/live:bytes",
+	"/gc/limiter/last-enabled:gc-cycle",
+	"/sync/mutex/wait/total:seconds",
+}
+
+// newProcessTelemetry builds the registry, the telemetry for Config.Telemetry
+// and the handler for /metrics. Call it once per process.
+func newProcessTelemetry(ctx context.Context) (
+	*s5server.Telemetry, *sdkmetric.MeterProvider, http.Handler, error,
+) {
+	quoted := make([]string, len(runtimeMetricNames))
+	for i, name := range runtimeMetricNames {
+		quoted[i] = regexp.QuoteMeta(name)
+	}
+	registry := prometheus.NewRegistry()
+	for _, c := range []prometheus.Collector{
+		collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(
+			collectors.GoRuntimeMetricsRule{
+				Matcher: regexp.MustCompile("^(?:" + strings.Join(quoted, "|") + ")$"),
+			},
+		)),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	} {
+		if err := registry.Register(c); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	exporter, err := otelprom.New(otelprom.WithRegisterer(registry))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	telemetry, err := s5server.InitTelemetry(provider)
+	if err != nil {
+		return nil, nil, nil, errors.Join(err, provider.Shutdown(ctx))
+	}
+	handler := promhttp.InstrumentMetricHandler(registry,
+		promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	return telemetry, provider, handler, nil
+}
+```
+
+Mount the returned handler on `/metrics` in the application's own HTTP mux, with
+explicit read, write and idle timeouts as in the standalone service.
+`promhttp.Handler()` serves the default registry and would omit this setup's
+metrics. The process collector exports the families the host platform supports.
+Do not register a second base Go collector in this registry, which fails, or
+merge the default gatherer into it, which makes the scrape fail on duplicate
+families. The exporter takes the registry through
+[`WithRegisterer`](https://pkg.go.dev/go.opentelemetry.io/otel/exporters/prometheus@v0.69.0#WithRegisterer).
+
+The setup starts no listener and no background goroutine: the metrics are read
+when the handler is scraped. Stop each server and shut down the metrics HTTP
+service before calling `provider.Shutdown` with a bounded context.
 
 ### Acting on behalf of an account
 
