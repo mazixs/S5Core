@@ -12,8 +12,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const tcpRTOMaxMS = 44 // TCP_RTO_MAX_MS, not in golang.org/x/sys yet
-
 func readOpt(t *testing.T, conn *net.TCPConn, opt int) (int, error) {
 	t.Helper()
 	raw, err := conn.SyscallConn()
@@ -45,7 +43,7 @@ func TestTheTunnelSocketGetsItsOptions(t *testing.T) {
 		t.Logf("TCP_RTO_MIN_US: the kernel refused it (%v), which is allowed", why)
 		return
 	}
-	got, err := readOpt(t, c, tcpRTOMinUS)
+	got, err := readOpt(t, c, unix.TCP_RTO_MIN_US)
 	// The kernel keeps the floor in jiffies; a tick is at most 10 ms.
 	if err != nil || got < 10_000 || got > 30_000 {
 		t.Fatalf("TCP_RTO_MIN_US = %d (%v), want 20000", got, err)
@@ -125,7 +123,7 @@ func TestTheTunedSocketGivesUpNoSooner(t *testing.T) {
 	for _, o := range []struct {
 		name string
 		opt  int
-	}{{"TCP_RTO_MAX_MS", tcpRTOMaxMS}, {"TCP_USER_TIMEOUT", unix.TCP_USER_TIMEOUT}} {
+	}{{"TCP_RTO_MAX_MS", unix.TCP_RTO_MAX_MS}, {"TCP_USER_TIMEOUT", unix.TCP_USER_TIMEOUT}} {
 		want, err := readOpt(t, c, o.opt)
 		if err != nil {
 			t.Logf("%s: the kernel does not have it (%v)", o.name, err)

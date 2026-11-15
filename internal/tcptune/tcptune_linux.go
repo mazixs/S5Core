@@ -7,9 +7,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Not in golang.org/x/sys yet.
-const tcpRTOMinUS = 45 // TCP_RTO_MIN_US
-
 type option struct {
 	name  string
 	opt   int
@@ -23,7 +20,7 @@ type option struct {
 // потолок таймера"). A CONNECT stream sets TCP_USER_TIMEOUT through ForStream.
 var options = []option{
 	{"TCP_THIN_LINEAR_TIMEOUTS", unix.TCP_THIN_LINEAR_TIMEOUTS, 1},
-	{"TCP_RTO_MIN_US", tcpRTOMinUS, 20_000},
+	{"TCP_RTO_MIN_US", unix.TCP_RTO_MIN_US, 20_000},
 }
 
 func set(sc syscall.Conn) (Skipped, error) {
