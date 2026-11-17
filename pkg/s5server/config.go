@@ -100,11 +100,6 @@ type Config struct {
 	// keepalives of their own.
 	ObfsKeepaliveMin time.Duration
 	ObfsKeepaliveMax time.Duration
-	// ObfsTFO lets the obfs listener accept data in a SYN (TCP Fast Open,
-	// Linux only; net.ipv4.tcp_fastopen needs the server bit, 2). Off by
-	// default: a SYN with data is a shape a filter can see, and some paths
-	// drop it. It is for measuring what it saves on a given path.
-	ObfsTFO bool
 
 	// WebSocket-over-TLS (stealth transport) settings
 	WSEnabled     bool
@@ -117,12 +112,6 @@ type Config struct {
 	// listener is proxied to (plan task Ф5-6). Empty serves the built-in
 	// page instead, which is weaker cover - see docs/design/decoy.md.
 	WSDecoyUpstream string
-	// WSEarlyData is "auto" (the default, also when empty) or "off". With
-	// auto the WS listener accepts frames sent behind the upgrade request
-	// and says so in the advice frame (CapWSEarlyData), so a client saves
-	// the round trip of the 101 from its second connection on. Off restores
-	// gorilla's refusal of such a connection and stops announcing it.
-	WSEarlyData string
 	// TransportAdvice is what the server tells every client inside the
 	// tunnel, once it is up: which transport to use next and what shape
 	// to give its traffic (plan task Ф5-7). It is how a client on a router
@@ -145,8 +134,7 @@ type Config struct {
 	// those sockets retransmit sooner and do not double the wait on repeated
 	// loss (internal/tcptune), because every datagram behind a lost segment
 	// waits for that timer. The switch is for a path where it turns out worse.
-	UDPTunnelTCPTuningOff  bool
-	UDPDiagnosticsInterval time.Duration
+	UDPTunnelTCPTuningOff bool
 
 	// Multi-account settings
 	UsersFile            string        // Path to JSON file with user accounts
@@ -181,6 +169,17 @@ type Config struct {
 	SessionLogDst string
 }
 
+// ServerOptions extends Config with optional transport and diagnostic settings.
+type ServerOptions struct {
+	// ObfsTFO enables TCP Fast Open on the obfs listener (Linux only).
+	ObfsTFO bool
+	// WSEarlyData selects "auto" (also when empty) or "off" for accepting
+	// WebSocket frames sent before the server's upgrade response.
+	WSEarlyData string
+	// UDPDiagnosticsInterval enables per-association UDP reports when nonzero.
+	UDPDiagnosticsInterval time.Duration
+}
+
 // DefaultConfig returns a configuration with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
@@ -202,6 +201,11 @@ func DefaultConfig() Config {
 
 // ValidateConfig checks that the configuration is valid before starting the server.
 func ValidateConfig(cfg Config) error {
+	return ValidateConfigWithOptions(cfg, ServerOptions{})
+}
+
+// ValidateConfigWithOptions also validates the additional server settings.
+func ValidateConfigWithOptions(cfg Config, opts ServerOptions) error {
 	if cfg.KDFMemoryBudget < 0 {
 		return fmt.Errorf("KDF_MEMORY_BUDGET_MB must not be negative")
 	}
@@ -213,7 +217,7 @@ func ValidateConfig(cfg Config) error {
 			return err
 		}
 	}
-	if err := socks5.ValidateUDPDiagnosticsInterval(cfg.UDPDiagnosticsInterval); err != nil {
+	if err := socks5.ValidateUDPDiagnosticsInterval(opts.UDPDiagnosticsInterval); err != nil {
 		return err
 	}
 	if cfg.UDPPort != "" {
@@ -283,10 +287,10 @@ func ValidateConfig(cfg Config) error {
 		if _, err := tlsdecoy.ValidateUpstream(cfg.WSDecoyUpstream); err != nil {
 			return fmt.Errorf("WS_DECOY_UPSTREAM is not usable: %w", err)
 		}
-		switch cfg.WSEarlyData {
+		switch opts.WSEarlyData {
 		case "", WSEarlyDataAuto, WSEarlyDataOff:
 		default:
-			return fmt.Errorf("WS_EARLY_DATA must be %q or %q, not %q", WSEarlyDataAuto, WSEarlyDataOff, cfg.WSEarlyData)
+			return fmt.Errorf("WS_EARLY_DATA must be %q or %q, not %q", WSEarlyDataAuto, WSEarlyDataOff, opts.WSEarlyData)
 		}
 	}
 	// An advice that sends clients to a transport this server does not run
@@ -301,32 +305,25 @@ func ValidateConfig(cfg Config) error {
 	return validateSessionLog(cfg)
 }
 
-// validateTelemetry reports the first instrument a Telemetry is missing.
-//
-// Every field is an interface, so a struct literal with two of them filled in
-// compiles exactly as well as the result of InitTelemetry, starts the server
-// and then panics on the first connection that touches the missing one. That
-// is a configuration mistake with a runtime address, which is the worst place
-// to read it; here it is a sentence naming the field.
+// validateTelemetry reports a missing legacy instrument at startup instead
+// of panicking when a connection first needs it. New instruments are optional.
 func validateTelemetry(t *Telemetry) error {
 	if t == nil {
-		// Telemetry is optional. Every call site checks for a nil Telemetry.
 		return nil
 	}
 	v := reflect.ValueOf(t).Elem()
 	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		// Private synchronization/cache state is lazily initialized. The
-		// meter and instrument interfaces must still all be present.
-		if v.Type().Field(i).PkgPath != "" && f.Kind() != reflect.Interface {
+		field := v.Type().Field(i)
+		if !field.IsExported() {
 			continue
 		}
-		switch f.Kind() {
-		case reflect.Interface, reflect.Pointer, reflect.Func, reflect.Map, reflect.Slice:
-			if f.IsNil() {
-				return fmt.Errorf("telemetry is incomplete: Telemetry.%s is not set; build it with InitTelemetry instead of a struct literal",
-					v.Type().Field(i).Name)
-			}
+		switch field.Name {
+		case "TCPStreamBytesIn", "TCPStreamBytesOut", "ObfsIdleCloses",
+			"NativeUDPQueueDrops", "UDPDrops", "UDPRelayDatagrams", "NativeUDPLost", "NativeUDPLate", "TCPFastOpenPassive":
+			continue
+		}
+		if v.Field(i).IsNil() {
+			return fmt.Errorf("telemetry is incomplete: Telemetry.%s is not set; build it with InitTelemetry instead of a struct literal", field.Name)
 		}
 	}
 	return nil

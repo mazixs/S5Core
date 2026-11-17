@@ -2,8 +2,8 @@ package main
 
 import (
 	"net"
+	"strings"
 	"testing"
-	"time"
 )
 
 // The shape spelling is the probe's whole interface: a run is only worth
@@ -44,62 +44,36 @@ func TestAShapeSpellingIsReadAsWritten(t *testing.T) {
 	}
 }
 
-// A split shape has to arrive as several writes, or the measurement is a
-// measurement of nothing. Loopback keeps the boundaries when the reader
-// keeps up, which is what makes this checkable without a packet capture.
+type shapeWriteRecorder struct {
+	net.Conn // Only Write is used by the shape.
+	writes   []string
+}
+
+func (c *shapeWriteRecorder) Write(p []byte) (int, error) {
+	c.writes = append(c.writes, string(p))
+	return len(p), nil
+}
+
+// Check the writes themselves: TCP reads need not preserve their boundaries.
 func TestASplitShapeLeavesInSeveralWrites(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-
-	reads := make(chan []int, 1)
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			reads <- nil
-			return
-		}
-		defer conn.Close()
-		var sizes []int
-		buf := make([]byte, 4096)
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		for {
-			n, err := conn.Read(buf)
-			if n > 0 {
-				sizes = append(sizes, n)
-			}
-			if err != nil {
-				break
-			}
-		}
-		reads <- sizes
-	}()
-
 	s, err := parseShape("random:split3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := net.Dial("tcp", ln.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.write(conn, 300, 3*time.Millisecond); err != nil {
-		t.Fatal(err)
-	}
-	conn.Close()
+	want := []string{strings.Repeat("a", 100), strings.Repeat("b", 100), strings.Repeat("c", 100)}
+	s.build = func(int) []byte { return []byte(strings.Join(want, "")) }
 
-	sizes := <-reads
-	if len(sizes) != 3 {
-		t.Fatalf("split3 arrived as %v, want three writes", sizes)
+	var conn shapeWriteRecorder
+	if err := s.write(&conn, 300, 0); err != nil {
+		t.Fatal(err)
 	}
-	total := 0
-	for _, n := range sizes {
-		total += n
+	if len(conn.writes) != len(want) {
+		t.Fatalf("split3 made %d writes, want %d", len(conn.writes), len(want))
 	}
-	if total != 300 {
-		t.Errorf("split3 delivered %d bytes, want 300", total)
+	for i, got := range conn.writes {
+		if got != want[i] {
+			t.Errorf("write %d = %q, want %q", i+1, got, want[i])
+		}
 	}
 }
 

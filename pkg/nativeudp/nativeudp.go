@@ -200,7 +200,7 @@ func (s *Session) NegotiatedLimit() (uint32, int) {
 // ApplyProbeLimit accepts authenticated proposals monotonically. A repeated
 // generation can only repeat its original value; delayed proposals cannot
 // overwrite a newer generation. Legacy peers keep the one-shot contract.
-func (s *Session) ApplyProbeLimit(p Probe) bool {
+func (s *Session) ApplyProbeLimit(p ExtendedProbe) bool {
 	if p.Limit == 0 {
 		return false
 	}
@@ -230,14 +230,24 @@ func (s *Session) overhead() int { return 8 + 2 + s.keys.Send.Overhead() }
 func (s *Session) MaxPayload() int { return s.Limit() - s.overhead() }
 
 // Seal appends a whole wire datagram to dst. The caller must not reuse dst
-// while sending it. Oversized payloads must use the TCP fallback.
+// while sending it. An oversized payload returns ErrPacket.
 func (s *Session) Seal(dst []byte, kind byte, payload []byte) ([]byte, error) {
+	return s.sealDatagram(dst, kind, payload, ErrPacket)
+}
+
+// SealWithLimitError is like Seal but returns ErrPayloadTooLarge for a
+// payload that must use the TCP fallback.
+func (s *Session) SealWithLimitError(dst []byte, kind byte, payload []byte) ([]byte, error) {
+	return s.sealDatagram(dst, kind, payload, ErrPayloadTooLarge)
+}
+
+func (s *Session) sealDatagram(dst []byte, kind byte, payload []byte, limitError error) ([]byte, error) {
 	if kind != KindData && kind != KindProbe && kind != KindProbeAck {
 		return nil, ErrPacket
 	}
 	limit := s.MaxPayload()
 	if len(payload) > limit {
-		return nil, ErrPayloadTooLarge
+		return nil, limitError
 	}
 	return s.seal(dst, kind, payload, 0, min(32, limit-len(payload)))
 }
@@ -281,9 +291,18 @@ func (s *Session) seal(dst []byte, kind byte, data []byte, fill, space int) ([]b
 // SealWrite seals one datagram into a pooled buffer and hands it to write,
 // which must be done with it when it returns.
 func (s *Session) SealWrite(kind byte, payload []byte, write func([]byte) error) error {
+	return s.sealWriteDatagram(kind, payload, ErrPacket, write)
+}
+
+// SealWriteWithLimitError is like SealWrite but distinguishes ErrPayloadTooLarge.
+func (s *Session) SealWriteWithLimitError(kind byte, payload []byte, write func([]byte) error) error {
+	return s.sealWriteDatagram(kind, payload, ErrPayloadTooLarge, write)
+}
+
+func (s *Session) sealWriteDatagram(kind byte, payload []byte, limitError error, write func([]byte) error) error {
 	b := wirePool.Get().(*[MaxWire]byte)
 	defer wirePool.Put(b)
-	wire, err := s.Seal(b[:0], kind, payload)
+	wire, err := s.sealDatagram(b[:0], kind, payload, limitError)
 	if err != nil {
 		return err
 	}
@@ -550,7 +569,7 @@ type Hub struct {
 // ackRequest is a probe to answer, and how long it was on the wire.
 type ackRequest struct {
 	s         *Session
-	probe     Probe
+	probe     ExtendedProbe
 	extended  bool
 	wire      int
 	route     *route
@@ -562,20 +581,40 @@ type ackRequest struct {
 type Stats struct {
 	Accepted, TagDrops, ReplayDrops, AuthDrops, ReadErrors uint64
 	Active                                                 int
-	DataEnqueued, DataQueueDrops, ProbeACKQueueDrops       uint64
-	ProbeACKWriteErrors                                    uint64
+}
+
+// ExtendedStats adds queue, write and loss counters to Stats.
+type ExtendedStats struct {
+	Stats
+	DataEnqueued, DataQueueDrops, ProbeACKQueueDrops uint64
+	ProbeACKWriteErrors                              uint64
 	// Lost and Late are the Loss of every session summed, with the final
 	// one of a removed session.
 	Lost, Late uint64
 }
 
+// Stats returns the original counters of the endpoint.
 func (h *Hub) Stats() Stats {
 	h.mu.Lock()
-	active, loss := len(h.sessions), h.loss
+	active := len(h.sessions)
 	h.mu.Unlock()
+	return h.stats(active)
+}
+
+func (h *Hub) stats(active int) Stats {
 	return Stats{
 		Accepted: h.accepted.Load(), TagDrops: h.tagDrops.Load(), ReplayDrops: h.replayDrops.Load(),
 		AuthDrops: h.authDrops.Load(), ReadErrors: h.readErrors.Load(), Active: active,
+	}
+}
+
+// ExtendedStats returns all current endpoint counters.
+func (h *Hub) ExtendedStats() ExtendedStats {
+	h.mu.Lock()
+	active, loss := len(h.sessions), h.loss
+	h.mu.Unlock()
+	return ExtendedStats{
+		Stats:        h.stats(active),
 		DataEnqueued: h.dataEnqueued.Load(), DataQueueDrops: h.dataQueueDrops.Load(),
 		ProbeACKQueueDrops:  h.probeACKQueueDrops.Load(),
 		ProbeACKWriteErrors: h.probeACKWriteErrors.Load(),
@@ -640,7 +679,7 @@ func (h *Hub) answer() {
 		if a.challenge {
 			err = a.s.SealWriteChallenge(a.token, a.wire, write)
 		} else {
-			err = a.s.SealWriteAnswer(a.probe, a.extended, a.wire, write)
+			err = a.s.SealWriteExtendedAnswer(a.probe, a.extended, a.wire, write)
 		}
 		if err != nil {
 			h.probeACKWriteErrors.Add(1)
@@ -651,6 +690,10 @@ func (h *Hub) answer() {
 func (h *Hub) Port() int    { return h.conn.LocalAddr().(*net.UDPAddr).Port }
 func (h *Hub) Close() error { return h.conn.Close() }
 
+// Register registers keys without a trusted peer address. The initial UDP
+// route requires return-path proof; legacy clients without proof cannot use
+// it. To admit a legacy client's initial route, use RegisterPeer with its
+// authenticated TCP peer address.
 func (h *Hub) Register(keys veil.DatagramKeys) *Session {
 	return h.RegisterPeer(keys, netip.Addr{})
 }
@@ -782,19 +825,30 @@ func (h *Hub) forget(s *Session, t [8]byte) {
 	}
 }
 
+// Send writes a datagram to the established route. An oversized payload
+// returns ErrPacket, as does a missing route.
 func (h *Hub) Send(s *Session, kind byte, payload []byte) error {
+	return h.send(s, kind, payload, ErrPacket)
+}
+
+// SendWithLimitError is like Send but distinguishes ErrPayloadTooLarge.
+func (h *Hub) SendWithLimitError(s *Session, kind byte, payload []byte) error {
+	return h.send(s, kind, payload, ErrPayloadTooLarge)
+}
+
+func (h *Hub) send(s *Session, kind byte, payload []byte, limitError error) error {
 	r := s.answers.Load()
 	if r == nil || s.closed.Load() {
 		return ErrPacket
 	}
-	return s.SealWrite(kind, payload, func(wire []byte) error { return h.write(wire, r.oob, r.peer) })
+	return s.sealWriteDatagram(kind, payload, limitError, func(wire []byte) error { return h.write(wire, r.oob, r.peer) })
 }
 
 // follow requires reception at the candidate before moving application
 // replies. A member can authenticate datagrams with a spoofed source, so
 // authentication alone is insufficient. Proofs expire after five seconds;
 // at most one bounded challenge per second is reflected per association.
-func (s *Session) follow(h *Hub, peer netip.AddrPort, from netip.Addr, probe Probe, isProbe bool, wire int) bool {
+func (s *Session) follow(h *Hub, peer netip.AddrPort, from netip.Addr, probe ExtendedProbe, isProbe bool, wire int) bool {
 	cur := s.answers.Load()
 	if cur != nil && cur.peer == peer && cur.from == from {
 		return true
@@ -894,10 +948,10 @@ func (h *Hub) read() {
 		if h.source != sourceOff {
 			from, _ = destinationOf(oob[:oobn])
 		}
-		var probe Probe
+		var probe ExtendedProbe
 		var extended bool
 		if p.Kind == KindProbe {
-			probe, extended = ParseProbe(p.Data)
+			probe, extended = ParseExtendedProbe(p.Data)
 		}
 		cur := s.answers.Load()
 		if cur == nil || cur.peer != peer || cur.from != from {

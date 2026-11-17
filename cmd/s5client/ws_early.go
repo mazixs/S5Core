@@ -59,8 +59,8 @@ const phaseEarlyUpgrade tunnelPhase = "early_upgrade"
 // listener the tunnel came through, so they are kept here and taken out
 // before the policy compares advice: tunnels through two listeners of one
 // server would otherwise log a change of advice on every switch.
-func adviceFor(cfg clientParams) func(obfs.Advice) {
-	return func(a obfs.Advice) {
+func adviceFor(cfg clientParams) func(obfs.AdviceDetails) {
+	return func(a obfs.AdviceDetails) {
 		if cfg.usesWS() {
 			key := nativeKey(cfg)
 			if a.Capabilities&obfs.CapWSEarlyData != 0 && !distrusted(key) {
@@ -71,9 +71,8 @@ func adviceFor(cfg clientParams) func(obfs.Advice) {
 				earlyData.Delete(key)
 			}
 		}
-		a.Capabilities = 0
 		if cfg.policy != nil {
-			cfg.policy.onAdvice(a)
+			cfg.policy.onAdvice(a.Advice)
 		}
 	}
 }

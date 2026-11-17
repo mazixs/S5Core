@@ -11,7 +11,7 @@ import (
 // asks for it. A system without TCP Fast Open is said at debug level and the
 // listener works without it.
 func (s *Server) listenObfs(addr string) (net.Listener, error) {
-	if !s.cfg.ObfsTFO {
+	if !s.opts.ObfsTFO {
 		return net.Listen("tcp", addr)
 	}
 	lc := net.ListenConfig{Control: tcptune.ListenFastOpen(func(err error) {

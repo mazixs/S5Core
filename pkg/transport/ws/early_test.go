@@ -53,7 +53,7 @@ type echoStand struct {
 // a test closes it when the client has written what it sends early.
 func earlyEcho(t *testing.T, earlyData bool, release <-chan struct{}) echoStand {
 	t.Helper()
-	up := NewUpgrader(UpgraderOpts{Path: "/ws", EarlyData: earlyData})
+	up := NewUpgraderWithEarlyData(UpgraderOpts{Path: "/ws"}, earlyData)
 	verdicts := make(chan error, 4)
 	conns := make(chan *Conn, 4)
 	buffered := make(chan int, 4)
@@ -523,7 +523,7 @@ func earlyWSS(t *testing.T) (url string, pool *x509.CertPool, pin string) {
 	pool.AddCert(leaf)
 	spki := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
 
-	up := NewUpgrader(UpgraderOpts{Path: "/ws", EarlyData: true})
+	up := NewUpgraderWithEarlyData(UpgraderOpts{Path: "/ws"}, true)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(50 * time.Millisecond)
 		c, err := up.Upgrade(w, r)

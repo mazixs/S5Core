@@ -86,8 +86,7 @@ func associateThroughClient(t *testing.T, cfg clientParams) (net.Conn, []byte) {
 // server reads it before it has written its method reply, so the client did
 // not wait for that either.
 func TestTheFirstDatagramFollowsTheRequestOnTheWire(t *testing.T) {
-	cfg := testClientParams()
-	cfg.OptimisticConnect = true
+	cfg := clientParamsWithOptimismEnv(t, "true")
 	serverSide := pipeServer(t)
 	_, reply := associateThroughClient(t, cfg)
 	sender := appSocket(t)
@@ -705,12 +704,13 @@ func TestWithoutOptimismTheApplicationWaitsForTheServer(t *testing.T) {
 	t.Run("refused", func(t *testing.T) {
 		app, clientSide := tcpPair(t)
 		tunnel, obfsSide := tcpPair(t)
-		done := runUDPAssociate(t, clientSide, "example.com", clientParams{}, nil, dialled(obfsSide))
-		if _, err := tunnel.Write([]byte{socks5Ver, 0x02, 0x00, addrIPv4, 0, 0, 0, 0, 0, 0}); err != nil {
+		done := runUDPAssociate(t, clientSide, "example.com", clientParamsWithOptimismEnv(t, ""), nil, dialled(obfsSide))
+		refusal := []byte{socks5Ver, 0x02, 0x00, addrIPv4, 0, 0, 0, 0, 0, 0}
+		if _, err := tunnel.Write(refusal); err != nil {
 			t.Fatal(err)
 		}
-		if reply := readAppReply(t, app); reply[1] != 0x02 {
-			t.Fatalf("the application was answered % x, want the server's refusal", reply)
+		if reply := readAppReply(t, app); !bytes.Equal(reply, refusal) {
+			t.Fatalf("the application was answered % x, want the server's refusal % x", reply, refusal)
 		}
 		associationEnded(t, app, done)
 	})

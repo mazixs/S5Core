@@ -40,9 +40,8 @@ func earlyStand(t *testing.T, earlyData string) (obfsPort, wsURL, echo string) {
 		WSCertFile:     certFile,
 		WSKeyFile:      keyFile,
 		WSPath:         "/ws",
-		WSEarlyData:    earlyData,
 	}
-	srv := startServer(t, cfg)
+	srv := startServerWithOptions(t, cfg, ServerOptions{WSEarlyData: earlyData})
 	deadline := time.Now().Add(3 * time.Second)
 	for srv.WSAddr() == "" && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
@@ -55,14 +54,13 @@ func earlyStand(t *testing.T, earlyData string) (obfsPort, wsURL, echo string) {
 
 // adviceThrough runs CONNECT through transport and returns the advice the
 // server sent with its reply.
-func adviceThrough(t *testing.T, transport net.Conn, echo string) obfs.Advice {
+func adviceThrough(t *testing.T, transport net.Conn, echo string) obfs.AdviceDetails {
 	t.Helper()
 	t.Cleanup(func() { _ = transport.Close() })
-	got := make(chan obfs.Advice, 1)
-	tunnel, err := obfs.NewClientConn(transport, obfs.Config{
+	got := make(chan obfs.AdviceDetails, 1)
+	tunnel, err := obfs.NewClientConnWithOptions(transport, obfs.Config{
 		PSK: []byte(testPSK), MaxPadding: 64, MTU: 1400,
-		OnAdvice: func(a obfs.Advice) { got <- a },
-	})
+	}, obfs.ConnOptions{OnAdviceDetails: func(a obfs.AdviceDetails) { got <- a }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +81,7 @@ func adviceThrough(t *testing.T, transport net.Conn, echo string) obfs.Advice {
 		return a
 	default:
 		t.Fatal("no advice arrived with the SOCKS5 reply")
-		return obfs.Advice{}
+		return obfs.AdviceDetails{}
 	}
 }
 
@@ -229,13 +227,11 @@ func TestWSEarlyDataTakesOnlyItsTwoValues(t *testing.T) {
 	cfg.WSCertFile, cfg.WSKeyFile = "cert", "key"
 	cfg.ObfsPSK = testPSK
 	for _, v := range []string{"", WSEarlyDataAuto, WSEarlyDataOff} {
-		cfg.WSEarlyData = v
-		if err := ValidateConfig(cfg); err != nil && strings.Contains(err.Error(), "WS_EARLY_DATA") {
+		if err := ValidateConfigWithOptions(cfg, ServerOptions{WSEarlyData: v}); err != nil && strings.Contains(err.Error(), "WS_EARLY_DATA") {
 			t.Errorf("%q was refused: %v", v, err)
 		}
 	}
-	cfg.WSEarlyData = "on"
-	if err := ValidateConfig(cfg); err == nil || !strings.Contains(err.Error(), "WS_EARLY_DATA") {
+	if err := ValidateConfigWithOptions(cfg, ServerOptions{WSEarlyData: "on"}); err == nil || !strings.Contains(err.Error(), "WS_EARLY_DATA") {
 		t.Errorf("\"on\" was accepted: %v", err)
 	}
 }

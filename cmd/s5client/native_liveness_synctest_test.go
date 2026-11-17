@@ -73,8 +73,8 @@ type memPath struct {
 	limit             int
 	loseSized         func(size int) bool
 	legacyLimits      bool
-	loseLimitACK      func(nativeudp.Probe) bool
-	loseLimitProposal func(nativeudp.Probe) bool
+	loseLimitACK      func(nativeudp.ExtendedProbe) bool
+	loseLimitProposal func(nativeudp.ExtendedProbe) bool
 	announced         []int // the limits the probes of the path said
 	// ptb has a datagram past limit answered with a PTB, which a connected
 	// socket reports by failing its next call.
@@ -92,7 +92,7 @@ type memPath struct {
 	challenged bool
 	proven     bool
 	// seen gets every probe the server opens, before it answers.
-	seen func(nativeudp.Probe)
+	seen func(nativeudp.ExtendedProbe)
 }
 
 func (p *memPath) Write(b []byte) (int, error) {
@@ -115,7 +115,7 @@ func (p *memPath) Write(b []byte) (int, error) {
 	if pk, err := p.server.Open(b); err == nil {
 		switch pk.Kind {
 		case nativeudp.KindProbe:
-			probe, extended := nativeudp.ParseProbe(pk.Data)
+			probe, extended := nativeudp.ParseExtendedProbe(pk.Data)
 			if p.seen != nil {
 				p.seen(probe)
 			}
@@ -227,7 +227,7 @@ func TestSizeProbeEMSGSIZEIsNotAPathWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := newNativeClient(&failingProbeSocket{}, nativeudp.NewSession(keys), func() {})
-	if err := n.sendProbe(nativeudp.Probe{Size: 1400, Generation: 1}); !errors.Is(err, syscall.EMSGSIZE) {
+	if err := n.sendProbe(nativeudp.ExtendedProbe{Size: 1400, Generation: 1}); !errors.Is(err, syscall.EMSGSIZE) {
 		t.Fatalf("size probe error: %v", err)
 	}
 	if n.stats.probeWriteErrors.Load() != 0 {
@@ -257,7 +257,7 @@ func (p *memPath) answer(kind byte, d []byte) {
 }
 
 // reflect answers a probe as a server with the search does.
-func (p *memPath) reflect(probe nativeudp.Probe, extended bool, n int) {
+func (p *memPath) reflect(probe nativeudp.ExtendedProbe, extended bool, n int) {
 	if p.loseLimitACK != nil && p.loseLimitACK(probe) {
 		return
 	}
@@ -267,14 +267,14 @@ func (p *memPath) reflect(probe nativeudp.Probe, extended bool, n int) {
 	if p.dropDown.Load() {
 		return
 	}
-	if err := p.server.SealWriteAnswer(probe, extended, n, func(w []byte) error { p.down(bytes.Clone(w)); return nil }); err != nil {
+	if err := p.server.SealWriteExtendedAnswer(probe, extended, n, func(w []byte) error { p.down(bytes.Clone(w)); return nil }); err != nil {
 		panic(err)
 	}
 }
 
 // routeProven reports whether the route of the probes is proven, and
 // challenges the first ordinary probe that comes by it.
-func (p *memPath) routeProven(probe nativeudp.Probe, n int) bool {
+func (p *memPath) routeProven(probe nativeudp.ExtendedProbe, n int) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	switch {
@@ -755,10 +755,10 @@ func (l *liveness) waitAfter(from time.Duration) time.Duration {
 func TestEveryProbeButTheEchoHasAGeneration(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var mu sync.Mutex
-		var probes []nativeudp.Probe
+		var probes []nativeudp.ExtendedProbe
 		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) {
 			p.sizes, p.proveRoute, p.delay = true, true, 20*time.Millisecond
-			p.seen = func(probe nativeudp.Probe) {
+			p.seen = func(probe nativeudp.ExtendedProbe) {
 				mu.Lock()
 				defer mu.Unlock()
 				probes = append(probes, probe)

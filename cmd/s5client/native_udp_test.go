@@ -84,11 +84,16 @@ func startTunnelServer(t testing.TB, native bool) (string, s5server.Config) {
 
 func startTunnelServerWith(t testing.TB, adjust func(*s5server.Config)) (string, s5server.Config) {
 	t.Helper()
+	return startTunnelServerWithOptions(t, adjust, s5server.ServerOptions{})
+}
+
+func startTunnelServerWithOptions(t testing.TB, adjust func(*s5server.Config), opts s5server.ServerOptions) (string, s5server.Config) {
+	t.Helper()
 	// A port found free can be taken before the server listens on it, by a
 	// test of another package or by another freeTCPPort here. Start then
 	// returns at once, and the server is started again on new ports.
 	for attempt := 1; ; attempt++ {
-		addr, cfg, err := tryTunnelServer(t, adjust)
+		addr, cfg, err := tryTunnelServer(t, adjust, opts)
 		if err == nil {
 			return addr, cfg
 		}
@@ -101,7 +106,7 @@ func startTunnelServerWith(t testing.TB, adjust func(*s5server.Config)) (string,
 // tryTunnelServer returns once the server listens on each transport it was
 // given, or with the error of a Start that ended before that. A CPU quota
 // stretches a start, so it gets 10 s rather than the 2 s it once had.
-func tryTunnelServer(t testing.TB, adjust func(*s5server.Config)) (string, s5server.Config, error) {
+func tryTunnelServer(t testing.TB, adjust func(*s5server.Config), opts s5server.ServerOptions) (string, s5server.Config, error) {
 	t.Helper()
 	plain, obfsPort := freeTCPPort(t), freeTCPPort(t)
 	cfg := s5server.DefaultConfig()
@@ -110,8 +115,10 @@ func tryTunnelServer(t testing.TB, adjust func(*s5server.Config)) (string, s5ser
 	cfg.ObfsEnabled = true
 	cfg.ObfsPSK = "01234567890123456789012345678901"
 	cfg.ObfsMTU = 1400
-	adjust(&cfg)
-	srv, err := s5server.NewServer(cfg)
+	if adjust != nil {
+		adjust(&cfg)
+	}
+	srv, err := s5server.NewServerWithOptions(cfg, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

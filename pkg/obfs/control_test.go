@@ -189,7 +189,7 @@ func TestAControlFrameForTheOtherRoleIsDropped(t *testing.T) {
 		t.Fatalf("deliver: %v", err)
 	}
 	adviceAtServer := &conn{cfg: Config{Role: RoleServer, OnAdvice: func(Advice) { t.Fatal("a server delivered an advice") }}}
-	if err := adviceAtServer.deliverControl(kindAdvice, encodeAdvice(Advice{Transport: "ws"})); err != nil {
+	if err := adviceAtServer.deliverControl(kindAdvice, encodeAdvice(AdviceDetails{Advice: Advice{Transport: "ws"}})); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 }
@@ -246,7 +246,7 @@ func TestTLVRoundTrips(t *testing.T) {
 		}
 	})
 	t.Run("advice with every field", func(t *testing.T) {
-		in := Advice{Transport: "ws", WSMinFrame: 1, WSMaxFrame: 65535, WSMaxJitterMs: 3, MaxPadding: 4, KeepaliveMin: 5 * time.Second, KeepaliveMax: 6 * time.Second, Capabilities: CapWSEarlyData | 0x8000}
+		in := AdviceDetails{Advice: Advice{Transport: "ws", WSMinFrame: 1, WSMaxFrame: 65535, WSMaxJitterMs: 3, MaxPadding: 4, KeepaliveMin: 5 * time.Second, KeepaliveMax: 6 * time.Second}, Capabilities: CapWSEarlyData | 0x8000}
 		out, err := decodeAdvice(encodeAdvice(in))
 		if err != nil {
 			t.Fatal(err)
@@ -256,11 +256,11 @@ func TestTLVRoundTrips(t *testing.T) {
 		}
 	})
 	t.Run("zero advice is empty on the wire", func(t *testing.T) {
-		if got := encodeAdvice(Advice{}); len(got) != 0 {
+		if got := encodeAdvice(AdviceDetails{}); len(got) != 0 {
 			t.Fatalf("a zero advice encoded to %d bytes, want 0", len(got))
 		}
 		out, err := decodeAdvice(nil)
-		if err != nil || out != (Advice{}) {
+		if err != nil || out != (AdviceDetails{}) {
 			t.Fatalf("decoding nothing gave %+v, %v", out, err)
 		}
 	})
@@ -298,7 +298,7 @@ func TestTLVRoundTrips(t *testing.T) {
 		}
 	})
 	t.Run("a value past the 16-bit range is clamped", func(t *testing.T) {
-		out, err := decodeAdvice(encodeAdvice(Advice{WSMaxFrame: 1 << 20}))
+		out, err := decodeAdvice(encodeAdvice(AdviceDetails{Advice: Advice{WSMaxFrame: 1 << 20}}))
 		if err != nil {
 			t.Fatal(err)
 		}

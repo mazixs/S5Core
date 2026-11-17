@@ -3,6 +3,7 @@ package nativeudp
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/netip"
@@ -245,8 +246,12 @@ func TestTheLimitOfTheClientBoundsTheAnswersOfTheHub(t *testing.T) {
 			t.Fatalf("the hub sent %d bytes past a limit of 1250", n)
 		}
 	}
-	if hub.Send(registered, KindData, make([]byte, registered.MaxPayload()+1)) == nil {
-		t.Fatal("the hub sent a payload past the limit")
+	oversized := make([]byte, registered.MaxPayload()+1)
+	if err := hub.Send(registered, KindData, oversized); err != ErrPacket { //nolint:errorlint // v2.3.0 callers compare the exact sentinel.
+		t.Fatalf("Send oversized payload: %v, want ErrPacket", err)
+	}
+	if err := hub.SendWithLimitError(registered, KindData, oversized); !errors.Is(err, ErrPayloadTooLarge) || errors.Is(err, ErrPacket) {
+		t.Fatalf("SendWithLimitError oversized payload: %v, want ErrPayloadTooLarge", err)
 	}
 }
 

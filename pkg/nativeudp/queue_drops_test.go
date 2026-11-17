@@ -31,8 +31,8 @@ func TestProbeACKWriteFailuresAreCountedAndWriterRecovers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitFor(t, hub, func(st Stats) bool { return st.ProbeACKWriteErrors == 2 })
-	if st := hub.Stats(); st.ReadErrors != 0 || st.ProbeACKQueueDrops != 0 || st.Accepted != 2 {
+	waitForExtendedStats(t, hub, func(st ExtendedStats) bool { return st.ProbeACKWriteErrors == 2 })
+	if st := hub.ExtendedStats(); st.ReadErrors != 0 || st.ProbeACKQueueDrops != 0 || st.Accepted != 2 {
 		t.Fatalf("a socket write failure was attributed to another stage: %+v", st)
 	}
 	if err := client.SealWriteProbe(Probe{}, func(wire []byte) error { _, err := c.Write(wire); return err }); err != nil {
@@ -44,7 +44,7 @@ func TestProbeACKWriteFailuresAreCountedAndWriterRecovers(t *testing.T) {
 	if err != nil {
 		t.Fatal("ACK writer did not recover:", err)
 	}
-	if p, err := client.Open(wire[:n]); err != nil || p.Kind != KindProbeAck || hub.Stats().ProbeACKWriteErrors != 2 {
+	if p, err := client.Open(wire[:n]); err != nil || p.Kind != KindProbeAck || hub.ExtendedStats().ProbeACKWriteErrors != 2 {
 		t.Fatal("recovered ACK or error accounting is incorrect")
 	}
 }
@@ -68,8 +68,8 @@ func TestDataQueueDropsAreCountedAndTheQueueRecovers(t *testing.T) {
 	for range 128 {
 		send()
 	}
-	waitFor(t, hub, func(st Stats) bool { return st.DataEnqueued+st.DataQueueDrops == 128 })
-	st := hub.Stats()
+	waitForExtendedStats(t, hub, func(st ExtendedStats) bool { return st.DataEnqueued+st.DataQueueDrops == 128 })
+	st := hub.ExtendedStats()
 	if st.Accepted != 128 || st.DataEnqueued != 64 || st.DataQueueDrops != 64 || st.ProbeACKQueueDrops != 0 || len(s.packets) != 64 {
 		t.Fatalf("full queue: %+v, pending=%d", st, len(s.packets))
 	}
@@ -78,10 +78,10 @@ func TestDataQueueDropsAreCountedAndTheQueueRecovers(t *testing.T) {
 		p.Release()
 	}
 	send()
-	waitFor(t, hub, func(st Stats) bool { return st.DataEnqueued == 65 })
+	waitForExtendedStats(t, hub, func(st ExtendedStats) bool { return st.DataEnqueued == 65 })
 	p := <-s.Packets()
 	defer p.Release()
-	if string(p.Data) != "game" || hub.Stats().DataQueueDrops != 64 {
+	if string(p.Data) != "game" || hub.ExtendedStats().DataQueueDrops != 64 {
 		t.Fatal("the queue did not recover after being drained")
 	}
 }
@@ -124,8 +124,8 @@ func TestProbeACKQueueDropsAreCountedWithoutBlockingData(t *testing.T) {
 	for range ackQueue + lost {
 		sendProbe()
 	}
-	waitFor(t, hub, func(st Stats) bool { return st.ProbeACKQueueDrops == lost })
-	st := hub.Stats()
+	waitForExtendedStats(t, hub, func(st ExtendedStats) bool { return st.ProbeACKQueueDrops == lost })
+	st := hub.ExtendedStats()
 	if st.Accepted != 1+ackQueue+lost || len(hub.acks) != ackQueue || st.DataQueueDrops != 0 {
 		t.Fatalf("ACK queue: %+v, pending=%d", st, len(hub.acks))
 	}

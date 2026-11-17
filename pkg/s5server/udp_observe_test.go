@@ -55,15 +55,13 @@ func TestUDPRelayMetricsExposeOnlyFourStagesIncludingZero(t *testing.T) {
 func TestUDPDiagnosticsIntervalIsExplicitAndBounded(t *testing.T) {
 	for _, interval := range []time.Duration{-time.Second, time.Nanosecond, time.Millisecond * 999} {
 		cfg := DefaultConfig()
-		cfg.UDPDiagnosticsInterval = interval
-		if err := ValidateConfig(cfg); err == nil {
+		if err := ValidateConfigWithOptions(cfg, ServerOptions{UDPDiagnosticsInterval: interval}); err == nil {
 			t.Fatalf("invalid interval %s accepted", interval)
 		}
 	}
 	for _, interval := range []time.Duration{0, time.Second, 5 * time.Second} {
 		cfg := DefaultConfig()
-		cfg.UDPDiagnosticsInterval = interval
-		if err := ValidateConfig(cfg); err != nil {
+		if err := ValidateConfigWithOptions(cfg, ServerOptions{UDPDiagnosticsInterval: interval}); err != nil {
 			t.Fatalf("interval %s: %v", interval, err)
 		}
 	}

@@ -69,7 +69,7 @@ type params struct {
 	KeepaliveMin time.Duration `env:"KEEPALIVE_MIN" envDefault:"0s"`
 	KeepaliveMax time.Duration `env:"KEEPALIVE_MAX" envDefault:"0s"`
 	// ObfsTFO accepts data in a SYN on the obfs port; off by default, see
-	// s5server.Config.ObfsTFO.
+	// s5server.ServerOptions.ObfsTFO.
 	ObfsTFO bool `env:"OBFS_TFO" envDefault:"false"`
 	// UDPTunnelTCPTuning lets the connection of a UDP-over-TCP tunnel
 	// retransmit sooner than the kernel's default (internal/tcptune). Off
@@ -241,59 +241,56 @@ func setupTelemetry(registry *promclient.Registry) (*s5server.Telemetry, error) 
 
 func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger) (*s5server.Server, error) {
 	serverCfg := s5server.Config{
-		Logger:                 logger,
-		Port:                   cfg.Port,
-		ListenIP:               cfg.ListenIP,
-		RequireAuth:            cfg.RequireAuth,
-		AllowedDestFqdn:        cfg.AllowedDestFqdn,
-		DenyPrivateDest:        !cfg.AllowPrivateDest,
-		AllowedIPs:             cfg.AllowedIPs,
-		ReadTimeout:            cfg.ReadTimeout,
-		WriteTimeout:           cfg.WriteTimeout,
-		HandshakeTimeout:       cfg.HandshakeTimeout,
-		DialTimeout:            cfg.DialTimeout,
-		FrameTimeout:           cfg.FrameTimeout,
-		QuotaGrace:             cfg.QuotaGrace,
-		MaxConnections:         cfg.MaxConnections,
-		Fail2BanRetries:        cfg.Fail2BanRetries,
-		Fail2BanTime:           cfg.Fail2BanTime,
-		Telemetry:              telemetry,
-		ObfsEnabled:            cfg.ObfsEnabled,
-		ObfsPort:               cfg.ObfsPort,
-		ObfsPSK:                cfg.ObfsPSK,
-		ObfsMaxPadding:         cfg.ObfsMaxPadding,
-		ObfsMTU:                cfg.ObfsMTU,
-		ObfsKeepaliveMin:       cfg.KeepaliveMin,
-		ObfsKeepaliveMax:       cfg.KeepaliveMax,
-		ObfsReplayWindow:       cfg.ObfsReplayWindow,
-		ObfsNodeID:             cfg.ObfsNodeID,
-		ObfsAcceptNodeIDs:      cfg.ObfsAcceptNodeIDs,
-		ObfsRequireMemberKey:   cfg.ObfsRequireMemberKey,
-		ObfsTFO:                cfg.ObfsTFO,
-		UDPTunnelTCPTuningOff:  !cfg.UDPTunnelTCPTuning,
-		UDPPort:                cfg.UDPPort,
-		UDPDiagnosticsInterval: cfg.UDPDiagnosticsInterval,
-		WSEnabled:              cfg.WSEnabled,
-		WSAddr:                 cfg.WSAddr,
-		WSCertFile:             cfg.WSCertFile,
-		WSKeyFile:              cfg.WSKeyFile,
-		WSPath:                 cfg.WSPath,
-		WSDecoyUpstream:        cfg.WSDecoyUpstream,
-		WSEarlyData:            cfg.WSEarlyData,
-		TransportAdvice:        cfg.TransportAdvice,
-		WSSubprotocol:          cfg.WSSubprotocol,
-		WSMinFrame:             cfg.WSMinFrame,
-		WSMaxFrame:             cfg.WSMaxFrame,
-		WSMaxJitter:            time.Duration(cfg.WSMaxJitterMs) * time.Millisecond,
-		UsersFile:              cfg.UsersFile,
-		TrafficFlushInterval:   cfg.TrafficFlush,
-		KDFMemoryBudget:        int64(cfg.KDFMemoryBudgetMB) << 20,
-		SessionLog:             cfg.SessionLog,
-		SessionLogFile:         cfg.SessionLogFile,
-		SessionLogMaxSize:      int64(cfg.SessionLogMaxSizeMB) << 20,
-		SessionLogMaxFiles:     cfg.SessionLogMaxFiles,
-		SessionLogMaxAge:       cfg.SessionLogMaxAge,
-		SessionLogDst:          cfg.SessionLogDst,
+		Logger:                logger,
+		Port:                  cfg.Port,
+		ListenIP:              cfg.ListenIP,
+		RequireAuth:           cfg.RequireAuth,
+		AllowedDestFqdn:       cfg.AllowedDestFqdn,
+		DenyPrivateDest:       !cfg.AllowPrivateDest,
+		AllowedIPs:            cfg.AllowedIPs,
+		ReadTimeout:           cfg.ReadTimeout,
+		WriteTimeout:          cfg.WriteTimeout,
+		HandshakeTimeout:      cfg.HandshakeTimeout,
+		DialTimeout:           cfg.DialTimeout,
+		FrameTimeout:          cfg.FrameTimeout,
+		QuotaGrace:            cfg.QuotaGrace,
+		MaxConnections:        cfg.MaxConnections,
+		Fail2BanRetries:       cfg.Fail2BanRetries,
+		Fail2BanTime:          cfg.Fail2BanTime,
+		Telemetry:             telemetry,
+		ObfsEnabled:           cfg.ObfsEnabled,
+		ObfsPort:              cfg.ObfsPort,
+		ObfsPSK:               cfg.ObfsPSK,
+		ObfsMaxPadding:        cfg.ObfsMaxPadding,
+		ObfsMTU:               cfg.ObfsMTU,
+		ObfsKeepaliveMin:      cfg.KeepaliveMin,
+		ObfsKeepaliveMax:      cfg.KeepaliveMax,
+		ObfsReplayWindow:      cfg.ObfsReplayWindow,
+		ObfsNodeID:            cfg.ObfsNodeID,
+		ObfsAcceptNodeIDs:     cfg.ObfsAcceptNodeIDs,
+		ObfsRequireMemberKey:  cfg.ObfsRequireMemberKey,
+		UDPTunnelTCPTuningOff: !cfg.UDPTunnelTCPTuning,
+		UDPPort:               cfg.UDPPort,
+		WSEnabled:             cfg.WSEnabled,
+		WSAddr:                cfg.WSAddr,
+		WSCertFile:            cfg.WSCertFile,
+		WSKeyFile:             cfg.WSKeyFile,
+		WSPath:                cfg.WSPath,
+		WSDecoyUpstream:       cfg.WSDecoyUpstream,
+		TransportAdvice:       cfg.TransportAdvice,
+		WSSubprotocol:         cfg.WSSubprotocol,
+		WSMinFrame:            cfg.WSMinFrame,
+		WSMaxFrame:            cfg.WSMaxFrame,
+		WSMaxJitter:           time.Duration(cfg.WSMaxJitterMs) * time.Millisecond,
+		UsersFile:             cfg.UsersFile,
+		TrafficFlushInterval:  cfg.TrafficFlush,
+		KDFMemoryBudget:       int64(cfg.KDFMemoryBudgetMB) << 20,
+		SessionLog:            cfg.SessionLog,
+		SessionLogFile:        cfg.SessionLogFile,
+		SessionLogMaxSize:     int64(cfg.SessionLogMaxSizeMB) << 20,
+		SessionLogMaxFiles:    cfg.SessionLogMaxFiles,
+		SessionLogMaxAge:      cfg.SessionLogMaxAge,
+		SessionLogDst:         cfg.SessionLogDst,
 	}
 
 	if cfg.TLSFingerprint != "" {
@@ -301,7 +298,9 @@ func setupServer(cfg params, telemetry *s5server.Telemetry, logger *slog.Logger)
 			"tls_fingerprint", cfg.TLSFingerprint)
 	}
 
-	srv, err := s5server.NewServer(serverCfg)
+	srv, err := s5server.NewServerWithOptions(serverCfg, s5server.ServerOptions{
+		ObfsTFO: cfg.ObfsTFO, WSEarlyData: cfg.WSEarlyData, UDPDiagnosticsInterval: cfg.UDPDiagnosticsInterval,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize server: %w", err)
 	}

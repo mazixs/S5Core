@@ -93,7 +93,7 @@ func serverReadsRequest(t *testing.T, raw net.Conn, cfg clientParams) net.Conn {
 // to the greeting. That is the round trip saved.
 func TestAnOptimisticConnectSendsTheApplicationsBytesBeforeTheReply(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := optimisticParams()
+		cfg := clientParamsWithOptimismEnv(t, "true")
 		logs := captureLogs(t)
 
 		original := dialServer

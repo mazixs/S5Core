@@ -137,12 +137,15 @@ func main() {
 }
 ```
 
-`NewServer` validates the configuration before anything is listening, so a
-mistake is a returned error and not a panic on the first connection. In
-particular, `Config.Telemetry` must come from `s5server.InitTelemetry`: it is a
-struct of OpenTelemetry instruments, and one assembled by hand - or carried
-over from a version with fewer fields - is rejected by name rather than
-dereferenced later. Leaving it nil is fine and disables metrics.
+`NewServer` validates the configuration before anything is listening. To pass
+optional settings such as TCP Fast Open, WSS early data or periodic UDP
+reports, use `s5server.NewServerWithOptions(cfg, opts)` with a
+`s5server.ServerOptions` value.
+
+Use `s5server.InitTelemetry` to populate `Config.Telemetry` with all available
+OpenTelemetry instruments. If you supply your own, a missing required
+instrument is reported by name at startup; instruments added in 2.4 are
+optional. A nil `Config.Telemetry` disables metrics.
 
 `Start` returns when the context is canceled; call `Stop` afterwards to flush
 the traffic counters and wait for the live sessions (see [Shutdown](operations.md#shutdown)).

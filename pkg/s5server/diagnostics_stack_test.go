@@ -98,7 +98,7 @@ func TestTheLatencyWrapperKeepsTheDeepestStackWalkable(t *testing.T) {
 		ListenIP: "127.0.0.1", Port: anyPort, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		ObfsEnabled: true, ObfsPort: anyPort, ObfsPSK: testPSK, ObfsMaxPadding: 64, ObfsMTU: 1400,
 		WSEnabled: true, WSAddr: "127.0.0.1:0", WSCertFile: certFile, WSKeyFile: keyFile, WSPath: "/ws",
-		WSEarlyData: WSEarlyDataAuto, WSMinFrame: 256, WSMaxFrame: 4096, MaxConnections: 16,
+		WSMinFrame: 256, WSMaxFrame: 4096, MaxConnections: 16,
 	})
 	for deadline := time.Now().Add(3 * time.Second); srv.WSAddr() == "" && time.Now().Before(deadline); {
 		time.Sleep(10 * time.Millisecond)

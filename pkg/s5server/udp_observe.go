@@ -14,7 +14,7 @@ import (
 )
 
 func registerUDPRelayMetrics(t *Telemetry, c *socks5.UDPRelayCounters) (metric.Registration, error) {
-	if t == nil {
+	if t == nil || t.meter == nil || t.UDPRelayDatagrams == nil {
 		return nil, nil
 	}
 	stages := []struct {

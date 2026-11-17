@@ -50,9 +50,8 @@ func earlyNode(t *testing.T, earlyData string) (clientParams, string) {
 	cfg.WSCertFile = cert
 	cfg.WSKeyFile = key
 	cfg.WSPath = "/ws"
-	cfg.WSEarlyData = earlyData
 	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv, err := s5server.NewServer(cfg)
+	srv, err := s5server.NewServerWithOptions(cfg, s5server.ServerOptions{WSEarlyData: earlyData})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,14 +218,14 @@ func TestTheCapabilityIsKeptOutOfTheAdvicePolicy(t *testing.T) {
 	}
 	cp.policy = policy
 
-	adviceFor(cp)(obfs.Advice{Capabilities: obfs.CapWSEarlyData})
+	adviceFor(cp)(obfs.AdviceDetails{Capabilities: obfs.CapWSEarlyData})
 	if !earlyDataKnown(cp) {
 		t.Fatal("the bit was not remembered")
 	}
-	if policy.advice == nil || policy.advice.Capabilities != 0 {
+	if policy.advice == nil || *policy.advice != (obfs.Advice{}) {
 		t.Fatalf("the policy saw %+v, want the advice without capabilities", policy.advice)
 	}
-	adviceFor(cp)(obfs.Advice{})
+	adviceFor(cp)(obfs.AdviceDetails{})
 	if earlyDataKnown(cp) {
 		t.Fatal("an advice without the bit did not withdraw it")
 	}
@@ -236,7 +235,7 @@ func TestAFailedNodeIsNotBelievedForTenMinutes(t *testing.T) {
 	cp := clientParams{Transport: "ws", WSUrl: "wss://node.invalid/ws"}
 	freshEarlyData(t, cp)
 	key := nativeKey(cp)
-	bit := obfs.Advice{Capabilities: obfs.CapWSEarlyData}
+	bit := obfs.AdviceDetails{Capabilities: obfs.CapWSEarlyData}
 
 	forgetEarlyData(key)
 	adviceFor(cp)(bit)
@@ -273,7 +272,7 @@ func TestTheDistrustOfANodeThatFailsAgainGrows(t *testing.T) {
 	cp := clientParams{Transport: "ws", WSUrl: "wss://node.invalid/ws"}
 	freshEarlyData(t, cp)
 	key := nativeKey(cp)
-	bit := obfs.Advice{Capabilities: obfs.CapWSEarlyData}
+	bit := obfs.AdviceDetails{Capabilities: obfs.CapWSEarlyData}
 
 	forgetEarlyData(key)
 	forgetEarlyData(key)

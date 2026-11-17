@@ -8,18 +8,18 @@ import (
 
 func TestRecoveryProposalsAreOrderedAndIdempotent(t *testing.T) {
 	s, _ := pair(t)
-	for _, p := range []Probe{{Generation: 1, Limit: 1210}, {Generation: 2, Limit: 1392}, {Generation: 1, Limit: 1200}, {Generation: 2, Limit: 1200}, {Generation: 0, Limit: 1220}} {
+	for _, p := range []ExtendedProbe{{Generation: 1, Limit: 1210}, {Generation: 2, Limit: 1392}, {Generation: 1, Limit: 1200}, {Generation: 2, Limit: 1200}, {Generation: 0, Limit: 1220}} {
 		s.ApplyProbeLimit(p)
 	}
 	gen, limit := s.NegotiatedLimit()
 	if gen != 2 || limit != 1392 || s.Limit() != 1392 {
 		t.Fatalf("generation %d limit %d", gen, limit)
 	}
-	if !s.ApplyProbeLimit(Probe{Generation: 2, Limit: 1392}) {
+	if !s.ApplyProbeLimit(ExtendedProbe{Generation: 2, Limit: 1392}) {
 		t.Fatal("duplicate proposal is not idempotent")
 	}
 	for _, limit := range []int{1, BaseWire - 1, MaxWire + 1, 65535} {
-		if s.ApplyProbeLimit(Probe{Generation: 3, Limit: limit}) {
+		if s.ApplyProbeLimit(ExtendedProbe{Generation: 3, Limit: limit}) {
 			t.Fatal("out-of-range proposal accepted")
 		}
 	}
@@ -27,12 +27,12 @@ func TestRecoveryProposalsAreOrderedAndIdempotent(t *testing.T) {
 
 func TestRecoveryAnswerEchoesOnlyTheAppliedProposal(t *testing.T) {
 	client, server := pair(t)
-	for _, p := range []Probe{{Generation: 1}, {Generation: 1, Limit: 1210}, {Generation: 2, Limit: 1392}, {Generation: 1, Limit: 1210}} {
-		wire := sealed(t, func(w func([]byte) error) error { return client.SealWriteProbe(p, w) })
+	for _, p := range []ExtendedProbe{{Generation: 1}, {Generation: 1, Limit: 1210}, {Generation: 2, Limit: 1392}, {Generation: 1, Limit: 1210}} {
+		wire := sealed(t, func(w func([]byte) error) error { return client.SealWriteExtendedProbe(p, w) })
 		packet, n := open(t, server, wire)
-		probe, extended := ParseProbe(packet.Data)
+		probe, extended := ParseExtendedProbe(packet.Data)
 		server.ApplyProbeLimit(probe)
-		reply := sealed(t, func(w func([]byte) error) error { return server.SealWriteAnswer(probe, extended, n, w) })
+		reply := sealed(t, func(w func([]byte) error) error { return server.SealWriteExtendedAnswer(probe, extended, n, w) })
 		if len(reply) > len(wire) {
 			t.Fatal("recovery answer amplifies")
 		}
@@ -59,7 +59,8 @@ func TestLegacyProbeStillGetsALegacyAnswer(t *testing.T) {
 	wire := sealed(t, func(w func([]byte) error) error { return client.SealWriteProbe(Probe{Limit: 1250}, w) })
 	packet, n := open(t, server, wire)
 	p, ext := ParseProbe(packet.Data)
-	server.ApplyProbeLimit(p)
+	details, _ := ParseExtendedProbe(packet.Data)
+	server.ApplyProbeLimit(details)
 	reply := sealed(t, func(w func([]byte) error) error { return server.SealWriteAnswer(p, ext, n, w) })
 	packet, _ = open(t, client, reply)
 	a, _ := ParseAnswer(packet.Data)
@@ -79,8 +80,8 @@ func TestHubAppliesRecoveryBeforeAcknowledging(t *testing.T) {
 	defer hub.Remove(registered)
 	c := dialHub(t, hub)
 	var b [MaxWire + 1]byte
-	for _, p := range []Probe{{Generation: 1, Limit: 1210}, {Generation: 2, Limit: 1392}, {Generation: 1, Limit: 1210}} {
-		if err := client.SealWriteProbe(p, func(w []byte) error { _, e := c.Write(w); return e }); err != nil {
+	for _, p := range []ExtendedProbe{{Generation: 1, Limit: 1210}, {Generation: 2, Limit: 1392}, {Generation: 1, Limit: 1210}} {
+		if err := client.SealWriteExtendedProbe(p, func(w []byte) error { _, e := c.Write(w); return e }); err != nil {
 			t.Fatal(err)
 		}
 		_ = c.SetReadDeadline(time.Now().Add(time.Second))

@@ -16,10 +16,11 @@ import (
 // on the socket, an idle tunnel would still be dropped while the keepalive
 // kept dutifully running.
 //
-// The timeouts here are milliseconds rather than the shipped seconds, and the
-// connections are real sockets rather than a synctest bubble: the deadline
-// being tested is held by the kernel, which fake time does not move.
+// Use real sockets: the socket deadline does not follow synctest's clock.
 func TestAKeepaliveKeepsTheServerFromTimingOut(t *testing.T) {
+	// Leave scheduling headroom under -race: even the longest keepalive
+	// interval (200 ms) is only a tenth of the server's idle timeout.
+	const idleTimeout = 2 * time.Second
 	echoAddr := startEchoServer(t)
 	usersPath := testUsersFile(t)
 
@@ -33,9 +34,8 @@ func TestAKeepaliveKeepsTheServerFromTimingOut(t *testing.T) {
 		ObfsPSK:        testPSK,
 		ObfsMaxPadding: 256,
 		ObfsMTU:        1400,
-		// The idle timeout under test. Everything else is scaled to it.
-		ReadTimeout:  400 * time.Millisecond,
-		WriteTimeout: 400 * time.Millisecond,
+		ReadTimeout:    idleTimeout,
+		WriteTimeout:   idleTimeout,
 	})
 	obfsPort := obfsPortOf(t, srv)
 
@@ -68,13 +68,17 @@ func TestAKeepaliveKeepsTheServerFromTimingOut(t *testing.T) {
 		if err := echoOnce(tunnel, "open"); err != nil {
 			t.Fatalf("the tunnel did not work before the idle period: %v", err)
 		}
+		// Do not let the client's setup deadline interrupt keepalive writes.
+		if err := tunnel.SetDeadline(time.Time{}); err != nil {
+			t.Fatalf("clear setup deadline: %v", err)
+		}
 		return tunnel
 	}
 
 	// Silence longer than the idle timeout. With keepalive the tunnel must
 	// still carry traffic afterwards; without it, it must not - otherwise the
 	// test would pass for the wrong reason, on a server that had no timeout.
-	const idle = 1200 * time.Millisecond
+	const idle = idleTimeout + time.Second
 
 	t.Run("with keepalive", func(t *testing.T) {
 		tunnel := open(t, 100*time.Millisecond, 200*time.Millisecond)

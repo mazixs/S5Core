@@ -435,7 +435,7 @@ func TestClientDefaultsMatchTheLibraries(t *testing.T) {
 		{"TRANSPORT", cfg.Transport, string(transportAuto)},
 		{"OBFS_FORMAT", cfg.Format, "auto"},
 		{"OBFS_PROLOGUE", cfg.Prologue, string(obfs.DefaultPrologueEncoding)},
-		{"OBFS_TFO", cfg.FastOpen, s5server.DefaultConfig().ObfsTFO},
+		{"OBFS_TFO", cfg.FastOpen, (s5server.ServerOptions{}).ObfsTFO},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

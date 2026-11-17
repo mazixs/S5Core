@@ -40,7 +40,8 @@ type listenerPipeline struct {
 	// advice, when set, is asked at Accept time what the server currently
 	// recommends to clients, so that a TRANSPORT_ADVICE changed on the fly
 	// reaches the next connection rather than the next restart.
-	advice func() *obfs.Advice
+	advice             func() *obfs.Advice
+	adviceCapabilities uint16
 
 	// closeOnce makes Close idempotent. Both Start (on context cancellation)
 	// and Stop close the listeners, and not every underlying listener
@@ -121,7 +122,7 @@ func (l *listenerPipeline) withObfs(cfg obfs.Config) *listenerPipeline {
 			perConn.Advice = l.advice()
 		}
 		perConn.OnFrameState = frameHook(sess)
-		return obfs.NewServerConn(c, perConn)
+		return obfs.NewServerConnWithOptions(c, perConn, obfs.ConnOptions{AdviceCapabilities: l.adviceCapabilities})
 	}
 	return l
 }
@@ -151,8 +152,9 @@ func frameHook(sess *session.Session) func(obfs.FrameState) {
 // withAdvice makes the obfuscation stage ask for the current transport
 // advice on every accepted connection. Order does not matter: the function
 // is consulted at Accept time, not now.
-func (l *listenerPipeline) withAdvice(current func() *obfs.Advice) *listenerPipeline {
+func (l *listenerPipeline) withAdvice(current func() *obfs.Advice, capabilities uint16) *listenerPipeline {
 	l.advice = current
+	l.adviceCapabilities = capabilities
 	return l
 }
 

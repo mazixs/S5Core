@@ -225,7 +225,7 @@ func TestTheHubCountsWhatIsMissingWhenTheSessionEnds(t *testing.T) {
 		}
 	}
 	waitFor(t, hub, func(s Stats) bool { return s.Accepted == 3 })
-	if st := hub.Stats(); st.Lost != 0 || st.Late != 1 {
+	if st := hub.ExtendedStats(); st.Lost != 0 || st.Late != 1 {
 		t.Fatalf("hub lost %d, late %d; want 0, 1", st.Lost, st.Late)
 	}
 	wantLoss(t, "so far", registered.Loss(), 0, 1)
@@ -233,19 +233,19 @@ func TestTheHubCountsWhatIsMissingWhenTheSessionEnds(t *testing.T) {
 
 	sealRun(t, client, window)
 	hub.Resync(registered, client.Next())
-	if st, l := hub.Stats(), registered.Loss(); st.Lost != l.Lost || st.Late != l.Late || l.Lost == 0 {
+	if st, l := hub.ExtendedStats(), registered.Loss(); st.Lost != l.Lost || st.Late != l.Late || l.Lost == 0 {
 		t.Fatalf("after the resync the hub has lost %d, late %d, the session %+v", st.Lost, st.Late, l)
 	}
 	total := client.Next() - 3
 	wantLoss(t, "had it ended after the resync", registered.FinalLoss(), total, 1)
 
 	hub.Remove(registered)
-	if st := hub.Stats(); st.Lost != total || st.Late != 1 {
+	if st := hub.ExtendedStats(); st.Lost != total || st.Late != 1 {
 		t.Fatalf("after Remove the hub has lost %d, late %d; want %d, 1", st.Lost, st.Late, total)
 	}
 	wantLoss(t, "after Remove", registered.Loss(), total, 1)
 	hub.Remove(registered)
-	if st := hub.Stats(); st.Lost != total {
+	if st := hub.ExtendedStats(); st.Lost != total {
 		t.Fatalf("a second Remove made the hub's loss %d, want %d", st.Lost, total)
 	}
 	wantLoss(t, "after a second Remove", registered.FinalLoss(), total, 1)
@@ -338,9 +338,9 @@ func TestTheHubSumsTheLossOfItsSessionsWhileTheyMove(t *testing.T) {
 	reader := make(chan struct{})
 	go func() {
 		defer close(reader)
-		var last Stats
+		var last ExtendedStats
 		for {
-			st := hub.Stats()
+			st := hub.ExtendedStats()
 			for _, s := range sessions {
 				_ = s.FinalLoss()
 			}
@@ -369,7 +369,7 @@ func TestTheHubSumsTheLossOfItsSessionsWhileTheyMove(t *testing.T) {
 		sum.Lost += l.Lost
 		sum.Late += l.Late
 	}
-	if st := hub.Stats(); st.Lost != sum.Lost || st.Late != sum.Late || sum.Lost == 0 {
+	if st := hub.ExtendedStats(); st.Lost != sum.Lost || st.Late != sum.Late || sum.Lost == 0 {
 		t.Fatalf("the hub has lost %d, late %d; the sessions %+v", st.Lost, st.Late, sum)
 	}
 }

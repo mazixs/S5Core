@@ -141,10 +141,10 @@ func (r *routeNet) arrive(i int, wire []byte) {
 	if err != nil {
 		return
 	}
-	var probe nativeudp.Probe
+	var probe nativeudp.ExtendedProbe
 	var extended bool
 	if p.Kind == nativeudp.KindProbe {
-		probe, extended = nativeudp.ParseProbe(p.Data)
+		probe, extended = nativeudp.ParseExtendedProbe(p.Data)
 		if probe.RouteEcho && i == r.silence && i != 0 {
 			r.silenced = true
 			return
@@ -173,14 +173,14 @@ func (r *routeNet) arrive(i int, wire []byte) {
 		if probe.RouteEcho && r.loseEchoACK != nil && r.loseEchoACK(i) {
 			return
 		}
-		_ = r.server.SealWriteAnswer(probe, extended, len(wire), func(w []byte) error { r.down(r.current, w); return nil })
+		_ = r.server.SealWriteExtendedAnswer(probe, extended, len(wire), func(w []byte) error { r.down(r.current, w); return nil })
 	case nativeudp.KindData:
 		r.data = append(r.data, routeDatum{at: at, sock: i, d: string(p.Data)})
 	}
 }
 
 // follow is Session.follow of pkg/nativeudp.
-func (r *routeNet) follow(i int, p nativeudp.Probe, isProbe bool, wire int) bool {
+func (r *routeNet) follow(i int, p nativeudp.ExtendedProbe, isProbe bool, wire int) bool {
 	if !isProbe || !p.RouteProof {
 		return false
 	}
@@ -234,7 +234,7 @@ func (r *routeNet) late(i int, stop <-chan struct{}) {
 			case <-time.After(100 * time.Millisecond):
 			}
 			r.mu.Lock()
-			_ = r.server.SealWriteAnswer(nativeudp.Probe{Generation: 1}, true, 100, func(w []byte) error { r.down(i, w); return nil })
+			_ = r.server.SealWriteExtendedAnswer(nativeudp.ExtendedProbe{Generation: 1}, true, 100, func(w []byte) error { r.down(i, w); return nil })
 			r.mu.Unlock()
 		}
 	}()

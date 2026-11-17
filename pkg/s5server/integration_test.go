@@ -135,11 +135,16 @@ func (w testLogWriter) Write(p []byte) (int, error) {
 // a cleanup function. Blocks until the server is ready to accept.
 func startServer(t *testing.T, cfg Config) *Server {
 	t.Helper()
+	return startServerWithOptions(t, cfg, ServerOptions{})
+}
+
+func startServerWithOptions(t *testing.T, cfg Config, opts ServerOptions) *Server {
+	t.Helper()
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 
-	srv, err := NewServer(cfg)
+	srv, err := NewServerWithOptions(cfg, opts)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

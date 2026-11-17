@@ -79,9 +79,9 @@ func FuzzControlRoundTrip(f *testing.F) {
 			WSMaxJitterMs: clampControlInt(jitter), MaxPadding: clampControlInt(padding),
 			KeepaliveMin: clampControlSeconds(a.KeepaliveMin), KeepaliveMax: clampControlSeconds(a.KeepaliveMax),
 		}
-		encA := encodeAdvice(a)
+		encA := encodeAdvice(AdviceDetails{Advice: a})
 		gotA, err := decodeAdvice(encA)
-		if err != nil || gotA != wantAdvice {
+		if err != nil || gotA != (AdviceDetails{Advice: wantAdvice}) {
 			t.Fatalf("advice %+v came back as %+v, err=%v", wantAdvice, gotA, err)
 		}
 		if len(encH) > maxControlPayload || len(encA) > maxControlPayload {
@@ -95,10 +95,10 @@ func FuzzControlRoundTrip(f *testing.F) {
 				t.Fatalf("an unknown field %#x changed the hello: %+v, err=%v", unknown, got, err)
 			}
 		}
-		if unknown == 0 || unknown > adviceKeepaliveMax {
+		if unknown == 0 || unknown > adviceCapabilities {
 			p := withUnknownTLV(encA, unknown, value, pick)
 			got, err := decodeAdvice(p)
-			if len(p) <= maxControlPayload && (err != nil || got != wantAdvice) {
+			if len(p) <= maxControlPayload && (err != nil || got != (AdviceDetails{Advice: wantAdvice})) {
 				t.Fatalf("an unknown field %#x changed the advice: %+v, err=%v", unknown, got, err)
 			}
 		}
@@ -115,7 +115,7 @@ func FuzzControlRoundTrip(f *testing.F) {
 //     again gives the same value, up to the sender's 32-byte cut.
 func FuzzDecodeControl(f *testing.F) {
 	f.Add(encodeHello(Hello{Version: "v2.2.0", Transport: "ws"}))
-	f.Add(encodeAdvice(Advice{Transport: "ws", WSMinFrame: 256, WSMaxFrame: 4096, KeepaliveMin: 10 * time.Second}))
+	f.Add(encodeAdvice(AdviceDetails{Advice: Advice{Transport: "ws", WSMinFrame: 256, WSMaxFrame: 4096, KeepaliveMin: 10 * time.Second}}))
 	f.Add([]byte{adviceWSMinFrame, 1, 0})
 	f.Add([]byte{0x7f, 3, 'a', 'b'})
 	f.Add([]byte{helloVersion})
