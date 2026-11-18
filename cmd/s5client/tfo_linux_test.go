@@ -188,7 +188,7 @@ func TestATunnelWithFastOpenSendsItsRequestInTheSYN(t *testing.T) {
 		return
 	}
 	logs := captureLogs(t)
-	server, _ := startTunnelServerWith(t, func(c *s5server.Config) { c.ObfsTFO = true })
+	server, _ := startTunnelServerWithOptions(t, nil, s5server.ServerOptions{ObfsTFO: true})
 	echo := target(t, "")
 	for _, optimistic := range []bool{false, true} {
 		var d tunnelDials
@@ -407,7 +407,7 @@ func TestANodeThatDropsSYNDataIsDialledWithoutFastOpen(t *testing.T) {
 	}
 	t.Cleanup(noFastOpenAt.Clear)
 	logs := captureLogs(t)
-	server, _ := startTunnelServerWith(t, func(c *s5server.Config) { c.ObfsTFO = true })
+	server, _ := startTunnelServerWithOptions(t, nil, s5server.ServerOptions{ObfsTFO: true})
 	echo := target(t, "")
 	var d tunnelDials
 	d.hook(t)
@@ -469,7 +469,7 @@ func TestANodeWhoseKeyChangedKeepsFastOpen(t *testing.T) {
 		}
 		t.Cleanup(func() { fastOpenCause = tcptune.FastOpenClientFail; noFastOpenAt.Clear() })
 		logs := captureLogs(t)
-		server, _ := startTunnelServerWith(t, func(c *s5server.Config) { c.ObfsTFO = true })
+		server, _ := startTunnelServerWithOptions(t, nil, s5server.ServerOptions{ObfsTFO: true})
 		echo := target(t, "")
 		var d tunnelDials
 		d.hook(t)

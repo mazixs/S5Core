@@ -164,9 +164,9 @@ type clientParams struct {
 	// datagrams sent behind the request (docs/veil-spec.md, 10.2). That saves
 	// a round trip per stream and two before the first datagram
 	// (docs/plan/v2.4-rc4.md, decision 1). A refusal then reaches the
-	// application as the end of its connection rather than as a reply code;
-	// off makes both wait for the server and pass its code on.
-	OptimisticConnect bool `env:"OPTIMISTIC_CONNECT" envDefault:"true"`
+	// application as the end of its connection rather than as a reply code.
+	// By default both wait for the server and pass its code on.
+	OptimisticConnect bool `env:"OPTIMISTIC_CONNECT" envDefault:"false"`
 	// Prewarm keeps one spare transport open while the client is busy, so
 	// that a new tunnel skips the transport's round trips (prewarm.go).
 	Prewarm bool `env:"PREWARM" envDefault:"true"`
@@ -1294,8 +1294,7 @@ func wrapTunnel(serverConn net.Conn, cfg clientParams) (net.Conn, error) {
 			Transport: string(cfg.effectiveTransport()),
 		},
 	}
-	obfsCfg.OnAdvice = adviceFor(cfg)
-	return obfs.NewClientConn(serverConn, obfsCfg)
+	return obfs.NewClientConnWithOptions(serverConn, obfsCfg, obfs.ConnOptions{OnAdviceDetails: adviceFor(cfg)})
 }
 
 func buildUserPassAuthPacket(user, pass string) []byte {

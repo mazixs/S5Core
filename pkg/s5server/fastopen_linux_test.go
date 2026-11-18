@@ -30,9 +30,8 @@ func TestTheObfsListenerTakesFastOpenOnlyWhenAsked(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs lockedBuffer
 			cfg := DefaultConfig()
-			cfg.ObfsTFO = tc.on
 			cfg.Logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			srv, err := NewServer(cfg)
+			srv, err := NewServerWithOptions(cfg, ServerOptions{ObfsTFO: tc.on})
 			if err != nil {
 				t.Fatal(err)
 			}

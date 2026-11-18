@@ -9,7 +9,7 @@ import (
 )
 
 func udpDropHook(t *Telemetry) func(string) {
-	if t == nil {
+	if t == nil || t.UDPDrops == nil {
 		return nil
 	}
 	options := make(map[string]metric.AddOption)

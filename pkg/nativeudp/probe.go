@@ -10,6 +10,12 @@ type Probe struct {
 	// Size is 0 for a probe of the path. A probe of a size is Size bytes on
 	// the wire and asks for an answer as long.
 	Size int
+}
+
+// ExtendedProbe adds limit recovery and return-path proof to Probe.
+type ExtendedProbe struct {
+	Heard       bool
+	Limit, Size int
 	// Generation negotiates recoverable limits; zero retains the original protocol.
 	Generation uint32
 	// RouteProof advertises return-path verification; RouteEcho returns the
@@ -36,11 +42,18 @@ func ParseProbe(data []byte) (p Probe, extended bool) {
 	if len(data) < probeHead {
 		return Probe{Heard: len(data) == 1 && data[0] == ProbeHeard}, false
 	}
-	p = Probe{
+	return Probe{
 		Heard: data[0]&ProbeHeard != 0,
 		Limit: int(binary.BigEndian.Uint16(data[1:])),
 		Size:  int(binary.BigEndian.Uint16(data[3:])),
-	}
+	}, true
+}
+
+// ParseExtendedProbe also reads the optional recovery and proof fields.
+// The extended result has the same meaning as in ParseProbe.
+func ParseExtendedProbe(data []byte) (p ExtendedProbe, extended bool) {
+	legacy, extended := ParseProbe(data)
+	p = ExtendedProbe{Heard: legacy.Heard, Limit: legacy.Limit, Size: legacy.Size}
 	if len(data) >= recoveryProbeHead && binary.BigEndian.Uint32(data[5:]) == recoveryMagic {
 		p.Generation = binary.BigEndian.Uint32(data[9:])
 	}
@@ -48,12 +61,17 @@ func ParseProbe(data []byte) (p Probe, extended bool) {
 		p.RouteProof, p.RouteEcho = true, data[17] == 1
 		copy(p.RouteToken[:], data[18:34])
 	}
-	return p, true
+	return p, extended
 }
 
 // SealWriteProbe seals an extended probe into a pooled buffer and hands it to
 // write. A probe of a size has no padding: zeros fill it to Size.
 func (s *Session) SealWriteProbe(p Probe, write func([]byte) error) error {
+	return s.SealWriteExtendedProbe(ExtendedProbe{Heard: p.Heard, Limit: p.Limit, Size: p.Size}, write)
+}
+
+// SealWriteExtendedProbe seals a probe with optional recovery and proof fields.
+func (s *Session) SealWriteExtendedProbe(p ExtendedProbe, write func([]byte) error) error {
 	var head [routeProbeHead]byte
 	n := probeHead
 	if p.Heard {
@@ -89,6 +107,12 @@ func (s *Session) SealWriteProbe(p Probe, write func([]byte) error) error {
 // padding for a probe of the path, and for a probe of a size exactly the
 // size it asked for. The answer is never longer than the probe it reflects.
 func (s *Session) SealWriteAnswer(p Probe, extended bool, wire int, write func([]byte) error) error {
+	return s.SealWriteExtendedAnswer(ExtendedProbe{Heard: p.Heard, Limit: p.Limit, Size: p.Size}, extended, wire, write)
+}
+
+// SealWriteExtendedAnswer can acknowledge the probe's recovery generation.
+// Like SealWriteAnswer, it never amplifies the probe.
+func (s *Session) SealWriteExtendedAnswer(p ExtendedProbe, extended bool, wire int, write func([]byte) error) error {
 	var head [recoveryAnswerHead]byte
 	n := answerHead
 	if !extended {
@@ -123,6 +147,17 @@ type Answer struct {
 	Limit          int
 	RouteChallenge bool
 	RouteToken     [16]byte
+}
+
+// AnswerSize reads the first two bytes of a probe answer as a size. A
+// shorter answer is not extended; an extended answer may have size zero.
+//
+// Deprecated: use ParseAnswer for size and the negotiated extensions.
+func AnswerSize(data []byte) (size int, extended bool) {
+	if len(data) < answerHead {
+		return 0, false
+	}
+	return int(binary.BigEndian.Uint16(data)), true
 }
 
 // ParseAnswer reads the data of an answer to a probe: Size is the size it

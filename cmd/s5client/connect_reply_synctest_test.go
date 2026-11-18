@@ -56,7 +56,7 @@ func TestATargetThatAnswersAndClosesReachesTheApplication(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				cfg := testClientParams()
+				cfg := clientParamsWithOptimismEnv(t, "")
 				logs := captureLogs(t)
 
 				original := dialServer
@@ -95,7 +95,13 @@ func TestATargetThatAnswersAndClosesReachesTheApplication(t *testing.T) {
 					t.Fatalf("application write: %v", err)
 				}
 
-				held := <-serverSide
+				synctest.Wait()
+				var held *heldConn
+				select {
+				case held = <-serverSide:
+				default:
+					t.Fatal("the default client did not dial before answering the application")
+				}
 				server := obfsServerSide(t, held, cfg)
 				if _, err := io.ReadFull(server, make([]byte, 3+len(connectRequest()))); err != nil {
 					t.Fatalf("server read of greeting and CONNECT: %v", err)

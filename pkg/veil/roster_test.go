@@ -338,22 +338,31 @@ func TestResolvingAMemberDoesNotDependOnHowManyThereAre(t *testing.T) {
 	}
 
 	const (
-		few      = 8
-		many     = 32768
-		rounds   = 10
-		perRound = 2000
+		few       = 8
+		many      = 32768
+		rounds    = 10
+		batch     = 2000
+		maxOps    = 1_000_000
+		minSample = 32 * time.Millisecond
 	)
 
 	measure := func(n int) func() time.Duration {
 		server, psk, wire := rosterStand(t, n)
 		return func() time.Duration {
 			start := time.Now()
-			for range perRound {
-				if _, err := server.Accept(psk, wire); err != nil {
-					t.Fatal(err)
+			// A single batch can round to zero on a coarse Windows clock.
+			for ops := batch; ops <= maxOps; ops += batch {
+				for range batch {
+					if _, err := server.Accept(psk, wire); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if elapsed := time.Since(start); elapsed >= minSample {
+					return elapsed / time.Duration(ops)
 				}
 			}
-			return time.Since(start) / perRound
+			t.Fatalf("no usable timing sample after %d lookups in a roster of %d", maxOps, n)
+			return 0
 		}
 	}
 

@@ -60,9 +60,6 @@ type Config struct {
 	// MaxFrame is the server shaper's WS_MAX_FRAME, which sizes the
 	// upgrader's write buffer. Zero means ws.DefaultMaxFrame.
 	MaxFrame int
-	// EarlyData accepts WebSocket frames behind the upgrade request
-	// (ws.UpgraderOpts.EarlyData).
-	EarlyData bool
 	// Logger receives upstream failures. Nil means slog.Default.
 	Logger *slog.Logger
 }
@@ -148,6 +145,11 @@ func registrable(pattern string) (err error) {
 // NewListener creates a TLS listener that serves a decoy site and upgrades
 // WebSocket connections on the configured path.
 func NewListener(cfg Config) (*Listener, error) {
+	return NewListenerWithEarlyData(cfg, false)
+}
+
+// NewListenerWithEarlyData can accept WebSocket frames before the upgrade response.
+func NewListenerWithEarlyData(cfg Config, earlyData bool) (*Listener, error) {
 	if err := ValidatePath(cfg.WSPath); err != nil {
 		return nil, err
 	}
@@ -172,7 +174,7 @@ func NewListener(cfg Config) (*Listener, error) {
 		tlsListener: tlsListener,
 		conns:       make(chan net.Conn, 64),
 		done:        make(chan struct{}),
-		upgrader:    ws.NewUpgrader(ws.UpgraderOpts{Path: cfg.WSPath, Subprotocols: cfg.Subprotocols, WriteBufferSize: cfg.MaxFrame, EarlyData: cfg.EarlyData}),
+		upgrader:    ws.NewUpgraderWithEarlyData(ws.UpgraderOpts{Path: cfg.WSPath, Subprotocols: cfg.Subprotocols, WriteBufferSize: cfg.MaxFrame}, earlyData),
 	}
 
 	decoy, err := newDecoyHandler(cfg)

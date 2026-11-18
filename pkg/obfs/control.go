@@ -67,7 +67,11 @@ type Advice struct {
 	MaxPadding    int
 	KeepaliveMin  time.Duration
 	KeepaliveMax  time.Duration
+}
 
+// AdviceDetails combines a recommendation with listener capabilities.
+type AdviceDetails struct {
+	Advice
 	// Capabilities says what the listener that accepted this tunnel can
 	// take from a client, as Cap* bits. Unlike the fields above it is a
 	// fact about the listener, not an opinion of the operator.
@@ -130,7 +134,7 @@ func decodeHello(payload []byte) (Hello, error) {
 // encodeAdvice turns an Advice into its TLV payload. Zero fields are left
 // out rather than sent as zero, so "no opinion" costs nothing on the wire
 // and decodes back to the zero value.
-func encodeAdvice(a Advice) []byte {
+func encodeAdvice(a AdviceDetails) []byte {
 	var out []byte
 	out = appendStringTLV(out, adviceTransport, a.Transport)
 	out = appendUint16TLV(out, adviceWSMinFrame, a.WSMinFrame)
@@ -146,8 +150,8 @@ func encodeAdvice(a Advice) []byte {
 // decodeAdvice parses an Advice. Unknown types are skipped; a numeric field
 // of the wrong width is an error, because a peer that agrees on the type
 // and not on the width is a peer this build cannot follow.
-func decodeAdvice(payload []byte) (Advice, error) {
-	var a Advice
+func decodeAdvice(payload []byte) (AdviceDetails, error) {
+	var a AdviceDetails
 	err := walkTLV(payload, func(typ byte, value []byte) error {
 		switch typ {
 		case adviceTransport:
@@ -331,7 +335,10 @@ func (c *conn) deliverControl(kind frameKind, payload []byte) error {
 			return err
 		}
 		if c.cfg.OnAdvice != nil {
-			c.cfg.OnAdvice(a)
+			c.cfg.OnAdvice(a.Advice)
+		}
+		if c.onAdviceDetails != nil {
+			c.onAdviceDetails(a)
 		}
 	}
 	return nil

@@ -87,7 +87,7 @@ func TestLostAndMismatchedLimitAcknowledgementsCannotRaiseTheClient(t *testing.T
 		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) {
 			p.sizes = true
 			p.loseSized = lose
-			p.loseLimitACK = func(p nativeudp.Probe) bool { return p.Generation > 1 && p.Limit != 0 }
+			p.loseLimitACK = func(p nativeudp.ExtendedProbe) bool { return p.Generation > 1 && p.Limit != 0 }
 		})
 		l.at(time.Second)
 		old := l.client.session.Limit()
@@ -122,7 +122,7 @@ func TestLostProposalAcknowledgementsExhaustTheRecoveryBudget(t *testing.T) {
 		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) {
 			p.sizes = true
 			p.loseSized = lose
-			p.loseLimitACK = func(p nativeudp.Probe) bool { return p.Generation > 1 && p.Limit != 0 }
+			p.loseLimitACK = func(p nativeudp.ExtendedProbe) bool { return p.Generation > 1 && p.Limit != 0 }
 		})
 		l.at(time.Second)
 		old := l.client.session.Limit()
@@ -151,8 +151,8 @@ func TestLostLimitCancellationIsRepeatedAtExistingProbeCadence(t *testing.T) {
 		l := startLivenessPath(t, nil, 0, nil, nil, func(p *memPath) {
 			p.sizes = true
 			p.loseSized = lostFirstSizes()
-			p.loseLimitACK = func(p nativeudp.Probe) bool { return p.Generation > 1 && p.Limit != 0 }
-			p.loseLimitProposal = func(p nativeudp.Probe) bool {
+			p.loseLimitACK = func(p nativeudp.ExtendedProbe) bool { return p.Generation > 1 && p.Limit != 0 }
+			p.loseLimitProposal = func(p nativeudp.ExtendedProbe) bool {
 				if p.Generation == 3 && p.Limit != 0 && lostCancellations < 2 {
 					lostCancellations++
 					return true

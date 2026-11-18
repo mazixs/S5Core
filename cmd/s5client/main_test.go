@@ -7,9 +7,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/caarlos0/env/v11"
 	"github.com/mazixs/S5Core/pkg/obfs"
 	"github.com/mazixs/S5Core/pkg/veil"
 )
+
+// Keep the tunnel fixture unchanged while taking optimism from the CLI parser.
+func clientParamsWithOptimismEnv(t *testing.T, value string) clientParams {
+	t.Helper()
+	environment := map[string]string{}
+	if value != "" {
+		environment["OPTIMISTIC_CONNECT"] = value
+	}
+	var parsed clientParams
+	if err := env.ParseWithOptions(&parsed, env.Options{Environment: environment}); err != nil {
+		t.Fatalf("parse client configuration: %v", err)
+	}
+	cfg := testClientParams()
+	cfg.OptimisticConnect = parsed.OptimisticConnect
+	return cfg
+}
 
 func TestMatchDomain(t *testing.T) {
 	patterns := []string{"example.com", "*.google.com"}

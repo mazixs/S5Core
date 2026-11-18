@@ -12,7 +12,7 @@ import (
 func proveReturnPath(t *testing.T, client *Session, c *net.UDPConn, write func([]byte) error) {
 	t.Helper()
 	var requestBytes int
-	if err := client.SealWriteProbe(Probe{RouteProof: true}, func(wire []byte) error { requestBytes = len(wire); return write(wire) }); err != nil {
+	if err := client.SealWriteExtendedProbe(ExtendedProbe{RouteProof: true}, func(wire []byte) error { requestBytes = len(wire); return write(wire) }); err != nil {
 		t.Fatal(err)
 	}
 	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
@@ -32,7 +32,7 @@ func proveReturnPath(t *testing.T, client *Session, c *net.UDPConn, write func([
 	if !a.RouteChallenge || a.RouteToken == [16]byte{} {
 		t.Fatal("candidate was not challenged")
 	}
-	if err := client.SealWriteProbe(Probe{RouteProof: true, RouteEcho: true, RouteToken: a.RouteToken}, write); err != nil {
+	if err := client.SealWriteExtendedProbe(ExtendedProbe{RouteProof: true, RouteEcho: true, RouteToken: a.RouteToken}, write); err != nil {
 		t.Fatal(err)
 	}
 	n, err = c.Read(b[:])
@@ -93,7 +93,7 @@ func TestRouteProofExpiresAndIsBoundedToTheAddressAndAssociation(t *testing.T) {
 		h := &Hub{acks: make(chan ackRequest, ackQueue)}
 		peer := netip.MustParseAddrPort("127.0.0.1:12000")
 		wrong := netip.MustParseAddrPort("127.0.0.1:12001")
-		p := Probe{RouteProof: true}
+		p := ExtendedProbe{RouteProof: true}
 		if s.follow(h, peer, netip.Addr{}, p, true, 100) {
 			t.Fatal("proposal became a route")
 		}
@@ -125,13 +125,13 @@ func TestALegacyInitialRouteMustMatchTheAuthenticatedTCPPeer(t *testing.T) {
 	_, s := pair(t)
 	s.legacyPeer = netip.MustParseAddr("127.0.0.1")
 	h := &Hub{acks: make(chan ackRequest, ackQueue)}
-	if s.follow(h, netip.MustParseAddrPort("127.0.0.2:9000"), netip.Addr{}, Probe{}, true, 60) {
+	if s.follow(h, netip.MustParseAddrPort("127.0.0.2:9000"), netip.Addr{}, ExtendedProbe{}, true, 60) {
 		t.Fatal("legacy route redirected outside the TCP peer")
 	}
-	if !s.follow(h, netip.MustParseAddrPort("127.0.0.1:9000"), netip.Addr{}, Probe{}, true, 60) {
+	if !s.follow(h, netip.MustParseAddrPort("127.0.0.1:9000"), netip.Addr{}, ExtendedProbe{}, true, 60) {
 		t.Fatal("compatible initial route refused")
 	}
-	if s.follow(h, netip.MustParseAddrPort("127.0.0.1:9001"), netip.Addr{}, Probe{}, true, 60) {
+	if s.follow(h, netip.MustParseAddrPort("127.0.0.1:9001"), netip.Addr{}, ExtendedProbe{}, true, 60) {
 		t.Fatal("legacy route migrated without proof")
 	}
 }
@@ -142,18 +142,18 @@ func TestALegacyInitialRouteMustMatchTheAuthenticatedTCPPeer(t *testing.T) {
 // probe, or the one accepted with the limit it announces.
 func TestOnlyTheAnswerToAnEchoHasNoGeneration(t *testing.T) {
 	client, server := pair(t)
-	for _, p := range []Probe{
+	for _, p := range []ExtendedProbe{
 		{RouteProof: true, RouteEcho: true, RouteToken: [16]byte{1}},
 		{RouteProof: true, Generation: 1},
 		{RouteProof: true, Heard: true, Generation: 1},
 		{RouteProof: true, Generation: 1, Limit: 1392},
 		{RouteProof: true, Generation: 3},
 	} {
-		wire := sealed(t, func(w func([]byte) error) error { return client.SealWriteProbe(p, w) })
+		wire := sealed(t, func(w func([]byte) error) error { return client.SealWriteExtendedProbe(p, w) })
 		packet, n := open(t, server, wire)
-		probe, extended := ParseProbe(packet.Data)
+		probe, extended := ParseExtendedProbe(packet.Data)
 		server.ApplyProbeLimit(probe)
-		reply := sealed(t, func(w func([]byte) error) error { return server.SealWriteAnswer(probe, extended, n, w) })
+		reply := sealed(t, func(w func([]byte) error) error { return server.SealWriteExtendedAnswer(probe, extended, n, w) })
 		packet, _ = open(t, client, reply)
 		a, _ := ParseAnswer(packet.Data)
 		if p.RouteEcho != (a.Generation == 0) {

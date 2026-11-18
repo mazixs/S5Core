@@ -18,10 +18,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// Telemetry holds OpenTelemetry instruments
+// Telemetry holds OpenTelemetry instruments. When constructing it manually,
+// the instruments added in 2.4 are optional. Use InitTelemetry to register
+// the server's asynchronous metric callbacks with a meter.
 type Telemetry struct {
-	buildMu           sync.Mutex
-	buildSeen         map[[3]string]struct{}
 	ActiveConnections metric.Int64UpDownCounter
 	TotalConnections  metric.Int64Counter
 	AuthFailures      metric.Int64Counter
@@ -175,6 +175,27 @@ type Telemetry struct {
 	// meter is kept so that the session gauge can be registered once the
 	// registry that answers it exists, which is in NewServer.
 	meter metric.Meter
+}
+
+// buildInfoInstrument owns deduplication for RecordBuildInfo. Copies that
+// keep the instrument share its history; replacing it also replaces that history.
+type buildInfoInstrument struct {
+	metric.Int64UpDownCounter
+	mu   sync.Mutex
+	seen map[[3]string]struct{}
+}
+
+func (h *buildInfoInstrument) first(key [3]string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, seen := h.seen[key]; seen {
+		return false
+	}
+	if h.seen == nil {
+		h.seen = make(map[[3]string]struct{})
+	}
+	h.seen[key] = struct{}{}
+	return true
 }
 
 // InitTelemetry initializes standard OpenTelemetry metrics
@@ -438,7 +459,7 @@ func InitTelemetry(meterProvider metric.MeterProvider) (*Telemetry, error) {
 
 		PhaseDuration:      phaseDuration,
 		ConnectionsInPhase: connectionsInPhase,
-		BuildInfo:          buildInfo,
+		BuildInfo:          &buildInfoInstrument{Int64UpDownCounter: buildInfo},
 		AuthVerifications:  authVerifications,
 		AuthAccountAlerts:  authAccountAlerts,
 		HalfCloseFailures:  halfCloseFailures,
@@ -638,25 +659,23 @@ func halfCloseHook(t *Telemetry) socks5.HalfCloseObserver {
 // It exists because "the server is running the new version" and "the server is
 // actually listening on the stealth transport" are the two claims that are
 // impossible to check from outside and easiest to get wrong.
+//
+// The instrument supplied by InitTelemetry records each label set once, even
+// across Telemetry copies that share it. For a caller-supplied BuildInfo
+// instrument, every call adds 1, as in v2.3.0.
 func (t *Telemetry) RecordBuildInfo(version, goVersion string, transports []string) {
 	if t == nil || t.BuildInfo == nil {
 		return
 	}
+	counter := t.BuildInfo
 	list := "none"
 	if len(transports) > 0 {
 		list = strings.Join(transports, ",")
 	}
-	t.buildMu.Lock()
-	defer t.buildMu.Unlock()
-	key := [3]string{version, goVersion, list}
-	if _, seen := t.buildSeen[key]; seen {
+	if instrument, ok := counter.(*buildInfoInstrument); ok && !instrument.first([3]string{version, goVersion, list}) {
 		return
 	}
-	if t.buildSeen == nil {
-		t.buildSeen = make(map[[3]string]struct{})
-	}
-	t.buildSeen[key] = struct{}{}
-	t.BuildInfo.Add(context.Background(), 1, metric.WithAttributes(
+	counter.Add(context.Background(), 1, metric.WithAttributes(
 		attribute.String("version", version),
 		attribute.String("go_version", goVersion),
 		attribute.String("transports", list),

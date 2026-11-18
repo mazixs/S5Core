@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0]
+
+### Upgrade notes
+
+- Regular SOCKS5 setup still returns the original failure reply. With
+  `OPTIMISTIC_CONNECT=true`, the client acknowledges first, so a subsequent
+  failure appears as a connection reset or close. The client keeps at most one
+  warm spare transport while busy; set `PREWARM=false` to disable the spare.
+- If WSS runs behind a reverse proxy or CDN, set `WS_EARLY_DATA=off` on the
+  server until the front end has been verified to pass early upgrade frames.
+- The server's authenticated replay history now defaults to 100,000 entries
+  over a five-hour epoch. If the history fills, the server refuses new openings
+  instead of evicting live entries. Review `OBFS_REPLAY_WINDOW` on busy nodes.
+- The Go SDK and source builds now require Go 1.27.0 or newer. Official builds
+  use Go 1.27.4.
+
 ### Added
 
 - Optimistic TCP and UDP setup, one bounded warm spare per client, advertised
@@ -38,10 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   association is 3 s old and active, the client tries up to
   `UDP_NATIVE_ROUTE_CANDIDATES` (default 3, `0` turns it off) sockets with new
   source ports, measures each route by the server's route challenge, and moves
-  to one that is faster by 10 ms or 15 %, whichever is more. The datagrams go
-  by `0x83` while the server follows, so none is lost or doubled, and the limit
-  of the new route is searched again. Neither the wire nor the server changes;
-  an older server that does not prove routes is not searched. A move writes
+  to one that is faster by 10 ms or 15%, whichever is more. During the move,
+  the client sends datagrams over the TCP fallback (`0x83`) while the server
+  switches paths, then searches for the new route's size limit. This uses the
+  existing wire protocol and skips servers that do not support route proof.
+  A move writes
   one Info line without addresses and a `moved` record of the latency recorder
   (manifest schema 5), and the closing line of the association adds
   `native_route_candidates` and `native_route_moved`. See
@@ -99,17 +116,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github.com/molecule-man/go-brrr` (MIT) in place of
   `github.com/andybalholm/brotli`.
 
-### Removed
+### Deprecated
 
-- `nativeudp.AnswerSize` from the public `pkg/nativeudp`. `ParseAnswer` returns
-  the same size in `Answer.Size` and the same extended flag.
+- `nativeudp.AnswerSize` remains available with its v2.3.0 behavior. Use
+  `nativeudp.ParseAnswer` to read the size and the newer answer fields.
+
+### SDK compatibility
+
+- Existing Go import paths, constructors and v2.3.0 struct literals remain
+  valid. New server settings are available through `s5server.ServerOptions`
+  and `NewServerWithOptions`. For native UDP, use `ParseExtendedProbe` and
+  `Hub.ExtendedStats` to read the new fields without changing the legacy types.
+- Native UDP route validation remains enabled. A v2.3.0 client can establish its
+  first native path from the authenticated TCP peer's IP, but it cannot migrate
+  that path after a NAT address or port change. It must fall back to TCP or
+  start a new association.
 
 ### Fixed
 
 - Bind sessions, traffic accounting and administrative access to the account
   incarnation, and retain updated SDK restrictions across server restarts.
-- Synchronize run identifiers, harden replay and reload accounting boundaries,
-  and recover negotiated native UDP limits after correlated probe loss.
+- Synchronize run identifiers, and harden replay and reload accounting
+  boundaries.
+- Recover native UDP size limits after correlated probe loss. Verify the exact
+  server acknowledgement before applying a recovered limit, and keep the TCP
+  fallback available for oversized datagrams when the native path is down.
+- Let failed CONNECT attempts free a slot for later DNS candidates. Reject
+  oversized UDP responses before writing any bytes of their tunnel frame.
 - Build with Go 1.27.4 (`go 1.27.0`, `toolchain go1.27.4`) in both Go modules,
   the CI and release containers and the Docker image, and take
   `github.com/andybalholm/brotli` 1.2.7 and `github.com/klauspost/compress`
@@ -1049,7 +1082,8 @@ Highlights:
 Last release of the 1.x line. See the field report in
 `docs/reports/v1.4.4-field-run.md`.
 
-[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/mazixs/S5Core/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/mazixs/S5Core/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/mazixs/S5Core/releases/tag/v2.3.0
 [2.2.0]: https://github.com/mazixs/S5Core/releases/tag/v2.2.0
 [2.1.0]: https://github.com/mazixs/S5Core/releases/tag/v2.1.0

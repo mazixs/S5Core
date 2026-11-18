@@ -24,7 +24,7 @@ func (a *nativeAssociation) Port() int       { return a.hub.Port() }
 func (a *nativeAssociation) MaxPayload() int { return a.session.MaxPayload() }
 
 func (a *nativeAssociation) Send(data []byte) error {
-	return nativeSendError(a.hub.Send(a.session, nativeudp.KindData, data))
+	return nativeSendError(a.hub.SendWithLimitError(a.session, nativeudp.KindData, data))
 }
 
 // nativeSendError tells the relay which failures end the path. The hub answers
@@ -65,8 +65,14 @@ func (a *nativeAssociation) Receive(ctx context.Context, datagram func(uint64, [
 }
 
 func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCounters) (metric.Registration, error) {
-	if t == nil {
+	if t == nil || t.meter == nil {
 		return nil, nil
+	}
+	instruments := []metric.Observable{t.NativeUDPPackets, t.NativeUDPSessions, t.NativeUDPDatagrams, t.NativeUDPRouteEvents, t.NativeUDPStreamDrops}
+	for _, optional := range []metric.Int64ObservableCounter{t.NativeUDPQueueDrops, t.NativeUDPLost, t.NativeUDPLate} {
+		if optional != nil {
+			instruments = append(instruments, optional)
+		}
 	}
 	datagrams := []struct {
 		direction, path string
@@ -91,7 +97,7 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCou
 		{"queue", &c.Drops.Queue}, {"age", &c.Drops.Age},
 	}
 	return t.meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
-		st := hub.Stats()
+		st := hub.ExtendedStats()
 		for _, row := range []struct {
 			outcome string
 			count   uint64
@@ -105,10 +111,16 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCou
 			o.ObserveInt64(t.NativeUDPPackets, int64(row.count), metric.WithAttributes(attribute.String("outcome", row.outcome)))
 		}
 		o.ObserveInt64(t.NativeUDPSessions, int64(st.Active))
-		o.ObserveInt64(t.NativeUDPLost, int64(st.Lost))
-		o.ObserveInt64(t.NativeUDPLate, int64(st.Late))
-		o.ObserveInt64(t.NativeUDPQueueDrops, int64(st.DataQueueDrops), metric.WithAttributes(attribute.String("queue", "data")))
-		o.ObserveInt64(t.NativeUDPQueueDrops, int64(st.ProbeACKQueueDrops), metric.WithAttributes(attribute.String("queue", "probe_ack")))
+		if t.NativeUDPLost != nil {
+			o.ObserveInt64(t.NativeUDPLost, int64(st.Lost))
+		}
+		if t.NativeUDPLate != nil {
+			o.ObserveInt64(t.NativeUDPLate, int64(st.Late))
+		}
+		if t.NativeUDPQueueDrops != nil {
+			o.ObserveInt64(t.NativeUDPQueueDrops, int64(st.DataQueueDrops), metric.WithAttributes(attribute.String("queue", "data")))
+			o.ObserveInt64(t.NativeUDPQueueDrops, int64(st.ProbeACKQueueDrops), metric.WithAttributes(attribute.String("queue", "probe_ack")))
+		}
 		for _, row := range datagrams {
 			o.ObserveInt64(t.NativeUDPDatagrams, int64(row.count.Load()), metric.WithAttributes(
 				attribute.String("direction", row.direction), attribute.String("path", row.path)))
@@ -120,6 +132,5 @@ func registerNativeMetrics(t *Telemetry, hub *nativeudp.Hub, c *socks5.NativeCou
 			o.ObserveInt64(t.NativeUDPStreamDrops, int64(row.count.Load()), metric.WithAttributes(attribute.String("reason", row.reason)))
 		}
 		return nil
-	}, t.NativeUDPPackets, t.NativeUDPSessions, t.NativeUDPDatagrams, t.NativeUDPRouteEvents, t.NativeUDPStreamDrops, t.NativeUDPQueueDrops,
-		t.NativeUDPLost, t.NativeUDPLate)
+	}, instruments...)
 }

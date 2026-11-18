@@ -8,7 +8,7 @@ import (
 )
 
 func TestCapabilitiesTravelAsTheirOwnField(t *testing.T) {
-	wire := encodeAdvice(Advice{Capabilities: CapWSEarlyData})
+	wire := encodeAdvice(AdviceDetails{Capabilities: CapWSEarlyData})
 	if want := []byte{0x08, 2, 0, 1}; !bytes.Equal(wire, want) {
 		t.Fatalf("early data encodes to % x, want % x", wire, want)
 	}
@@ -18,8 +18,7 @@ func TestCapabilitiesTravelAsTheirOwnField(t *testing.T) {
 	if err != nil || got.Capabilities != CapWSEarlyData {
 		t.Fatalf("decoded %+v, %v", got, err)
 	}
-	got.Capabilities = 0
-	if got != (Advice{}) {
+	if got.Advice != (Advice{}) {
 		t.Fatalf("capabilities leaked into another field: %+v", got)
 	}
 	if _, err := decodeAdvice([]byte{0x08, 1, 1}); err == nil {

@@ -374,7 +374,7 @@ func newNativeClient(conn datagramConn, session *nativeudp.Session, signal func(
 }
 
 func (n *nativeClient) send(kind byte, payload []byte) error {
-	return n.session.SealWrite(kind, payload, n.write)
+	return n.session.SealWriteWithLimitError(kind, payload, n.write)
 }
 
 func (n *nativeClient) write(wire []byte) error { return writeOn(n.current(), wire) }
@@ -438,13 +438,13 @@ func (n *nativeClient) close() {
 
 // sendProbe sends a probe the server reads: the form of 2.3.0-rc1 to a server
 // that answered like one, the extended form to any other.
-func (n *nativeClient) sendProbe(p nativeudp.Probe) error {
+func (n *nativeClient) sendProbe(p nativeudp.ExtendedProbe) error {
 	var err error
 	if n.server.Load() != serverLegacy {
 		// Search controls can be as short as 48 bytes and start only after a
 		// normal ACK. Keep their geometry; ordinary probes establish routes.
 		p.RouteProof = p.Size == 0
-		err = n.session.SealWriteProbe(p, n.write)
+		err = n.session.SealWriteExtendedProbe(p, n.write)
 	} else {
 		var payload []byte
 		if p.Heard {
@@ -676,7 +676,7 @@ func (n *nativeClient) read(s *nativeSocket) {
 				n.proves.Store(true)
 				n.challengeAt.Store(now)
 				n.echoAt.Store(now)
-				_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: answer.RouteToken})
+				_ = n.sendProbe(nativeudp.ExtendedProbe{RouteEcho: true, RouteToken: answer.RouteToken})
 				continue
 			}
 			if !current {
@@ -805,7 +805,7 @@ func (n *nativeClient) watch() {
 				generation++
 				announceGeneration = generation
 				announce = n.session.Limit()
-				n.session.ApplyProbeLimit(nativeudp.Probe{Generation: generation, Limit: announce})
+				n.session.ApplyProbeLimit(nativeudp.ExtendedProbe{Generation: generation, Limit: announce})
 				pendingLimit = 0
 				recoveryAt = now.Add(nativeRecoveryEvery)
 				slog.Info("Native UDP limit proposal unconfirmed; retaining committed limit", "conn", n.logID,
@@ -818,7 +818,7 @@ func (n *nativeClient) watch() {
 			firstSent = now
 			probeErrorBaseline = n.stats.probeWriteErrors.Load()
 		}
-		_ = n.sendProbe(nativeudp.Probe{Heard: heard, Limit: announce, Generation: announceGeneration})
+		_ = n.sendProbe(nativeudp.ExtendedProbe{Heard: heard, Limit: announce, Generation: announceGeneration})
 		unanswered++
 		if unanswered == 2 {
 			n.deafAt.Store(n.clock(now.Add(max(nativeAnswerWait, 2*srtt))))
@@ -850,7 +850,7 @@ func (n *nativeClient) watch() {
 	}
 	sendRound := func(now time.Time) {
 		for _, size := range search.Round() {
-			_ = n.sendProbe(nativeudp.Probe{Size: size, Generation: generation})
+			_ = n.sendProbe(nativeudp.ExtendedProbe{Size: size, Generation: generation})
 			n.stats.sizeProbes.Add(1)
 		}
 		roundAt, roundEnd, roundWait = now, now.Add(max(2*srtt, nativeAnswerWait)), false
@@ -940,7 +940,7 @@ func (n *nativeClient) watch() {
 			// server by now. From here the new socket is the path's.
 			echoDue, lastProbe = time.Time{}, now
 			n.echoAt.Store(n.clock(now))
-			_ = n.sendProbe(nativeudp.Probe{RouteEcho: true, RouteToken: token})
+			_ = n.sendProbe(nativeudp.ExtendedProbe{RouteEcho: true, RouteToken: token})
 		case !drainAt.IsZero():
 			n.retire(retired)
 			retired, drainAt = nil, time.Time{}
@@ -965,7 +965,7 @@ func (n *nativeClient) watch() {
 			candidateAt = n.clock(now)
 			// An ordinary probe from an address the server does not know: its
 			// challenge comes back a round trip of the new route later.
-			if err := n.session.SealWriteProbe(nativeudp.Probe{Limit: announce, Generation: announceGeneration, RouteProof: true},
+			if err := n.session.SealWriteExtendedProbe(nativeudp.ExtendedProbe{Limit: announce, Generation: announceGeneration, RouteProof: true},
 				func(w []byte) error { return writeOn(s, w) }); err != nil {
 				n.retire(s)
 				return
@@ -1126,7 +1126,7 @@ func (n *nativeClient) watch() {
 			}
 		case answer := <-n.limitACK:
 			if pendingLimit != 0 && answer.Generation == announceGeneration && answer.Limit == pendingLimit {
-				if n.session.ApplyProbeLimit(nativeudp.Probe{Generation: answer.Generation, Limit: answer.Limit}) {
+				if n.session.ApplyProbeLimit(nativeudp.ExtendedProbe{Generation: answer.Generation, Limit: answer.Limit}) {
 					slog.Info("Native UDP limit agreed", "conn", n.logID, "limit", answer.Limit, "generation", answer.Generation)
 				}
 				pendingLimit = 0

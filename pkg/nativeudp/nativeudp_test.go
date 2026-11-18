@@ -383,10 +383,20 @@ func TestTheAssociationLearnsTheCountersOfTheClientsWords(t *testing.T) {
 // waitFor polls the hub until its counters satisfy done.
 func waitFor(t *testing.T, hub *Hub, done func(Stats) bool) {
 	t.Helper()
+	waitForStats(t, hub.Stats, done)
+}
+
+func waitForExtendedStats(t *testing.T, hub *Hub, done func(ExtendedStats) bool) {
+	t.Helper()
+	waitForStats(t, hub.ExtendedStats, done)
+}
+
+func waitForStats[S any](t *testing.T, snapshot func() S, done func(S) bool) {
+	t.Helper()
 	deadline := time.Now().Add(time.Second)
-	for !done(hub.Stats()) {
+	for !done(snapshot()) {
 		if time.Now().After(deadline) {
-			t.Fatalf("hub counters: %+v", hub.Stats())
+			t.Fatalf("hub counters: %+v", snapshot())
 		}
 		time.Sleep(time.Millisecond)
 	}

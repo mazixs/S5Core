@@ -31,6 +31,7 @@ import (
 // Server represents a controllable SOCKS5 server instance.
 type Server struct {
 	cfg           Config
+	opts          ServerOptions
 	socks5        *socks5.Server
 	nativeHub     atomic.Pointer[nativeudp.Hub]
 	nativeMetrics metric.Registration
@@ -113,7 +114,12 @@ var udpTunnelTuner = tcptune.Tuner
 
 // NewServer initializes a new SOCKS5 server with the given configuration.
 func NewServer(cfg Config) (*Server, error) {
-	if err := ValidateConfig(cfg); err != nil {
+	return NewServerWithOptions(cfg, ServerOptions{})
+}
+
+// NewServerWithOptions initializes a server with additional transport settings.
+func NewServerWithOptions(cfg Config, opts ServerOptions) (*Server, error) {
+	if err := ValidateConfigWithOptions(cfg, opts); err != nil {
 		return nil, err
 	}
 	whitelist, err := parseWhitelist(cfg.AllowedIPs)
@@ -159,8 +165,8 @@ func NewServer(cfg Config) (*Server, error) {
 		DenyPrivateDest:        cfg.DenyPrivateDest,
 		NativeCounters:         nativeCounters,
 		UDPRelayCounters:       udpCounters,
-		UDPDiagnosticsInterval: cfg.UDPDiagnosticsInterval,
-		OnUDPReport:            udpReportHook(logger, cfg.UDPDiagnosticsInterval),
+		UDPDiagnosticsInterval: opts.UDPDiagnosticsInterval,
+		OnUDPReport:            udpReportHook(logger, opts.UDPDiagnosticsInterval),
 		// A node without UDP_PORT, or a listener without obfs keys, answers
 		// 0x84 with port 0: the client then stays on 0x83 without another
 		// connection.
@@ -225,6 +231,7 @@ func NewServer(cfg Config) (*Server, error) {
 
 	s := &Server{
 		cfg:            cfg,
+		opts:           opts,
 		controls:       controlsFrom(cfg, whitelist),
 		socks5:         srv,
 		logger:         logger,
@@ -739,7 +746,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 		s.mu.Unlock()
 
 		ol := newListenerPipeline(obfsListen, TransportObfs, s.cfg, s.cfg.Telemetry, limiter, s.sessions).
-			withAdvice(s.currentAdvice).
+			withAdvice(s.currentAdvice, 0).
 			withObfs(s.obfsConfig(TransportObfs))
 
 		s.logger.Info("Obfuscation ENABLED on separate port",
@@ -747,7 +754,7 @@ func (s *Server) Start(ctx context.Context) (err error) {
 			"max_padding", s.cfg.ObfsMaxPadding,
 			"mtu", s.cfg.ObfsMTU,
 			"psk_length", len(s.cfg.ObfsPSK),
-			"tfo", s.cfg.ObfsTFO,
+			"tfo", s.opts.ObfsTFO,
 		)
 		serve(ol)
 	} else {
@@ -769,7 +776,8 @@ func (s *Server) Start(ctx context.Context) (err error) {
 			subprotocols = []string{s.cfg.WSSubprotocol}
 		}
 
-		tdl, err := tlsdecoy.NewListener(tlsdecoy.Config{
+		earlyData := s.opts.WSEarlyData != WSEarlyDataOff
+		tdl, err := tlsdecoy.NewListenerWithEarlyData(tlsdecoy.Config{
 			Addr:          wsAddr,
 			CertFile:      s.cfg.WSCertFile,
 			KeyFile:       s.cfg.WSKeyFile,
@@ -777,16 +785,19 @@ func (s *Server) Start(ctx context.Context) (err error) {
 			DecoyUpstream: s.cfg.WSDecoyUpstream,
 			Subprotocols:  subprotocols,
 			MaxFrame:      s.cfg.WSMaxFrame,
-			EarlyData:     s.cfg.wsEarlyData(),
 			Logger:        s.logger,
-		})
+		}, earlyData)
 		if err != nil {
 			return fmt.Errorf("failed to start WS listener on %s: %w", wsAddr, err)
 		}
 
+		var capabilities uint16
+		if earlyData {
+			capabilities = obfs.CapWSEarlyData
+		}
 		wl := newListenerPipeline(tdl, TransportWS, s.cfg, s.cfg.Telemetry, limiter, s.sessions).
 			withShaper(s.cfg.WSMinFrame, s.cfg.WSMaxFrame, s.cfg.WSMaxJitter).
-			withAdvice(s.wsAdvice).
+			withAdvice(s.currentAdvice, capabilities).
 			withObfs(s.obfsConfig(TransportWS))
 
 		s.mu.Lock()

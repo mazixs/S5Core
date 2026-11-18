@@ -25,10 +25,6 @@ type UpgraderOpts struct {
 	// WriteBufferSize is the payload gorilla assembles into one socket
 	// write; see writeBufferSize.
 	WriteBufferSize int
-	// EarlyData accepts WebSocket frames that arrive behind the upgrade
-	// request, before the 101 has been sent (docs/veil-spec.md, 8.5).
-	// Without it gorilla refuses such a connection outright.
-	EarlyData bool
 }
 
 // writeBufferSize covers the shaper's largest message. A message longer than
@@ -41,18 +37,26 @@ func writeBufferSize(maxFrame int) int {
 
 // Upgrader wraps a gorilla websocket.Upgrader and validates the request path.
 type Upgrader struct {
-	opts UpgraderOpts
-	up   websocket.Upgrader
+	opts      UpgraderOpts
+	up        websocket.Upgrader
+	earlyData bool
 }
 
-// NewUpgrader creates a new WS upgrader.
+// NewUpgrader creates a WS upgrader that refuses frames sent before the 101.
 func NewUpgrader(opts UpgraderOpts) *Upgrader {
+	return NewUpgraderWithEarlyData(opts, false)
+}
+
+// NewUpgraderWithEarlyData can accept frames sent behind the upgrade request,
+// before the 101 (docs/veil-spec.md, 8.5).
+func NewUpgraderWithEarlyData(opts UpgraderOpts, earlyData bool) *Upgrader {
 	checkOrigin := opts.CheckOrigin
 	if checkOrigin == nil {
 		checkOrigin = func(r *http.Request) bool { return true }
 	}
 	return &Upgrader{
-		opts: opts,
+		opts:      opts,
+		earlyData: earlyData,
 		up: websocket.Upgrader{
 			Subprotocols: namedSubprotocols(opts.Subprotocols),
 			CheckOrigin:  checkOrigin,
@@ -68,7 +72,7 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error
 	if r.URL.Path != u.opts.Path {
 		return nil, fmt.Errorf("ws upgrade: path %q does not match %q", r.URL.Path, u.opts.Path)
 	}
-	if u.opts.EarlyData {
+	if u.earlyData {
 		if h, ok := w.(http.Hijacker); ok {
 			w = earlyHijacker{ResponseWriter: w, h: h}
 		}

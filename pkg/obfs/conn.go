@@ -215,10 +215,21 @@ type Config struct {
 	SplitOpening bool
 }
 
+// ConnOptions extends Config without changing its literal form.
+type ConnOptions struct {
+	// AdviceCapabilities is what the server listener supports (Cap* bits).
+	// Nonzero capabilities send an advice frame even when Config.Advice is nil.
+	AdviceCapabilities uint16
+	// OnAdviceDetails is like Config.OnAdvice, with listener capabilities.
+	// If both callbacks are set, both are called with the same recommendation.
+	OnAdviceDetails func(AdviceDetails)
+}
+
 // conn is the obfuscation wrapper around net.Conn.
 type conn struct {
 	net.Conn
-	cfg Config
+	cfg             Config
+	onAdviceDetails func(AdviceDetails)
 
 	// Session state. The two directions have separate keys, derived from the
 	// PSK and the connection's salt, so neither the payload cipher nor the
@@ -368,6 +379,11 @@ type conn struct {
 // NewConn wraps an existing net.Conn with obfuscation. cfg.Role must say
 // which end this is; NewClientConn and NewServerConn set it for you.
 func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
+	return NewConnWithOptions(c, cfg, ConnOptions{})
+}
+
+// NewConnWithOptions wraps a connection with optional advice capabilities.
+func NewConnWithOptions(c net.Conn, cfg Config, opts ConnOptions) (net.Conn, error) {
 	if len(cfg.PSK) != 32 {
 		return nil, fmt.Errorf("obfs: PSK must be 32 bytes")
 	}
@@ -399,11 +415,12 @@ func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
 	}
 
 	oc := &conn{
-		Conn:          c,
-		cfg:           cfg,
-		maxFrame:      frameOverhead + budget,
-		payloadBudget: budget,
-		padCap:        padCap,
+		Conn:            c,
+		cfg:             cfg,
+		onAdviceDetails: opts.OnAdviceDetails,
+		maxFrame:        frameOverhead + budget,
+		payloadBudget:   budget,
+		padCap:          padCap,
 		// The salt rides in front of the first batch, and a control frame
 		// may ride between the two, so the buffer has to hold the salt
 		// plus two whole frames even when a jumbo MTU pushes the batch
@@ -467,8 +484,12 @@ func NewConn(c net.Conn, cfg Config) (net.Conn, error) {
 		if err := oc.queueControl(kindHello, encodeHello(*cfg.Hello)); err != nil {
 			return nil, err
 		}
-	case cfg.Role == RoleServer && cfg.Advice != nil:
-		if err := oc.queueControl(kindAdvice, encodeAdvice(*cfg.Advice)); err != nil {
+	case cfg.Role == RoleServer && (cfg.Advice != nil || opts.AdviceCapabilities != 0):
+		a := AdviceDetails{Capabilities: opts.AdviceCapabilities}
+		if cfg.Advice != nil {
+			a.Advice = *cfg.Advice
+		}
+		if err := oc.queueControl(kindAdvice, encodeAdvice(a)); err != nil {
 			return nil, err
 		}
 	}
@@ -668,14 +689,24 @@ func (c *conn) readOpening() error {
 
 // NewClientConn wraps the dialing end of a connection.
 func NewClientConn(c net.Conn, cfg Config) (net.Conn, error) {
+	return NewClientConnWithOptions(c, cfg, ConnOptions{})
+}
+
+// NewClientConnWithOptions is like NewClientConn with optional advice details.
+func NewClientConnWithOptions(c net.Conn, cfg Config, opts ConnOptions) (net.Conn, error) {
 	cfg.Role = RoleClient
-	return NewConn(c, cfg)
+	return NewConnWithOptions(c, cfg, opts)
 }
 
 // NewServerConn wraps the accepting end of a connection.
 func NewServerConn(c net.Conn, cfg Config) (net.Conn, error) {
+	return NewServerConnWithOptions(c, cfg, ConnOptions{})
+}
+
+// NewServerConnWithOptions is like NewServerConn with optional advice capabilities.
+func NewServerConnWithOptions(c net.Conn, cfg Config, opts ConnOptions) (net.Conn, error) {
 	cfg.Role = RoleServer
-	return NewConn(c, cfg)
+	return NewConnWithOptions(c, cfg, opts)
 }
 
 // frameNonce builds the nonce for one frame. Nothing of it goes on the wire:

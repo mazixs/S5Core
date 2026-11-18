@@ -215,19 +215,6 @@ const (
 	WSEarlyDataOff  = "off"
 )
 
-func (c Config) wsEarlyData() bool { return c.WSEarlyData != WSEarlyDataOff }
-
-// wsAdvice is currentAdvice plus what the WS listener can take. The
-// capability rides only on this listener: a client learns it from a tunnel
-// that came through the listener it describes.
-func (s *Server) wsAdvice() *obfs.Advice {
-	a := *s.currentAdvice()
-	if s.cfg.wsEarlyData() {
-		a.Capabilities |= obfs.CapWSEarlyData
-	}
-	return &a
-}
-
 // clientHelloObserver builds the callback the obfuscation layer invokes when
 // a client names itself. transport is the listener's label - what the client
 // claims is logged, not counted, because the listener knows and the client
