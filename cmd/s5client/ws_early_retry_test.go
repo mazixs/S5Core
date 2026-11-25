@@ -32,16 +32,15 @@ func throughClient(t *testing.T, cp clientParams) string {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	go func() {
+	wg.Go(func() {
 		for {
 			c, err := l.Accept()
 			if err != nil {
 				return
 			}
-			wg.Add(1)
-			go func() { defer wg.Done(); handleClient(c, cp, nil) }()
+			wg.Go(func() { handleClient(c, cp, nil) })
 		}
-	}()
+	})
 	t.Cleanup(func() { _ = l.Close(); wg.Wait() })
 	return l.Addr().String()
 }

@@ -202,7 +202,7 @@ class PrivateRotatingHandler(logging.handlers.RotatingFileHandler):
         return os.fdopen(fd, self.mode, encoding=self.encoding)
 
 
-def log_handler(folder, max_bytes):
+def log_handler(folder, max_bytes, filename="checks.jsonl"):
     # Only a directory created by this diagnostic may be rotated or pruned.
     # Never chmod or remove prefixed files in an operator's shared folder.
     marker = folder / ".s5-netwatch"
@@ -225,17 +225,17 @@ def log_handler(folder, max_bytes):
             mark.write("s5-netwatch-v1\n")
         marker.chmod(0o600)
     for old in folder.iterdir():
-        if old.name not in {"checks.jsonl", *(f"checks.jsonl.{n}" for n in range(1, 8))}:
+        if old.name not in {filename, *(f"{filename}.{n}" for n in range(1, 8))}:
             continue
         info = old.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
             raise ValueError("invalid diagnostic log file")
         if info.st_mtime < time.time() - 7 * 86400:
             old.unlink()
-    path = folder / "checks.jsonl"
+    path = folder / filename
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     os.close(fd)
-    handler = PrivateRotatingHandler(folder / "checks.jsonl", maxBytes=max_bytes,
+    handler = PrivateRotatingHandler(path, maxBytes=max_bytes,
                                                    backupCount=7, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(message)s"))
     return handler

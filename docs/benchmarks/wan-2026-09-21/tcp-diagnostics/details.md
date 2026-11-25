@@ -1,6 +1,6 @@
 # TCP-диагностика отдачи на настоящем WAN
 
-> Сырые данные (`*.jsonl`, `*.log`, `*.gz`) убраны из дерева 01.10.2026: они остаются в истории git до коммита `8342022`. Сводки, манифесты и скрипты анализа лежат рядом; скрипты, читающие сырые файлы, требуют их восстановления из истории.
+> The public tree contains the summaries and analysis scripts. Recalculating the summaries requires the raw logs from a local archive.
 
 21.09.2026, продолжение WAN-UP-01. Тот же ARM64-роутер, тот же узел A,
 те же опубликованные бинарники 2.0.0 и локальный candidate. SHA256 в
@@ -99,16 +99,33 @@ SO_RCVBUF для всех соединений не вносилось.
 
 ## Материалы и повтор анализа
 
-- 128 МиБ: строки и прогревы (`samples.jsonl`, в истории git), [сводка](128MiB/summary.json),
-  журнал с причиной прерывания (`run.log`, в истории git).
-- 512 МиБ: строки и прогревы (`samples.jsonl`, в истории git), [сводка](512MiB/summary.json),
-  журнал (`run.log`, в истории git).
+- [128 МиБ](128MiB/summary.json)
+- [512 МиБ](512MiB/summary.json)
 - `router-tcp.jsonl.gz` и `node-A-tcp.jsonl.gz` в обеих папках - все сохраненные
   снимки. Адреса и временные пути заменены метками, счетчики не менялись.
 - [Исходник сборщика](monitor.go.txt): финальный вариант с SKMEMINFO; в первой
   серии эта дополнительная группа полей еще не запрашивалась.
-- `python3 docs/benchmarks/wan-2026-09-21/tcp-diagnostics/128MiB/analyze.py` и
-  аналогичная команда для `512MiB` пересоздают summary из сжатых журналов.
+
+Run from the repository root. Set `BENCHMARK_INPUTS` to the local archive root
+with the same directory layout. The recalculated summaries go into a temporary
+directory printed at the end.
+
+```bash
+(
+  set -eu
+  : "${BENCHMARK_INPUTS:?Set BENCHMARK_INPUTS to the local archive root}"
+  work=$(mktemp -d)
+  for size in 128MiB 512MiB; do
+    path="docs/benchmarks/wan-2026-09-21/tcp-diagnostics/$size"
+    target="$work/$size"
+    mkdir "$target"
+    cp "$path/analyze.py" "$target/"
+    cp "$BENCHMARK_INPUTS/$path"/{samples.jsonl,router-tcp.jsonl.gz,node-A-tcp.jsonl.gz} "$target/"
+    python3 "$target/analyze.py"
+  done
+  printf '%s\n' "$work"
+)
+```
 
 Временные процессы, файлы и учетные данные удалены с обоих хостов. Тестовые
 порты закрыты. Рабочий контейнер по-прежнему 2.0.0 со временем запуска
