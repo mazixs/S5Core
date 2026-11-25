@@ -143,28 +143,6 @@ func TestASpareIsDialledWithoutFastOpen(t *testing.T) {
 	}
 }
 
-// tfoClient serves the client's SOCKS5 port with cp and returns its address.
-func tfoClient(t *testing.T, cp clientParams) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			wg.Add(1)
-			go func() { defer wg.Done(); handleClient(c, cp, nil) }()
-		}
-	}()
-	t.Cleanup(func() { _ = l.Close(); wg.Wait() })
-	return l.Addr().String()
-}
-
 // pingThrough opens a stream to echo through the client and checks that it
 // carries bytes, then returns with the stream still open.
 func pingThrough(t *testing.T, proxy, echo string) net.Conn {
@@ -193,7 +171,7 @@ func TestATunnelWithFastOpenSendsItsRequestInTheSYN(t *testing.T) {
 	for _, optimistic := range []bool{false, true} {
 		var d tunnelDials
 		d.hook(t)
-		proxy := tfoClient(t, clientParams{ServerAddr: server, PSK: "01234567890123456789012345678901", MTU: 1400,
+		proxy := throughClient(t, clientParams{ServerAddr: server, PSK: "01234567890123456789012345678901", MTU: 1400,
 			Transport: "obfs", HandshakeTimeout: 5 * time.Second, DialTimeout: 5 * time.Second,
 			OptimisticConnect: optimistic, FastOpen: true})
 		for range 2 {
@@ -229,7 +207,7 @@ func TestWithoutFastOpenTheTunnelIsDialledAsBefore(t *testing.T) {
 	echo := target(t, "")
 	var d tunnelDials
 	d.hook(t)
-	proxy := tfoClient(t, clientParams{ServerAddr: server, PSK: "01234567890123456789012345678901", MTU: 1400,
+	proxy := throughClient(t, clientParams{ServerAddr: server, PSK: "01234567890123456789012345678901", MTU: 1400,
 		Transport: "obfs", HandshakeTimeout: 5 * time.Second, DialTimeout: 5 * time.Second})
 	for i := range 2 {
 		c := pingThrough(t, proxy, echo)
@@ -348,7 +326,7 @@ func TestAFastOpenTunnelThatNeverReachedTheServerFailsAtTheDial(t *testing.T) {
 			logs := captureLogs(t)
 			cfg := fastOpenParams(tc.server, optimistic)
 			cfg.DialTimeout, cfg.HandshakeTimeout = tc.dial, tc.handshake
-			proxy := tfoClient(t, cfg)
+			proxy := throughClient(t, cfg)
 			start := time.Now()
 			c, reply := socksConnect(t, proxy, echo, nil)
 			if optimistic {
@@ -411,7 +389,7 @@ func TestANodeThatDropsSYNDataIsDialledWithoutFastOpen(t *testing.T) {
 	echo := target(t, "")
 	var d tunnelDials
 	d.hook(t)
-	proxy := tfoClient(t, fastOpenParams(server, false))
+	proxy := throughClient(t, fastOpenParams(server, false))
 	_ = pingThrough(t, proxy, echo).Close()
 
 	// A SYN with no data is under 100 bytes, one with the opening is over.
@@ -473,7 +451,7 @@ func TestANodeWhoseKeyChangedKeepsFastOpen(t *testing.T) {
 		echo := target(t, "")
 		var d tunnelDials
 		d.hook(t)
-		proxy := tfoClient(t, fastOpenParams(server, false))
+		proxy := throughClient(t, fastOpenParams(server, false))
 		_ = pingThrough(t, proxy, echo).Close()
 		_ = pingThrough(t, proxy, echo).Close()
 

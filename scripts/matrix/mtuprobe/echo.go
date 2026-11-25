@@ -200,7 +200,6 @@ type mtuTrace struct {
 }
 
 func (t *mtuTrace) AddProducer() qlogwriter.Recorder { return t }
-func (t *mtuTrace) SupportsSchemas(string) bool      { return true }
 func (t *mtuTrace) Close() error                     { return nil }
 
 func (t *mtuTrace) RecordEvent(e qlogwriter.Event) {

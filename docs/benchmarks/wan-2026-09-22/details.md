@@ -1,6 +1,6 @@
 # Raw, опубликованная 2.0.0 и current: повтор WAN после оптимизации
 
-> Сырые данные (`*.jsonl`, `*.log`, `*.gz`) убраны из дерева 01.10.2026: они остаются в истории git до коммита `8342022`. Сводки, манифесты и скрипты анализа лежат рядом; скрипты, читающие сырые файлы, требуют их восстановления из истории.
+> The public tree contains summaries, manifests, and analysis scripts. Recalculating the summaries requires the raw logs from a local archive.
 
 Дата: 2026-09-22. Current в этом сравнении - **`9e0eb3937b45c7637d1536b252f5b9f852df7455`**, а не произвольный последующий HEAD. Маршрут: ARM-роутер (aarch64, 3 CPU, AES/PMULL) -> тот же Linux amd64 VPS (1 vCPU), RTT около 43 мс. Рабочие службы не обновлялись.
 
@@ -87,16 +87,33 @@ Raw не является постоянным физическим потолк
 
 Исходники временных измерителей и оркестраторов сохранены в [fixtures](fixtures/). Они требуют приватного `addresses.json`, соответствующих бинарников и SSH-алиасов; значения адресов и credentials в репозиторий не входят.
 
-Для каждого транспорта сохранены `samples.jsonl`, `summary.json`, `manifest.json`, `build-info.txt`, окружение и журнал. В копиях build-info удалены только концевые пробелы. Сводка пересоздается командой:
+В копиях build-info удалены только концевые пробелы.
+
+Run from the repository root. Set `BENCHMARK_INPUTS` to the local archive root
+with the same directory layout. The recalculated summaries go into a temporary
+directory printed at the end.
 
 ```bash
-python3 docs/benchmarks/wan-2026-09-22/obfs/analyze.py
-python3 docs/benchmarks/wan-2026-09-22/wss/analyze.py
+(
+  set -eu
+  : "${BENCHMARK_INPUTS:?Set BENCHMARK_INPUTS to the local archive root}"
+  work=$(mktemp -d)
+  for transport in obfs wss; do
+    path="docs/benchmarks/wan-2026-09-22/$transport"
+    target="$work/$transport"
+    mkdir "$target"
+    cp "$path"/{analyze.py,analyze-tcp.py,state.json,clock-calibration.json} "$target/"
+    cp "$BENCHMARK_INPUTS/$path"/{samples.jsonl,node-a-monitor.log.gz} "$target/"
+    python3 "$target/analyze.py"
+    python3 "$target/analyze-tcp.py"
+  done
+  printf '%s\n' "$work"
+)
 ```
 
 `*-monitor.log.gz` содержат все сохраненные снимки выбранных 36 измеренных bulk-потоков каждой серии. Warmup и короткие потоки исключены только из этого извлечения, не из request-лога. Имена узлов обезличены: `router` обозначает клиентский роутер, `node-a` - VPS; для повторного запуска нужны собственные SSH-алиасы. IP заменены метками, hex-адреса `/proc/net/tcp` скрыты, порты/счетчики/время сохранены. `analyze-tcp.py` повторяет сопоставление потока и сводку. Выборочные TCP-счетчики не являются окончательными счетчиками закрытого сокета. При upload VPS - получатель; его retransmit нельзя выдавать за retransmit отправителя на роутере, где NETLINK_SOCK_DIAG недоступен.
 
-Полные TCP-логи, бинарники и приватные служебные данные остаются в `/tmp/s5core-wan-20260922/` и `/tmp/s5core-wss-wan-20260922/`. В Git не добавляются IP узлов, ключи и пароли. Первый незавершенный запуск obfs остановлен проверкой фикстуры: ожидалось 23 байта вместо фактических 24. SHA-256 совпадал, продуктового дефекта не было; эта попытка сохранена отдельно и не включена в статистику.
+Первый незавершенный запуск obfs остановлен проверкой фикстуры: ожидалось 23 байта вместо фактических 24. SHA-256 совпадал, продуктового дефекта не было; эта попытка сохранена отдельно и не включена в статистику.
 
 Этот повтор сравнивает опубликованную 2.0.0 с конечной реализацией, тогда как [desktop A/B](../../reports/performance-implementation-2026-09-22.md) сравнивал рабочий baseline с H01-H05/R01 и конечный код. Проценты разных баз и нагрузок не складываются. Новый результат не меняет исторические измерения [21 сентября](../wan-2026-09-21/README.md).
 

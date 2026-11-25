@@ -389,6 +389,38 @@ Every line has these fields:
 
 ---
 
+## UDP reply gaps on a Docker host
+
+`scripts/udp_incidents.py` passively observes UDP on a Linux host running
+S5Core in a Docker bridge network. Run it on the Docker host with privileges
+for packet capture, container network namespace inspection and read access to
+conntrack. It requires Python 3.10+, `ip`, `nsenter`, `docker`, `conntrack`
+and a `tcpdump` build with Linux cooked v2 support.
+
+```bash
+sudo python3 scripts/udp_incidents.py --container s5core --output /var/log/s5core-udp-incidents
+```
+
+The collector refreshes the container's interfaces, addresses and UDP
+listener ports from Docker and Linux. It gets each target address and port
+from the traffic on the container's veth and resolves the matching
+post-NAT tuple with [conntrack](https://www.netfilter.org/projects/conntrack-tools/conntrack-manpage.html).
+The container name is the only node identifier needed. Restarting the
+container or changing its IP does not require editing a capture filter.
+
+After seeing replies on a flow, the collector saves an incident when
+requests keep going out for four seconds without a reply. Each report
+contains a two-minute lookback and sixty seconds after the trigger,
+with per-second datagram counts on the container side and the external
+interface. The private rotating `udp-incidents.jsonl` keeps timestamps,
+addresses, ports and counters. Redact endpoint addresses, ports and interface
+names before sharing an incident report. The collector never writes packet
+payloads. An unresolved NAT tuple leaves the external counts unavailable.
+Check the truncation flags
+and the cumulative kernel capture drop counters before using missing packets
+as evidence. A captured outbound datagram shows what the VPS sent to its
+interface, without establishing delivery to the remote endpoint.
+
 ## Hot Reloading
 
 `SIGHUP` makes the process re-read what it can re-read while running, without breaking existing connections.
